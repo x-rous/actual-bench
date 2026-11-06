@@ -123,7 +123,7 @@ export function useFinancialInsightsGate(): Gate {
     // An exempt closed account (no history) has no class and nothing to count, so it is left out of every figure.
     const facts: AccountFact[] = accounts.flatMap((a) => {
       const accountClass = classOf.get(a.id);
-      return accountClass && accountClass !== "excluded" ? [{ id: a.id, name: a.name, accountClass, treatment: reportingByAccount.get(a.id) ?? null, offBudget: a.offBudget }] : [];
+      return accountClass && accountClass !== "excluded" ? [{ id: a.id, name: a.name, accountClass, treatment: reportingByAccount.get(a.id) ?? null, offBudget: a.offBudget, closed: a.closed }] : [];
     });
     const excluded = accounts.filter((a) => classOf.get(a.id) === "excluded").map((a) => ({ id: a.id, name: a.name }));
     return { state: "ready", accounts: facts, excluded };

@@ -48,6 +48,9 @@ files to `demo/seed-data/` and the matching fictional references to
 `demo/seed-manifest.json`. It also makes an ignored local `demo/seed-bench.sqlite`
 for validation. The image independently regenerates that SQLite file from the
 manifest. Commit the seed-data and manifest together when reviewing a refresh.
+Opening transactions use the `Starting Balance` payee. In the Envelope seed,
+the current month stays fully assigned even early in the month: any shortfall
+after the hold is taken from the emergency-fund assignment.
 
 The household has a family home with six years of valuations, a car, and an
 investment property with linked rental income and expenses. Four loans include

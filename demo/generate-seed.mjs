@@ -1118,10 +1118,17 @@ async function assignSurplusToSinkingFunds(api, current, categoryIds) {
   // other way round, the hold would push the month back into the red.
   await api.holdBudgetForNextMonth(current.key, 50000);
 
-  const surplus = (await api.getBudgetMonth(current.key))?.toBudget ?? 0;
-  if (surplus <= 0) return;
-
   const plan = budgetPlanForMonth(current);
+  const surplus = (await api.getBudgetMonth(current.key))?.toBudget ?? 0;
+  // Early in the month, the full plan can exceed income received so far.
+  // Release money from the emergency fund, as the historical sweep does,
+  // so the current month remains fully assigned without changing expense plans.
+  if (surplus < 0) {
+    await api.setBudgetAmount(current.key, categoryIds.emergencyFund, (plan.emergencyFund ?? 0) + surplus);
+    return;
+  }
+  if (surplus === 0) return;
+
   // Whole dollars, so the category rows read as decisions rather than as the
   // output of a division. The emergency fund absorbs the remainder.
   const shares = [

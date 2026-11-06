@@ -9,13 +9,13 @@ function Guide({ start = "start" as FinancialInsightsGuideSection, onClose = jes
 
 describe("the Financial Insights guide", () => {
   it("has a section for every part of the page, each with its own heading and something to read", () => {
-    expect(FINANCIAL_INSIGHTS_GUIDE_SECTIONS.map(([id]) => id)).toEqual(["start", "different", "ready", "summary", "money", "income", "spending", "budget", "investments", "property", "loans", "buffer", "drill", "counted", "glossary"]);
+    expect(FINANCIAL_INSIGHTS_GUIDE_SECTIONS.map(([id]) => id)).toEqual(["start", "different", "ready", "counted", "summary", "money", "income", "spending", "budget", "investments", "property", "loans", "buffer", "drill", "glossary"]);
     for (const [id, label] of FINANCIAL_INSIGHTS_GUIDE_SECTIONS) {
       const { unmount } = render(<Guide start={id} />);
       expect(screen.getByRole("heading", { name: label, level: 2 })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: label })).toHaveAttribute("aria-current", "page");
-      // Every section has pictures or figures as well as words.
-      expect(document.querySelectorAll("figure, [aria-label^='Sketch'], table, ol").length).toBeGreaterThan(0);
+      // Each section has a visual or a structured list of examples.
+      expect(document.querySelectorAll("figure, [aria-label^='Sketch'], table, ol, dl").length).toBeGreaterThan(0);
       unmount();
     }
   });
@@ -42,6 +42,19 @@ describe("the Financial Insights guide", () => {
     render(<Guide start="money" />);
     for (const label of ["Received", "Spent", "Kept from income", "Savings rate", "Change in cash"]) expect(screen.getAllByText(label).length).toBeGreaterThan(0);
     expect(screen.getAllByText("vs previous").length).toBeGreaterThan(0);
+  });
+
+  it("distinguishes budget placement and portfolio transfers from investment activity", () => {
+    render(<Guide start="counted" />);
+    const examples = screen.getByRole("region", { name: "Explore more examples" });
+    expect(within(examples).getByText("Cash & bank")).toBeInTheDocument();
+    fireEvent.click(within(examples).getByText("Investments"));
+    expect(screen.getByText(/neither side has a category/i)).toBeInTheDocument();
+    expect(screen.getByText(/Other per account/)).toBeInTheDocument();
+    expect(screen.getByText(/Investment activity: a recorded non-transfer change/)).toBeInTheDocument();
+    expect(screen.getByText(/Why My budget can differ/)).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Advanced: How Financial Insights classifies transactions"));
+    expect(screen.getByText("On-budget, no category")).toBeVisible();
   });
 
   it("covers the cash buffer, its goal and its scenarios, and says the loan interest is not counted twice", () => {

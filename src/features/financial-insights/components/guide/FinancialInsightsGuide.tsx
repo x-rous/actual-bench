@@ -3,9 +3,11 @@
 import type { ReactNode } from "react";
 import {
   ArrowLeftRight, Banknote, BookOpen, Building2, CircleHelp, CreditCard, FileSearch, Gauge, GitCompare, Home, LayoutDashboard, ListChecks,
-  Lock, MousePointerClick, PieChart, Scale, ShieldCheck, ShoppingCart, Target, TrendingUp, type LucideIcon,
+  Lock, MousePointerClick, PieChart, Scale, ShieldCheck, ShoppingCart, Target, TrendingUp, UserRound, FilePenLine, type LucideIcon,
 } from "lucide-react";
 import { GuideFrame } from "@/components/ui/guide-frame";
+import { ACCOUNT_CLASS_ICONS } from "@/features/accounts/lib/accountClassIcons";
+import type { AccountClass } from "@/lib/account-class";
 import { Example, Heading, Para, Steps } from "@/components/ui/guide-primitives";
 import {
   BudgetLineSketch, BufferSketch, Callout, Card, Chip, DrillSketch, EquitySketch, FlowSketch, HeatSketch, MiniTile, OwnAndOweSketch,
@@ -17,9 +19,9 @@ export type FinancialInsightsGuideSection =
   | "start" | "different" | "ready" | "summary" | "money" | "income" | "spending" | "budget" | "investments" | "property" | "loans" | "buffer" | "drill" | "counted" | "glossary";
 
 export const FINANCIAL_INSIGHTS_GUIDE_SECTIONS: [FinancialInsightsGuideSection, string][] = [
-  ["start", "Start here"], ["different", "Why not Actual’s reports?"], ["ready", "Before any number"], ["summary", "Summary"], ["money", "Money in & out"],
+  ["start", "Start here"], ["different", "Why not Actual’s reports?"], ["ready", "Before any number"], ["counted", "How things are counted"], ["summary", "Summary"], ["money", "Money in & out"],
   ["income", "Income"], ["spending", "Spending"], ["budget", "My budget"], ["investments", "Investments"], ["property", "Property & assets"],
-  ["loans", "Loans & cards"], ["buffer", "Cash buffer & scenarios"], ["drill", "The transactions behind a figure"], ["counted", "How things are counted"], ["glossary", "Glossary"],
+  ["loans", "Loans & cards"], ["buffer", "Cash buffer & scenarios"], ["drill", "The transactions behind a figure"], ["glossary", "Glossary"],
 ];
 
 const SECTION_ICONS: Record<FinancialInsightsGuideSection, LucideIcon> = {
@@ -37,6 +39,108 @@ const Grid = ({ cols = 3, children }: { cols?: 2 | 3 | 4 | 5; children: ReactNod
 );
 const Tiles = ({ children }: { children: ReactNode }) => <div className="grid max-w-[64.5rem] gap-2 sm:grid-cols-2 xl:grid-cols-5">{children}</div>;
 const Tag = ({ children }: { children: ReactNode }) => <code className="rounded bg-muted/70 px-1 font-mono text-[11px]">{children}</code>;
+
+type FlowNode = { label: string; accountClass?: AccountClass };
+const account = (label: string, accountClass: AccountClass): FlowNode => ({ label, accountClass });
+const other = (label: string): FlowNode => ({ label });
+type FlowExample = { label: string; left: FlowNode; right: FlowNode; direction: "right" | "left" | "entry" | "link"; impact?: "received" | "spent"; recorded: string; result: string };
+const FLOW_GROUPS: { name: string; icon: LucideIcon; placement: string; examples: FlowExample[] }[] = [
+  { name: "Cash & bank", icon: ACCOUNT_CLASS_ICONS.bank, placement: "Cash and Bank classes can be on or off budget", examples: [
+    { label: "Paycheck", left: account("Checking · on budget", "bank"), right: other("Employer · outside payee"), direction: "left", impact: "received", recorded: "Paycheck with an income category.", result: "Received rises; Change in cash rises." },
+    { label: "Groceries", left: account("Checking · on budget", "bank"), right: other("Grocery store · outside payee"), direction: "right", impact: "spent", recorded: "Purchase with a grocery category.", result: "Spent rises; Change in cash falls." },
+    { label: "Move to savings", left: account("Checking · on budget", "bank"), right: account("Savings · off budget", "bank"), direction: "right", recorded: "Transfer between two Bank accounts; the category is on the on-budget side.", result: "Cash and Money kept stay the same." },
+    { label: "Off-budget payment", left: other("Outside payee"), right: account("Savings · off budget", "bank"), direction: "left", recorded: "Uncategorized entry in the off-budget account.", result: "Unidentified movements; not Spent." },
+    { label: "Restricted deposit", left: account("Checking · on budget", "bank"), right: account("Deposit · off budget", "bank"), direction: "right", recorded: "Transfer into a Bank marked Fixed / restricted deposit.", result: "Fixed / restricted deposits rise; cash falls. Still in net worth, not the cash buffer." },
+  ] },
+  { name: "Investments", icon: ACCOUNT_CLASS_ICONS.investment, placement: "Off budget · Investment needs a current / non-current choice", examples: [
+    { label: "Put in", left: account("Checking · on budget", "bank"), right: account("Brokerage · off budget", "investment"), direction: "right", recorded: "Transfer; the on-budget side carries the category.", result: "Funding / Put into investments; not Spent." },
+    { label: "Withdraw", left: account("Checking · on budget", "bank"), right: account("Brokerage · off budget", "investment"), direction: "left", recorded: "Withdrawal recorded as a transfer.", result: "Withdrawals / Withdrawn from investments; not Received." },
+    { label: "Between investments", left: account("Brokerage A · off budget", "investment"), right: account("Brokerage B · off budget", "investment"), direction: "right", recorded: "Transfer between two portfolio accounts; neither side has a category.", result: "Other per account; cancels in the portfolio total when both sides are in the period." },
+    { label: "Investment activity", left: other("Recorded value change"), right: account("Brokerage · off budget", "investment"), direction: "entry", recorded: "Uncategorized non-transfer entry, such as a dividend or price change.", result: "Investment activity: a recorded non-transfer change to the account balance, not a calculated return." },
+  ] },
+  { name: "Loans", icon: ACCOUNT_CLASS_ICONS.loan, placement: "Off budget · Loan liability", examples: [
+    { label: "Borrow", left: account("Checking · on budget", "bank"), right: account("Loan · off budget", "loan"), direction: "left", recorded: "Borrowed money recorded as a transfer.", result: "Borrowed (received from loans); not Received income." },
+    { label: "Repay principal", left: account("Checking · on budget", "bank"), right: account("Loan · off budget", "loan"), direction: "right", recorded: "Principal repaid as a transfer; the on-budget side carries a category.", result: "Loan principal repaid; not Spent." },
+    { label: "Interest & fees", left: account("Checking · on budget", "bank"), right: other("Lender · outside payee"), direction: "right", impact: "spent", recorded: "Separate interest or fee entry with an expense category.", result: "Spent. Interest paid / Fees paid identified for tracked loans only." },
+    { label: "Loan adjustment", left: other("Recorded charge"), right: account("Loan · off budget", "loan"), direction: "entry", recorded: "Uncategorized non-transfer entry, for example capitalized interest.", result: "Unidentified movements; not Interest paid or Spent." },
+  ] },
+  { name: "Credit cards", icon: ACCOUNT_CLASS_ICONS["credit-card"], placement: "On or off budget · Current liability", examples: [
+    { label: "Card purchase", left: account("Card · on budget", "credit-card"), right: other("Grocery store · outside payee"), direction: "right", impact: "spent", recorded: "Purchase with a grocery category.", result: "Spent rises when recorded; card debt rises." },
+    { label: "Pay card", left: account("Checking · on budget", "bank"), right: account("Card · on budget", "credit-card"), direction: "right", recorded: "Transfer to pay the card. Both accounts are on budget.", result: "Cash falls; not Spent again." },
+    { label: "Off-budget card", left: other("Outside payee"), right: account("Card · off budget", "credit-card"), direction: "left", recorded: "Uncategorized non-transfer entry.", result: "Unidentified movements; not Spent." },
+  ] },
+  { name: "Property & assets", icon: ACCOUNT_CLASS_ICONS.property, placement: "Property and Vehicle classes are off budget · Fixed assets", examples: [
+    { label: "Buy property", left: account("Checking · on budget", "bank"), right: account("Property · off budget", "property"), direction: "right", recorded: "Purchase recorded as a transfer; the on-budget side carries a category.", result: "Asset value rises; not Spent. Assets may classify Capital added." },
+    { label: "Value change", left: other("Recorded value change"), right: account("Property · off budget", "property"), direction: "entry", recorded: "Entry classified in Assets as revaluation or depreciation.", result: "Revaluation / Depreciation when classified in Assets." },
+    { label: "Link a loan", left: account("Loan · off budget", "loan"), right: account("Property · off budget", "property"), direction: "link", recorded: "The loan is linked to the asset in Assets. This link is not a transaction.", result: "Debt against assets and Equity in Property & assets." },
+  ] },
+  { name: "Other accounts", icon: ACCOUNT_CLASS_ICONS["other-liability"], placement: "Other Liability may be on or off budget; Excluded is off budget", examples: [
+    { label: "Other liability", left: account("Checking · on budget", "bank"), right: account("Liability · off budget", "other-liability"), direction: "right", recorded: "A transfer to an Other Liability account; choose current or non-current in Financial Reporting.", result: "Other liabilities change; the transfer is not Spent." },
+    { label: "Excluded account", left: account("Checking · on budget", "bank"), right: account("Excluded · off budget", "excluded"), direction: "right", recorded: "A transfer to an account excluded from Financial Insights.", result: "Transfers with excluded accounts: the excluded account is left out, so the movement changes the included balances and net worth." },
+  ] },
+];
+
+const FLOW_CLASS_COLOURS: Partial<Record<AccountClass, string>> = {
+  cash: "var(--fi-cash)", bank: "var(--fi-cash)", investment: "var(--fi-invest)", retirement: "var(--fi-invest)",
+  loan: "var(--fi-loan)", "credit-card": "var(--fi-card)", property: "var(--fi-property)", vehicle: "var(--fi-vehicle)",
+  "other-asset": "var(--fi-other-asset)", "other-liability": "var(--fi-other-liability)",
+};
+const FLOW_GROUP_COLOURS = ["var(--fi-cash)", "var(--fi-invest)", "var(--fi-loan)", "var(--fi-card)", "var(--fi-property)", "var(--fi-other-liability)"];
+
+function FlowAccountNode({ node, align = "left" }: { node: FlowNode; align?: "left" | "right" }) {
+  const Icon = node.accountClass ? ACCOUNT_CLASS_ICONS[node.accountClass] : node.label.includes("payee") ? UserRound : FilePenLine;
+  const [name, placement] = node.label.split(" · ");
+  return <span className={`flex min-w-0 items-start gap-1 ${align === "right" ? "justify-end text-right" : "text-left"}`}><Icon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" style={{ color: node.accountClass ? FLOW_CLASS_COLOURS[node.accountClass] : undefined }} aria-hidden="true" /><span>{name}{placement && <span className="text-muted-foreground"> ({placement === "outside payee" ? "payee" : placement})</span>}</span></span>;
+}
+
+/** Examples start with everyday activities; account-specific detail stays available on demand. */
+function FlowOverview() {
+  const basics: { title: string; text: string; tone: "income" | "spend" | "neutral" | "value"; icon: LucideIcon }[] = [
+    { title: "Received", text: "Income from salary, business, interest or other sources recorded as income, plus uncategorized money in on budget. Borrowing and transfers are not income.", tone: "income", icon: Banknote },
+    { title: "Spent", text: "Expenses paid in cash or on credit, usually from on-budget accounts, such as groceries or loan interest.", tone: "spend", icon: ShoppingCart },
+    { title: "Money moved", text: "Transfers between your accounts, including money put into savings or investments and loan principal repaid.", tone: "neutral", icon: ArrowLeftRight },
+    { title: "Value changed", text: "A recorded change in an asset’s value can change net worth without being income or spending.", tone: "value", icon: TrendingUp },
+  ];
+  const common = [
+    { title: "Receive a salary", badge: "Received", left: other("Employer · outside payee"), right: account("Checking · on budget", "bank"), text: "Received and cash rise." },
+    { title: "Buy groceries", badge: "Spent", left: account("Checking · on budget", "bank"), right: other("Grocery store · outside payee"), text: "Spent rises; cash and net worth fall." },
+    { title: "Move money to savings", badge: "Transfer", left: account("Checking · on budget", "bank"), right: account("Savings · off budget", "bank"), text: "Cash moves between included accounts; total cash and net worth stay the same when both sides match in the period." },
+    { title: "Repay loan principal", badge: "Transfer", left: account("Checking · on budget", "bank"), right: account("Loan · off budget", "loan"), text: "Cash and debt fall; principal is not Spent." },
+  ];
+  const order = [0, 3, 1, 2, 4, 5];
+  return <div className="max-w-[55rem] space-y-4">
+    <section aria-label="How your money is counted">
+      <h3 className="text-sm font-semibold">How your money is counted</h3>
+      <p className="mt-1 text-xs leading-relaxed text-foreground/80">Financial Insights separates income, expenses, transfers and changes in value.</p>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">{basics.map(({ title, text, tone, icon }) => <Card key={title} icon={icon} tone={tone} title={title}>{text}</Card>)}</div>
+    </section>
+    <section aria-label="Common money movements">
+      <h3 className="text-sm font-semibold">Common money movements</h3>
+      <div className="mt-2 divide-y divide-border/60">{common.map(({ title, badge, left, right, text }) => <div key={title} className="py-2 text-xs leading-relaxed">
+        <div className="flex flex-wrap items-center justify-between gap-1"><p className="font-semibold">{title}</p><Chip tone={badge === "Received" ? "income" : badge === "Spent" ? "spend" : "neutral"}>{badge}</Chip></div>
+        <div className="mt-1 grid grid-cols-[minmax(0,1fr)_1.5rem_minmax(0,1fr)] items-start font-medium"><FlowAccountNode node={left} /><span className="text-center text-muted-foreground" aria-label="to">→</span><FlowAccountNode node={right} align="right" /></div>
+        <p className="mt-1 text-foreground/80">{text}</p>
+      </div>)}</div>
+      <aside className="mt-3 rounded-lg border bg-muted/30 px-3 py-2 text-xs leading-relaxed"><b>Why My budget can differ:</b> When a transfer involves an off-budget account, Actual requires a category on its on-budget side and it can count the transfer as budget spending. Financial Insights excludes transfers from its <b>Spending</b> calculation, even when they have a category. For example, moving 500 from checking to an off-budget investment account can use 500 of a budget category, but adds nothing to Financial Insights’ <b>Spent</b>. The reconciliation in My budget shows the difference.</aside>
+    </section>
+    <section aria-label="Explore more examples">
+      <h3 className="text-sm font-semibold">Explore more examples</h3>
+      <div className="mt-2 space-y-2">{order.map((index) => {
+        const group = FLOW_GROUPS[index];
+        const Icon = group.icon;
+        const colour = FLOW_GROUP_COLOURS[index];
+        const subtitles = ["Savings, deposits and everyday banking", "Funding, withdrawals and account value changes", "Borrowing, principal and interest", "Purchases, payments and off-budget cards", "Purchases, valuations and linked debt", "Other liabilities and excluded accounts"];
+        return <details key={group.name} className="overflow-hidden rounded-lg border">
+          <summary className="flex cursor-pointer items-center gap-2 px-3 py-2.5 text-xs font-semibold marker:content-none"><Icon className="size-4 shrink-0" style={{ color: colour }} aria-hidden="true" /><span className="min-w-0 flex-1">{group.name}<span className="mt-0.5 block font-normal text-muted-foreground">{subtitles[index]}</span></span><span aria-hidden="true" className="text-muted-foreground">⌄</span></summary>
+          <div className="border-t px-3 py-1"><p className="py-1 text-xs text-muted-foreground">{group.placement}</p><dl className="divide-y divide-border/60">{group.examples.map(({ label, left, right, direction, recorded, result }) => <div key={label} className="py-2 text-xs leading-relaxed">
+            <dt className="grid grid-cols-[minmax(0,1fr)_1.5rem_minmax(0,1fr)] items-start font-medium"><FlowAccountNode node={left} /><span className="text-center text-muted-foreground" aria-label={direction === "right" ? "to" : direction === "left" ? "from" : direction === "link" ? "linked to" : "recorded in"}>{direction === "right" ? "→" : direction === "left" ? "←" : direction === "link" ? "+" : "→"}</span><FlowAccountNode node={right} align="right" /></dt>
+            <dd className="mt-0.5 text-foreground/80">{!result.toLowerCase().startsWith(label.toLowerCase()) && <span className="font-medium text-foreground">{label}: </span>}{result}<span className="sr-only"> {recorded}</span></dd>
+          </div>)}</dl></div>
+        </details>;
+      })}</div>
+    </section>
+  </div>;
+}
 
 export function FinancialInsightsGuide({ section, onSection, onClose, docsUrl }: { section: FinancialInsightsGuideSection; onSection: (section: FinancialInsightsGuideSection) => void; onClose: () => void; docsUrl?: string }) {
   const link = (to: FinancialInsightsGuideSection, text: string) => <button type="button" className="font-medium text-primary hover:underline" onClick={() => onSection(to)}>{text}</button>;
@@ -70,6 +174,28 @@ export function FinancialInsightsGuide({ section, onSection, onClose, docsUrl }:
           <MiniTile label="Savings rate" value="25.0%" detail="Of every 100 received: 75.0 spent" delta={{ text: "▲ 1.2 pts", good: true }} />
         </Grid>
         <Callout title="Nothing is changed in Actual">Everything is read-only. What Bench keeps itself (the class of each account, your cash buffer goal and scenarios) lives in Bench’s own database, never in your budget file.</Callout>
+        <Para>New to the report? See {link("counted", "how things are counted")} from your accounts to the figures.</Para>
+      </>}
+
+      {section === "counted" && <>
+        <FlowOverview />
+        <details className="my-4 max-w-[55rem] rounded-xl border bg-card px-4 py-3 text-xs">
+          <summary className="cursor-pointer font-semibold">Advanced: How Financial Insights classifies transactions</summary>
+          <ol className="mt-3 grid gap-3 sm:grid-cols-2">
+            {([
+              ["Transfers", ["Transfers are neither Received nor Spent in Financial Insights. Actual may count the on-budget category in My budget.", "A missing side or one outside the period can appear as In transit."]],
+              ["Asset Registry entries", ["A revaluation or depreciation classified in Assets has its own value-change line.", "Proceeds linked to an asset sale have their own Asset sales line."]],
+              ["Categories", ["Other categorized entries follow their category: income in an income category, spending otherwise.", "A refund in an expense category reduces spending; its sign does not make it income."]],
+              ["On-budget, no category", ["Money in or out is counted by its sign and shown separately as uncategorized.", "Starting balances are not income."]],
+              ["Off-budget, no category", ["A non-transfer entry in an investment or retirement account is Investment activity, not a calculated return.", "In another off-budget account it is an unidentified movement, unless Assets classifies it; neither is income or spending."]],
+              ["Excluded accounts", ["The account’s balance and entries are left out of Financial Insights.", "Transfers between an excluded account and an included account appear on their own line."]],
+            ] satisfies [string, string[]][]).map(([title, bullets], index) => <li key={title} className="flex gap-3 rounded-lg border border-border bg-muted/20 p-3">
+              <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-primary/10 font-semibold text-primary">{index + 1}</span>
+              <div className="min-w-0"><p className="font-semibold">{title}</p><ul className="mt-1.5 list-disc space-y-1 pl-4 leading-relaxed text-foreground/80">{bullets.map((bullet) => <li key={bullet}>{bullet}</li>)}</ul></div>
+            </li>)}
+          </ol>
+        </details>
+        <Callout title="When Money kept needs review">Money kept and the savings rate say <b>Needs review</b> when Assets classifies money put into an asset without a recorded transfer, the registry cannot be read, or an asset account has too many entries to read. Income, spending, net worth and balances still show.</Callout>
       </>}
 
       {section === "different" && <>
@@ -81,7 +207,7 @@ export function FinancialInsightsGuide({ section, onSection, onClose, docsUrl }:
           ["Is a transfer income or spending?", "Depends on the filter you build", "Never: transfers are neither, in transit ones are listed with the reason, and accounts you exclude stay out"],
           ["What is a house or a car worth?", "Its account balance", "The Asset Registry’s own classified entries: purchases, improvements, revaluation, depreciation, sales"],
           ["What does a loan really cost?", "Repayments as spending", "Principal, interest and fees apart, from the schedule tracked in Loans, with the next 12 months"],
-          ["Is a card’s interest spending?", "Mixed in with purchases", "Only where you set the interest and fee categories in Credit Cards; otherwise it says so and guesses nothing"],
+          ["Is a card’s interest spending?", "Mixed in with purchases", "Categorized interest is spending; the card-cost breakdown identifies it when interest and fee categories are configured"],
           ["How long would my cash last?", "No such figure", "Months of cover from cash and every loan repayment, with your own goal and what-if scenarios"],
           ["Are two totals the same thing?", "You check by hand", "Every figure opens its transactions and says Matches the figure, or by how much it differs"],
         ]} />
@@ -343,25 +469,6 @@ export function FinancialInsightsGuide({ section, onSection, onClose, docsUrl }:
         <Para>A month that has no data is unavailable, never zero. Bench reads your transactions each time you open the page and when you press <b>Refresh</b>, which first pulls the latest budget from the server. Changing the period, the tab or a chart mode does not read again.</Para>
       </>}
 
-      {section === "counted" && <>
-        <Para>Each entry is read in the same order, whatever kind of account it is in. This is why the totals agree across tabs.</Para>
-        <Steps items={[
-          ["Transfers", "A transfer is never income or spending."],
-          ["Asset Registry entries", "A revaluation or the proceeds of a sale has its own line."],
-          ["Categories", "An entry with a category follows it: income in an income category, spending otherwise. The sign does not decide, so a refund lowers spending."],
-          ["On-budget, no category", "Counted by its sign, and counted separately so nothing is hidden."],
-          ["Off-budget, no category", "An unidentified movement: shown on its own, changes net worth, is not income or spending. Give it a category to include it."],
-          ["Excluded accounts", "An account you set to Excluded is left out completely. Money moved to or from one is its own line."],
-        ]} />
-        <Example caption="Also" head={["Case", "How it counts"]} rows={[
-          ["A card purchase", "Once, in the month you buy. Paying the card later is not spending"],
-          ["Moving money", "Into investments, between your own accounts or to pay loan principal: not spending. Borrowing is not income"],
-          ["Interest and fees you record", "Spending. Opening balances are never income"],
-          ["A transfer with one side recorded", "Shown as in transit where it matters; the balances stay right"],
-        ]} />
-        <Callout tone="warn" title="When Money kept needs review">Money kept and the savings rate say <b>Needs review</b>, with the entries listed, only when Bench cannot trust them: the Asset Registry classifies an entry as money put into an asset but no transfer is recorded behind it, or the registry cannot be read, or an asset account holds too many entries to read. Income, spending, net worth and balances still show.</Callout>
-      </>}
-
       {section === "glossary" && <>
         <Example caption="Terms used on the page" head={["Term", "Meaning"]} rows={[
           ["Account class", "What kind of account it is: cash & bank, credit card, loan, investment, property and so on. Set in Accounts"],
@@ -371,8 +478,8 @@ export function FinancialInsightsGuide({ section, onSection, onClose, docsUrl }:
           ["Savings rate", "Money kept as a share of money received"],
           ["Change in cash", "How your cash & bank balance moved from the start to the end"],
           ["In transit", "A transfer with only one side recorded, or whose other side falls outside the period"],
-          ["Investment activity", "An entry with no category in an investment account: a price change, dividend, interest or fee. Not a return"],
-          ["Unidentified movement", "An entry with no category in an off-budget account. Shown on its own"],
+          ["Investment activity", "An uncategorized non-transfer entry in an investment account: a price change, dividend, interest or fee. Not a return; transfers between investment accounts are separate"],
+          ["Unidentified movement", "An uncategorized non-transfer entry in an off-budget account other than an investment or retirement account, unless Assets classifies it. Shown on its own"],
           ["Reconciled / Unexplained", "Whether the identified steps add up to the change, or by how much they do not"],
           ["Partial month", "The month still running, drawn lighter and not compared with whole months"],
           ["Typical month", "A category’s average or median over the last 3, 6 or 12 complete months"],

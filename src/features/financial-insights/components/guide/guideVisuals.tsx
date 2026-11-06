@@ -60,7 +60,7 @@ export function MiniTile({ label, value, detail, delta, tone, info }: { label: s
 /** A sketch in a frame, with a caption that is also its accessible description. */
 export function Figure({ label, caption, children, wide }: { label: string; caption?: ReactNode; children: ReactNode; wide?: boolean }) {
   return (
-    <figure className={cn("my-4 rounded-xl border bg-background p-3 shadow-sm", wide ? "max-w-[55rem]" : "max-w-[41.5rem]")} aria-label={label}>
+    <figure className={cn("mx-auto my-4 w-full rounded-xl border bg-background p-3 shadow-sm", wide ? "max-w-[55rem]" : "max-w-[41.5rem]")} aria-label={label}>
       {children}
       {caption && <figcaption className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">{caption}</figcaption>}
     </figure>
@@ -112,7 +112,7 @@ export function WaterfallSketch({ steps, label }: { steps: { name: string; value
   const colour = (k: string) => (k === "total" ? "var(--fi-balance)" : k === "up" ? "var(--fi-up)" : k === "down" ? "var(--fi-down)" : "var(--fi-gap)");
   return (
     <Figure label={label} caption={<><Key colour="var(--fi-balance)">Balance</Key><Key colour="var(--fi-up)">Raises it</Key><Key colour="var(--fi-down)">Lowers it</Key><Key colour="var(--fi-gap)">Unexplained</Key></>}>
-      <svg viewBox="0 0 400 150" className="w-full" role="img" aria-label={label}>
+      <svg viewBox="0 0 400 120" className="w-full" role="img" aria-label={label}>
         {GRID}
         {bars.map((b) => {
           const x = 35 + b.i * width;
@@ -121,12 +121,15 @@ export function WaterfallSketch({ steps, label }: { steps: { name: string; value
             <g key={b.name}>
               <rect x={x + 6} y={y} width={width - 12} height={b.height * scale} rx="2" fill={colour(b.kind)} fillOpacity={b.kind === "gap" ? 0.5 : 0.95} stroke={b.kind === "gap" ? colour(b.kind) : "none"} strokeDasharray={b.kind === "gap" ? "3 2" : undefined} />
               <text x={x + width / 2} y={y - 4} textAnchor="middle" fontSize="8.5" fontWeight="600" fill="currentColor">{b.kind === "total" ? b.value : `${b.value > 0 ? "+" : ""}${b.value}`}</text>
-              <text x={x + width / 2} y="132" textAnchor="middle" fontSize="8.5" fill="currentColor" opacity="0.65">{b.name}</text>
             </g>
           );
         })}
         <line x1="30" x2="390" y1="112" y2="112" stroke="currentColor" strokeOpacity="0.3" />
       </svg>
+      <div aria-hidden className="ml-[8.75%] grid w-[90%]" style={{ gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))` }}>
+        {steps.map((step) => <span key={step.name} className="px-0.5 text-center text-[10px] leading-tight break-words text-muted-foreground">{step.name}</span>)}
+      </div>
+      <span className="sr-only">{steps.map((step) => `${step.name}: ${step.value}`).join(", ")}</span>
     </Figure>
   );
 }
@@ -212,9 +215,9 @@ export function EquitySketch() {
     <Figure label="Sketch of value, debt and equity over time" caption={<><Key colour="var(--fi-property)" line>Asset value</Key><Key colour="var(--fi-loan)" line>Debt against linked assets</Key><Key colour="var(--fi-up)" line>Equity</Key></>}>
       <svg viewBox="0 0 400 140" className="w-full" role="img" aria-label="An asset value line that rises, a debt line that falls and an equity line that rises faster than the value">
         {GRID}
-        <path d="M40 60 L110 56 L180 50 L250 44 L320 38 L380 34" fill="none" stroke="var(--fi-property)" strokeWidth="2.5" />
-        <path d="M40 80 L110 82 L180 85 L250 90 L320 95 L380 100" fill="none" stroke="var(--fi-loan)" strokeWidth="2.5" />
-        <path d="M40 108 L110 104 L180 98 L250 90 L320 82 L380 76" fill="none" stroke="var(--fi-up)" strokeWidth="2.5" />
+        <path d="M55 60 L113 56 L171 50 L229 44 L287 38 L345 34" fill="none" stroke="var(--fi-property)" strokeWidth="2.5" />
+        <path d="M55 80 L113 82 L171 85 L229 90 L287 95 L345 100" fill="none" stroke="var(--fi-loan)" strokeWidth="2.5" />
+        <path d="M55 108 L113 104 L171 98 L229 90 L287 82 L345 76" fill="none" stroke="var(--fi-up)" strokeWidth="2.5" />
         {monthLabels(133)}
       </svg>
     </Figure>
