@@ -34,6 +34,35 @@ describe("the cash buffer card", () => {
     expect(screen.queryByText(/Simulated:/)).not.toBeInTheDocument();
   });
 
+  it("explains today's cash using eligible account balances, including overdrafts, for a scenario", () => {
+    setHook(scenario({ excluded: ["fun"] }));
+    const balances: Record<string, number> = { checking: 1_900_000, savings: 1_200_000, overdraft: -200_000, closed: 100_000, deposit: 900_000, investment: 800_000 };
+    const ledger = {
+      account: new Map([
+        ["checking", { id: "checking", name: "Checking" }], ["savings", { id: "savings", name: "Off-budget savings" }],
+        ["overdraft", { id: "overdraft", name: "Overdraft" }], ["deposit", { id: "deposit", name: "Restricted deposit" }],
+        ["investment", { id: "investment", name: "Brokerage" }], ["empty", { id: "empty", name: "Empty account" }],
+        ["closed", { id: "closed", name: "Old account", closed: true }], ["closedEmpty", { id: "closedEmpty", name: "Closed empty account", closed: true }],
+      ]),
+      role: new Map([["checking", "cash"], ["savings", "cash"], ["overdraft", "cash"], ["deposit", "fixed"], ["investment", "investment"], ["empty", "cash"], ["closed", "cash"], ["closedEmpty", "cash"]]),
+      balanceAt: (id: string, month: string) => month === "2026-11" ? balances[id] ?? 0 : 0,
+    };
+    const data = { ledger } as unknown as NonNullable<Parameters<typeof CashBufferCard>[0]["data"]>;
+    render(<TipProvider><CashBufferCard buffer={ready} groups={groups} today="2026-11-18" data={data} /></TipProvider>);
+    fireEvent.click(screen.getByRole("button", { name: /Cash & bank today.*see account balances/ }));
+    const table = screen.getByRole("table");
+    expect(within(table).getByRole("row", { name: /Checking/ })).toHaveTextContent("19,000.00");
+    expect(within(table).getByRole("row", { name: /Off-budget savings/ })).toHaveTextContent("12,000.00");
+    expect(within(table).getByRole("row", { name: /Overdraft/ })).toHaveTextContent("-2,000.00");
+    expect(within(table).getByRole("row", { name: /Cash & bank today/ })).toHaveTextContent("30,000.00");
+    expect(within(table).queryByText("Restricted deposit")).not.toBeInTheDocument();
+    expect(within(table).queryByText("Brokerage")).not.toBeInTheDocument();
+    expect(within(table).getByRole("row", { name: /Empty account/ })).toHaveTextContent("0.00");
+    expect(within(table).queryByText("Old account")).not.toBeInTheDocument();
+    expect(within(table).queryByText("Closed empty account")).not.toBeInTheDocument();
+    expect(within(table).getByRole("row", { name: /Closed account balances/ })).toHaveTextContent("1,000.00");
+  });
+
   it("shows a scenario as simulated, against the actual, with what it left out", () => {
     setHook(scenario({ excluded: ["fun"], loanAmounts: { m: 120_000 } }, { months: 12, cashMinor: 3_000_000, monthlyNeedMinor: 250_000, actualMonths: 8.8, at: "2026-10-01T10:00:00Z" }));
     show();

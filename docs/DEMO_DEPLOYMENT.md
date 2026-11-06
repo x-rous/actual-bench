@@ -80,7 +80,9 @@ the Space is awake.
 For a seed or backend-code change, regenerate the paired data as described in
 [`demo/README.md`](../demo/README.md), review the manifest and seed files
 together, then rebuild and update the Space repository. Use Git Xet or Git LFS
-for binary files, tracking them before committing. A UI-only change does not
+for binary files, tracking them before committing. The refreshed opening
+transactions use the `Starting Balance` payee; verify the matching seed set
+before deployment. A UI-only change does not
 require an HF update because Vercel builds the UI from `main`. If a change adds
 or changes an API route, app-database schema, or other server behavior, update
 the HF Space too; its server-side code does not automatically track GitHub

@@ -7,7 +7,28 @@ Open **Financial Management → Financial Insights** after connecting your Actua
 
 Financial Insights answers one question at a time, using the same definitions everywhere, so the numbers on one chart always agree with the numbers on another. It starts with a **Summary** tab, then **Money in & out**, **Income** and **Spending**, which are always there; the other tabs appear when there is something to show: My budget once Bench can read your budget mode, Investments when you have an investment or retirement account, Property & assets when you have a property, vehicle or fixed other-asset account, and Loans & cards when you have a loan, credit card or other liability account.
 
-The **Guide** button at the top of the page opens a guide inside Bench: what every tab and card tells you, how each figure is worked out, with pictures of the charts, why this page is more than a report of transactions, and a glossary. It opens at the section for the tab you are on.
+The **Guide** button at the top of the page opens a guide inside Bench: what every tab and card tells you, how each figure is worked out, with pictures of the charts, why this page is more than a report of transactions, and a glossary. **How things are counted** starts with common movements and explains why My budget can differ, with account-specific examples and classification rules available to expand. The Guide opens at the section for the tab you are on.
+
+## How things are counted
+
+Actual's on-budget or off-budget placement says whether an account participates in the budget. Bench's **Class** says what the account represents, and its **Financial Reporting** treatment says how it is grouped in the report. Investment, Retirement, Property, Vehicle and Loan accounts must be off budget. Cash and Bank accounts count as cash equivalents even off budget; a Bank marked **Fixed / restricted deposit** still counts toward net worth but not cash or the cash buffer. These choices are stored by Bench and do not change Actual.
+
+| Movement | How it is reported |
+| --- | --- |
+| Checking (on or off budget) → investment (off budget) | Cash falls and investment funding rises. The transfer itself is not spending and does not change net worth. |
+| Investment (off budget) → checking (on or off budget) | A portfolio withdrawal and money into cash, not income. |
+| Investment (off budget) → investment (off budget) | A move between portfolio accounts, which cancels in the portfolio total when both sides are in the period. |
+| Checking (on or off budget) → loan (off budget) | Principal repaid: cash and the amount owed fall. Borrowing in the other direction is not income. Separately recorded, categorized interest and fees are spending. |
+| Checking (on or off budget) → credit card (on or off budget) | Card settlement, not spending again. A categorized purchase is counted when recorded. |
+| Checking (on or off budget) → property (off budget) | A transfer into an asset, not spending. Assets can help explain a purchase, improvement, value change or sale. |
+
+The checking examples assume a Bank account counted as cash, not one marked fixed / restricted.
+
+The Investments tab counts transfers between the portfolio and **any account outside it** as funding or withdrawals; Money in & out shows the part exchanged with cash accounts. Transfers between investments are separate from investment activity: each account's movement is included in **Other**, and the two sides cancel in the total when they fall in the period. An uncategorized non-transfer entry inside an off-budget investment or retirement account is investment activity, not a calculated return. An uncategorized entry in another off-budget account is an unidentified movement unless Assets classifies it; on budget, uncategorized money in or out is counted by its sign. Categorized non-transfer entries follow their income or expense category. Opening balances are not income, and excluded accounts stay out, with transfers to or from them shown separately.
+
+Money kept is received less spent; cash change also reflects transfers, and net worth is included assets less liabilities. Assets can link the records of a purchase that is not a transfer, but separate unlinked entries may look like spending and a value change; Money kept can need review. When transfer sides do not match or fall in different periods, the report may show them as in transit. Unexplained differences stay visible.
+
+**Why My budget can differ:** When a transfer involves an off-budget account, Actual requires a category on its on-budget side and it can count the transfer as budget spending. Financial Insights excludes transfers from its **Spending** calculation, even when they have a category. For example, moving 500 from checking to an off-budget investment account can use 500 of a budget category, but adds nothing to Financial Insights’ **Spent**. The reconciliation in My budget shows the difference.
 
 ## Before any number appears
 
@@ -38,6 +59,7 @@ A period never holds more than 200 years (2,400 months); if your history or a cu
 - **Net worth, change in net worth, money kept, change in cash and savings rate** across the top. Under money kept, the received and spent amounts that make it up open their transactions. Money kept and the savings rate also show how they moved against the stretch of the same length just before the period, when your budget has data that far back.
 - **What you own and owe, month by month** stacks your assets above zero and your liabilities below, with net worth as a line. **Mo**, **Qtr** and **Yr** buttons show the balance at the end of each month, quarter or year; the chart opens in months for a period up to 18 months, in quarters up to five years and in years beyond that, and your own choice replaces it for that period. Every card with these buttons does the same: change the period and each card that you have not set by hand opens by its new length. Select a class in the legend (Cash & bank, Fixed / restricted deposits, Investments, Property, Vehicles, Other assets, Loans, Credit cards, Other liabilities) to take it out of the picture or put it back, so cash and investments are easier to read when property is large. It is only a filtered view: the net worth line is always the true total.
 - **Your cash buffer** shows the months of cover large, with cash & bank today beside it and the monthly need laid out as a sum: spending per month, plus each loan, equals needed per month. It is always *as of today*, whatever period you picked. The monthly need is your average spending over the last 12 complete months (all available complete months when there are three to eleven; "Insufficient history" below three) plus each loan you owe, in full:
+  - Hover or select **Cash & bank today** to see open cash accounts and their balances, including zero and negative balances. Closed accounts are not listed; if they have a nonzero combined balance, it appears as a single subtotal so the list adds up to the figure. Fixed / restricted deposits and investments are excluded. It also works when a scenario is shown, because scenarios use the same cash balance.
   - A loan **tracked in [Loans](/user-guide/assets-debt/)** whose schedule agrees with its loan account in Actual counts its scheduled repayment, principal and interest together. Only the interest and fee entries Loans recorded are taken out of your spending so they are not counted twice.
   - If a tracked loan's schedule does not agree with Actual, the buffer says **Unavailable** and names the loan. Nothing is estimated in its place.
   - Any other loan uses the average of the transfers recorded into its account over the last complete months (at least three), principal only.
@@ -143,13 +165,13 @@ Each entry is read in this order, whatever kind of account it is in:
 2. An entry the **Asset Registry** classifies, such as a revaluation or the proceeds of a sale, has its own line.
 3. An entry with a **category** follows its category: income in an income category, spending otherwise. The sign does not decide it, so a refund in an expense category lowers spending, and an expense from an Other Asset account is spending.
 4. An entry with **no category** in an **on-budget** account counts by its sign, and is counted separately so nothing is hidden.
-5. An entry with no category in an **off-budget** account is an **unidentified movement**. It is shown on its own, with how many there are, changes your net worth, and is not counted as income or spending. Give it a category to include it.
+5. An uncategorized non-transfer entry in an **off-budget** investment or retirement account is **investment activity**. In another off-budget account it is an **unidentified movement**, unless Assets classifies it. These movements change net worth and are not income or spending. Actual does not assign categories to off-budget entries.
 6. An account you set to the **Excluded** class (off-budget accounts only) is left out completely: its balance, entries and transfers do not count. The status line shows how many accounts are included and excluded. Money moved between an included and an excluded account changes your net worth, so it appears on its own line, **Transfers with excluded accounts**, and is not income, spending or in transit.
 
 Also:
 
 - A **card purchase** counts once, in the month you buy. Paying the card later is not spending.
-- **Moving money** into investments, between your own accounts, or to pay loan principal is not spending. **Borrowing** is not income. **Interest** and fees you record are spending. **Opening balances** are never income.
+- **Moving money** into investments, between your own accounts, or to pay loan principal is not spending. **Borrowing** is not income. **Interest and fees** recorded in expense categories are spending; an uncategorized charge in an off-budget loan is an unidentified movement. **Opening balances** are never income.
 - A transfer with only one side recorded up to today, or whose other side falls outside the period, is shown as **in transit** where it matters, and the balances stay right.
 
 ## When Money kept needs review

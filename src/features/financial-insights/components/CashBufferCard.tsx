@@ -18,6 +18,32 @@ import { CardTitle } from "./InfoTip";
 
 type Ready = Extract<FinancialInsightsView["data"], { state: "ready" }>;
 
+/** Today's cash equivalents, from the same ledger and month as the buffer. Amounts are integer minor units. */
+function CashAccountsTip({ data, today, cashMinor }: { data?: Ready; today: string; cashMinor: number }) {
+  const ledger = data?.ledger;
+  const cashAccounts = ledger ? [...ledger.account.values()]
+    .filter((account) => ledger.role.get(account.id) === "cash")
+    .map((account) => ({ id: account.id, name: account.name, closed: account.closed, balanceMinor: ledger.balanceAt(account.id, today.slice(0, 7)) })) : [];
+  const accounts = cashAccounts.filter((account) => !account.closed).sort((a, b) => b.balanceMinor - a.balanceMinor || a.name.localeCompare(b.name));
+  const closedBalanceMinor = cashAccounts.filter((account) => account.closed).reduce((sum, account) => sum + account.balanceMinor, 0);
+  // Do not show a breakdown when it cannot explain the displayed total.
+  if (!ledger || accounts.reduce((sum, account) => sum + account.balanceMinor, closedBalanceMinor) !== cashMinor) return <>{withSmallDecimals(money(cashMinor))}</>;
+  return <Popover>
+    <PopoverTrigger openOnHover delay={150} render={<button type="button" aria-label={`Cash & bank today ${money(cashMinor)}: see account balances`} className="cursor-help tabular-nums underline decoration-dotted underline-offset-4 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">{withSmallDecimals(money(cashMinor))}</button>} />
+    <PopoverContent align="end" className="w-80 p-3 text-xs">
+      <p className="mb-1.5 font-medium">Cash &amp; bank, by account</p>
+      <p className="mb-2 text-muted-foreground">Balances as of {formatDay(today)}. Fixed / restricted deposits are excluded.</p>
+      <table className="w-full border-collapse">
+        <tbody>
+          {accounts.map((account) => <tr key={account.id} className="border-b border-border/40"><th scope="row" className="max-w-52 py-1 text-left font-normal"><span className="block truncate" title={account.name}>{account.name}</span></th><td className="text-right tabular-nums">{money(account.balanceMinor)}</td></tr>)}
+          {closedBalanceMinor !== 0 && <tr className="border-b border-border/40"><th scope="row" className="py-1 text-left font-normal">Closed account balances</th><td className="text-right tabular-nums">{money(closedBalanceMinor)}</td></tr>}
+          <tr className="font-semibold"><th scope="row" className="py-1.5 text-left">Cash &amp; bank today</th><td className="text-right tabular-nums">{money(cashMinor)}</td></tr>
+        </tbody>
+      </table>
+    </PopoverContent>
+  </Popover>;
+}
+
 /** The average monthly spending, with the average of each category group behind it on hover or focus. */
 function SpendingBreakdownTip({ groups, spendingMinor, months }: { groups: Ready["bufferSpending"]; spendingMinor: number; months: number }) {
   if (!groups || groups.groups.length === 0) return <>{money(spendingMinor)}</>;
@@ -156,7 +182,7 @@ export function CashBuffer({ buffer, groups, today, data }: { buffer: Ready["buf
             </div>
             <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-right">
               <p className="text-xs text-muted-foreground">Cash &amp; bank today</p>
-              <p className="text-xl font-semibold leading-tight tabular-nums">{withSmallDecimals(money(shown.cashMinor))}</p>
+              <p className="text-xl font-semibold leading-tight tabular-nums"><CashAccountsTip data={data} today={today} cashMinor={shown.cashMinor} /></p>
             </div>
           </div>
           <div className={`relative ${goal !== null ? "mt-7" : "mt-3"}`}>

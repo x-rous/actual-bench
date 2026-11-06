@@ -48,6 +48,8 @@ export type AccountFact = {
   treatment: ReportingTreatment | null;
   /** Actual's budget placement: it decides what an uncategorized entry means. */
   offBudget: boolean;
+  /** Whether the account is closed in Actual. Its historical balance remains in the ledger. */
+  closed?: boolean;
 };
 
 export type FinancialFacts = {
