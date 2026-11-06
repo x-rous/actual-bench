@@ -32,7 +32,7 @@ function Figure({ row, onOpen, neutral = false }: { row: StatementLine; onOpen: 
 
 function Rows({ rows, onOpen, explanations = false }: { rows: StatementLine[]; onOpen: OpenLine; explanations?: boolean }) {
   return <table className={`w-full ${STATEMENT_ROW}`}><thead className="sr-only"><tr><th scope="col">Line</th><th scope="col">Amount</th></tr></thead><tbody>
-    {rows.map((row) => <tr key={row.key} className="border-b border-border/40 last:border-b-0 hover:bg-muted/30">
+    {rows.map((row, index) => <tr key={JSON.stringify([row.key, index])} className="border-b border-border/40 last:border-b-0 hover:bg-muted/30">
       <th scope="row" className="py-1 pl-5 pr-3 text-left font-normal"><span className="inline-flex items-center gap-1">{row.label}{row.detail && !explanations && <InfoTip label={row.label}>{row.detail}</InfoTip>}</span>{row.detail && explanations && <span className="mt-0.5 block text-[11px] leading-relaxed text-muted-foreground">{row.detail}</span>}</th>
       <td className="py-1 pr-3 text-right align-top whitespace-nowrap"><Figure row={row} onOpen={onOpen} /></td>
     </tr>)}
