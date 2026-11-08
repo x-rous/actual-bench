@@ -103,7 +103,7 @@ it("checks a search containing % or _ against the text, since LIKE would treat t
 
 it("names starting balances and a few left-out transactions in the query, so aggregates and the list agree", () => {
   const and = filter(emptyFilterState(), { excludeStartingBalance: true, excludeIds: ["x1", "x2"] }).$and;
-  expect(and).toEqual(expect.arrayContaining([{ $or: [{ payee: null }, { "payee.name": { $ne: "Starting Balance" } }] }, { id: { $ne: "x1" } }, { id: { $ne: "x2" } }]));
+  expect(and).toEqual(expect.arrayContaining([{ $or: [{ starting_balance_flag: false }, { starting_balance_flag: null }] }, { $or: [{ payee: null }, { "payee.name": { $ne: "Starting Balance" } }] }, { id: { $ne: "x1" } }, { id: { $ne: "x2" } }]));
 });
 it("turns the chart selections into one condition, and a chart leaves out its own dimension", () => {
   expect(picksWhere(emptyPicks())).toBeUndefined();

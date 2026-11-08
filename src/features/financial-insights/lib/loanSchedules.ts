@@ -25,8 +25,12 @@ export type LoanSchedules = {
   costRows: CostRowTag[];
 };
 
-/** A cost row of a tracked loan. `kind` is set for what a payment paid (interest, fees); a charge the lender added to the loan account has none: it leaves spending, but it is not a payment, so it is not counted as paid. */
-export type CostRowTag = { id: string; loanAccountId: string; kind?: "interest" | "fee" };
+/**
+ * A cost row of a tracked loan: what it is (`kind`) and where it sits. `charged` is false for a split line of a repayment (a
+ * categorized row, already in spending through its category) and true for a charge the lender added to the loan account as its own
+ * row (uncategorized, off budget): that row is counted in Spent and lowers the principal repaid.
+ */
+export type CostRowTag = { id: string; loanAccountId: string; kind: "interest" | "fee"; charged: boolean };
 
 const unavailable = (accountId: string, reason: string): LoanSchedule => ({ accountId, state: "unavailable", reason });
 
@@ -57,21 +61,23 @@ export function monthlyRepayment(events: readonly { eventType: string; date: str
 }
 
 /**
- * The interest and fee lines of the installments already recorded in Actual, and, for a loan whose lender charges interest as its
- * own transaction, the rows of the loan account classified as interest charged or as a fee: the scheduled repayment already
- * includes them, so they must not stay in spending as well; they have no kind, so they are never counted as paid. Transfers are never
- * cost rows.
+ * The interest and fee lines of the installments already recorded in Actual (`charged: false`), and, for a loan whose lender charges
+ * interest as its own transaction, the rows of the loan account classified as interest charged or as a fee (`charged: true`). The
+ * scheduled repayment already includes both, so the cash buffer takes them out of the spending average; Spent counts them, whichever
+ * way they were recorded. Transfers are never cost rows.
  */
 export function recordedCostRows(plan: TrackedLoan["plan"], loanAccountId: string): CostRowTag[] {
   const fromSplits: CostRowTag[] = plan.installments.flatMap((installment) => {
     const split = installment.payment?.split;
     if (!split) return [];
     return [
-      ...(split.interestLineId ? [{ id: split.interestLineId, loanAccountId, kind: "interest" as const }] : []),
-      ...split.feeLineIds.map((id) => ({ id, loanAccountId, kind: "fee" as const })),
+      ...(split.interestLineId ? [{ id: split.interestLineId, loanAccountId, kind: "interest" as const, charged: false }] : []),
+      ...split.feeLineIds.map((id) => ({ id, loanAccountId, kind: "fee" as const, charged: false })),
     ];
   });
-  const charged: CostRowTag[] = plan.ledger.filter((l) => !l.row.transferId && !l.benchMade && (l.type === "interest-charged" || l.type === "fee")).map((l) => ({ id: l.row.id, loanAccountId }));
+  const charged: CostRowTag[] = plan.ledger
+    .filter((l) => !l.row.transferId && !l.benchMade && (l.type === "interest-charged" || l.type === "fee"))
+    .map((l) => ({ id: l.row.id, loanAccountId, kind: l.type === "fee" ? "fee" as const : "interest" as const, charged: true }));
   const seen = new Set<string>();
   return [...fromSplits, ...charged].filter((tag) => !seen.has(tag.id) && !!seen.add(tag.id));
 }

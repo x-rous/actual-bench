@@ -1,4 +1,4 @@
-import type { DebtRepayments } from "./breakdowns";
+import { addLoanEntry, emptyLoanFigures, loanEntries, type DebtRepayments, type LoanFigures } from "./breakdowns";
 import type { Ledger } from "./measures";
 import { addMonths, type ResolvedPeriod } from "./period";
 
@@ -33,8 +33,10 @@ export type DebtAccountRow = {
   endMinor: number;
   /** End less start: positive when more is owed. */
   changeMinor: number;
-  /** Loans: principal paid into the account in the period; null for the other groups. */
+  /** Loans: principal repaid in the period (paid in less what the lender charged); null for the other groups. */
   principalRepaidMinor: number | null;
+  /** Loans: transferred in from other loans, cards or liabilities in the period; counted as no repayment. Null for the other groups. */
+  movedFromDebtsMinor: number | null;
   /** Loans only. */
   next12: NextTwelve | null;
 };
@@ -87,6 +89,7 @@ export function debtAccounts(ledger: Ledger, period: ResolvedPeriod, today: stri
     rows.push({
       accountId: account.id, name: account.name, group, startMinor: start, endMinor: end, changeMinor: end - start,
       principalRepaidMinor: loan ? (repaid?.principalMinor ?? 0) : null,
+      movedFromDebtsMinor: loan ? (repaid?.movedFromDebtsMinor ?? 0) : null,
       next12,
     });
   }
@@ -113,28 +116,41 @@ export type DebtMonth = {
   /** False for a month before the budget has any movement: nothing is drawn, not a zero. */
   hasData: boolean;
   partial: boolean;
-  /** Paid into loan accounts. */
+  /** Paid into loan accounts from accounts that are not debts, and moved in from other debts. */
+  paidInMinor: number;
+  movedFromDebtsMinor: number;
+  /** How far the debt fell: paid in less what the lender charged. Negative when more was charged than paid. */
   principalMinor: number;
-  /** Recorded interest and fees of tracked loans only; an untracked loan's cannot be told from other spending. */
+  /** Recorded interest and fees of tracked loans only (split lines and lender charges); an untracked loan's cannot be told from other spending. */
   interestMinor: number;
   feesMinor: number;
 };
 
-/** The same facts as `debtRepayments`, month by month: the months add up to its totals. */
+/** The same facts as `debtRepayments` (one shared reading, `loanEntries`), month by month: the months add up to its totals. */
 export function debtMonthly(ledger: Ledger, period: ResolvedPeriod): DebtMonth[] {
-  const byMonth = new Map(period.months.map((month, i): [string, DebtMonth] => [month, { month, hasData: !!ledger.firstMonth && month >= ledger.firstMonth, partial: period.partial && i === period.months.length - 1, principalMinor: 0, interestMinor: 0, feesMinor: 0 }]));
-  for (const r of ledger.facts.transfersIn) {
-    const m = byMonth.get(r.month);
-    if (!m || ledger.account.get(r.accountId)?.accountClass !== "loan" || ledger.facts.excluded.has(r.transferAccountId)) continue;
-    m.principalMinor += r.amountMinor;
+  const figures = new Map(period.months.map((month): [string, LoanFigures] => [month, emptyLoanFigures()]));
+  // A loan's principal is paid in less its charges, so the months are summed per loan and added up, not mixed across loans.
+  const perLoan = new Map<string, Map<string, LoanFigures>>();
+  for (const e of loanEntries(ledger)) {
+    if (!figures.has(e.month)) continue;
+    const months = perLoan.get(e.accountId) ?? new Map<string, LoanFigures>();
+    const f = months.get(e.month) ?? emptyLoanFigures();
+    addLoanEntry(f, e.field, e.amountMinor);
+    months.set(e.month, f);
+    perLoan.set(e.accountId, months);
   }
-  for (const r of ledger.facts.loanCosts) {
-    const m = byMonth.get(r.month);
-    if (!m || !r.loanAccountId || !r.kind) continue;
-    if (r.kind === "interest") m.interestMinor += 0 - r.amountMinor;
-    else m.feesMinor += 0 - r.amountMinor;
-  }
-  return [...byMonth.values()];
+  return period.months.map((month, i): DebtMonth => {
+    const sum = emptyLoanFigures();
+    for (const months of perLoan.values()) {
+      const f = months.get(month);
+      if (!f) continue;
+      for (const k of Object.keys(sum) as (keyof LoanFigures)[]) sum[k] += f[k];
+    }
+    return {
+      month, hasData: !!ledger.firstMonth && month >= ledger.firstMonth, partial: period.partial && i === period.months.length - 1,
+      paidInMinor: sum.paidIn, movedFromDebtsMinor: sum.movedFromDebts, principalMinor: sum.principalMinor, interestMinor: sum.interestMinor, feesMinor: sum.feesMinor,
+    };
+  });
 }
 
 export type CardSeries = { accountId: string; name: string; /** What is owed at each month end (positive), null before the budget began. */ values: (number | null)[] };

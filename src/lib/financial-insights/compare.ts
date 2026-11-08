@@ -1,4 +1,4 @@
-import { computeFlows, type Ledger } from "./measures";
+import { computeFlows, receivedOf, spentOf, type Ledger } from "./measures";
 import { addMonths, resolvePeriod, type ResolvedPeriod } from "./period";
 
 /** Money in, money out and what was kept over a run of whole months. */
@@ -20,8 +20,8 @@ export type Comparison = {
 
 function totalsOver(ledger: Ledger, period: ResolvedPeriod): FlowTotals {
   const { flows } = computeFlows(ledger, period);
-  const received = flows.income + flows.uncategorizedIn;
-  const spent = 0 - (flows.spending + flows.uncategorizedOut);
+  const received = receivedOf(flows);
+  const spent = spentOf(flows);
   return { received, spent, kept: received - spent };
 }
 

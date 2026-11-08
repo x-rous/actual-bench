@@ -6,7 +6,7 @@ import type { StatementEntry } from "./statements";
 const PAGE_SIZE = 2000;
 type RawEntry = {
   id: string; date: string; account: string; category: string | null; amount: number;
-  "payee.transfer_acct": string | null; "payee.name": string | null; transfer_id: string | null; parent_id: string | null;
+  "payee.transfer_acct": string | null; "payee.name": string | null; starting_balance_flag: boolean | number | null; transfer_id: string | null; parent_id: string | null;
 };
 
 /**
@@ -23,7 +23,7 @@ export async function readStatementEntries(connection: ConnectionInstance, perio
       ActualQLquery: {
         table: "transactions", options: { splits: "inline" },
         filter: { $and: [{ date: { $gte: period.startDate } }, { date: { $lte: period.endDate } }] },
-        select: ["id", "date", "account", "category", "amount", "payee.transfer_acct", "payee.name", "transfer_id", "parent_id"],
+        select: ["id", "date", "account", "category", "amount", "payee.transfer_acct", "payee.name", "starting_balance_flag", "transfer_id", "parent_id"],
         orderBy: [{ date: "asc" }, { id: "asc" }], limit: PAGE_SIZE, offset,
       },
     });
@@ -34,7 +34,8 @@ export async function readStatementEntries(connection: ConnectionInstance, perio
       entries.push({
       id: row.id, date: row.date, accountId: row.account, categoryId: row.category, amountMinor: row.amount,
       transferAccountId: row["payee.transfer_acct"], transferId: row.transfer_id, parentId: row.parent_id,
-      startingBalance: row["payee.name"] === "Starting Balance",
+      // The same rule as the movement reads: Actual's flag, or (an imported budget) the payee's name.
+      startingBalance: row.starting_balance_flag === true || row.starting_balance_flag === 1 || row["payee.name"] === "Starting Balance",
       });
     }
     if (response.data.length < PAGE_SIZE) return entries;

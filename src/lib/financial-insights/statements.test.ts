@@ -66,7 +66,7 @@ describe("recorded financial statements", () => {
     expect(model.cash.differenceMinor).toBe(0); expect(sumBridge(model)).toBe(model.cash.changeMinor);
     expect(model.classificationComplete).toBe(true);
     // Existing Insights definitions remain unchanged by the new projection.
-    expect(summarize(ledger, period, { unavailableReason: null, rowCount: 0 }).spent).toBe(50_000);
+    expect(summarize(ledger, period, { unavailableReason: null, rowCount: 0, amountMinor: 0 }).spent).toBe(50_000);
   });
 
   it("uses every cash equivalent, preserves closed history, and separates investments, retirement, deposits and fixed assets", () => {
@@ -117,7 +117,7 @@ describe("recorded financial statements", () => {
     expect(model.unresolved).toEqual([]); expect(model.classificationComplete).toBe(true);
     expect(section(model, "operating").amountMinor).toBe(300);
     expect(model.cash.differenceMinor).toBe(0); expect(sumBridge(model)).toBe(300);
-    const summary = summarize(ledger, period, { unavailableReason: null, rowCount: 0 });
+    const summary = summarize(ledger, period, { unavailableReason: null, rowCount: 0, amountMinor: 0 });
     expect(model.pnl.surplusMinor).toBe(summary.received - summary.spent);
     const csv = statementsCsvRows(model, period);
     expect(csv).toContainEqual(["Other activity", "Investment activity", "Recorded investment activity", "190.00", 3, model.investmentActivity.detail]);

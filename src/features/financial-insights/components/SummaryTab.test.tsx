@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { buildLedger, summarize, type AccountFact, type FinancialFacts, type MovementRow } from "@/lib/financial-insights/measures";
-import { compositionSeries, monthlyFlows, netWorthSteps } from "@/lib/financial-insights/breakdowns";
+import { compositionSeries, debtRepayments, monthlyFlows, netWorthSteps } from "@/lib/financial-insights/breakdowns";
 import { resolvePeriod } from "@/lib/financial-insights/period";
 import { SummaryTab } from "./SummaryTab";
 import { TipProvider } from "./charts/Tip";
@@ -16,8 +16,8 @@ function data(accounts: AccountFact[], movement: MovementRow[], over: Record<str
   const f: FinancialFacts = { accounts, incomeCategories: new Set(), movement, excluded: new Set(), startingBalances: [], uncategorizedIn: [], transfersIn: movement.filter((r) => r.transferAccountId && r.amountMinor > 0).map((r) => ({ month: r.month, accountId: r.accountId, amountMinor: r.amountMinor, transferAccountId: r.transferAccountId! })), reclassified: [], loanCosts: [] };
   const ledger = buildLedger(f);
   const period = resolvePeriod({ kind: "custom", startMonth: "2026-09", endMonth: "2026-09" }, "2026-11-18", ledger.firstMonth);
-  const summary = summarize(ledger, period, { unavailableReason: null, rowCount: 0 });
-  return { ledger, period, summary, composition: compositionSeries(ledger, period, summary.opening), netWorthChange: netWorthSteps(summary), monthly: monthlyFlows(ledger, period, "2026-11-18", true), review: [], registry: { read: true, assets: [], metadata: [], debtLinks: [], assetEntries: [], assetRowCount: 0, savedClassifications: [] }, ...over } as never;
+  const summary = summarize(ledger, period, { unavailableReason: null, rowCount: 0, amountMinor: 0 });
+  return { ledger, period, summary, debt: debtRepayments(ledger, period, new Set(), 0), composition: compositionSeries(ledger, period, summary.opening), netWorthChange: netWorthSteps(summary), monthly: monthlyFlows(ledger, period, "2026-11-18", true), review: [], registry: { read: true, assets: [], metadata: [], debtLinks: [], assetEntries: [], assetRowCount: 0, savedClassifications: [] }, ...over } as never;
 }
 
 describe("the Summary's net worth change", () => {

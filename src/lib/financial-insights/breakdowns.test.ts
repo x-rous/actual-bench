@@ -1,4 +1,5 @@
-import { classBalances, compositionSeries, debtRepayments, incomeBreakdown, netWorthSteps, spendingGroups, cashBridgeLines, heatBand, monthlyFlows, payeeSpending, spendingBreakdown, spendingFacts, type CategoryInfo } from "./breakdowns";
+import { debtMonthly } from "./debt";
+import { classBalances, compositionSeries, debtRepayments, whereMoneyWent, SPECIAL_ROW_ID, incomeBreakdown, netWorthSteps, spendingGroups, cashBridgeLines, heatBand, monthlyFlows, payeeSpending, spendingBreakdown, spendingFacts, type CategoryInfo } from "./breakdowns";
 import { drillScope, type DrillKind, type DrillTarget } from "./drill";
 import { buildLedger, summarize, type AccountFact, type FinancialFacts, type MovementRow, type ReclassifiedRow } from "./measures";
 import { resolvePeriod } from "./period";
@@ -53,7 +54,7 @@ const txs: Tx[] = [
 ];
 const reclassified: ReclassifiedRow[] = [{ id: "rv", payeeId: null, month: "2026-10", accountId: "house", categoryId: null, amountMinor: 300_000, to: "valueChange" }];
 
-function factsFrom(rows: Tx[]): FinancialFacts {
+function factsFrom(rows: Tx[], loanCosts: FinancialFacts["loanCosts"] = []): FinancialFacts {
   const movement = new Map<string, MovementRow>();
   const uncategorizedIn = new Map<string, { month: string; accountId: string; amountMinor: number }>();
   const starting: { month: string; accountId: string; amountMinor: number }[] = [];
@@ -78,14 +79,14 @@ function factsFrom(rows: Tx[]): FinancialFacts {
   }
   return {
     accounts, excluded: new Set(["scratch"]), incomeCategories: new Set(["salary"]), movement: [...movement.values()], startingBalances: starting,
-    uncategorizedIn: [...uncategorizedIn.values()], transfersIn: [...transfersIn.values()], reclassified, loanCosts: [],
+    uncategorizedIn: [...uncategorizedIn.values()], transfersIn: [...transfersIn.values()], reclassified, loanCosts,
   };
 }
 
 const facts = factsFrom(txs);
 const ledger = buildLedger(facts);
 const period = resolvePeriod({ kind: "custom", startMonth: "2026-09", endMonth: "2026-11" }, today, ledger.firstMonth);
-const review = { unavailableReason: null, rowCount: 0 };
+const review = { unavailableReason: null, rowCount: 0, amountMinor: 0 };
 
 describe("financial insights: month-by-month figures", () => {
   it("add up to the period's received and spent, which the Summary shows", () => {
@@ -199,10 +200,10 @@ function matches(t: Tx, cond: Cond): boolean {
   });
 }
 
-function listed(target: Exclude<DrillTarget, { kind: "inTransit" }>) {
-  const scope = drillScope(target, { ledger, period, today, reclassifiedIds: new Set(reclassified.map((r) => r.id)) });
+function listed(target: Exclude<DrillTarget, { kind: "inTransit" }>, model: { rows: Tx[]; ledger: ReturnType<typeof buildLedger>; period: typeof period } = { rows: txs, ledger, period }) {
+  const scope = drillScope(target, { ledger: model.ledger, period: model.period, today, reclassifiedIds: new Set(reclassified.map((r) => r.id)) });
   const { constraints: c, defaults: d } = scope;
-  const rows = txs.filter((t) => {
+  const rows = model.rows.filter((t) => {
     if (d.date?.from && t.date < d.date.from) return false;
     if (d.date?.to && t.date > d.date.to) return false;
     if ((c.excludeAccountIds ?? []).includes(t.account)) return false;
@@ -413,7 +414,7 @@ describe("financial insights: category groups, what changed net worth, debt repa
 
   it("separates recorded principal from interest and fees, and says what cannot be identified", () => {
     const untracked = debtRepayments(ledger, period, new Set(), 80_000);
-    expect(untracked.rows).toEqual([{ accountId: "loan", name: "Mortgage", tracked: false, principalMinor: 80_000, interestMinor: null, feesMinor: null }]);
+    expect(untracked.rows).toEqual([{ accountId: "loan", name: "Mortgage", tracked: false, paidInMinor: 80_000, movedFromDebtsMinor: 0, principalMinor: 80_000, interestMinor: null, feesMinor: null, chargedInterestMinor: 0, chargedFeesMinor: 0 }]);
     expect(untracked.complete).toBe(false);
     const costs = [{ month: "2026-10", accountId: "chk", categoryId: "x", amountMinor: -12_000, loanAccountId: "loan", kind: "interest" as const }, { month: "2026-10", accountId: "chk", categoryId: "x", amountMinor: -500, loanAccountId: "loan", kind: "fee" as const }];
     const tracked = debtRepayments(buildLedger({ ...facts, loanCosts: costs }), period, new Set(["loan"]), 80_000);
@@ -449,5 +450,132 @@ describe("financial insights: income categories with the same name", () => {
     expect(rows.rows.map((r) => r.name)).toEqual(["Bonus", "Bonus"]);
     expect(new Set(rows.rows.map((r) => r.group)).size).toBe(2);
     expect(spendingGroups(rows).groups).toHaveLength(2);
+  });
+});
+
+// ─── Interest and fees a lender charges to the loan account ──────────────────
+
+describe("financial insights: a lender that charges interest to the loan account", () => {
+  const range = resolvePeriod({ kind: "custom", startMonth: "2026-10", endMonth: "2026-10" }, today, "2026-09");
+  const base: Tx[] = [
+    tx("start", "2026-09-01", "loan", -10_000_000, { payee: "p-start", payeeName: STARTING }),
+    tx("pay", "2026-10-01", "chk", 500_000, { category: "salary", payee: "p1" }),
+    tx("food", "2026-10-03", "chk", -100_000, { category: "food", payee: "p2" }),
+  ];
+  // The lender charges 200.00 to the loan account as its own row; the repayment is one whole transfer of 1,200.00.
+  const lender: Tx[] = [...base, tx("charge", "2026-10-05", "loan", -20_000), tx("to-loan", "2026-10-09", "chk", -120_000, { transferAcct: "loan", payee: "t-loan" }), tx("from-chk", "2026-10-09", "loan", 120_000, { transferAcct: "chk", payee: "t-chk" })];
+  const charge = { id: "charge", month: "2026-10", accountId: "loan", categoryId: null, amountMinor: -20_000, loanAccountId: "loan", kind: "interest" as const, charged: true };
+  const model = (rows: Tx[], costs: FinancialFacts["loanCosts"] = []) => { const l = buildLedger({ ...factsFrom(rows, costs), reclassified: [] }); return { rows, ledger: l, period: range }; };
+  const figures = (m: ReturnType<typeof model>, tracked: boolean) => {
+    const summary = summarize(m.ledger, range, review);
+    const debt = debtRepayments(m.ledger, range, new Set(tracked ? ["loan"] : []), 0 - summary.cashBridge.loanOut);
+    return { summary, debt };
+  };
+
+  it("tracked in Loans: the charge is Spent and interest, the principal is paid in less the charge, and nothing is unidentified", () => {
+    const m = model(lender, [charge]);
+    const { summary, debt } = figures(m, true);
+    expect(summary.spent).toBe(120_000);
+    expect(summary.flows).toMatchObject({ unidentified: 0, loanCharges: -20_000, loanAccountOther: 0 });
+    expect(summary.unexplained).toBe(0);
+    expect(debt).toMatchObject({ principalMinor: 100_000, paidInMinor: 120_000, interestMinor: 20_000, chargedInterestMinor: 20_000, movedFromDebtsMinor: 0, complete: true });
+    // The cash bridge keeps the whole transfer, now named for what it holds, and still reconciles.
+    const bridge = cashBridgeLines(summary);
+    expect(bridge.lines.find((l) => l.key === "repaid")).toMatchObject({ label: "Paid to loans", amountMinor: -120_000 });
+    expect(bridge.unattributedMinor).toBe(0);
+    // The breakdown still equals Spent, with the charge on a row of its own that is not the Uncategorized row.
+    const bd = spendingBreakdown(m.ledger, range, categories, monthlyFlows(m.ledger, range, today, true));
+    expect(bd.totalMinor).toBe(summary.spent);
+    expect(bd.rows.find((r) => r.special === "loanInterest")).toMatchObject({ id: SPECIAL_ROW_ID.loanInterest, name: "Loan interest (charged by lender)", group: "Loans", totalMinor: 20_000 });
+    expect(bd.rows.some((r) => r.id === null)).toBe(false);
+    expect(spendingGroups(bd).groups.find((g) => g.name === "Loans")).toMatchObject({ categoryIds: [], chargeKinds: ["interest"] });
+  });
+
+  it("opens drills that say \"Matches the figure\": Spent, the charged rows, the principal and the loan interest", () => {
+    const m = model(lender, [charge]);
+    for (const target of [{ kind: "spent" }, { kind: "loanCharged" }, { kind: "loanCharged", chargeKind: "interest" }, { kind: "loanInterest" }, { kind: "loanPrincipal" }] as const) {
+      const whole = listed(target, m);
+      expect(whole.total).toBe(whole.scope.expectedMinor);
+    }
+    expect(listed({ kind: "spent" }, m).ids).toContain("charge");
+    expect(listed({ kind: "loanCharged" }, m).ids).toEqual(["charge"]);
+    expect(listed({ kind: "loanCharged", chargeKind: "fee" }, m).ids).toEqual([]);
+    // 1,200.00 paid in less the 200.00 charged.
+    expect(listed({ kind: "loanPrincipal" }, m).total).toBe(100_000);
+    const group = listed({ kind: "category", categoryIds: [], chargeKinds: ["interest"], name: "Loans", amountMinor: 20_000 }, m);
+    expect(group.ids).toEqual(["charge"]);
+    expect(group.total).toBe(group.scope.expectedMinor);
+  });
+
+  it("not tracked: the charge is an other entry in a loan account, not Spent and not unidentified; the principal is what was paid in; interest is not identified", () => {
+    const m = model(lender);
+    const { summary, debt } = figures(m, false);
+    expect(summary.spent).toBe(100_000);
+    expect(summary.flows).toMatchObject({ unidentified: 0, loanCharges: 0, loanAccountOther: -20_000, loanAccountOtherCount: 1 });
+    expect(summary.unexplained).toBe(0);
+    expect(debt.rows[0]).toMatchObject({ principalMinor: 120_000, interestMinor: null, feesMinor: null, tracked: false });
+    const step = netWorthSteps(summary).steps.find((x) => x.key === "loanAccountOther");
+    expect(step).toMatchObject({ label: "Other entries in loan accounts", amountMinor: -20_000, drill: "loanAccountOther" });
+    const other = listed({ kind: "loanAccountOther" }, m);
+    expect(other.ids).toEqual(["charge"]);
+    expect(other.total).toBe(other.scope.expectedMinor);
+  });
+
+  it("gives the same Spent, principal and interest whether interest is split from the repayment or charged by the lender", () => {
+    // The split pattern: the repayment transfer is the principal only, and the interest is a categorized line paid from checking.
+    const split: Tx[] = [...base, tx("to-loan", "2026-10-09", "chk", -100_000, { transferAcct: "loan", payee: "t-loan" }), tx("from-chk", "2026-10-09", "loan", 100_000, { transferAcct: "chk", payee: "t-chk" }), tx("split-interest", "2026-10-09", "chk", -20_000, { category: "interest", payee: "p-bank" })];
+    const interestCosts = [{ id: "split-interest", month: "2026-10", accountId: "chk", categoryId: "interest", amountMinor: -20_000, loanAccountId: "loan", kind: "interest" as const, charged: false }];
+    const a = figures(model(split, interestCosts), true), b = figures(model(lender, [charge]), true);
+    expect(a.summary.spent).toBe(b.summary.spent);
+    expect(a.debt.principalMinor).toBe(b.debt.principalMinor);
+    expect(a.debt.interestMinor).toBe(b.debt.interestMinor);
+    expect(a.summary.unexplained).toBe(0);
+  });
+
+  it("adds up the months to the period for principal, interest and fees", () => {
+    const m = model(lender, [charge]);
+    const wide = resolvePeriod({ kind: "custom", startMonth: "2026-09", endMonth: "2026-10" }, today, "2026-09");
+    const months = debtMonthly(m.ledger, wide);
+    const total = debtRepayments(m.ledger, wide, new Set(["loan"]), 0);
+    expect(months.reduce((a, x) => a + x.principalMinor, 0)).toBe(total.principalMinor);
+    expect(months.reduce((a, x) => a + x.interestMinor, 0)).toBe(total.interestMinor);
+    expect(months.reduce((a, x) => a + x.paidInMinor, 0)).toBe(total.paidInMinor);
+  });
+
+  it("counts money moved from another loan or a card as moved between debts, not repaid, and leaves net worth alone", () => {
+    const debts: AccountFact[] = [
+      { id: "old", name: "Old loan", accountClass: "loan", treatment: null, offBudget: true },
+      { id: "new", name: "New loan", accountClass: "loan", treatment: null, offBudget: true },
+      { id: "visa", name: "Visa", accountClass: "credit-card", treatment: null, offBudget: false },
+    ];
+    const row = (accountId: string, transferAccountId: string, amountMinor: number): MovementRow => ({ month: "2026-10", accountId, categoryId: null, transferAccountId, amountMinor, count: 1 });
+    const f: FinancialFacts = {
+      accounts: debts, excluded: new Set(), incomeCategories: new Set(), startingBalances: [{ month: "2026-09", accountId: "old", amountMinor: -10_000_000 }, { month: "2026-09", accountId: "visa", amountMinor: -500_000 }],
+      // A 100,000.00 refinance from the new loan into the old one, and 500.00 moved from a card onto the old loan.
+      movement: [row("new", "old", -10_000_000), row("old", "new", 10_000_000), row("visa", "old", -50_000), row("old", "visa", 50_000)],
+      uncategorizedIn: [], transfersIn: [{ month: "2026-10", accountId: "old", transferAccountId: "new", amountMinor: 10_000_000 }, { month: "2026-10", accountId: "old", transferAccountId: "visa", amountMinor: 50_000 }], reclassified: [], loanCosts: [],
+    };
+    const l = buildLedger(f);
+    const summary = summarize(l, range, review);
+    const debt = debtRepayments(l, range, new Set(), 0);
+    expect(debt).toMatchObject({ principalMinor: 0, paidInMinor: 0, movedFromDebtsMinor: 10_050_000 });
+    expect(summary.netWorth.change).toBe(0);
+    expect(summary.unexplained).toBe(0);
+  });
+
+  it("whereMoneyWent: lines and Other add up to Received; Other is zero when income and spending are in cash and card accounts only", () => {
+    const cards: Tx[] = [
+      tx("pay", "2026-10-01", "chk", 500_000, { category: "salary" }), tx("groceries", "2026-10-03", "visa", -100_000, { category: "food" }),
+      tx("settle", "2026-10-20", "chk", -80_000, { transferAcct: "visa", payee: "t-visa" }), tx("settle-leg", "2026-10-20", "visa", 80_000, { transferAcct: "chk", payee: "t-chk" }),
+    ];
+    for (const m of [model(cards), model(lender, [charge])]) {
+      const { summary, debt } = figures(m, true);
+      const went = whereMoneyWent(summary, debt);
+      expect(went.receivedMinor).toBe(summary.received);
+      expect(went.lines.reduce((a, l) => a + l.amountMinor, 0)).toBe(summary.received);
+      expect(went.lines.find((l) => l.key === "other")?.amountMinor).toBe(0);
+    }
+    const { summary, debt } = figures(model(cards), true);
+    expect(Object.fromEntries(whereMoneyWent(summary, debt).lines.map((l) => [l.key, l.amountMinor]))).toMatchObject({ spent: 100_000, cards: -20_000, cash: 420_000 });
   });
 });

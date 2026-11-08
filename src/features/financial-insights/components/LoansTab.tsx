@@ -166,7 +166,7 @@ export function LoansTab({ data, today, onDrill, onOpenAssets }: { data: Ready; 
             {drawn && (
               <ChartFrame
                 id="loan-payments" title="What your loan payments did" hint={`Principal, interest and fees by ${payNames.one}`}
-                subtitle={<><p>Each {payNames.one}&apos;s recorded payments into your loans. Principal lowers what you owe and is not spending; interest and fees are spending already counted in Spending.{payUnit !== "month" && ` A ${payNames.one} adds up its months; it is a calendar ${payNames.one}, and one the period only partly covers is marked *.`}</p><p>Interest and fees come only from loans tracked in Loans. A loan that is not tracked shows principal only: its interest and fees cannot be told from other spending.</p><p>Select a segment to see its transactions.</p></>}
+                subtitle={<><p>Each {payNames.one}&apos;s recorded payments into your loans. Principal is what was paid into your loans less what the lender charged: it lowers what you owe and is not spending. Interest and fees are spending, counted in Spent for loans tracked in Loans, whether split from a repayment or charged by the lender. Money moved in from other loans, cards or liabilities repays nothing and is not drawn.{payUnit !== "month" && ` A ${payNames.one} adds up its months; it is a calendar ${payNames.one}, and one the period only partly covers is marked *.`}</p><p>Interest and fees come only from loans tracked in Loans. A loan that is not tracked shows principal only: its interest and fees cannot be told from other spending.</p><p>Select a segment to see its transactions.</p></>}
                 legend={series.map((s) => ({ label: s.label, colour: s.colour }))}
                 actions={<UnitPills value={payUnit} onChange={setPayUnit} label="Show loan payments by" />}
                 table={{ head: [payNames.one[0].toUpperCase() + payNames.one.slice(1), "Principal", "Interest", "Fees"], rows: payBuckets.map((b, i) => [labels[i] + (b.partial ? " (partial)" : ""), ...series.map((s) => s.values[i])]) }} csvScope={scope}
@@ -283,7 +283,7 @@ export function LoansTab({ data, today, onDrill, onOpenAssets }: { data: Ready; 
                 </tr>,
                 ...(isOpen ? inGroup.map((r) => (
                   <tr key={r.accountId} className="border-b border-border/40">
-                    <th scope="row" className="max-w-56 py-1.5 pr-2 pl-8 text-left font-normal whitespace-nowrap"><span className="block truncate" title={r.name}>{r.name}</span></th>
+                    <th scope="row" className="max-w-56 py-1.5 pr-2 pl-8 text-left font-normal whitespace-nowrap"><span className="flex items-baseline gap-2"><span className="truncate" title={r.name}>{r.name}</span>{!!r.movedFromDebtsMinor && <span className="shrink-0 text-[11px] text-muted-foreground" title={`${money(r.movedFromDebtsMinor)} moved from other debts, not counted as repaid`}>{money(r.movedFromDebtsMinor)} moved from other debts</span>}</span></th>
                     <td className={TD}>{money(r.startMinor)}</td>
                     <td className={`${TD} font-medium`}>{money(r.endMinor)}</td>
                     <td className={TD}>{signedMoney(r.changeMinor)}</td>

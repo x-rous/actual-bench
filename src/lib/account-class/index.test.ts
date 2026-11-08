@@ -3,7 +3,6 @@ import {
   ACCOUNT_CLASS_INFO,
   isAccountClass,
   isAccountClassAllowed,
-  isCashLike,
   isLiability,
   planGroupAccountClass,
   resolveAccountClass,
@@ -31,11 +30,6 @@ describe("account classes", () => {
     expect(isAccountClass(null)).toBe(false);
     expect(isAccountClass("receivable")).toBe(false);
     expect(isAccountClass("payable")).toBe(false);
-  });
-
-  it("treats only cash and bank as cash-like", () => {
-    expect(ACCOUNT_CLASSES.filter((t) => isCashLike(t))).toEqual(["cash", "bank"]);
-    expect(isCashLike(null)).toBe(false);
   });
 
   it("treats card, loan and other liability as liabilities", () => {

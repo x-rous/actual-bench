@@ -16,7 +16,7 @@ function data(accounts: AccountFact[], movement: MovementRow[], over: Record<str
   const f: FinancialFacts = { accounts, incomeCategories: new Set(), movement, excluded: new Set(), startingBalances: [], uncategorizedIn: [], transfersIn: movement.filter((r) => r.transferAccountId && r.amountMinor > 0).map((r) => ({ month: r.month, accountId: r.accountId, amountMinor: r.amountMinor, transferAccountId: r.transferAccountId! })), reclassified: [], loanCosts: [] };
   const ledger = buildLedger(f);
   const period = resolvePeriod({ kind: "custom", startMonth: "2026-09", endMonth: "2026-09" }, "2026-11-18", ledger.firstMonth);
-  const summary = summarize(ledger, period, { unavailableReason: null, rowCount: 0 });
+  const summary = summarize(ledger, period, { unavailableReason: null, rowCount: 0, amountMinor: 0 });
   return { ledger, period, summary, composition: compositionSeries(ledger, period, summary.opening), netWorthChange: netWorthSteps(summary), monthly: monthlyFlows(ledger, period, "2026-11-18", true), review: [], registry: { read: true, assets: [], metadata: [], debtLinks: [], assetEntries: [], assetRowCount: 0, savedClassifications: [] }, ...over } as never;
 }
 const show = (d: never, onDrill = jest.fn()) => render(<TipProvider><WealthTab data={d} onDrill={onDrill} /></TipProvider>);

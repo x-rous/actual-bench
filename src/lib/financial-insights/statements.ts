@@ -73,7 +73,8 @@ export function buildStatements(input: {
   const cashIds = new Set(ledger.facts.accounts.filter((a) => isCashEquivalent(a.accountClass, a.treatment)).map((a) => a.id));
   const reclassified = new Map(ledger.facts.reclassified.map((r) => [r.id, r.to]));
   const capitalIds = new Set((input.assetEntries ?? []).filter((r) => ["acquisition", "added-capital"].includes(classificationOf(r, saved) ?? "")).map((r) => r.id));
-  const paidCosts = new Set(ledger.facts.loanCosts.filter((r) => r.kind && r.id).map((r) => r.id!));
+  // The split lines of a repayment, paid from a cash account; a charge the lender added to the loan account is not a cash payment.
+  const paidCosts = new Set(ledger.facts.loanCosts.filter((r) => r.kind && r.id && !r.charged).map((r) => r.id!));
   // A parent is evidence only when the recorded split has an identified expense alongside its principal transfer.
   const entriesById = new Map(entries.map((entry) => [entry.id, entry]));
   const expenseParents = new Set(entries.filter((r) => r.parentId && !r.transferAccountId && r.categoryId && categories.has(r.categoryId) && !ledger.facts.incomeCategories.has(r.categoryId)).map((r) => r.parentId));

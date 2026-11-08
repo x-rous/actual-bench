@@ -21,7 +21,7 @@ function data() {
   const monthly = monthlyFlows(ledger, period, today, true);
   const categories = new Map([[food.id, food]]);
   const breakdown = spendingBreakdown(ledger, period, categories, monthly);
-  return { ledger, period, summary: summarize(ledger, period, { unavailableReason: null, rowCount: 0 }), monthly, breakdown, spending: spendingFacts(breakdown, monthly), groups: spendingGroups(breakdown) } as never;
+  return { ledger, period, summary: summarize(ledger, period, { unavailableReason: null, rowCount: 0, amountMinor: 0 }), monthly, breakdown, spending: spendingFacts(breakdown, monthly), groups: spendingGroups(breakdown) } as never;
 }
 const show = (onDrill = jest.fn()) => render(<TipProvider><SpendingTab data={data()} today={today} onDrill={onDrill} /></TipProvider>);
 beforeEach(() => { jest.clearAllMocks(); sessionStorage.clear(); });
@@ -72,7 +72,7 @@ describe("Spending cards follow the length of the period", () => {
     const period = resolvePeriod({ kind: "custom", startMonth: months[0], endMonth: months[months.length - 1] }, "2026-11-18", ledger.firstMonth);
     const monthly = monthlyFlows(ledger, period, "2026-11-18", true);
     const breakdown = spendingBreakdown(ledger, period, new Map([[food.id, food]]), monthly);
-    render(<TipProvider><SpendingTab data={{ ledger, period, summary: summarize(ledger, period, { unavailableReason: null, rowCount: 0 }), monthly, breakdown, spending: spendingFacts(breakdown, monthly), groups: spendingGroups(breakdown) } as never} today="2026-11-18" onDrill={jest.fn()} /></TipProvider>);
+    render(<TipProvider><SpendingTab data={{ ledger, period, summary: summarize(ledger, period, { unavailableReason: null, rowCount: 0, amountMinor: 0 }), monthly, breakdown, spending: spendingFacts(breakdown, monthly), groups: spendingGroups(breakdown) } as never} today="2026-11-18" onDrill={jest.fn()} /></TipProvider>);
     expect(screen.getByRole("region", { name: "Spending each quarter" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Category by quarter" })).toBeInTheDocument();
   });

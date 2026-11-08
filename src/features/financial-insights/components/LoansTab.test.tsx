@@ -27,7 +27,7 @@ function data(accounts: AccountFact[], movement: MovementRow[], schedules: Sched
   };
   const ledger = buildLedger(f);
   const period = resolvePeriod({ kind: "custom", startMonth: "2026-09", endMonth: "2026-10" }, today, ledger.firstMonth);
-  const summary = summarize(ledger, period, { unavailableReason: null, rowCount: 0 });
+  const summary = summarize(ledger, period, { unavailableReason: null, rowCount: 0, amountMinor: 0 });
   return { ledger, period, summary, schedules, debt: debtRepayments(ledger, period, new Set(tracked), 0) } as never;
 }
 /** The account table starts closed, at the bottom of the page. */

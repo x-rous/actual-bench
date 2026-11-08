@@ -10,7 +10,7 @@ import { CardTitle } from "./InfoTip";
 type Ready = Extract<FinancialInsightsView["data"], { state: "ready" }>;
 const WARNING = "text-amber-700 dark:text-amber-400";
 
-/** Loan repayments: recorded payments only, with principal (a repayment, not an expense) apart from interest and fees (expenses already in Spent). */
+/** Loan repayments: recorded payments only, with principal (paid in less what the lender charged; not an expense) apart from interest and fees (expenses counted in Spent for loans tracked in Loans). */
 /** What the loans' saved schedules say is due in the next twelve months (Loans & cards only). */
 export type UpcomingLoans = { loans: number; scheduled: number; toReview: number; principalMinor: number; costMinor: number };
 
@@ -30,7 +30,7 @@ export function DebtRepaymentsCard({ data, csvScope, upcoming }: { data: Ready; 
   return (
     <section className="flex h-full min-w-0 flex-col rounded-lg border border-border bg-card" aria-label="Loan repayments">
       <header className="flex items-start justify-between gap-2 px-4 pt-3">
-        <CardTitle title="Loan repayments" hint="Recorded payments in the period" info={<p>Principal reduces what you owe and is not an expense. Interest and fees are the cost of borrowing: expenses already counted in Spent.</p>} infoLabel="loan repayments" />
+        <CardTitle title="Loan repayments" hint="Recorded payments in the period" info={<p>Principal reduces what you owe and is not an expense: it is what was paid into the loan less what the lender charged. Interest and fees are the cost of borrowing. For a loan tracked in Loans they are counted in Spent, whether they were split from a repayment or charged by the lender; an untracked loan&apos;s interest is counted only if you recorded it with a spending category.</p>} infoLabel="loan repayments" />
         <Button size="xs" variant="ghost" onClick={exportCsv} aria-label="Export Loan repayments as CSV"><Download className="size-3.5" aria-hidden />CSV</Button>
       </header>
       <div className="flex-1 px-4 py-2">
@@ -87,8 +87,10 @@ export function DebtRepaymentsCard({ data, csvScope, upcoming }: { data: Ready; 
       </div>
       <p className="border-t border-border/50 px-4 py-2 text-xs text-muted-foreground">
         {missing && <span>A loan marked &quot;not identified&quot; is not tracked in Loans, so its interest and fees cannot be separated from other spending; its total is a minimum. </span>}
-        {debt.principalMinor !== debt.fromCashMinor && <span>{money(debt.principalMinor)} was paid into loan accounts in all; {money(debt.fromCashMinor)} of it left cash accounts and is what the cash change above calls loan principal repaid. The rest came from other accounts, such as cards. </span>}
-        Interest and fees are already included in Spent; principal is not. Recorded payments only: nothing scheduled, and no interest that was only charged or capitalized, is counted.
+        {debt.paidInMinor !== debt.fromCashMinor && <span>{money(debt.paidInMinor)} was paid into loan accounts from accounts that are not debts; {money(debt.fromCashMinor)} of it left cash accounts and is what the cash change above calls paid to loans. </span>}
+        {debt.movedFromDebtsMinor !== 0 && <span>{money(debt.movedFromDebtsMinor)} was moved in from other loans, cards or liabilities. That lowers one debt and raises another, so it repays nothing and is not counted. </span>}
+        {debt.chargedInterestMinor + debt.chargedFeesMinor !== 0 && <span>The lender charged {money(debt.chargedInterestMinor + debt.chargedFeesMinor)} to loan accounts; principal is what was paid in less that. </span>}
+        Interest and fees of loans tracked in Loans are counted in Spent, whether they were split from a repayment or charged by the lender; principal is not. An untracked loan&apos;s interest is counted only if you recorded it with a spending category. Recorded entries only: nothing scheduled is counted.
       </p>
     </section>
   );

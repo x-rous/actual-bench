@@ -70,11 +70,6 @@ export function accountClassLabel(accountClass: AccountClass): string {
   return INFO_BY_CLASS.get(accountClass)?.label ?? accountClass;
 }
 
-/** Spendable-cash classes: the default scope for cashflow planning (together with budget mode). */
-export function isCashLike(accountClass: AccountClass | null | undefined): boolean {
-  return accountClass === "cash" || accountClass === "bank";
-}
-
 export function isLiability(accountClass: AccountClass | null | undefined): boolean {
   return !!accountClass && INFO_BY_CLASS.get(accountClass)?.side === "liability";
 }

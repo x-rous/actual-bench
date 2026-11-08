@@ -1,4 +1,4 @@
-import { computeFlows, ledgersByMonth, positionsAt, type Ledger, type Positions, type Summary } from "./measures";
+import { computeFlows, isLoanCostInSpent, ledgersByMonth, positionsAt, receivedOf, spentOf, type Ledger, type Positions, type Summary } from "./measures";
 import { resolvePeriod, type ResolvedPeriod } from "./period";
 
 /**
@@ -36,8 +36,8 @@ export function monthlyFlows(ledger: Ledger, period: ResolvedPeriod, today: stri
   const byMonth = ledgersByMonth(ledger, period.months);
   return period.months.map((month, index) => {
     const { flows, cashBridge } = computeFlows(byMonth.get(month)!, oneMonth(month, today, ledger.firstMonth));
-    const received = flows.income + flows.uncategorizedIn;
-    const spent = 0 - (flows.spending + flows.uncategorizedOut);
+    const received = receivedOf(flows);
+    const spent = spentOf(flows);
     return {
       month, hasData: !!ledger.firstMonth && month >= ledger.firstMonth, partial: period.partial && index === period.months.length - 1,
       received, spent, kept: keptAvailable ? received - spent : null, uncategorizedSpent: 0 - flows.uncategorizedOut,
@@ -61,13 +61,18 @@ export type SpendingRow = {
   totalMinor: number;
   /** Position in the budget (see `CategoryInfo.order`); the Uncategorized row has none and sorts last. */
   order?: number;
+  /** A row that is not a category: the loan interest or fees a lender charged. It has a reserved id, never the Uncategorized row's null, and opens its own drill. */
+  special?: "loanInterest" | "loanFees";
   /** The average over the complete months with data: the heatmap's baseline. Null when there is none. */
   averageMinor: number | null;
 };
 
 export type SpendingBreakdown = { months: string[]; rows: SpendingRow[]; totalMinor: number; hasHidden: boolean };
 
-/** Spending by category and month. The total equals the Summary's Money spent exactly. */
+/** Reserved ids of the rows that are not categories (see `SpendingRow.special`). */
+export const SPECIAL_ROW_ID = { loanInterest: "__loan-interest", loanFees: "__loan-fees" } as const;
+
+/** Spending by category and month, with the interest and fees lenders charged as rows of their own. The total equals the Summary's Money spent exactly. */
 export function spendingBreakdown(ledger: Ledger, period: ResolvedPeriod, categories: ReadonlyMap<string, CategoryInfo>, monthly: readonly MonthlyPoint[]): SpendingBreakdown {
   const { facts, account } = ledger;
   const slot = new Map(period.months.map((m, i) => [m, i]));
@@ -101,6 +106,20 @@ export function spendingBreakdown(ledger: Ledger, period: ResolvedPeriod, catego
   });
   const uncategorized = monthly.map((m) => m.uncategorizedSpent);
   if (uncategorized.some((v) => v !== 0)) rows.push({ id: null, name: "Uncategorized", group: "Uncategorized", hidden: false, ...finish(uncategorized, uncategorized.map(() => 0)) });
+  // Interest and fees the lender charged to the accounts of tracked loans: costs, so part of Spent, listed by kind under "Loans".
+  const charged = { loanInterest: period.months.map(() => 0), loanFees: period.months.map(() => 0) };
+  const chargedCount = { loanInterest: period.months.map(() => 0), loanFees: period.months.map(() => 0) };
+  for (const row of facts.loanCosts) {
+    const index = slot.get(row.month);
+    if (!row.charged || row.categoryId !== null || index === undefined || !isLoanCostInSpent(ledger, row)) continue;
+    const key = row.kind === "fee" ? "loanFees" : "loanInterest";
+    charged[key][index] += 0 - row.amountMinor;
+    chargedCount[key][index] += 1;
+  }
+  const specials = [["loanInterest", "Loan interest (charged by lender)"], ["loanFees", "Loan fees (charged by lender)"]] as const;
+  for (const [key, name] of specials) {
+    if (charged[key].some((v) => v !== 0)) rows.push({ id: SPECIAL_ROW_ID[key], special: key, name, group: "Loans", hidden: false, ...finish(charged[key], chargedCount[key]) });
+  }
   const kept = rows.filter((r) => r.totalMinor !== 0 || r.byMonth.some((v) => v !== 0)).sort((a, b) => b.totalMinor - a.totalMinor);
   return { months: [...period.months], rows: kept, totalMinor: kept.reduce((a, r) => a + r.totalMinor, 0), hasHidden: kept.some((r) => r.hidden) };
 }
@@ -224,7 +243,7 @@ export function cashBridgeLines(summary: Summary): CashBridgeLines {
     { key: "card", label: "Paid to credit cards", amountMinor: b.card },
     { key: "contributed", label: "Put into investments", amountMinor: b.investmentOut, drill: "contributed" },
     { key: "withdrawn", label: "Withdrawn from investments", amountMinor: b.investmentIn, drill: "withdrawn" },
-    { key: "repaid", label: "Loan principal repaid", amountMinor: b.loanOut, drill: "repaid" },
+    { key: "repaid", label: "Paid to loans", amountMinor: b.loanOut, drill: "repaid" },
     { key: "borrowed", label: "Borrowed (received from loans)", amountMinor: b.loanIn, drill: "borrowed" },
     { key: "fixedDeposits", label: "Fixed / restricted deposits", amountMinor: b.fixedDeposits },
     { key: "assets", label: "Moved to and from other assets", amountMinor: b.assets },
@@ -240,6 +259,34 @@ export function cashBridgeLines(summary: Summary): CashBridgeLines {
     unattributedMinor: summary.eligibleCash.closing - summary.eligibleCash.opening - explained,
     closingMinor: summary.eligibleCash.closing,
   };
+}
+
+// ─── Where the money went ────────────────────────────────────────────────────
+
+export type MoneyWentLine = { key: "spent" | "debtRepaid" | "borrowed" | "invested" | "depositsAndAssets" | "cards" | "cash" | "other"; label: string; /** Integer minor units: positive when money went to this use, negative when it came in (borrowed, more owed on cards). */ amountMinor: number };
+
+/**
+ * What the money received went to, in parts that add up to it exactly: spending, debt repaid, investing, deposits and assets, the
+ * change in card balances and the change in cash & bank. Every line is an existing figure (the cash bridge, the loans, the
+ * positions); `other` is whatever they do not explain, never forced to zero. Money kept is everything here except Spent.
+ */
+export function whereMoneyWent(summary: Summary, debt: DebtRepayments): { receivedMinor: number; lines: MoneyWentLine[] } {
+  const b = summary.cashBridge;
+  const listed: Omit<MoneyWentLine, "label">[] = [
+    { key: "spent", amountMinor: summary.spent },
+    { key: "debtRepaid", amountMinor: debt.principalMinor },
+    { key: "borrowed", amountMinor: 0 - b.loanIn },
+    { key: "invested", amountMinor: 0 - (b.investmentOut + b.investmentIn) },
+    { key: "depositsAndAssets", amountMinor: 0 - (b.fixedDeposits + b.assets + b.liabilities + b.excluded) },
+    { key: "cards", amountMinor: summary.closing.cards - summary.opening.cards },
+    { key: "cash", amountMinor: summary.eligibleCash.change },
+  ];
+  const labels: Record<MoneyWentLine["key"], string> = {
+    spent: "Spent", debtRepaid: "Debt repaid (principal)", borrowed: "Borrowed", invested: "Put into investments (net)",
+    depositsAndAssets: "Moved to deposits, assets and other liabilities", cards: "Change in card balances", cash: "Change in cash & bank", other: "Other",
+  };
+  const other = summary.received - listed.reduce((sum, l) => sum + l.amountMinor, 0);
+  return { receivedMinor: summary.received, lines: [...listed, { key: "other" as const, amountMinor: other }].map((l) => ({ ...l, label: labels[l.key] })) };
 }
 
 // ─── Payees ──────────────────────────────────────────────────────────────────
@@ -309,8 +356,10 @@ export type GroupSeries = {
   name: string;
   /** 0 to 9 for the ten largest groups, 10 for the others merged into "Other groups". */
   slot: number;
-  /** The categories of the group that have spending (the transactions behind the group are exactly these, plus uncategorized when flagged). */
+  /** The categories of the group that have spending (the transactions behind the group are exactly these, plus uncategorized when flagged and the lender charges named in `chargeKinds`). */
   categoryIds: string[];
+  /** The kinds of lender charge among the group's rows ("Loans" group): interest, fees, or both. They are read by id, not by category. */
+  chargeKinds: ("interest" | "fee")[];
   /** The group holds the on-budget entries with no category. */
   hasUncategorized: boolean;
   byMonth: number[];
@@ -336,7 +385,8 @@ export function spendingGroups(breakdown: SpendingBreakdown): { groups: GroupSer
     const known = rows.every((r) => r.id !== null);
     return {
       name, slot, rows, byMonth, totalMinor: byMonth.reduce((a, b) => a + b, 0), order: Math.min(Number.MAX_SAFE_INTEGER, ...rows.map((r) => r.order ?? Number.MAX_SAFE_INTEGER)),
-      categoryIds: rows.flatMap((r) => (r.id === null ? [] : [r.id])), hasUncategorized: rows.some((r) => r.id === null),
+      categoryIds: rows.flatMap((r) => (r.id === null || r.special ? [] : [r.id])), hasUncategorized: rows.some((r) => r.id === null),
+      chargeKinds: rows.flatMap((r) => (r.special === "loanInterest" ? ["interest" as const] : r.special === "loanFees" ? ["fee" as const] : [])),
       counts: known ? Array.from({ length: months }, (_, i) => rows.reduce((a, r) => a + r.counts[i], 0)) : null,
     };
   };
@@ -350,7 +400,7 @@ export function spendingGroups(breakdown: SpendingBreakdown): { groups: GroupSer
 
 // ─── Net worth: what changed it ──────────────────────────────────────────────
 
-export type WaterfallDrill = "unidentified" | "investmentResults" | "valueChange" | "assetSale" | "excludedTransfer" | "inTransit";
+export type WaterfallDrill = "unidentified" | "loanAccountOther" | "investmentResults" | "valueChange" | "assetSale" | "excludedTransfer" | "inTransit";
 export type NetWorthStep = { key: string; label: string; amountMinor: number; note: string; drill?: WaterfallDrill };
 
 /**
@@ -360,10 +410,11 @@ export type NetWorthStep = { key: string; label: string; amountMinor: number; no
  */
 export function netWorthSteps(summary: Summary) {
   const f = summary.flows;
-  const kept = f.income + f.uncategorizedIn + f.spending + f.uncategorizedOut;
+  const kept = receivedOf(f) - spentOf(f);
   const all: NetWorthStep[] = [
-    { key: "kept", label: "Money kept", amountMinor: kept, note: "Income less spending, including entries with no category in on-budget accounts" },
+    { key: "kept", label: "Money kept", amountMinor: kept, note: "Income less spending, including entries with no category in on-budget accounts and interest and fees lenders charged on tracked loans" },
     { key: "unidentified", label: "Unidentified movements", amountMinor: f.unidentified, note: "Entries with no category in other off-budget accounts. Not income or spending: nothing is assumed", drill: "unidentified" },
+    { key: "loanAccountOther", label: "Other entries in loan accounts", amountMinor: f.loanAccountOther, note: "Entries in untracked loan accounts that aren't transfers: often interest or fees the lender charged. Track the loan in Loans to count them in Spent.", drill: "loanAccountOther" },
     { key: "investmentResults", label: "Investment activity", amountMinor: f.investmentResults, note: "Entries with no category in your investment and retirement accounts: price changes, dividends, interest and fees recorded there. Not income or spending, and no return is calculated", drill: "investmentResults" },
     { key: "valueChange", label: "Changes in value", amountMinor: f.valueChanges, note: "Entries classified in Assets as a change in an asset's value", drill: "valueChange" },
     { key: "assetSale", label: "Asset sales", amountMinor: f.assetSales, note: "Proceeds and selling costs linked in Assets", drill: "assetSale" },
@@ -400,50 +451,112 @@ export function compositionSeries(ledger: Ledger, period: ResolvedPeriod, openin
 
 // ─── Debt repayments ─────────────────────────────────────────────────────────
 
+/** What one entry of a loan account is: the pieces `debtRepayments` and `debtMonthly` both add up. */
+export type LoanEntryField = "paidIn" | "movedFromDebts" | "splitInterest" | "splitFees" | "chargedInterest" | "chargedFees";
+
+/**
+ * Every figure of the loans, entry by entry (all months; the callers choose theirs), so the period and its months always agree:
+ *  - `paidIn`: transfers into a loan from accounts that are not loans, cards, other liabilities or excluded;
+ *  - `movedFromDebts`: transfers into a loan from another loan, a card or another liability (a refinance or balance transfer),
+ *    which lower one debt and raise another and so repay nothing;
+ *  - `splitInterest`, `splitFees`: the lines of a repayment that the Loans tracking split out;
+ *  - `chargedInterest`, `chargedFees`: what the lender charged as rows of the loan account itself.
+ * Costs are positive amounts here. A transfer from an excluded account is not an entry.
+ */
+export function loanEntries(ledger: Ledger): { accountId: string; month: string; field: LoanEntryField; amountMinor: number }[] {
+  const entries: { accountId: string; month: string; field: LoanEntryField; amountMinor: number }[] = [];
+  for (const r of ledger.facts.transfersIn) {
+    if (ledger.account.get(r.accountId)?.accountClass !== "loan" || ledger.facts.excluded.has(r.transferAccountId)) continue;
+    const from = ledger.role.get(r.transferAccountId);
+    entries.push({ accountId: r.accountId, month: r.month, field: from === "loan" || from === "card" || from === "liability" ? "movedFromDebts" : "paidIn", amountMinor: r.amountMinor });
+  }
+  for (const r of ledger.facts.loanCosts) {
+    if (!r.loanAccountId || !r.kind) continue;
+    const field: LoanEntryField = r.charged ? (r.kind === "interest" ? "chargedInterest" : "chargedFees") : r.kind === "interest" ? "splitInterest" : "splitFees";
+    entries.push({ accountId: r.loanAccountId, month: r.month, field, amountMinor: 0 - r.amountMinor });
+  }
+  return entries;
+}
+
+/** The sums of `loanEntries` for one loan, and what follows from them. */
+export type LoanFigures = Record<LoanEntryField, number> & {
+  /** Paid in less what the lender charged: how far the debt fell (negative when more was charged than paid). */
+  principalMinor: number;
+  /** Split lines and lender charges together. */
+  interestMinor: number;
+  feesMinor: number;
+};
+
+export const emptyLoanFigures = (): LoanFigures => ({ paidIn: 0, movedFromDebts: 0, splitInterest: 0, splitFees: 0, chargedInterest: 0, chargedFees: 0, principalMinor: 0, interestMinor: 0, feesMinor: 0 });
+
+/** Adds an entry to a loan's figures, keeping the derived ones in step. */
+export function addLoanEntry(figures: LoanFigures, field: LoanEntryField, amountMinor: number) {
+  figures[field] += amountMinor;
+  figures.principalMinor = figures.paidIn - figures.chargedInterest - figures.chargedFees;
+  figures.interestMinor = figures.splitInterest + figures.chargedInterest;
+  figures.feesMinor = figures.splitFees + figures.chargedFees;
+}
+
 export type DebtRow = {
   accountId: string;
   name: string;
   tracked: boolean;
-  /** Everything recorded as paid into the loan account in the period, from any account that is counted: a repayment sent from an account left out of Financial Insights is not in it. */
+  /** Paid into the loan account in the period from accounts that are not debts (a repayment sent from an account left out of Financial Insights is not in it). */
+  paidInMinor: number;
+  /** Transferred into the loan from another loan, a card or another liability: not repaid. */
+  movedFromDebtsMinor: number;
+  /** How far the debt fell: paid in less what the lender charged (see `LoanFigures`). */
   principalMinor: number;
-  /** Null when the loan is not tracked in Loans: its interest cannot be told from other spending. */
+  /** Null when the loan is not tracked in Loans: its interest cannot be told from other spending. Split lines and lender charges together. */
   interestMinor: number | null;
   feesMinor: number | null;
+  /** The part of interest and fees the lender charged to the loan account (zero for the split pattern). */
+  chargedInterestMinor: number;
+  chargedFeesMinor: number;
 };
 
 export type DebtRepayments = {
   rows: DebtRow[];
   principalMinor: number;
+  paidInMinor: number;
+  movedFromDebtsMinor: number;
   interestMinor: number;
   feesMinor: number;
+  chargedInterestMinor: number;
+  chargedFeesMinor: number;
   /** True when every loan listed is tracked, so interest and fees are complete. */
   complete: boolean;
-  /** What the cash-change table counts as principal: money that left cash accounts for loans. It can be less than `principalMinor`. */
+  /** Cash accounts to loans, as the cash-change table counts it ("Paid to loans"): principal plus any interest the lender charged. It can differ from `paidInMinor`. */
   fromCashMinor: number;
 };
 
 /** Recorded repayments of the loans in the period. Recorded figures only, never scheduled ones. */
 export function debtRepayments(ledger: Ledger, period: ResolvedPeriod, trackedLoanIds: ReadonlySet<string>, fromCashMinor: number): DebtRepayments {
   const inWin = (month: string) => month >= period.startMonth && month <= period.endMonth;
-  const principal = new Map<string, number>(), interest = new Map<string, number>(), fees = new Map<string, number>();
-  for (const r of ledger.facts.transfersIn) {
-    if (!inWin(r.month) || ledger.account.get(r.accountId)?.accountClass !== "loan" || ledger.facts.excluded.has(r.transferAccountId)) continue;
-    principal.set(r.accountId, (principal.get(r.accountId) ?? 0) + r.amountMinor);
-  }
-  for (const r of ledger.facts.loanCosts) {
-    if (!r.loanAccountId || !r.kind || !inWin(r.month)) continue;
-    const into = r.kind === "interest" ? interest : fees;
-    into.set(r.loanAccountId, (into.get(r.loanAccountId) ?? 0) + (0 - r.amountMinor));
+  const byLoan = new Map<string, LoanFigures>();
+  for (const e of loanEntries(ledger)) {
+    if (!inWin(e.month)) continue;
+    const figures = byLoan.get(e.accountId) ?? emptyLoanFigures();
+    addLoanEntry(figures, e.field, e.amountMinor);
+    byLoan.set(e.accountId, figures);
   }
   const rows: DebtRow[] = [];
   for (const a of ledger.account.values()) {
     if (a.accountClass !== "loan") continue;
+    const f = byLoan.get(a.id);
+    if (!f) continue;
+    if (!f.paidIn && !f.movedFromDebts && !f.interestMinor && !f.feesMinor) continue;
     const tracked = trackedLoanIds.has(a.id);
-    const p = principal.get(a.id) ?? 0, i = interest.get(a.id) ?? 0, f = fees.get(a.id) ?? 0;
-    if (!p && !i && !f) continue;
-    rows.push({ accountId: a.id, name: a.name, tracked, principalMinor: p, interestMinor: tracked ? i : null, feesMinor: tracked ? f : null });
+    rows.push({
+      accountId: a.id, name: a.name, tracked, paidInMinor: f.paidIn, movedFromDebtsMinor: f.movedFromDebts, principalMinor: f.principalMinor,
+      interestMinor: tracked ? f.interestMinor : null, feesMinor: tracked ? f.feesMinor : null, chargedInterestMinor: f.chargedInterest, chargedFeesMinor: f.chargedFees,
+    });
   }
   rows.sort((a, b) => b.principalMinor - a.principalMinor);
   const sum = (pick: (r: DebtRow) => number | null) => rows.reduce((a, r) => a + (pick(r) ?? 0), 0);
-  return { rows, principalMinor: sum((r) => r.principalMinor), interestMinor: sum((r) => r.interestMinor), feesMinor: sum((r) => r.feesMinor), complete: rows.every((r) => r.tracked), fromCashMinor };
+  return {
+    rows, principalMinor: sum((r) => r.principalMinor), paidInMinor: sum((r) => r.paidInMinor), movedFromDebtsMinor: sum((r) => r.movedFromDebtsMinor),
+    interestMinor: sum((r) => r.interestMinor), feesMinor: sum((r) => r.feesMinor), chargedInterestMinor: sum((r) => r.chargedInterestMinor), chargedFeesMinor: sum((r) => r.chargedFeesMinor),
+    complete: rows.every((r) => r.tracked), fromCashMinor,
+  };
 }

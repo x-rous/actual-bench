@@ -1,6 +1,8 @@
 import type { AccountClass } from "@/lib/account-class";
 import { isCashEquivalent, type ReportingTreatment } from "@/lib/account-class/reporting";
+import { median } from "./bufferScenario";
 import { addMonths, lastCompleteMonths, monthOf, type ResolvedPeriod } from "./period";
+import { money } from "@/features/financial-insights/format";
 
 /**
  * Every Financial Insights measure is defined here, once, from the same facts. Tabs only render what this returns.
@@ -37,8 +39,12 @@ export type DatedAmount = { month: string; accountId: string; amountMinor: numbe
  */
 export type ReclassifiedRow = { /** The transaction, so a drilldown can leave it out of income and spending. */ id: string; payeeId: string | null; month: string; accountId: string; categoryId: string | null; amountMinor: number; to: "valueChange" | "assetSale" };
 
-/** One interest or fee line the Loans tracking recorded for a tracked loan. */
-export type LoanCostRow = { /** The transaction, so a drilldown can list it. */ id?: string; month: string; accountId: string; categoryId: string | null; amountMinor: number; /** The loan these lines belong to, and what they are, when the reader knows. */ loanAccountId?: string; kind?: "interest" | "fee" };
+/**
+ * One interest or fee line the Loans tracking recorded for a tracked loan. `charged` is true for a charge the lender added to the
+ * loan account as its own row (uncategorized, off budget): Spent counts it and the principal repaid is net of it. A split line of a
+ * repayment (`charged` false) is a categorized row that spending already holds. Money out is negative.
+ */
+export type LoanCostRow = { /** The transaction, so a drilldown can list it. */ id?: string; month: string; accountId: string; categoryId: string | null; amountMinor: number; /** The loan these lines belong to, and what they are, when the reader knows. */ loanAccountId?: string; kind?: "interest" | "fee"; charged?: boolean };
 
 export type AccountFact = {
   id: string;
@@ -75,16 +81,17 @@ export type FinancialFacts = {
 };
 
 export type Status<T> =
-  | { state: "ready"; value: T }
+  /** `warning`: the value is shown, with what may make it too high or too low; it is never a reason to hide the value. */
+  | { state: "ready"; value: T; warning?: string }
   | { state: "unavailable"; reason: string }
   | { state: "needsReview"; reason: string };
 
-const ready = <T>(value: T): Status<T> => ({ state: "ready", value });
+const ready = <T>(value: T, warning?: string): Status<T> => (warning ? { state: "ready", value, warning } : { state: "ready", value });
 const unavailable = <T>(reason: string): Status<T> => ({ state: "unavailable", reason });
 const needsReview = <T>(reason: string): Status<T> => ({ state: "needsReview", reason });
 
-/** The result of the Asset Registry check for the selected period. */
-export type AssetReview = { unavailableReason: string | null; rowCount: number };
+/** The result of the Asset Registry check for the selected period. `amountMinor` is the sum of the absolute amounts of the entries to review. */
+export type AssetReview = { unavailableReason: string | null; rowCount: number; amountMinor: number };
 
 // ─── Roles ───────────────────────────────────────────────────────────────────
 
@@ -177,6 +184,11 @@ export type Flows = {
   /** Uncategorized entries in off-budget accounts: not income or spending. */
   unidentified: number;
   unidentifiedCount: number;
+  /** Interest and fees the lender charged as their own rows in the accounts of tracked loans (negative = cost). Part of Spent. */
+  loanCharges: number;
+  /** Uncategorized non-transfer entries in loan accounts that are not tagged charges (an untracked loan's interest among them). Not income, not spending. */
+  loanAccountOther: number;
+  loanAccountOtherCount: number;
   /** Uncategorized entries in off-budget Investment and Retirement accounts: price changes, dividends, interest and fees recorded there. Not income or spending. */
   investmentResults: number;
   investmentResultsCount: number;
@@ -192,7 +204,7 @@ export type Flows = {
 };
 
 const emptyFlows = (): Flows => ({
-  income: 0, spending: 0, uncategorizedIn: 0, uncategorizedOut: 0, unidentified: 0, unidentifiedCount: 0, investmentResults: 0, investmentResultsCount: 0, valueChanges: 0, assetSales: 0,
+  income: 0, spending: 0, uncategorizedIn: 0, uncategorizedOut: 0, unidentified: 0, unidentifiedCount: 0, loanCharges: 0, loanAccountOther: 0, loanAccountOtherCount: 0, investmentResults: 0, investmentResultsCount: 0, valueChanges: 0, assetSales: 0,
   openingBalances: 0, excludedTransfers: 0, inTransit: 0,
 });
 
@@ -224,18 +236,26 @@ export type CashBridge = {
 
 const inWindow = (month: string, period: ResolvedPeriod) => month >= period.startMonth && month <= period.endMonth;
 
+/** Spent: a positive amount. Costs of every kind in one place: categories, on-budget uncategorized money out, and loan charges. */
+export const spentOf = (flows: Flows): number => 0 - (flows.spending + flows.uncategorizedOut + flows.loanCharges);
+/** Received: a positive amount. */
+export const receivedOf = (flows: Flows): number => flows.income + flows.uncategorizedIn;
+
 export type Computed = { flows: Flows; cashBridge: CashBridge };
 
 /** Takes a classified row back out of the line its category (or lack of one) gave it. */
-function takeOut(flows: Flows, cash: CashBridge | null, account: AccountFact, investment: boolean, incomeCategories: ReadonlySet<string>, row: { categoryId: string | null; amountMinor: number }) {
+function takeOut(flows: Flows, cash: CashBridge | null, account: AccountFact, role: Role, incomeCategories: ReadonlySet<string>, row: { categoryId: string | null; amountMinor: number }) {
   const { categoryId, amountMinor } = row;
   if (categoryId !== null) {
     if (incomeCategories.has(categoryId)) flows.income -= amountMinor;
     else flows.spending -= amountMinor;
     if (cash) { if (incomeCategories.has(categoryId)) cash.operatingIncome -= amountMinor; else cash.operatingSpending -= amountMinor; }
-  } else if (account.offBudget && investment) {
+  } else if (account.offBudget && role === "investment") {
     flows.investmentResults -= amountMinor;
     flows.investmentResultsCount -= 1;
+  } else if (account.offBudget && role === "loan") {
+    flows.loanAccountOther -= amountMinor;
+    flows.loanAccountOtherCount -= 1;
   } else if (account.offBudget) {
     flows.unidentified -= amountMinor;
     flows.unidentifiedCount -= 1;
@@ -328,6 +348,10 @@ export function computeFlows(ledger: Ledger, period: ResolvedPeriod): Computed {
     } else if (owner.offBudget && own === "investment") {
       flows.investmentResults += amount;
       flows.investmentResultsCount += row.count;
+    } else if (owner.offBudget && own === "loan") {
+      // An entry in a loan account that is not a transfer: often interest or fees the lender charged. Charges of a tracked loan are moved to `loanCharges` below.
+      flows.loanAccountOther += amount;
+      flows.loanAccountOtherCount += row.count;
     } else if (owner.offBudget) {
       flows.unidentified += amount;
       flows.unidentifiedCount += row.count;
@@ -341,6 +365,15 @@ export function computeFlows(ledger: Ledger, period: ResolvedPeriod): Computed {
     }
   }
 
+  // The lender's charges of tracked loans are costs: they leave "other entries" and join Spent. A split line (`charged` false) is
+  // already in spending through its category; a charge that carries a category is too, so only uncategorized rows move.
+  for (const row of facts.loanCosts) {
+    if (!row.charged || row.categoryId !== null || !inWindow(row.month, period) || role.get(row.accountId) !== "loan" || !account.get(row.accountId)?.offBudget) continue;
+    flows.loanAccountOther -= row.amountMinor;
+    flows.loanAccountOtherCount -= 1;
+    flows.loanCharges += row.amountMinor;
+  }
+
   for (const [key, cell] of directed) {
     const into = received.get(key) ?? 0;
     if (cell.role === "investment") { cash.investmentIn += into; cash.investmentOut += cell.net - into; }
@@ -351,7 +384,7 @@ export function computeFlows(ledger: Ledger, period: ResolvedPeriod): Computed {
     const owner = account.get(row.accountId);
     if (!inWindow(row.month, period) || !owner) continue;
     const own = role.get(row.accountId);
-    takeOut(flows, own === "cash" ? cash : null, owner, own === "investment", facts.incomeCategories, row);
+    takeOut(flows, own === "cash" ? cash : null, owner, own ?? "cash", facts.incomeCategories, row);
     if (row.to === "valueChange") flows.valueChanges += row.amountMinor;
     else {
       flows.assetSales += row.amountMinor;
@@ -443,20 +476,21 @@ export function summarize(ledger: Ledger, period: ResolvedPeriod, review: AssetR
   const netWorth = { opening: sumPositions(opening), closing: sumPositions(closing), change: sumPositions(closing) - sumPositions(opening) };
   const eligibleCash = { opening: opening.eligibleCash, closing: closing.eligibleCash, change: closing.eligibleCash - opening.eligibleCash };
 
-  const received = flows.income + flows.uncategorizedIn;
-  const spent = 0 - (flows.spending + flows.uncategorizedOut);
+  const received = receivedOf(flows);
+  const spent = spentOf(flows);
   const kept = received - spent;
   let moneyKept: Status<number>;
   if (review.unavailableReason) moneyKept = needsReview(review.unavailableReason);
   else if (review.rowCount > 0) {
-    moneyKept = needsReview(`${review.rowCount} ${review.rowCount === 1 ? "entry is" : "entries are"} classified in Assets as capital put into an asset without a recorded transfer, so the money may also be counted as spending`);
+    // Shown with the amount at issue, never withheld: the value is Received less Spent, and these entries may be counted twice in it.
+    moneyKept = ready(kept, `${review.rowCount} ${review.rowCount === 1 ? "entry" : "entries"} (${money(review.amountMinor)}) ${review.rowCount === 1 ? "is" : "are"} classified in Assets as capital put into an asset without a recorded transfer, so this may count ${review.rowCount === 1 ? "it" : "them"} twice`);
   } else moneyKept = ready(kept);
   let savingsRate: Status<number>;
   if (moneyKept.state !== "ready") savingsRate = moneyKept;
   else if (received <= 0) savingsRate = unavailable("There was no income in this period");
-  else savingsRate = ready(Math.round((moneyKept.value * 1000) / received) / 10);
+  else savingsRate = ready(Math.round((moneyKept.value * 1000) / received) / 10, moneyKept.warning);
 
-  const explained = flows.income + flows.spending + flows.uncategorizedIn + flows.uncategorizedOut + flows.unidentified + flows.investmentResults + flows.valueChanges + flows.assetSales + flows.openingBalances + flows.excludedTransfers + flows.inTransit;
+  const explained = flows.income + flows.spending + flows.uncategorizedIn + flows.uncategorizedOut + flows.unidentified + flows.loanCharges + flows.loanAccountOther + flows.investmentResults + flows.valueChanges + flows.assetSales + flows.openingBalances + flows.excludedTransfers + flows.inTransit;
   const series: SeriesPoint[] = period.months.map((month, index) => {
     if (!ledger.firstMonth || month < ledger.firstMonth) return { month, netWorthMinor: null, cashMinor: null, partial: false };
     const at = positionsAt(ledger, month);
@@ -478,7 +512,12 @@ export type BufferLoan = { accountId: string; name: string; monthlyMinor: number
 
 export type CashBuffer = {
   months: number;
+  /** Cash & bank less what is owed on credit cards (`grossCashMinor` − `cardsOwedMinor`): what the months are measured on. Never negative. */
   cashMinor: number;
+  /** Eligible cash today, before cards. */
+  grossCashMinor: number;
+  /** What is owed on credit cards today (a positive amount); a card in credit is ignored. */
+  cardsOwedMinor: number;
   monthlyNeedMinor: number;
   /** Average monthly spending, without the interest and fees of tracked loans (their repayments are counted whole). */
   spendingMinor: number;
@@ -486,22 +525,30 @@ export type CashBuffer = {
   loans: BufferLoan[];
 };
 
-/** The loans' recorded interest and fee lines in a window, only where the row is counted as spending (it is in the budget and is money out). Money out is negative. */
+/** The loans' recorded interest and fee lines in a window, only where the row is counted in Spent (see `loanCostRowsIn`). Money out is negative. */
 export function loanCostsIn(ledger: Ledger, window: ResolvedPeriod): number {
   return loanCostRowsIn(ledger, window).reduce((sum, row) => sum + row.amountMinor, 0);
 }
 
-/** The loan interest and fee rows of a window that are counted as spending, so a figure can say what it took out of each category. */
+/**
+ * Whether a tagged loan cost row is part of Spent, by the same rules `computeFlows` reads rows with: a categorized row in an expense
+ * category; an uncategorized money-out row of an on-budget account; or a charge the lender added to the account of a tracked loan.
+ */
+export function isLoanCostInSpent(ledger: Ledger, row: LoanCostRow): boolean {
+  const owner = ledger.account.get(row.accountId);
+  if (!owner) return false;
+  if (row.categoryId !== null) return !ledger.facts.incomeCategories.has(row.categoryId);
+  if (row.charged) return ledger.role.get(row.accountId) === "loan" && owner.offBudget;
+  return !owner.offBudget && row.amountMinor < 0;
+}
+
+/** The loan interest and fee rows of a window that are counted in Spent, so a figure can say what it took out of each category. */
 export function loanCostRowsIn(ledger: Ledger, window: ResolvedPeriod): LoanCostRow[] {
-  return ledger.facts.loanCosts.filter((row) => {
-    const owner = ledger.account.get(row.accountId);
-    if (!owner || !inWindow(row.month, window)) return false;
-    return row.categoryId !== null ? !ledger.facts.incomeCategories.has(row.categoryId) : !owner.offBudget && row.amountMinor < 0;
-  });
+  return ledger.facts.loanCosts.filter((row) => inWindow(row.month, window) && isLoanCostInSpent(ledger, row));
 }
 
 /**
- * How many months eligible cash would cover, as of today and regardless of the selected period. It uses Actual's
+ * How many months eligible cash, less what is owed on credit cards, would cover, as of today and regardless of the selected period. It uses Actual's
  * recorded obligations. Need = average monthly spending over the last complete months (twelve where available, all of them
  * from three to eleven, unavailable below three) plus what each loan costs each month, in full:
  *  - a tracked loan whose schedule reconciles with Actual: its scheduled repayment (principal, interest and fees); its
@@ -509,10 +556,10 @@ export function loanCostRowsIn(ledger: Ledger, window: ResolvedPeriod): LoanCost
  *    out of the spending average so they are not counted twice;
  *  - a tracked loan that does not reconcile makes the buffer unavailable, naming the loan;
  *  - any other loan owed: the average of the transfers recorded into its account over the last complete months (at least
- *    three), which is principal only, because its interest cannot be told from other spending.
+ *    three), which is what was paid in, and can include interest the lender charged, because its interest cannot be told from other spending.
  * An untracked model is never used. The buffer is unavailable, never zero, when any part cannot be known.
  */
-export function cashBuffer(ledger: Ledger, today: string, schedules: ReadonlyMap<string, LoanScheduleInput>, options: { /** How many complete months a typical month is taken over (12 by default). */ months?: number; /** A typical month's spending worked out elsewhere (a median); the average of the months is used when it is not given. */ spendingMinor?: number } = {}): Status<CashBuffer> {
+export function cashBuffer(ledger: Ledger, today: string, schedules: ReadonlyMap<string, LoanScheduleInput>, options: { /** How many complete months a typical month is taken over (12 by default). */ months?: number; /** How an untracked loan's typical month is worked out from its monthly paid-in sums (the average by default). */ method?: "average" | "median"; /** A typical month's spending worked out elsewhere (a median); the average of the months is used when it is not given. */ spendingMinor?: number } = {}): Status<CashBuffer> {
   const current = monthOf(today);
   const months = lastCompleteMonths(today, ledger.firstMonth, options.months ?? 12);
   if (months.length < 3) return unavailable("Insufficient history: at least three complete months are needed");
@@ -522,8 +569,8 @@ export function cashBuffer(ledger: Ledger, today: string, schedules: ReadonlyMap
   };
   const { flows } = computeFlows(ledger, window);
   const loanCosts = loanCostsIn(ledger, window);
-  // `loanCosts` is money out (negative); adding it takes exactly those lines back out of spending.
-  const spendingMinor = 0 - (flows.spending + flows.uncategorizedOut) + loanCosts;
+  // `loanCosts` is money out (negative); adding it takes exactly those lines back out of spending (lender charges included: they are in Spent too).
+  const spendingMinor = spentOf(flows) + loanCosts;
 
   const loans: BufferLoan[] = [];
   for (const account of ledger.account.values()) {
@@ -538,17 +585,24 @@ export function cashBuffer(ledger: Ledger, today: string, schedules: ReadonlyMap
     for (const row of ledger.facts.movement) if (row.accountId === account.id && (!first || row.month < first)) first = row.month;
     const loanMonths = lastCompleteMonths(today, first, 6);
     if (loanMonths.length < 3) return unavailable(`${account.name} is not tracked in Loans and has fewer than three complete months of recorded repayments`);
-    let paid = 0;
+    const paidByMonth = new Map(loanMonths.map((m) => [m, 0]));
     for (const row of ledger.facts.movement) {
-      if (row.accountId === account.id && row.transferAccountId && row.amountMinor > 0 && loanMonths.includes(row.month)) paid += row.amountMinor;
+      if (row.accountId === account.id && row.transferAccountId && row.amountMinor > 0 && paidByMonth.has(row.month)) paidByMonth.set(row.month, paidByMonth.get(row.month)! + row.amountMinor);
     }
-    loans.push({ accountId: account.id, name: account.name, monthlyMinor: Math.round(paid / loanMonths.length), source: "recorded" });
+    const paid = [...paidByMonth.values()];
+    // The same choice as for spending: one extra lump-sum payment does not lift the median.
+    loans.push({ accountId: account.id, name: account.name, monthlyMinor: options.method === "median" ? median(paid) : Math.round(paid.reduce((a, v) => a + v, 0) / loanMonths.length), source: "recorded" });
   }
 
   const averageSpending = options.spendingMinor ?? Math.round(spendingMinor / months.length);
   const monthlyNeedMinor = averageSpending + loans.reduce((sum, l) => sum + l.monthlyMinor, 0);
   if (monthlyNeedMinor <= 0) return unavailable("There is no regular spending to measure against");
-  const cashMinor = positionsAt(ledger, current).eligibleCash;
-  if (cashMinor < 0) return unavailable("Cash & bank is below zero");
-  return ready({ months: cashMinor / monthlyNeedMinor, cashMinor, monthlyNeedMinor, spendingMinor: averageSpending, spendingMonths: months.length, loans });
+  const grossCashMinor = positionsAt(ledger, current).eligibleCash;
+  if (grossCashMinor < 0) return unavailable("Cash & bank is below zero");
+  // Card purchases are in the spending average, and what is already owed on the cards is committed out of this cash.
+  let cardsOwedMinor = 0;
+  for (const account of ledger.account.values()) if (account.accountClass === "credit-card") cardsOwedMinor += Math.max(0, 0 - ledger.balanceAt(account.id, current));
+  const cashMinor = grossCashMinor - cardsOwedMinor;
+  if (cashMinor < 0) return unavailable("What you owe on credit cards is more than your cash & bank");
+  return ready({ months: cashMinor / monthlyNeedMinor, cashMinor, grossCashMinor, cardsOwedMinor, monthlyNeedMinor, spendingMinor: averageSpending, spendingMonths: months.length, loans });
 }

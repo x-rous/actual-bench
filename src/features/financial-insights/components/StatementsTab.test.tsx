@@ -20,7 +20,7 @@ const facts: FinancialFacts = {
 };
 const ledger = buildLedger(facts);
 const model = buildStatements({ ledger, period, categories, entries, assetEntries: [], savedClassifications: [], basisIssue: null });
-const data = { ledger, period, categories, summary: summarize(ledger, period, { unavailableReason: null, rowCount: 0 }) } as unknown as ReadyData;
+const data = { ledger, period, categories, summary: summarize(ledger, period, { unavailableReason: null, rowCount: 0, amountMinor: 0 }) } as unknown as ReadyData;
 beforeEach(() => { jest.clearAllMocks(); jest.mocked(useStatements).mockReturnValue({ model, isError: false, retry: jest.fn() }); });
 
 it("shows equally sized statements without repeating the global period, and compact collapsed groups with exact drill-downs", () => {

@@ -189,8 +189,8 @@ describe("the cost rows of a loan whose lender charges interest as its own trans
     expect(recordedCostRows(plan, "").map((r) => r.id).sort()).toEqual(["fee-1", "interest-1"]);
   });
 
-  it("carry no kind, so a charge added to the loan is taken out of spending but is not counted as interest or fees paid", () => {
+  it("carry their kind and are marked as charged by the lender, unlike the split lines of a repayment", () => {
     const tags = recordedCostRows(plan, "loan");
-    expect(tags.map((t) => [t.id, t.loanAccountId, t.kind])).toEqual([["interest-1", "loan", undefined], ["fee-1", "loan", undefined]]);
+    expect(tags.map((t) => [t.id, t.loanAccountId, t.kind, t.charged])).toEqual([["interest-1", "loan", "interest", true], ["fee-1", "loan", "fee", true]]);
   });
 });
