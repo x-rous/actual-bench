@@ -1,6 +1,6 @@
 import { buildLedger, summarize, type AccountFact, type FinancialFacts } from "./measures";
 import { resolvePeriod } from "./period";
-import { buildStatements, statementsCsvRows, type StatementEntry } from "./statements";
+import { buildStatements, statementsCsvRows, subtotalIds, type StatementEntry } from "./statements";
 import type { CategoryInfo } from "./breakdowns";
 import { drillScope } from "./drill";
 
@@ -263,6 +263,16 @@ describe("recorded financial statements", () => {
       expect(model.unresolved.find((r) => r.key === "loan-allocation")).toBeUndefined();
       expect(model.cash.differenceMinor).toBe(0);
       expect(sumBridge(model)).toBe(model.cash.changeMinor);
+    });
+
+    it("opens no list for a subtotal that holds a line shown from the loan side, and lists every other subtotal in full", () => {
+      const rows = [salary, charged, ...transfer("repay", "bank", "loan", 12_000)];
+      const { model } = fixture(rows, { loanCosts: [charge] });
+      // The line opens from the loan accounts (+10,000.00) while it counts -10,000.00 in the section, so the section cannot be listed.
+      expect(subtotalIds(section(model, "financing").rows)).toEqual([]);
+      const operating = section(model, "operating").rows;
+      expect(subtotalIds(operating)).toEqual(operating.flatMap((r) => r.ids));
+      expect(subtotalIds(operating).reduce((sum, id) => sum + rows.find((r) => r.id === id)!.amountMinor, 0)).toBe(section(model, "operating").amountMinor);
     });
 
     it("leaves a loan whose lender charges nothing as before: the unsplit payment stays unidentified", () => {

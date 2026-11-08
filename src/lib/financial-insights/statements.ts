@@ -35,6 +35,15 @@ const line = (key: string, label: string, detail?: string): StatementLine => ({ 
 const add = (to: StatementLine, entry: StatementEntry) => { to.amountMinor += entry.amountMinor; to.ids.push(entry.id); };
 
 /**
+ * The transactions a section subtotal opens, or none when they cannot add up to it. A line that opens from the other side of a
+ * transfer (it has its own `drill` with a different figure) cannot be listed together with the others, so the subtotal is then a plain figure
+ * and its lines open one by one.
+ */
+export function subtotalIds(rows: readonly StatementLine[]): string[] {
+  return rows.some((r) => r.drill && r.drill.amountMinor !== r.amountMinor) ? [] : rows.flatMap((r) => r.ids);
+}
+
+/**
  * A statement projection of the shared ledger, using recorded rows for exact membership and drill-downs.
  * Follows Received/Spent: categories determine income/expense; uncategorized on-budget rows follow their sign.
  * Uncategorized off-budget investment rows are investment activity, separately from genuinely unidentified movements.

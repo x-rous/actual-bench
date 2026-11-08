@@ -9,7 +9,7 @@ import { buildBalanceSheet, type BalanceSheetGroup } from "@/lib/financial-insig
 import type { DrillTarget } from "@/lib/financial-insights/drill";
 import type { AccountFact, Ledger } from "@/lib/financial-insights/measures";
 import { addMonths } from "@/lib/financial-insights/period";
-import { statementsCsvRows, type StatementGroup, type StatementLine, type Statements } from "@/lib/financial-insights/statements";
+import { statementsCsvRows, subtotalIds, type StatementGroup, type StatementLine, type Statements } from "@/lib/financial-insights/statements";
 import type { ReadyData } from "../hooks/useFinancialInsights";
 import { useStatements } from "../hooks/useStatements";
 import { formatDay, money, signedMoney } from "../format";
@@ -41,7 +41,7 @@ function Rows({ rows, onOpen, explanations = false }: { rows: StatementLine[]; o
 
 function Total({ label, amountMinor, rows, onOpen, strong = false, neutral = false }: { label: string; amountMinor: number; rows?: StatementLine[]; onOpen: OpenLine; strong?: boolean; neutral?: boolean }) {
   return <div className={`flex items-center justify-between gap-3 px-3 text-xs font-semibold ${strong ? `border-t border-border bg-muted/60 py-3 ${STATEMENT_TOTAL} text-foreground` : "border-t border-border/60 bg-muted/30 py-2 text-foreground"}`}>
-    <span>{label}</span><Figure neutral={neutral} row={{ key: label, label, amountMinor, ids: rows?.flatMap((r) => r.ids) ?? [] }} onOpen={onOpen} />
+    <span>{label}</span><Figure neutral={neutral} row={{ key: label, label, amountMinor, ids: rows ? subtotalIds(rows) : [] }} onOpen={onOpen} />
   </div>;
 }
 
