@@ -57,10 +57,10 @@ export function WhereMoneyWentCard({ data, csvScope, onDrill }: { data: Ready; c
     ...[...used, ...funded, ...(other.amountMinor !== 0 ? [other] : [])].map((l) => [l.label, (l.amountMinor / 100).toFixed(2), share(l.amountMinor)]),
   ]);
   const amount = (l: MoneyWentLine) => l.key === "debtRepaid" && l.amountMinor !== 0
-    ? <DrillLink label={`${l.label} ${money(l.amountMinor)}`} onClick={() => onDrill({ kind: "loanPrincipal" })}>{money(l.amountMinor)}</DrillLink>
+    ? <DrillLink label={`${l.label} ${signedMoney(l.amountMinor)}`} onClick={() => onDrill({ kind: "loanPrincipal" })}>{signedMoney(l.amountMinor)}</DrillLink>
     : l.key === "borrowed" && l.amountMinor !== 0
     ? <DrillLink label={`${l.label} ${signedMoney(l.amountMinor)}`} onClick={() => onDrill({ kind: "borrowed" })}>{signedMoney(l.amountMinor)}</DrillLink>
-    : l.key === "debtRepaid" || l.key === "invested" || l.key === "depositsAndAssets" ? money(l.amountMinor) : signedMoney(l.amountMinor);
+    : signedMoney(l.amountMinor);
   const row = (l: MoneyWentLine) => (
     <tr key={l.key} className="border-b border-border/40">
       <th scope="row" className="py-1.5 pl-3 text-left font-normal whitespace-nowrap">
@@ -100,7 +100,7 @@ export function WhereMoneyWentCard({ data, csvScope, onDrill }: { data: Ready; c
             {keptMinor > 0 && <div style={{ flexGrow: keptMinor, backgroundColor: COLOUR.cash }} />}
           </div>
         )}
-        <p className="mt-2 text-xs text-muted-foreground">{keptMinor < 0 ? "You spent more than you received. Below is how that was covered." : "Below is what the money you kept did."} Select an underlined amount to see its transactions; select (i) to see what a line means.</p>
+        <p className="mt-2 text-xs text-muted-foreground">{keptMinor < 0 ? "You spent more than you received. Below is how that was covered." : "Below is what the money you kept did."} A <b>+</b> line adds to what you kept; a <b>−</b> line takes away from it. Select an underlined amount to see its transactions; select (i) to see what a line means.</p>
         <table className="mt-2 w-full border-collapse text-xs">
           <thead className="sr-only"><tr><th scope="col">Line</th><th scope="col">Amount</th></tr></thead>
           <tbody>

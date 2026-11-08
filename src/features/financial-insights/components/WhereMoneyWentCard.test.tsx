@@ -65,6 +65,10 @@ describe("Where your money went", () => {
     expect(onDrill).toHaveBeenLastCalledWith({ kind: "spent" });
     fireEvent.click(screen.getByRole("button", { name: /^Debt repaid \(principal\) .*Show the transactions/ }));
     expect(onDrill).toHaveBeenLastCalledWith({ kind: "loanPrincipal" });
+    // Every line carries its sign, so the reader can see which ones add to what was kept and which take away.
+    const signed = screen.getAllByRole("row").filter((r) => /^(Debt repaid|Moved to|Change in|Borrowed|Other)/.test(r.textContent ?? "")).map((r) => r.lastElementChild?.textContent ?? "");
+    expect(signed.length).toBeGreaterThan(1);
+    for (const text of signed) expect(text).toMatch(/^[+−-]/);
     for (const label of ["Debt repaid (principal)", "Change in cash & bank"]) {
       expect(screen.getByRole("button", { name: `About ${label} in where your money went` })).toBeInTheDocument();
     }
