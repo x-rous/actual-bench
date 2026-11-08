@@ -189,6 +189,14 @@ describe("the cost rows of a loan whose lender charges interest as its own trans
     expect(recordedCostRows(plan, "").map((r) => r.id).sort()).toEqual(["fee-1", "interest-1"]);
   });
 
+  it("tag the interest and fee lines split from a recorded repayment with their kind, as not charged by the lender", () => {
+    const split = { installments: [{ payment: { split: { interestLineId: "split-interest", feeLineIds: ["split-fee-1", "split-fee-2"] } } }, { payment: { split: { interestLineId: null, feeLineIds: [] } } }, { payment: null }], ledger: [] } as never;
+    const tags = recordedCostRows(split, "loan");
+    expect(tags.map((t) => [t.id, t.loanAccountId, t.kind, t.charged])).toEqual([
+      ["split-interest", "loan", "interest", false], ["split-fee-1", "loan", "fee", false], ["split-fee-2", "loan", "fee", false],
+    ]);
+  });
+
   it("carry their kind and are marked as charged by the lender, unlike the split lines of a repayment", () => {
     const tags = recordedCostRows(plan, "loan");
     expect(tags.map((t) => [t.id, t.loanAccountId, t.kind, t.charged])).toEqual([["interest-1", "loan", "interest", true], ["fee-1", "loan", "fee", true]]);

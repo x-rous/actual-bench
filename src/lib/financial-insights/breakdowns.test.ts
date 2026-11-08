@@ -200,8 +200,8 @@ function matches(t: Tx, cond: Cond): boolean {
   });
 }
 
-function listed(target: Exclude<DrillTarget, { kind: "inTransit" }>, model: { rows: Tx[]; ledger: ReturnType<typeof buildLedger>; period: typeof period } = { rows: txs, ledger, period }) {
-  const scope = drillScope(target, { ledger: model.ledger, period: model.period, today, reclassifiedIds: new Set(reclassified.map((r) => r.id)) });
+function listed(target: Exclude<DrillTarget, { kind: "inTransit" }>, model: { rows: Tx[]; ledger: ReturnType<typeof buildLedger>; period: typeof period; reclassifiedIds?: string[] } = { rows: txs, ledger, period }) {
+  const scope = drillScope(target, { ledger: model.ledger, period: model.period, today, reclassifiedIds: new Set(model.reclassifiedIds ?? reclassified.map((r) => r.id)) });
   const { constraints: c, defaults: d } = scope;
   const rows = model.rows.filter((t) => {
     if (d.date?.from && t.date < d.date.from) return false;
@@ -577,5 +577,88 @@ describe("financial insights: a lender that charges interest to the loan account
     }
     const { summary, debt } = figures(model(cards), true);
     expect(Object.fromEntries(whereMoneyWent(summary, debt).lines.map((l) => [l.key, l.amountMinor]))).toMatchObject({ spent: 100_000, cards: -20_000, cash: 420_000 });
+  });
+});
+
+describe("financial insights: lender charges, loan accounts and excluded accounts", () => {
+  const range = resolvePeriod({ kind: "custom", startMonth: "2026-10", endMonth: "2026-10" }, today, "2026-09");
+  const base: Tx[] = [
+    tx("start", "2026-09-01", "loan", -10_000_000, { payee: "p-start", payeeName: STARTING }),
+    tx("pay", "2026-10-01", "chk", 500_000, { category: "salary", payee: "p1" }),
+    tx("food", "2026-10-03", "chk", -100_000, { category: "food", payee: "p2" }),
+    tx("charge", "2026-10-05", "loan", -20_000),
+    tx("to-loan", "2026-10-09", "chk", -120_000, { transferAcct: "loan", payee: "t-loan" }), tx("from-chk", "2026-10-09", "loan", 120_000, { transferAcct: "chk", payee: "t-chk" }),
+  ];
+  const charge = { id: "charge", month: "2026-10", accountId: "loan", categoryId: null, amountMinor: -20_000, loanAccountId: "loan", kind: "interest" as const, charged: true };
+  const model = (rows: Tx[], costs: FinancialFacts["loanCosts"] = [], extra: Partial<FinancialFacts> = {}) => ({ rows, ledger: buildLedger({ ...factsFrom(rows, costs), reclassified: [], ...extra }), period: range, reclassifiedIds: (extra.reclassified ?? []).map((r) => r.id) });
+  const review = { unavailableReason: null, rowCount: 0, amountMinor: 0 };
+
+  it("leaves loan accounts out of the unidentified movements, so the drill matches the figure", () => {
+    const m = model([...base, tx("sav-entry", "2026-10-07", "sav", 4_000)], [charge]);
+    const summary = summarize(m.ledger, range, review);
+    expect(summary.flows.unidentified).toBe(4_000);
+    const drill = listed({ kind: "unidentified" }, m);
+    expect(drill.ids).toEqual(["sav-entry"]);
+    expect(drill.total).toBe(drill.scope.expectedMinor);
+    // An untracked loan's entries are in the loan drill only.
+    const untracked = model([...base, tx("sav-entry", "2026-10-07", "sav", 4_000)]);
+    expect(listed({ kind: "unidentified" }, untracked).ids).toEqual(["sav-entry"]);
+    expect(listed({ kind: "loanAccountOther" }, untracked).ids).toEqual(["charge"]);
+  });
+
+  it("figures one loan's other entries without subtracting a charged row that carries a category", () => {
+    const second: AccountFact = { id: "loan2", name: "Car loan", accountClass: "loan", treatment: null, offBudget: true };
+    const rows = [...base, tx("categorized-charge", "2026-10-06", "loan", -5_000, { category: "food" }), tx("other", "2026-10-07", "loan", -3_000), tx("other2", "2026-10-07", "loan2", -1_000)];
+    const costs = [charge, { id: "categorized-charge", month: "2026-10", accountId: "loan", categoryId: "food", amountMinor: -5_000, loanAccountId: "loan", kind: "fee" as const, charged: true }];
+    const m = model(rows, costs, { accounts: [...accounts, second] });
+    const one = listed({ kind: "loanAccountOther", accountId: "loan" }, m);
+    expect(one.ids).toEqual(["other"]);
+    expect(one.scope.expectedMinor).toBe(-3_000);
+    expect(one.total).toBe(one.scope.expectedMinor);
+    const both = listed({ kind: "loanAccountOther" }, m);
+    expect(both.total).toBe(both.scope.expectedMinor);
+  });
+
+  it("ignores cost rows of accounts that are excluded, in the Loans totals, Spent and the drills", () => {
+    // A split interest line paid from an excluded account is not in anything Financial Insights counts.
+    const rows = [...base, tx("hidden-interest", "2026-10-09", "scratch", -5_000, { category: "food" })];
+    const hidden = { id: "hidden-interest", month: "2026-10", accountId: "scratch", categoryId: "food", amountMinor: -5_000, loanAccountId: "loan", kind: "interest" as const, charged: false };
+    const m = model(rows, [charge, hidden]);
+    const summary = summarize(m.ledger, range, review);
+    const debt = debtRepayments(m.ledger, range, new Set(["loan"]), 0);
+    expect(debt).toMatchObject({ interestMinor: 20_000, chargedInterestMinor: 20_000 });
+    expect(summary.spent).toBe(120_000);
+    const interest = listed({ kind: "loanInterest" }, m);
+    expect(interest.ids).toEqual(["charge"]);
+    expect(interest.total).toBe(interest.scope.expectedMinor);
+    const months = debtMonthly(m.ledger, range);
+    expect(months.reduce((a, x) => a + x.interestMinor, 0)).toBe(debt.interestMinor);
+  });
+
+  it("opens a My budget loan-charges drill listing only the uncategorized charges behind the Spending rows", () => {
+    const rows = [...base, tx("categorized-charge", "2026-10-06", "loan", -5_000, { category: "food" })];
+    const costs = [charge, { id: "categorized-charge", month: "2026-10", accountId: "loan", categoryId: "food", amountMinor: -5_000, loanAccountId: "loan", kind: "fee" as const, charged: true }];
+    const m = model(rows, costs);
+    const drill = listed({ kind: "budgetGap", part: "loanCharges", amountMinor: 20_000, month: "2026-10", throughMonth: "2026-10" }, m);
+    expect(drill.ids).toEqual(["charge"]);
+    expect(drill.total).toBe(-20_000);
+    expect(drill.total).toBe(drill.scope.expectedMinor);
+  });
+
+  it("does not count a lender charge the Asset Registry classifies, anywhere", () => {
+    const reclassifiedCharge: ReclassifiedRow = { id: "charge", payeeId: null, month: "2026-10", accountId: "loan", categoryId: null, amountMinor: -20_000, to: "valueChange" };
+    const m = model(base, [charge], { reclassified: [reclassifiedCharge] });
+    const summary = summarize(m.ledger, range, review);
+    expect(summary.flows).toMatchObject({ loanCharges: 0, loanAccountOther: 0, loanAccountOtherCount: 0, valueChanges: -20_000 });
+    expect(summary.spent).toBe(100_000);
+    expect(summary.unexplained).toBe(0);
+    const bd = spendingBreakdown(m.ledger, range, categories, monthlyFlows(m.ledger, range, today, true));
+    expect(bd.totalMinor).toBe(summary.spent);
+    expect(bd.rows.some((r) => r.special !== undefined)).toBe(false);
+    const spent = listed({ kind: "spent" }, m);
+    expect(spent.ids).not.toContain("charge");
+    expect(spent.total).toBe(spent.scope.expectedMinor);
+    // The Loans figures still show it as interest: that is what the loan tracking recorded.
+    expect(debtRepayments(m.ledger, range, new Set(["loan"]), 0)).toMatchObject({ chargedInterestMinor: 20_000 });
   });
 });

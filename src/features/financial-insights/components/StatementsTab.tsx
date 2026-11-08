@@ -171,7 +171,7 @@ export function StatementsContent({ data, model, onDrill }: Props & { model: Sta
   const [closedBalanceSections, setClosedBalanceSections] = useState<ReadonlySet<string>>(new Set());
   const { period, ledger } = data;
   const { cash, pnl } = model;
-  const open: OpenLine = (row) => onDrill({ kind: "statement", name: row.label, ids: row.ids, amountMinor: row.amountMinor, description: row.detail });
+  const open: OpenLine = (row) => onDrill({ kind: "statement", name: row.label, ids: row.drill?.ids ?? row.ids, amountMinor: row.drill?.amountMinor ?? row.amountMinor, description: row.detail });
   const scope: [string, string][] = [["Period", `${period.label}: ${formatDay(period.startDate)} to ${formatDay(period.endDate)}`], ["Basis", "Recorded categories; uncategorized on-budget receipts/payments by sign; investment activity separate"], ["Classification", model.classificationComplete ? "Complete" : "Needs review"], ["P&L status", pnl.basisIssue ?? "Recorded result"]];
   const csv = statementsCsvRows(model, period);
   const csvRows = (statement: string) => csv.filter((r) => r[0] === statement).map((r) => r.slice(1).map(String));

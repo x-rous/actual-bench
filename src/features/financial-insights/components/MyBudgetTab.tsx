@@ -121,7 +121,6 @@ function ReconcileBox({ rec, onDrill }: { rec: Reconciliation; onDrill: (target:
   const partLabel = { categorizedTransfers: "Categorized transfers", uncategorized: "Entries with no category", loanCharges: "Interest and fees lenders charged to loan accounts", offBudget: "Categorized entries in off-budget accounts", registry: "Entries the Asset Registry classifies", hidden: "Hidden categories left out of Actual's totals" } as const;
   const target = (p: Reconciliation["parts"][number]): DrillTarget =>
     p.key === "uncategorized" ? { kind: "uncategorizedOut", month: first, throughMonth: last }
-      : p.key === "loanCharges" ? { kind: "loanCharged", month: first, throughMonth: last }
       : p.key === "hidden" ? { kind: "category", categoryIds: p.categoryIds ?? [], name: "Hidden categories", amountMinor: p.spentMinor, month: first, throughMonth: last }
       : { kind: "budgetGap", part: p.key, amountMinor: p.spentMinor, month: first, throughMonth: last };
   const reconciled = rec.otherMinor === 0;

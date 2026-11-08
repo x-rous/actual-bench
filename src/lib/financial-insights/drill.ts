@@ -54,7 +54,7 @@ export type DrillTarget =
    */
   | { kind: "budgetCell"; categoryIds: string[]; name: string; amountMinor: number; month: string; throughMonth?: string }
   /** One explained part of the difference between Actual's spending and the Spending tab (positive `amountMinor` is money spent). */
-  | { kind: "budgetGap"; part: "categorizedTransfers" | "offBudget" | "registry"; amountMinor: number; month: string; throughMonth: string };
+  | { kind: "budgetGap"; part: "categorizedTransfers" | "offBudget" | "registry" | "loanCharges"; amountMinor: number; month: string; throughMonth: string };
 
 export type DrillContext = {
   ledger: Ledger;
@@ -151,7 +151,8 @@ export function drillScope(target: Exclude<DrillTarget, { kind: "inTransit" }>, 
   const incomeIds = [...facts.incomeCategories];
   const ids = (predicate: (a: AccountFact) => boolean) => [...account.values()].filter(predicate).map((a) => a.id);
   const onBudget = ids((a) => !a.offBudget);
-  const offBudget = ids((a) => a.offBudget && role.get(a.id) !== "investment");
+  // Loan accounts have their own figure ("Other entries in loan accounts"), so they are not part of the unidentified movements.
+  const offBudget = ids((a) => a.offBudget && role.get(a.id) !== "investment" && role.get(a.id) !== "loan");
   const investmentAccounts = ids((a) => a.offBudget && role.get(a.id) === "investment");
   const cash = ids((a) => role.get(a.id) === "cash");
   const withRole = (r: string) => ids((a) => role.get(a.id) === r);
@@ -215,6 +216,16 @@ export function drillScope(target: Exclude<DrillTarget, { kind: "inTransit" }>, 
         description: `Actual's own spending for ${many ? "these budget categories" : "this budget category"}: entries in on-budget accounts, transfers that carry ${many ? "a category" : "the category"} and refunds included. Entries dated after today are not listed.`,
         constraints: { excludeAccountIds: leftOutAccounts, where: { category: { $oneof: target.categoryIds.length ? target.categoryIds : ["-"] } } }, lockedLabels: { where: target.name },
         filters: base.filters, defaults: base.defaults, insights: charts("spending", many ? ["groups"] : ["categories", "groups"]), expectedMinor: 0 - target.amountMinor,
+      };
+    }
+    if (target.part === "loanCharges") {
+      // The lender's uncategorized charges that make up the loan rows of the Spending tab, counted as Spent counts them.
+      const named = facts.loanCosts.filter((r) => r.charged && r.id && r.categoryId === null && r.kind && window.months.includes(r.month) && isLoanCostInSpent(ledger, r)).map((r) => r.id!);
+      return {
+        title: `Interest and fees lenders charged to loan accounts · ${when}`,
+        description: "Interest and fees the lender charged as their own entries in the accounts of loans tracked in Loans. They have no category, so Actual's budget never sees them; the Spending tab counts them as spending.",
+        constraints: { excludeAccountIds: [...facts.excluded], where: { id: { $oneof: named.length ? named : ["-"] } } }, lockedLabels: { where: "Charged by lenders" },
+        filters: base.filters, defaults: base.defaults, insights: null, expectedMinor: 0 - target.amountMinor,
       };
     }
     if (target.part === "registry") {
@@ -282,7 +293,12 @@ export function drillScope(target: Exclude<DrillTarget, { kind: "inTransit" }>, 
     if (target.kind === "loanAccountOther") {
       // The uncategorized non-transfer rows of loan accounts that are not tagged charges; the charges are named out so they are not listed twice.
       const charged = facts.loanCosts.filter((r) => r.charged && r.id && r.loanAccountId && mine.includes(r.loanAccountId)).map((r) => r.id!);
-      const figure = mine.length === loans.length ? flows.loanAccountOther : facts.movement.filter((r) => inWindow(r.month) && mine.includes(r.accountId) && r.categoryId === null && !r.transferAccountId).reduce((sum, r) => sum + r.amountMinor, 0) - chargedRows().reduce((sum, r) => sum + r.amountMinor, 0);
+      // Counted as `computeFlows` counts them: the charges that moved to Spent, and the entries the Asset Registry classifies, are not "other".
+      const sum = (rows: readonly { amountMinor: number }[]) => rows.reduce((total, r) => total + r.amountMinor, 0);
+      const movedToSpent = chargedRows().filter((r) => r.categoryId === null && isLoanCostInSpent(ledger, r));
+      const registry = facts.reclassified.filter((r) => r.categoryId === null && inWindow(r.month) && mine.includes(r.accountId));
+      const figure = mine.length === loans.length ? flows.loanAccountOther
+        : sum(facts.movement.filter((r) => inWindow(r.month) && mine.includes(r.accountId) && r.categoryId === null && !r.transferAccountId)) - sum(movedToSpent) - sum(registry);
       return labelled(scope(
         { $and: [noCategory(mine), ...charged.map((id) => ({ id: { $ne: id } }))] },
         { excludeTransferPayees: true }, figure, "mixed", false, { initialView: "accounts" },
@@ -294,7 +310,7 @@ export function drillScope(target: Exclude<DrillTarget, { kind: "inTransit" }>, 
     }
     // Interest and fees tracked for the loans: split lines and the lender's charges together.
     const kind = target.kind === "loanInterest" ? "interest" : "fee";
-    const rows = facts.loanCosts.filter((r) => r.kind === kind && r.id && r.loanAccountId && mine.includes(r.loanAccountId) && inWindow(r.month));
+    const rows = facts.loanCosts.filter((r) => r.kind === kind && r.id && r.loanAccountId && mine.includes(r.loanAccountId) && account.has(r.accountId) && inWindow(r.month));
     return labelled(scope({ id: { $oneof: idsOf(rows) } }, {}, rows.reduce((sum, r) => sum + r.amountMinor, 0), "spending", true, { initialView: "accounts" }));
   }
   if (wealth && (target.kind === "contributed" || target.kind === "withdrawn" || target.kind === "investmentResults")) {

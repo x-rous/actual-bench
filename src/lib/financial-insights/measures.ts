@@ -368,7 +368,7 @@ export function computeFlows(ledger: Ledger, period: ResolvedPeriod): Computed {
   // The lender's charges of tracked loans are costs: they leave "other entries" and join Spent. A split line (`charged` false) is
   // already in spending through its category; a charge that carries a category is too, so only uncategorized rows move.
   for (const row of facts.loanCosts) {
-    if (!row.charged || row.categoryId !== null || !inWindow(row.month, period) || role.get(row.accountId) !== "loan" || !account.get(row.accountId)?.offBudget) continue;
+    if (!row.charged || row.categoryId !== null || !inWindow(row.month, period) || !isLoanCostInSpent(ledger, row)) continue;
     flows.loanAccountOther -= row.amountMinor;
     flows.loanAccountOtherCount -= 1;
     flows.loanCharges += row.amountMinor;
@@ -530,6 +530,14 @@ export function loanCostsIn(ledger: Ledger, window: ResolvedPeriod): number {
   return loanCostRowsIn(ledger, window).reduce((sum, row) => sum + row.amountMinor, 0);
 }
 
+const reclassifiedIdCache = new WeakMap<object, ReadonlySet<string>>();
+/** The ids of the entries the Asset Registry classifies (a change in value or a sale), cached per set of facts. */
+function reclassifiedIds(facts: FinancialFacts): ReadonlySet<string> {
+  let ids = reclassifiedIdCache.get(facts);
+  if (!ids) { ids = new Set(facts.reclassified.map((r) => r.id)); reclassifiedIdCache.set(facts, ids); }
+  return ids;
+}
+
 /**
  * Whether a tagged loan cost row is part of Spent, by the same rules `computeFlows` reads rows with: a categorized row in an expense
  * category; an uncategorized money-out row of an on-budget account; or a charge the lender added to the account of a tracked loan.
@@ -538,7 +546,8 @@ export function isLoanCostInSpent(ledger: Ledger, row: LoanCostRow): boolean {
   const owner = ledger.account.get(row.accountId);
   if (!owner) return false;
   if (row.categoryId !== null) return !ledger.facts.incomeCategories.has(row.categoryId);
-  if (row.charged) return ledger.role.get(row.accountId) === "loan" && owner.offBudget;
+  // An entry the Asset Registry classifies as a change in value or a sale is not spending, even when the lender charged it.
+  if (row.charged) return ledger.role.get(row.accountId) === "loan" && owner.offBudget && !(row.id !== undefined && reclassifiedIds(ledger.facts).has(row.id));
   return !owner.offBudget && row.amountMinor < 0;
 }
 
@@ -583,7 +592,7 @@ export function cashBuffer(ledger: Ledger, today: string, schedules: ReadonlyMap
     }
     let first: string | null = null;
     for (const row of ledger.facts.movement) if (row.accountId === account.id && (!first || row.month < first)) first = row.month;
-    const loanMonths = lastCompleteMonths(today, first, 6);
+    const loanMonths = lastCompleteMonths(today, first, options.months ?? 12);
     if (loanMonths.length < 3) return unavailable(`${account.name} is not tracked in Loans and has fewer than three complete months of recorded repayments`);
     const paidByMonth = new Map(loanMonths.map((m) => [m, 0]));
     for (const row of ledger.facts.movement) {

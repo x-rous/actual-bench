@@ -354,6 +354,8 @@ describe("where a budget's data begins", () => {
 describe("financial insights: the cash buffer", () => {
   const months = ["2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10"];
   const steady = months.flatMap((m) => [row(m, "chk", 300_000, { categoryId: "salary" }), row(m, "chk", -300_000, { categoryId: "food" })]);
+  const months9 = ["2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10"];
+  const steady9 = months9.flatMap((m) => [row(m, "chk", 300_000, { categoryId: "salary" }), row(m, "chk", -300_000, { categoryId: "food" })]);
   const buffer = (f: FinancialFacts, schedules: ReadonlyMap<string, LoanScheduleInput> = new Map()) => cashBuffer(buildLedger(f), "2026-11-18", schedules);
 
   it("is measured on cash & bank less what is owed on credit cards", () => {
@@ -384,6 +386,17 @@ describe("financial insights: the cash buffer", () => {
     const untagged = buffer(facts(movement, { startingBalances: start }), schedules);
     expect(tagged.state === "ready" && tagged.value.monthlyNeedMinor).toBe(100_000 + 120_000);
     expect(tagged).toEqual(untagged);
+  });
+
+  it("works out an untracked loan's recorded repayments over the same months as a typical month, and still needs three", () => {
+    // 100.00 paid in each of the last three months, 400.00 in each of the nine before.
+    const payments = months9.flatMap((m, i) => transfer(m, "chk", "loan", i < 6 ? 40_000 : 10_000));
+    const f = facts([...steady9, ...payments], { startingBalances: [{ month: "2026-01", accountId: "loan", amountMinor: -10_000_000 }, { month: "2026-01", accountId: "chk", amountMinor: 50_000_000 }] });
+    const over = (n: number | undefined) => { const b = cashBuffer(buildLedger(f), "2026-11-18", new Map(), { months: n }); return b.state === "ready" ? b.value.loans[0].monthlyMinor : b; };
+    expect(over(3)).toBe(10_000);
+    expect(over(6)).toBe(Math.round((3 * 10_000 + 3 * 40_000) / 6));
+    expect(over(undefined)).toBe(Math.round((6 * 40_000 + 3 * 10_000) / 9));
+    expect(over(2)).toEqual({ state: "unavailable", reason: "Insufficient history: at least three complete months are needed" });
   });
 
   it("takes the median of an untracked loan's monthly payments when asked, so one lump sum does not lift it", () => {

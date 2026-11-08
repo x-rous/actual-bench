@@ -471,7 +471,7 @@ export function loanEntries(ledger: Ledger): { accountId: string; month: string;
     entries.push({ accountId: r.accountId, month: r.month, field: from === "loan" || from === "card" || from === "liability" ? "movedFromDebts" : "paidIn", amountMinor: r.amountMinor });
   }
   for (const r of ledger.facts.loanCosts) {
-    if (!r.loanAccountId || !r.kind) continue;
+    if (!r.loanAccountId || !r.kind || !ledger.account.has(r.accountId)) continue;
     const field: LoanEntryField = r.charged ? (r.kind === "interest" ? "chargedInterest" : "chargedFees") : r.kind === "interest" ? "splitInterest" : "splitFees";
     entries.push({ accountId: r.loanAccountId, month: r.month, field, amountMinor: 0 - r.amountMinor });
   }

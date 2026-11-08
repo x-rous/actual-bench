@@ -1,7 +1,7 @@
 import { isCashEquivalent } from "@/lib/account-class/reporting";
 import { classificationOf } from "./assetReview";
 import type { CategoryInfo } from "./breakdowns";
-import type { Ledger } from "./measures";
+import { isLoanCostInSpent, type Ledger } from "./measures";
 import { addMonths, type ResolvedPeriod } from "./period";
 import type { AssetEntry, SavedClassification } from "./assetReview";
 
@@ -12,7 +12,11 @@ export type StatementEntry = {
 };
 
 /** A transaction-backed statement line; refunds and reversals retain their signs. Amounts are integer minor units. */
-export type StatementLine = { key: string; label: string; amountMinor: number; ids: string[]; detail?: string };
+export type StatementLine = {
+  key: string; label: string; amountMinor: number; ids: string[]; detail?: string;
+  /** The transactions to open when the rows behind the line do not add up to its figure as they are recorded (they are shown from the other side of a transfer). */
+  drill?: { ids: string[]; amountMinor: number };
+};
 export type StatementGroup = StatementLine & { rows: StatementLine[] };
 export type StatementSection = { key: string; label: string; rows: StatementLine[]; amountMinor: number };
 /** Read-only statements. Balance agreement and classification completeness are independent. Amounts are integer minor units. */
@@ -78,9 +82,22 @@ export function buildStatements(input: {
   // A parent is evidence only when the recorded split has an identified expense alongside its principal transfer.
   const entriesById = new Map(entries.map((entry) => [entry.id, entry]));
   const expenseParents = new Set(entries.filter((r) => r.parentId && !r.transferAccountId && r.categoryId && categories.has(r.categoryId) && !ledger.facts.incomeCategories.has(r.categoryId)).map((r) => r.parentId));
+  // Interest and fees the lender charged as their own rows of a tracked loan's account: recorded expenses with no cash movement of their own.
+  const chargedIds = new Set(ledger.facts.loanCosts.filter((r) => r.charged && r.id && r.categoryId === null && isLoanCostInSpent(ledger, r)).map((r) => r.id!));
+  const chargedByLoan = new Map<string, StatementEntry[]>();
+  for (const entry of entries) if (chargedIds.has(entry.id) && !entry.startingBalance && !entry.transferAccountId) chargedByLoan.set(entry.accountId, [...(chargedByLoan.get(entry.accountId) ?? []), entry]);
+  // The cash payments into those loans that do not identify their own split. Where there are some, the charged amount is what
+  // they paid in interest and fees and the rest is principal; where there are none, the charge is an accrual that cash has not paid.
+  const unsplitPayment = (entry: StatementEntry) => {
+    const other = entry.transferAccountId ? ledger.account.get(entry.transferAccountId) : undefined;
+    return cashIds.has(entry.accountId) && !entry.startingBalance && !!entry.transferId && entry.amountMinor < 0 && other?.accountClass === "loan" && !cashIds.has(other.id) && !(entry.parentId && expenseParents.has(entry.parentId));
+  };
+  const paidLoans = new Set(entries.filter((e) => unsplitPayment(e) && chargedByLoan.has(e.transferAccountId!)).map((e) => e.transferAccountId!));
   const operating = [line("receipts", "Categorized cash receipts"), line("payments", "Categorized cash payments"), line("card", "Credit-card settlements", "Ordinary card settlements are operating payments. Purchase categories remain in P&L; no allocation of a settlement to particular purchases is inferred."), line("interest", "Recorded loan interest and fees paid"), line("uncategorized-in", "Uncategorized cash receipts"), line("uncategorized-out", "Uncategorized cash payments")];
   const investing = [line("invest-out", "Put into investments and retirement"), line("invest-in", "Withdrawn from investments and retirement"), line("fixed-out", "Placed in fixed / restricted deposits"), line("fixed-in", "Released from fixed / restricted deposits"), line("asset-out", "Fixed-asset purchases and capital added"), line("asset-in", "Fixed-asset transfers received"), line("sales", "Asset sale proceeds and selling costs")];
-  const financing = [line("borrowed", "Borrowing received from loans"), line("principal", "Recorded loan principal repaid")];
+  const financing = [line("borrowed", "Borrowing received from loans"), line("principal", "Recorded loan principal repaid"), line("principal-net", "Loan payments less interest and fees the lender charged", "Payments to loans whose lender charges interest and fees as their own entries. What the lender charged is shown as interest and fees paid under operating activities; the rest is principal. Opened from the loan accounts: what was paid in, less what was charged.")];
+  const lenderCharges = line("lender-charges", "Interest and fees charged by lenders", "Interest and fees the lender charged as their own entries in the accounts of loans tracked in Loans. They are recorded expenses; the cash that pays them is the loan payments.");
+  const principalNetIds: string[] = [];
   const starting = line("starting", "Starting balances introduced in the period", "Recorded starting balances change the cash population; they are not income or an activity cash flow.");
   const internal = line("internal", "In transit / unmatched cash transfers", "Cash-to-cash transfers cancel when both sides have equal amounts within the period. This is the recorded net left over; inspect the transfers before attributing a cause.");
   const unresolved = new Map<string, StatementLine>();
@@ -99,6 +116,11 @@ export function buildStatements(input: {
     const cash = cashIds.has(entry.accountId);
     const owner = ledger.account.get(entry.accountId)!;
     if (entry.startingBalance) { if (cash) add(starting, entry); continue; }
+    if (chargedIds.has(entry.id) && !entry.transferAccountId) {
+      add(lenderCharges, entry);
+      if (paidLoans.has(entry.accountId)) add(operating[3], entry); else otherNoncashPnlMinor += entry.amountMinor;
+      continue;
+    }
     if (entry.transferAccountId) {
       if (!cash) continue;
       const other = ledger.account.get(entry.transferAccountId);
@@ -117,6 +139,7 @@ export function buildStatements(input: {
       else if (other.accountClass === "credit-card" && entry.amountMinor < 0) add(operating[2], entry);
       else if (other.accountClass === "loan" && entry.amountMinor > 0) add(financing[0], entry);
       else if (other.accountClass === "loan" && entry.parentId && expenseParents.has(entry.parentId)) add(financing[1], entry);
+      else if (unsplitPayment(entry) && paidLoans.has(other.id)) { add(financing[2], entry); principalNetIds.push(entry.transferId!); }
       else if (other.accountClass === "loan") unknown(entry, "loan-allocation", "Loan payments: allocation unidentified", "The recorded payment does not identify separate principal and interest/fee amounts. A calculated loan schedule is not used to split it.");
       else unknown(entry, `transfer-${other.accountClass}`, `Transfers with ${other.accountClass === "other-liability" ? "other liabilities" : other.accountClass === "other-asset" ? "other assets" : "credit cards"}: purpose unidentified`, "Account class and current/non-current treatment do not establish the purpose of this cash movement.");
       continue;
@@ -164,9 +187,16 @@ export function buildStatements(input: {
     }
     const result = [...byGroup.values()];
     const uncategorized = income ? uncategorizedIncome : uncategorizedExpenses;
+    if (!income && lenderCharges.ids.length) result.push({ ...lenderCharges, label: "Loans", rows: [lenderCharges] });
     if (uncategorized.ids.length) result.push({ ...uncategorized, label: "Uncategorized", rows: [uncategorized] });
     return result;
   };
+  // The charged amount comes out of the payments: what was paid in interest and fees is not principal.
+  const chargedPaid = [...paidLoans].flatMap((id) => chargedByLoan.get(id) ?? []);
+  financing[2].amountMinor -= total(chargedPaid);
+  financing[2].ids.push(...chargedPaid.map((e) => e.id));
+  // Opened from the loan accounts: the payments received there, less the charges, add up to the principal (the cash flow shows it as money out).
+  financing[2].drill = { ids: [...principalNetIds, ...chargedPaid.map((e) => e.id)], amountMinor: 0 - financing[2].amountMinor };
   const income = groups(true), expenses = groups(false);
   const sections = [
     { key: "operating", label: "Operating activities", rows: operating },

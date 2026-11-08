@@ -26,7 +26,8 @@ export function WhereMoneyWentCard({ data, csvScope, onDrill }: { data: Ready; c
   // Zero lines are left out, except the two that answer the question on their own: what was spent and how cash moved.
   const shown = lines.filter((l) => l.amountMinor !== 0 || l.key === "spent" || l.key === "cash");
   const share = (minor: number) => (receivedMinor > 0 ? percent((minor / receivedMinor) * 100) : "");
-  const bar = shown.filter((l) => l.amountMinor > 0);
+  // The bar cannot draw a negative line (money that came in), so it is left out then; the table stays and says it all.
+  const bar = shown.some((l) => l.amountMinor < 0) ? [] : shown.filter((l) => l.amountMinor > 0);
   const exportCsv = () => downloadCsv("financial-insights-where-your-money-went.csv", [
     ["Financial Insights", "Where your money went"], ...csvScope, [],
     ["Line", "Amount", "Share of received"],

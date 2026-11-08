@@ -62,7 +62,7 @@ const FLOW_GROUPS: { name: string; icon: LucideIcon; placement: string; examples
     { label: "Borrow", left: account("Checking · on budget", "bank"), right: account("Loan · off budget", "loan"), direction: "left", recorded: "Borrowed money recorded as a transfer.", result: "Borrowed (received from loans); not Received income." },
     { label: "Repay principal", left: account("Checking · on budget", "bank"), right: account("Loan · off budget", "loan"), direction: "right", recorded: "Principal repaid as a transfer; the on-budget side carries a category.", result: "Loan principal repaid; not Spent." },
     { label: "Interest & fees", left: account("Checking · on budget", "bank"), right: other("Lender · outside payee"), direction: "right", impact: "spent", recorded: "Separate interest or fee entry with an expense category.", result: "Spent. Interest paid / Fees paid identified for tracked loans only." },
-    { label: "Loan adjustment", left: other("Recorded charge"), right: account("Loan · off budget", "loan"), direction: "entry", recorded: "Uncategorized non-transfer entry, for example capitalized interest.", result: "Unidentified movements; not Interest paid or Spent." },
+    { label: "Loan adjustment", left: other("Recorded charge"), right: account("Loan · off budget", "loan"), direction: "entry", recorded: "Uncategorized non-transfer entry, for example interest the lender charged.", result: "Loan tracked in Loans: interest or fees, counted in Spent. Not tracked: Other entries in loan accounts; not Spent." },
   ] },
   { name: "Credit cards", icon: ACCOUNT_CLASS_ICONS["credit-card"], placement: "On or off budget · Current liability", examples: [
     { label: "Card purchase", left: account("Card · on budget", "credit-card"), right: other("Grocery store · outside payee"), direction: "right", impact: "spent", recorded: "Purchase with a grocery category.", result: "Spent rises when recorded; card debt rises." },
@@ -187,7 +187,7 @@ export function FinancialInsightsGuide({ section, onSection, onClose, docsUrl }:
               ["Asset Registry entries", ["A revaluation or depreciation classified in Assets has its own value-change line.", "Proceeds linked to an asset sale have their own Asset sales line."]],
               ["Categories", ["Other categorized entries follow their category: income in an income category, spending otherwise.", "A refund in an expense category reduces spending; its sign does not make it income."]],
               ["On-budget, no category", ["Money in or out is counted by its sign and shown separately as uncategorized.", "Starting balances are not income."]],
-              ["Off-budget, no category", ["A non-transfer entry in an investment or retirement account is Investment activity, not a calculated return.", "In another off-budget account it is an unidentified movement, unless Assets classifies it; neither is income or spending."]],
+              ["Off-budget, no category", ["A non-transfer entry in an investment or retirement account is Investment activity, not a calculated return.", "In a loan account it is an other entry in a loan account (interest or fees the lender charged to a loan tracked in Loans are Spent). In another off-budget account it is an unidentified movement. Assets can classify either; neither is income."]],
               ["Excluded accounts", ["The account’s balance and entries are left out of Financial Insights.", "Transfers between an excluded account and an included account appear on their own line."]],
             ] satisfies [string, string[]][]).map(([title, bullets], index) => <li key={title} className="flex gap-3 rounded-lg border border-border bg-muted/20 p-3">
               <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-primary/10 font-semibold text-primary">{index + 1}</span>
@@ -420,7 +420,7 @@ export function FinancialInsightsGuide({ section, onSection, onClose, docsUrl }:
         <Example caption="The account table" head={["Column", "What it says"]} rows={[
           ["Start, End, Change", "What was owed before the period and at its end"],
           ["Share", "Each account’s part of everything you owe"],
-          ["Principal repaid", "What was paid into the loan in the period (select it for the transactions)"],
+          ["Principal repaid", "What was paid into the loan in the period, less what the lender charged (select it for the transactions). Money moved in from another loan, a card or a liability repays nothing"],
           ["Next 12 months, Later", "Only for a tracked loan whose schedule agrees with Actual: the scheduled principal of the coming year, and what is owed after it. Otherwise Not scheduled, or Review in Loans with the reason"],
         ]} />
         <Grid cols={2}>
@@ -441,6 +441,8 @@ export function FinancialInsightsGuide({ section, onSection, onClose, docsUrl }:
           ["Transfer into investments or a restricted deposit", "Investing", "Excluded"],
           ["Recorded loan split", "Principal financing; paid interest operating", "Recorded interest expense"],
           ["Unsplit loan payment", "Allocation unidentified", "Transfer excluded; no estimated interest"],
+          ["Interest the lender charged to a tracked loan, with payments in the period", "Interest paid (operating); the rest of the payments is principal (financing)", "Recorded interest expense"],
+          ["Interest the lender charged to a tracked loan, with no payment in the period", "No cash movement", "Recorded interest expense"],
           ["Uncategorized on-budget cash entry", "Operating receipt or payment", "Uncategorized income or expense by sign"],
           ["Uncategorized on-budget card purchase", "No cash movement", "Uncategorized expense when recorded"],
           ["Uncategorized entry inside off-budget investments", "No available-cash movement", "Investment activity, outside P&L and exceptions"],
@@ -463,7 +465,7 @@ export function FinancialInsightsGuide({ section, onSection, onClose, docsUrl }:
           ["Retirement", "Cash funding and withdrawals are investing. Uncategorized internal activity stays outside P&L."],
           ["Other asset", "Fixed-asset cash transfers are investing. Other transfers need an identified purpose."],
           ["Credit card", "Purchases enter P&L once, including uncategorized on-budget payments. Ordinary settlements are operating; cash receipts need a purpose."],
-          ["Loan", "Borrowing is financing. Recorded split principal is financing; unsplit payment composition needs review."],
+          ["Loan", "Borrowing is financing. Recorded split principal is financing. Interest and fees the lender charged to a tracked loan are expenses, and the rest of its payments is principal; any other unsplit payment needs review."],
           ["Other liability", "Current / non-current does not identify borrowing versus payables; transfers need review."],
           ["Excluded", "Activity excluded. Its cash counterpart is a scope exception."],
         ]} />
@@ -476,7 +478,7 @@ export function FinancialInsightsGuide({ section, onSection, onClose, docsUrl }:
         <Example caption="How the real figure is worked out" head={["Part", "What it is"]} rows={[
           ["Cash", "Cash & bank today, less what you owe on credit cards. Investments and fixed or restricted deposits are not cash"],
           ["Spending per month", "A typical month of recorded spending, without the interest and fees of tracked loans"],
-          ["Loan repayments", "Each loan you owe, in full: its scheduled repayment (principal and interest) if it is tracked and agrees with Actual, otherwise its recent recorded repayments (what was paid in, which can include interest the lender charged)"],
+          ["Loan repayments", "Each loan you owe, in full: its scheduled repayment (principal and interest) if it is tracked and agrees with Actual; if it is tracked but does not agree, the buffer is unavailable; if it is not tracked, its recorded repayments over the same recent months as your typical month (what was paid in, which can include interest the lender charged), which needs three complete months"],
           ["Months of cover", "(Cash & bank − cards owed) ÷ (spending per month + loan repayments)"],
         ]} />
         <Callout title="Is the loan interest counted twice?">No. The interest and fee lines of tracked loans are taken out of the spending categories, because each loan’s scheduled repayment already contains them. In the simulator that category is not listed at all.</Callout>

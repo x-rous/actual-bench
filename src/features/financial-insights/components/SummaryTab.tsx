@@ -42,7 +42,7 @@ function ReviewList({ rows, names }: { rows: ReviewEntry[]; names: ReadonlyMap<s
   return (
     <details className="rounded-lg border border-border bg-card px-4 py-2 text-xs">
       <summary className="cursor-pointer font-medium">Asset entries to review ({rows.length})</summary>
-      <p className="mt-2 text-muted-foreground">Assets classifies these as money put into an asset, but no transfer is recorded behind them, so they may also be counted as spending. Record the purchase as a transfer in Actual, or change the classification in Assets. Until then, Money kept and the savings rate are not shown.</p>
+      <p className="mt-2 text-muted-foreground">Assets classifies these as money put into an asset, but no transfer is recorded behind them, so they may also be counted as spending. Record the purchase as a transfer in Actual, or change the classification in Assets. Money kept and the savings rate stay visible, with a warning, until then.</p>
       <OverlayScrollArea className="mt-2 max-h-64">
         <table className="w-full border-collapse">
           <thead className="sticky top-0 bg-card"><tr className="border-b border-border text-left text-muted-foreground"><th className="py-1 pr-3 font-medium">Date</th><th className="pr-3 font-medium">Account</th><th className="pr-3 text-right font-medium">Amount</th><th className="font-medium">Why</th></tr></thead>

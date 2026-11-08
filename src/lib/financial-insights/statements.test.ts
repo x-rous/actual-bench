@@ -206,4 +206,52 @@ describe("recorded financial statements", () => {
     expect(long.constraints.namedIds).toHaveLength(301);
     expect(long.rowFilter).toBeUndefined();
   });
+
+  describe("a lender that charges interest to a tracked loan's account", () => {
+    const charge = { id: "charge", month: "2026-09", accountId: "loan", categoryId: null, amountMinor: -2_000, loanAccountId: "loan", kind: "interest" as const, charged: true };
+    const salary = entry("salary", "bank", 100_000, { categoryId: "salary" });
+    const charged = entry("charge", "loan", -2_000);
+    const line = (rows: { key: string }[], key: string) => rows.find((r) => r.key === key);
+
+    it("is a recorded expense; the payments are split into interest paid (operating) and principal (financing), and everything reconciles", () => {
+      const { model } = fixture([salary, charged, ...transfer("repay", "bank", "loan", 12_000)], { loanCosts: [charge] });
+      expect(model.pnl.expenses.find((g) => g.label === "Loans")).toMatchObject({ amountMinor: -2_000, rows: [{ key: "lender-charges", ids: ["charge"] }] });
+      expect(model.pnl.surplusMinor).toBe(98_000);
+      expect(section(model, "operating").rows.find((r) => r.key === "interest")).toMatchObject({ amountMinor: -2_000, ids: ["charge"] });
+      const principal = line(section(model, "financing").rows, "principal-net") as ReturnType<typeof section>["rows"][number];
+      expect(principal.amountMinor).toBe(-10_000);
+      // Opened from the loan accounts: what was paid in (12,000.00) less what was charged (2,000.00).
+      expect(principal.drill).toEqual({ ids: ["repay-to", "charge"], amountMinor: 10_000 });
+      expect(model.unresolved.find((r) => r.key === "loan-allocation")).toBeUndefined();
+      expect(model.unresolved.find((r) => r.key === "uncategorized")).toBeUndefined();
+      expect(model.cash.differenceMinor).toBe(0);
+      expect(sumBridge(model)).toBe(model.cash.changeMinor);
+      expect(Math.abs(model.bridge.find((r) => r.label === "Income / expenses in other noncash accounts")!.amountMinor)).toBe(0);
+    });
+
+    it("lists the loan-side rows and the charge for the principal line, adding up to its drill figure", () => {
+      const rows = [salary, charged, ...transfer("repay", "bank", "loan", 12_000)];
+      const { model } = fixture(rows, { loanCosts: [charge] });
+      const principal = line(section(model, "financing").rows, "principal-net") as ReturnType<typeof section>["rows"][number];
+      const listedTotal = principal.drill!.ids.reduce((sum, id) => sum + rows.find((r) => r.id === id)!.amountMinor, 0);
+      expect(listedTotal).toBe(principal.drill!.amountMinor);
+      const operating = line(section(model, "operating").rows, "interest") as ReturnType<typeof section>["rows"][number];
+      expect(operating.ids.reduce((sum, id) => sum + rows.find((r) => r.id === id)!.amountMinor, 0)).toBe(operating.amountMinor);
+    });
+
+    it("is an expense with no cash movement when nothing was paid to the loan in the period, and still reconciles", () => {
+      const { model } = fixture([salary, charged], { loanCosts: [charge] });
+      expect(model.pnl.expensesMinor).toBe(-2_000);
+      expect(section(model, "operating").rows.find((r) => r.key === "interest")).toBeUndefined();
+      expect(section(model, "financing").rows).toEqual([]);
+      expect(model.bridge.find((r) => r.label === "Income / expenses in other noncash accounts")?.amountMinor).toBe(2_000);
+      expect(model.cash.differenceMinor).toBe(0);
+      expect(sumBridge(model)).toBe(model.cash.changeMinor);
+    });
+
+    it("leaves a loan whose lender charges nothing as before: the unsplit payment stays unidentified", () => {
+      const { model } = fixture([salary, ...transfer("repay", "bank", "loan", 12_000)]);
+      expect(model.unresolved.find((r) => r.key === "loan-allocation")?.amountMinor).toBe(-12_000);
+    });
+  });
 });
