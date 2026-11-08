@@ -40,7 +40,9 @@ const add = (to: StatementLine, entry: StatementEntry) => { to.amountMinor += en
  * and its lines open one by one.
  */
 export function subtotalIds(rows: readonly StatementLine[]): string[] {
-  return rows.some((r) => r.drill && r.drill.amountMinor !== r.amountMinor) ? [] : rows.flatMap((r) => r.ids);
+  // Also when the figures happen to agree (a zero principal): the line's rows are not the rows that make it up.
+  const apart = (r: StatementLine) => !!r.drill && (r.drill.amountMinor !== r.amountMinor || r.drill.ids.length !== r.ids.length || r.drill.ids.some((id, i) => id !== r.ids[i]));
+  return rows.some(apart) ? [] : rows.flatMap((r) => r.ids);
 }
 
 /**
@@ -107,7 +109,9 @@ export function buildStatements(input: {
   const chargeSum = (loanId: string) => (chargedByLoan.get(loanId) ?? []).reduce((sum, e) => sum + e.amountMinor, 0);
   // Interest and fees are paid in cash only up to what was paid to the loan. A loan charged more than it was paid has all its payments
   // read as interest and fees (no principal), and the rest of the charge stays an expense that no cash has paid.
-  const overCharged = new Set([...paidLoans].filter((id) => chargeSum(id) < paymentSum.get(id)!));
+  // A loan the lender credited on balance (a reversal larger than its charges) has nothing paid in cash: its payments are all principal and the credit stays a noncash P&L item.
+  const appliedLoans = new Set([...paidLoans].filter((id) => chargeSum(id) < 0));
+  const overCharged = new Set([...appliedLoans].filter((id) => chargeSum(id) < paymentSum.get(id)!));
   const operating = [line("receipts", "Categorized cash receipts"), line("payments", "Categorized cash payments"), line("card", "Credit-card settlements", "Ordinary card settlements are operating payments. Purchase categories remain in P&L; no allocation of a settlement to particular purchases is inferred."), line("interest", "Recorded loan interest and fees paid"), line("uncategorized-in", "Uncategorized cash receipts"), line("uncategorized-out", "Uncategorized cash payments")];
   const investing = [line("invest-out", "Put into investments and retirement"), line("invest-in", "Withdrawn from investments and retirement"), line("fixed-out", "Placed in fixed / restricted deposits"), line("fixed-in", "Released from fixed / restricted deposits"), line("asset-out", "Fixed-asset purchases and capital added"), line("asset-in", "Fixed-asset transfers received"), line("sales", "Asset sale proceeds and selling costs")];
   const financing = [line("borrowed", "Borrowing received from loans"), line("principal", "Recorded loan principal repaid"), line("principal-net", "Loan payments less interest and fees the lender charged", "Payments to loans whose lender charges interest and fees as their own entries. What the lender charged is shown as interest and fees paid under operating activities; the rest is principal. Opened from the loan accounts: what was paid in, less what was charged.")];
@@ -133,7 +137,7 @@ export function buildStatements(input: {
     if (entry.startingBalance) { if (cash) add(starting, entry); continue; }
     if (chargedIds.has(entry.id) && !entry.transferAccountId) {
       add(lenderCharges, entry);
-      if (paidLoans.has(entry.accountId)) { if (!overCharged.has(entry.accountId)) add(operating[3], entry); } else otherNoncashPnlMinor += entry.amountMinor;
+      if (appliedLoans.has(entry.accountId)) { if (!overCharged.has(entry.accountId)) add(operating[3], entry); } else otherNoncashPnlMinor += entry.amountMinor;
       continue;
     }
     if (entry.transferAccountId) {
@@ -210,7 +214,7 @@ export function buildStatements(input: {
     return result;
   };
   // The charged amount comes out of the payments: what was paid in interest and fees is not principal.
-  const chargedPaid = [...paidLoans].filter((id) => !overCharged.has(id)).flatMap((id) => chargedByLoan.get(id) ?? []);
+  const chargedPaid = [...appliedLoans].filter((id) => !overCharged.has(id)).flatMap((id) => chargedByLoan.get(id) ?? []);
   for (const id of overCharged) otherNoncashPnlMinor += chargeSum(id) - paymentSum.get(id)!;
   financing[2].amountMinor -= total(chargedPaid);
   financing[2].ids.push(...chargedPaid.map((e) => e.id));

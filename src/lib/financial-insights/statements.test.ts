@@ -275,6 +275,28 @@ describe("recorded financial statements", () => {
       expect(subtotalIds(operating).reduce((sum, id) => sum + rows.find((r) => r.id === id)!.amountMinor, 0)).toBe(section(model, "operating").amountMinor);
     });
 
+    it("opens no subtotal list when the loan line is zero, because its rows still do not add up to the section", () => {
+      const rows = [salary, entry("charge", "loan", -12_000), ...transfer("repay", "bank", "loan", 12_000)];
+      const { model } = fixture(rows, { loanCosts: [{ ...charge, amountMinor: -12_000 }] });
+      const principal = line(section(model, "financing").rows, "principal-net") as ReturnType<typeof section>["rows"][number];
+      expect(principal.amountMinor).toBe(0);
+      expect(subtotalIds(section(model, "financing").rows)).toEqual([]);
+      expect(model.cash.differenceMinor).toBe(0);
+      expect(sumBridge(model)).toBe(model.cash.changeMinor);
+    });
+
+    it("pays no interest in cash when the lender credited the loan on balance: the payments are all principal and the credit stays in the P&L", () => {
+      const rows = [salary, entry("credit", "loan", 2_000), ...transfer("repay", "bank", "loan", 12_000)];
+      const { model } = fixture(rows, { loanCosts: [{ ...charge, id: "credit", amountMinor: 2_000 }] });
+      expect(line(section(model, "operating").rows, "interest")).toBeUndefined();
+      const principal = line(section(model, "financing").rows, "principal-net") as ReturnType<typeof section>["rows"][number];
+      expect(principal.amountMinor).toBe(-12_000);
+      expect(principal.drill).toEqual({ ids: ["repay-to"], amountMinor: 12_000 });
+      expect(model.pnl.expensesMinor).toBe(2_000);
+      expect(model.cash.differenceMinor).toBe(0);
+      expect(sumBridge(model)).toBe(model.cash.changeMinor);
+    });
+
     it("leaves a loan whose lender charges nothing as before: the unsplit payment stays unidentified", () => {
       const { model } = fixture([salary, ...transfer("repay", "bank", "loan", 12_000)]);
       expect(model.unresolved.find((r) => r.key === "loan-allocation")?.amountMinor).toBe(-12_000);
