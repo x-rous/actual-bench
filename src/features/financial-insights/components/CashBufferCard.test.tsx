@@ -166,4 +166,29 @@ describe("the cash buffer card", () => {
     const label = screen.getByText("your goal: 11 months");
     expect(label.style.transform).toBe("translateX(-100%)"); // ends at its mark rather than running past the edge
   });
+
+  it("keeps the headline short: the formula and the accessible-money figure are behind an (i), and the bar has no 0 label", () => {
+    setHook(null);
+    const accessible = { ...value, accessibleMinor: 500_000, monthsWithAccessible: (3_000_000 + 500_000) / 340_000, accessibleAccounts: [{ accountId: "inv", name: "Brokerage", balanceMinor: 500_000 }] };
+    render(<TipProvider><CashBufferCard buffer={{ state: "ready", value: accessible as CashBuffer }} groups={groups} today="2026-11-18" /></TipProvider>);
+    // Not written out on the card: it is in the (i).
+    expect(screen.queryByText(/With accessible investments/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/of cover: cash/)).not.toBeInTheDocument();
+    expect(screen.getByText(/months of cover/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "About the months of cover" }));
+    expect(screen.getByText("With accessible investments: 10.3 months")).toBeInTheDocument();
+    expect(screen.getByText("Brokerage")).toBeInTheDocument();
+    expect(screen.getByText(/divided by what you need each month/)).toBeInTheDocument();
+    // The scale starts at the bar's own left edge, so only its far end is labelled.
+    expect(screen.getByText("12 months")).toBeInTheDocument();
+    expect(screen.queryByText("0")).not.toBeInTheDocument();
+  });
+
+  it("has no accessible figure in the (i) when no account is set", () => {
+    setHook(null);
+    show();
+    fireEvent.click(screen.getByRole("button", { name: "About the months of cover" }));
+    expect(screen.getByText(/divided by what you need each month/)).toBeInTheDocument();
+    expect(screen.queryByText(/With accessible investments/)).not.toBeInTheDocument();
+  });
 });
