@@ -7,7 +7,7 @@ import { assetSeries, assetValues, holdings, homeEquity, isFixedAssetAccount, ot
 const accounts: AccountFact[] = [
   { id: "chk", name: "Checking", accountClass: "bank", treatment: null, offBudget: false },
   { id: "visa", name: "Visa", accountClass: "credit-card", treatment: null, offBudget: false },
-  { id: "inv", name: "Brokerage", accountClass: "investment", treatment: "non-current-investment", offBudget: true },
+  { id: "inv", name: "Brokerage", accountClass: "investment", treatment: null, offBudget: true },
   { id: "ira", name: "Retirement", accountClass: "retirement", treatment: null, offBudget: true },
   { id: "house", name: "House", accountClass: "property", treatment: null, offBudget: true },
   { id: "car", name: "Car", accountClass: "vehicle", treatment: null, offBudget: true },
@@ -74,7 +74,7 @@ describe("portfolio bridge", () => {
   });
 
   it("reads an uncategorized row of an on-budget investment account as income or spending, not investment activity", () => {
-    const f = facts([row("2026-09", "inv2", 12_000), row("2026-09", "inv2", 3_000, { categoryId: "salary" })], { accounts: [...accounts, { id: "inv2", name: "Savings plan", accountClass: "investment", treatment: "current-investment", offBudget: false }] });
+    const f = facts([row("2026-09", "inv2", 12_000), row("2026-09", "inv2", 3_000, { categoryId: "salary" })], { accounts: [...accounts, { id: "inv2", name: "Savings plan", accountClass: "investment", treatment: null, offBudget: false }] });
     const { accounts: rows } = portfolioBridge(setup(f).ledger, setup(f).period);
     expect(rows.find((a) => a.accountId === "inv2")).toMatchObject({ activity: 0, unexplained: 15_000 });
   });
@@ -105,13 +105,12 @@ describe("fixed asset accounts", () => {
     expect(isFixedAssetAccount({ accountClass: "property", treatment: null })).toBe(true);
     expect(isFixedAssetAccount({ accountClass: "vehicle", treatment: null })).toBe(true);
     expect(isFixedAssetAccount(other("fixed-asset"))).toBe(true);
-    expect(isFixedAssetAccount(other("current-asset"))).toBe(false);
-    expect(isFixedAssetAccount(other("non-current-asset"))).toBe(false);
-    expect(isFixedAssetAccount({ accountClass: "investment", treatment: "non-current-investment" })).toBe(false);
+    expect(isFixedAssetAccount(other(null))).toBe(false);
+    expect(isFixedAssetAccount({ accountClass: "investment", treatment: null })).toBe(false);
   });
 
   it("leave a current Other Asset out of the unregistered asset rows", () => {
-    const owed: AccountFact = { id: "owed", name: "Owed to me", accountClass: "other-asset", treatment: "current-asset", offBudget: true };
+    const owed: AccountFact = { id: "owed", name: "Owed to me", accountClass: "other-asset", treatment: null, offBudget: true };
     const gold: AccountFact = { id: "gold", name: "Gold", accountClass: "other-asset", treatment: "fixed-asset", offBudget: true };
     const { ledger, period } = setup(facts([row("2026-09", "owed", 5_000), row("2026-09", "gold", 9_000)], { accounts: [...accounts, owed, gold] }));
     const rows = assetValues({ ledger, period, assets: [], books: new Map(), links: [], loans: [] });
@@ -231,7 +230,7 @@ describe("asset values, equity and loan-to-value", () => {
 
 describe("assets held in an Other Asset account whose treatment is no longer fixed", () => {
   it("is listed as unavailable, not dropped, because it is not a fixed asset any more", () => {
-    const other = { id: "gold", name: "Gold", accountClass: "other-asset" as const, treatment: "current-asset" as const, offBudget: true };
+    const other = { id: "gold", name: "Gold", accountClass: "other-asset" as const, treatment: null, offBudget: true };
     const fixed = { ...other, treatment: "fixed-asset" as const };
     const regAsset = [{ id: "g1", name: "Gold bar", actualAccountId: "gold", status: "active" }];
     const { ledger: l1, period: p1 } = setup(facts([row("2026-09", "gold", 100_000)], { accounts: [accounts[0], other] }));

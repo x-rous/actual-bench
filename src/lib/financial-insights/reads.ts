@@ -68,15 +68,15 @@ export async function readTransfersIn(connection: ConnectionInstance, today: str
 
 /** The positive part of the uncategorized non-transfer rows; the rest of each cell is money out. */
 export async function readUncategorizedIn(connection: ConnectionInstance, today: string): Promise<DatedAmount[]> {
-  const response = await runQuery<Response<PerAccountMonth>>(connection, {
+  const response = await runQuery<Response<PerAccountMonth & { n: number }>>(connection, {
     ActualQLquery: {
       table: "transactions",
       filter: { $and: [upToToday(today), notStarting, { category: null }, { "payee.transfer_acct": null }, { amount: { $gt: 0 } }] },
       groupBy: [{ $month: "$date" }, "account"],
-      select: [{ month: { $month: "$date" } }, "account", { amt: { $sum: "$amount" } }],
+      select: [{ month: { $month: "$date" } }, "account", { amt: { $sum: "$amount" } }, { n: { $count: "$id" } }],
     },
   });
-  return response.data.map((r) => ({ month: r.month, accountId: r.account, amountMinor: r.amt }));
+  return response.data.map((r) => ({ month: r.month, accountId: r.account, amountMinor: r.amt, count: r.n }));
 }
 
 type EntryResult = { id: string; date: string; amount: number; account: string; category: string | null; notes: string | null; payee: string | null };

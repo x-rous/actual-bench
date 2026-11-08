@@ -163,7 +163,7 @@ export function buildStatements(input: {
         else { add(financing[2], entry); principalNetIds.push(entry.transferId!); }
       }
       else if (other.accountClass === "loan") unknown(entry, "loan-allocation", "Loan payments: allocation unidentified", "The recorded payment does not identify separate principal and interest/fee amounts. A calculated loan schedule is not used to split it.");
-      else unknown(entry, `transfer-${other.accountClass}`, `Transfers with ${other.accountClass === "other-liability" ? "other liabilities" : other.accountClass === "other-asset" ? "other assets" : "credit cards"}: purpose unidentified`, "Account class and current/non-current treatment do not establish the purpose of this cash movement.");
+      else unknown(entry, `transfer-${other.accountClass}`, `Transfers with ${other.accountClass === "other-liability" ? "other liabilities" : other.accountClass === "other-asset" ? "other assets" : "credit cards"}: purpose unidentified`, "The account class does not establish the purpose of this cash movement.");
       continue;
     }
     const classified = reclassified.get(entry.id);

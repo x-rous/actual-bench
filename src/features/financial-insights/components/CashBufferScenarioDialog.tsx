@@ -282,6 +282,9 @@ export function CashBufferScenarioDialog({ buffer, rows, basis, colours, window,
                 <p className={`mt-1 text-xs ${result.value.months > buffer.months ? "text-green-700 dark:text-green-400" : result.value.months < buffer.months ? "text-red-700 dark:text-red-400" : "text-muted-foreground"}`}>
                   {result.value.months === buffer.months ? "Same as" : `${result.value.months > buffer.months ? "+" : "−"}${Math.abs(result.value.months - buffer.months).toFixed(1)} months against`} the real {buffer.months.toFixed(1)}
                 </p>
+                {result.value.monthsWithAccessible !== undefined && (buffer.accessibleMinor ?? 0) > 0 && (
+                  <p className="mt-1 text-xs text-muted-foreground">With accessible investments: {result.value.monthsWithAccessible.toFixed(1)} months (the real {(buffer.monthsWithAccessible ?? buffer.months).toFixed(1)})</p>
+                )}
                 <div className="mt-3" role="img" aria-label={`Real ${buffer.months.toFixed(1)} months, this scenario ${result.value.months.toFixed(1)} months, on a scale of 0 to ${scaleMax}${goalMonths !== null ? `, your goal is ${goalMonths}` : ""}`}>
                   <div className="relative px-px">
                     <div className="space-y-1.5">

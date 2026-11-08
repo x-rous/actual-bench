@@ -112,7 +112,7 @@ export function useAccountsSave() {
         toCreate,
         async (a) => {
           if (!isAccountClassAllowed(staged[a.id].pendingAccountClass, a.offBudget)) {
-            throw new Error("The selected class is for off-budget accounts only.");
+            throw new Error("The selected class does not suit this account's budget type.");
           }
           const created = await transport.createAccount({
             name: a.name,
@@ -235,7 +235,7 @@ export function useAccountsSave() {
         try {
           if (!connection.budgetSyncId) throw new Error("No budget id is available for the account class.");
           if (!isAccountClassAllowed(entry.pendingAccountClass, entry.entity.offBudget)) {
-            throw new Error("The selected class is for off-budget accounts only.");
+            throw new Error("The selected class does not suit this account's budget type.");
           }
           const records = await saveAccountClasses(connection.budgetSyncId, [{
             scope: "account", id: realId, accountClass: entry.pendingAccountClass,

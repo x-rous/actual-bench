@@ -12,13 +12,13 @@ const accounts: AccountFact[] = [
   { id: "fd", name: "Deposit", accountClass: "bank", treatment: "fixed-deposit", offBudget: true },
   { id: "car", name: "Car", accountClass: "vehicle", treatment: null, offBudget: true },
   { id: "home", name: "Home", accountClass: "property", treatment: null, offBudget: true },
-  { id: "inv", name: "Broker", accountClass: "investment", treatment: "current-investment", offBudget: true },
+  { id: "inv", name: "Broker", accountClass: "investment", treatment: null, offBudget: true },
   { id: "ret", name: "Retirement", accountClass: "retirement", treatment: null, offBudget: true },
-  { id: "other", name: "Receivable", accountClass: "other-asset", treatment: "current-asset", offBudget: true },
+  { id: "other", name: "Receivable", accountClass: "other-asset", treatment: null, offBudget: true },
   { id: "fixed", name: "Collectible", accountClass: "other-asset", treatment: "fixed-asset", offBudget: true },
   { id: "card", name: "Card", accountClass: "credit-card", treatment: null, offBudget: false },
   { id: "loan", name: "Loan", accountClass: "loan", treatment: null, offBudget: true },
-  { id: "liability", name: "Payable", accountClass: "other-liability", treatment: "current-liability", offBudget: true },
+  { id: "liability", name: "Payable", accountClass: "other-liability", treatment: null, offBudget: true },
 ];
 const categories = new Map<string, CategoryInfo>([
   ["salary", { id: "salary", name: "Salary", groupName: "Income", hidden: false, isIncome: true, order: 1 }],

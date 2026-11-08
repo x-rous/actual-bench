@@ -55,7 +55,7 @@ import { listSyncFlowRuns } from "./syncRunRepository";
 import { insertDebt } from "./debtRepository";
 import { listDebtOffsetLinks } from "./debtOffsetLinkRepository";
 import { listDebtAssumptions, replaceDebtAssumptions } from "./debtAssumptionRepository";
-import { ASSETS_DEBT_V38_INDEX_SQL, ASSETS_DEBT_V42_INDEX_SQL, ASSETS_DEBT_V43_INDEX_SQL, ASSETS_DEBT_V44_INDEX_SQL, ASSETS_DEBT_V44_TRIGGER_SQL, DEBT_FUTURE_ASSUMPTION_TABLE_SQL, DEBT_MATCH_RULE_TABLE_SQL, DEBT_TRANSACTION_LINK_TABLE_SQL, FINANCIAL_POSTING_TABLE_SQL } from "./schema";
+import { ACCOUNT_CLASS_TABLE_SQL, ACCOUNT_REPORTING_TABLE_SQL, ASSETS_DEBT_V38_INDEX_SQL, ASSETS_DEBT_V42_INDEX_SQL, ASSETS_DEBT_V43_INDEX_SQL, ASSETS_DEBT_V44_INDEX_SQL, ASSETS_DEBT_V44_TRIGGER_SQL, DEBT_FUTURE_ASSUMPTION_TABLE_SQL, DEBT_MATCH_RULE_TABLE_SQL, DEBT_TRANSACTION_LINK_TABLE_SQL, FINANCIAL_POSTING_TABLE_SQL } from "./schema";
 import { OLD_POSTING_TABLES } from "./migrations";
 
 /**
@@ -1392,7 +1392,7 @@ describe("v38 Assets & Debt configuration through v43 observations", () => {
     const root = mkdtempSync(join(tmpdir(), "actual-bench-fresh-v42-"));
     try {
       const db = getAppDb(join(root, "metadata.sqlite"));
-      expect(LATEST_SCHEMA_VERSION).toBe(64);
+      expect(LATEST_SCHEMA_VERSION).toBe(65);
       expect(runMigrations(db).schemaVersion).toBe(LATEST_SCHEMA_VERSION);
       const tables = objectNames(db, "table");
       for (const t of V43_TABLES) expect(tables).toContain(t);
@@ -1932,5 +1932,51 @@ describe("v60 loan tracking", () => {
       expect(() => db.prepare("INSERT INTO debt_writes (id,debt_id,budget_sync_id,kind,target_ids_json,before_json,after_json,status,started_at) VALUES (?,'d','b','split','[]','{}','{}','applying','t')").run("w2")).not.toThrow();
       expect(() => db.prepare("INSERT INTO debt_writes (id,debt_id,budget_sync_id,kind,target_ids_json,before_json,after_json,status,started_at) VALUES (?,'d','b','split','[]','{}','{}','applying','t')").run("w3")).toThrow(/UNIQUE/);
     } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  it("moves the Excluded class to the excluded flag and drops current / non-current choices (v65), and a second run changes nothing", () => {
+    const root = mkdtempSync(join(tmpdir(), "actual-bench-upgrade-v65-"));
+    const path = join(root, "metadata.sqlite");
+    const seed = new Database(path);
+    seed.exec(`CREATE TABLE app_meta (key text PRIMARY KEY, value text NOT NULL, updated_at text NOT NULL);${ACCOUNT_CLASS_TABLE_SQL}${ACCOUNT_REPORTING_TABLE_SQL}`);
+    seed.prepare("INSERT INTO app_meta (key, value, updated_at) VALUES ('schema_version', '64', ?)").run("2026-11-01T00:00:00.000Z");
+    const cls = seed.prepare("INSERT INTO account_classes (budget_sync_id, scope, account_id, account_class, updated_at) VALUES (?,?,?,?,?)");
+    cls.run("b1", "account", "acc-excluded", "excluded", "2026-11-02T00:00:00.000Z");
+    cls.run("b1", "group", "grp-excluded", "excluded", "2026-11-03T00:00:00.000Z");
+    cls.run("b2", "account", "acc-other-budget", "excluded", "2026-11-04T00:00:00.000Z");
+    cls.run("b1", "account", "acc-bank", "bank", "2026-11-05T00:00:00.000Z");
+    cls.run("b1", "group", "grp-loans", "loan", "2026-11-06T00:00:00.000Z");
+    const reporting = seed.prepare("INSERT INTO account_reporting (budget_sync_id, account_id, treatment, updated_at) VALUES (?,?,?,?)");
+    for (const [id, treatment] of [["inv-c", "current-investment"], ["inv-n", "non-current-investment"], ["oa-c", "current-asset"], ["oa-n", "non-current-asset"], ["ol-c", "current-liability"], ["ol-n", "non-current-liability"], ["gold", "fixed-asset"], ["deposit", "fixed-deposit"]]) {
+      reporting.run("b1", id, treatment, "2026-11-07T00:00:00.000Z");
+    }
+    seed.close();
+
+    try {
+      const db = getAppDb(path);
+      expect(runMigrations(db).schemaVersion).toBe(LATEST_SCHEMA_VERSION);
+      const read = () => ({
+        flags: db.prepare("SELECT budget_sync_id AS b, scope, target_id AS id, flag, updated_at AS at FROM account_flags ORDER BY b, scope, id").all(),
+        classes: db.prepare("SELECT budget_sync_id AS b, scope, account_id AS id, account_class AS cls FROM account_classes ORDER BY b, scope, id").all(),
+        treatments: db.prepare("SELECT account_id AS id, treatment FROM account_reporting ORDER BY id").all(),
+      });
+      const first = read();
+      // Both scopes (and every budget) move over as they were, keeping the date they were saved.
+      expect(first.flags).toEqual([
+        { b: "b1", scope: "account", id: "acc-excluded", flag: "excluded", at: "2026-11-02T00:00:00.000Z" },
+        { b: "b1", scope: "group", id: "grp-excluded", flag: "excluded", at: "2026-11-03T00:00:00.000Z" },
+        { b: "b2", scope: "account", id: "acc-other-budget", flag: "excluded", at: "2026-11-04T00:00:00.000Z" },
+      ]);
+      // The Excluded class is gone; every other class stays.
+      expect(first.classes).toEqual([{ b: "b1", scope: "account", id: "acc-bank", cls: "bank" }, { b: "b1", scope: "group", id: "grp-loans", cls: "loan" }]);
+      // Current / non-current choices are gone; Fixed asset and Fixed / restricted deposit stay.
+      expect(first.treatments).toEqual([{ id: "deposit", treatment: "fixed-deposit" }, { id: "gold", treatment: "fixed-asset" }]);
+
+      expect(runMigrations(db).schemaVersion).toBe(LATEST_SCHEMA_VERSION);
+      expect(read()).toEqual(first);
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

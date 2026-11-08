@@ -20,13 +20,11 @@ export const ACCOUNT_CLASSES = [
   "credit-card",
   "loan",
   "other-liability",
-  /** Off-budget tracking accounts that must not contribute to Financial Insights. */
-  "excluded",
 ] as const;
 
 export type AccountClass = (typeof ACCOUNT_CLASSES)[number];
 
-export type AccountClassSide = "asset" | "liability" | "none";
+export type AccountClassSide = "asset" | "liability";
 
 export type AccountClassInfo = {
   value: AccountClass;
@@ -46,7 +44,6 @@ export const ACCOUNT_CLASS_INFO: readonly AccountClassInfo[] = [
   { value: "credit-card", label: "Credit Card", description: "Credit cards, revolving credit", side: "liability" },
   { value: "loan", label: "Loan", description: "Mortgages, personal, auto, student loans", side: "liability" },
   { value: "other-liability", label: "Other Liability", description: "Taxes, other obligations", side: "liability" },
-  { value: "excluded", label: "Excluded", description: "For off-budget accounts used for tracking purposes that should not contribute to Financial Insights", side: "none" },
 ];
 
 const INFO_BY_CLASS = new Map<AccountClass, AccountClassInfo>(ACCOUNT_CLASS_INFO.map((info) => [info.value, info]));
@@ -58,12 +55,22 @@ export function isAccountClass(value: unknown): value is AccountClass {
 /** These balances belong outside Actual's spending budget. */
 export function accountClassRequiresOffBudget(accountClass: AccountClass | null | undefined): boolean {
   return accountClass === "vehicle" || accountClass === "property"
-    || accountClass === "investment" || accountClass === "retirement" || accountClass === "loan" || accountClass === "excluded";
+    || accountClass === "investment" || accountClass === "retirement" || accountClass === "loan";
 }
 
-/** Clearing a class is always allowed; the other five classes (Cash, Bank, Other Asset, Credit Card and Other Liability) support either placement. */
+/** A credit card's purchases must count as spending, so it belongs in the budget. */
+export function accountClassRequiresOnBudget(accountClass: AccountClass | null | undefined): boolean {
+  return accountClass === "credit-card";
+}
+
+/** Clearing a class is always allowed; Cash, Bank, Other Asset and Other Liability support either placement. */
 export function isAccountClassAllowed(accountClass: AccountClass | null | undefined, offBudget: boolean): boolean {
-  return offBudget || !accountClassRequiresOffBudget(accountClass);
+  return !(offBudget ? accountClassRequiresOnBudget(accountClass) : accountClassRequiresOffBudget(accountClass));
+}
+
+/** A class for a set of accounts (a group, a bulk selection) must suit every placement among them. An empty set has no placement to disagree with. */
+export function isAccountClassAllowedForSet(accountClass: AccountClass | null | undefined, set: { onBudget: boolean; offBudget: boolean }): boolean {
+  return (!set.onBudget || isAccountClassAllowed(accountClass, false)) && (!set.offBudget || isAccountClassAllowed(accountClass, true));
 }
 
 export function accountClassLabel(accountClass: AccountClass): string {

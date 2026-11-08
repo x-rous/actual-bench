@@ -12,7 +12,7 @@ const accounts: AccountFact[] = [
   { id: "car", name: "Car loan", accountClass: "loan", treatment: null, offBudget: true },
   { id: "van", name: "Van loan", accountClass: "loan", treatment: null, offBudget: true },
   { id: "old", name: "Old loan", accountClass: "loan", treatment: null, offBudget: true },
-  { id: "tax", name: "Tax bill", accountClass: "other-liability", treatment: "current-liability", offBudget: true },
+  { id: "tax", name: "Tax bill", accountClass: "other-liability", treatment: null, offBudget: true },
 ];
 const row = (month: string, accountId: string, amountMinor: number, extra: Partial<MovementRow> = {}): MovementRow => ({ month, accountId, categoryId: null, transferAccountId: null, amountMinor, count: 1, ...extra });
 const both = (month: string, from: string, to: string, amount: number): MovementRow[] => [row(month, from, -amount, { transferAccountId: to }), row(month, to, amount, { transferAccountId: from })];

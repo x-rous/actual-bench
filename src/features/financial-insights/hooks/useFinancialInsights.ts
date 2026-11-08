@@ -8,7 +8,8 @@ import { getTransport } from "@/lib/actual";
 import { isAccountGroupsUnsupported } from "@/lib/api/accountGroups";
 import { selectActiveInstance, useConnectionStore } from "@/store/connection";
 import { resolveAccountClass, type AccountClass } from "@/lib/account-class";
-import { evaluateAccountReadiness, type AccountReadinessStatus } from "@/lib/account-class/reporting";
+import { hasFlag, isExcluded } from "@/lib/account-class/flags";
+import { evaluateAccountReadiness, validSavedTreatment, type AccountReadinessStatus } from "@/lib/account-class/reporting";
 import type { AssetDebtLink } from "@/lib/asset-registry/financing";
 import { CASHFLOW_TYPES, type Asset, type BookMetadata } from "@/lib/asset-registry/models";
 import { useBudgetAvailability } from "./useBudgetPlan";
@@ -16,6 +17,7 @@ import { useCashBufferSettings } from "./useCashBufferSettings";
 import { readLoanSchedules, type LoanSchedules } from "../lib/loanSchedules";
 import type { AccountGroup } from "@/types/entities";
 import { useAccountClasses } from "@/features/accounts/hooks/useAccountClasses";
+import { useAccountFlags } from "@/features/accounts/hooks/useAccountFlags";
 import { useAccountReporting } from "@/features/accounts/hooks/useAccountReporting";
 import { useClosedAccountActivity } from "@/features/accounts/hooks/useClosedAccountActivity";
 import { registryRequest } from "@/features/asset-registry/api";
@@ -35,7 +37,7 @@ import { readAssetEntries, readLinkedSales, readPayeeRows, readLoanCostRows, rea
 
 // ─── Gate ────────────────────────────────────────────────────────────────────
 
-export type SetupRow = { id: string; name: string; status: Exclude<AccountReadinessStatus, "ready"> };
+export type SetupRow = { id: string; name: string; status: Exclude<AccountReadinessStatus, "ready">; /** Why the placement does not fit, in words, when it is a wrong placement. */ detail?: string };
 
 export type Gate =
   | { state: "none" }
@@ -54,6 +56,7 @@ export function useFinancialInsightsGate(): Gate {
   const connection = useConnectionStore(selectActiveInstance);
   const classes = useAccountClasses();
   const reporting = useAccountReporting();
+  const flags = useAccountFlags();
 
   const accountsQuery = useQuery({
     queryKey: ["accounts", connection?.id],
@@ -87,13 +90,14 @@ export function useFinancialInsightsGate(): Gate {
   // `classes` and `reporting` are new objects on every render; the gate depends on the parts it reads, so it is rebuilt only when they change.
   const { enabled: classesEnabled, available: classesAvailable, failed: classesFailed, refetch: refetchClasses, maps: classMaps } = classes;
   const { available: reportingAvailable, failed: reportingFailed, refetch: refetchReporting, byAccount: reportingByAccount } = reporting;
+  const { available: flagsAvailable, failed: flagsFailed, refetch: refetchFlags, maps: flagMaps } = flags;
   const { isError: accountsFailed, refetch: refetchAccounts, isFetchedAfterMount: accountsFetchedAfterMount } = accountsQuery;
   const { isError: groupsFailed, refetch: refetchGroups, data: groupsData } = groupsQuery;
   const { isError: activityFailed, refetch: refetchActivity, data: activityData } = activity;
 
   return useMemo((): Gate => {
     if (!connection || !classesEnabled) return { state: "none" };
-    if (accountsFailed || groupsFailed || activityFailed || classesFailed || reportingFailed) {
+    if (accountsFailed || groupsFailed || activityFailed || classesFailed || reportingFailed || flagsFailed) {
       return {
         state: "error",
         retry: () => {
@@ -102,33 +106,49 @@ export function useFinancialInsightsGate(): Gate {
           void refetchActivity();
           void refetchClasses();
           void refetchReporting();
+          void refetchFlags();
         },
       };
     }
     // The accounts are checked again every time the page opens: until that check is back, what was cached is not shown as the truth.
-    if (!accounts || !accountsFetchedAfterMount || groupsData === undefined || !activityData || !classesAvailable || !reportingAvailable) return { state: "loading" };
+    if (!accounts || !accountsFetchedAfterMount || groupsData === undefined || !activityData || !classesAvailable || !reportingAvailable || !flagsAvailable) return { state: "loading" };
 
     const groupNames = new Map((groupsData ?? []).map((g) => [g.id, g.name]));
     const liveGroups = new Set(groupNames.keys());
     const classOf = new Map<string, AccountClass | null>(
       accounts.map((a) => [a.id, resolveAccountClass(a.id, a.groupId && liveGroups.has(a.groupId) ? a.groupId : null, classMaps).accountClass])
     );
-    const readiness = evaluateAccountReadiness({ accounts, classOf, reporting: reportingByAccount, closedActivity: activityData });
+    // Left out of Financial Insights: the account's own flag, or its group's (a live group only).
+    const excludedIds = new Set(accounts.filter((a) => isExcluded(a.id, a.groupId && liveGroups.has(a.groupId) ? a.groupId : null, flagMaps)).map((a) => a.id));
+    const readiness = evaluateAccountReadiness({ accounts, classOf, excluded: excludedIds, closedActivity: activityData });
     if (!readiness.ready) {
-      const names = new Map(accounts.map((a) => [a.id, a.name]));
+      const byId = new Map(accounts.map((a) => [a.id, a]));
       const rows = readiness.accounts
         .filter((a): a is { accountId: string; status: Exclude<AccountReadinessStatus, "ready"> } => a.status !== "ready")
-        .map((a) => ({ id: a.accountId, name: names.get(a.accountId) ?? a.accountId, status: a.status }));
+        .map((a): SetupRow => {
+          const account = byId.get(a.accountId);
+          const detail = a.status !== "incompatible-placement" || !account ? undefined
+            : excludedIds.has(a.accountId) ? "It is left out of Financial Insights, but only off-budget accounts can be left out. Move it off budget in Actual, or include it."
+            : classOf.get(a.accountId) === "credit-card" ? "Credit cards must be on budget so their purchases count as spending. Move the account on budget in Actual, or choose another class."
+            : "Its class needs an off-budget account. Move it off budget in Actual, or choose another class.";
+          return { id: a.accountId, name: account?.name ?? a.accountId, status: a.status, detail };
+        });
       return { state: "setup", rows };
     }
     // An exempt closed account (no history) has no class and nothing to count, so it is left out of every figure.
     const facts: AccountFact[] = accounts.flatMap((a) => {
       const accountClass = classOf.get(a.id);
-      return accountClass && accountClass !== "excluded" ? [{ id: a.id, name: a.name, groupId: a.groupId ?? null, groupName: a.groupId ? groupNames.get(a.groupId) ?? null : null, accountClass, treatment: reportingByAccount.get(a.id) ?? null, offBudget: a.offBudget, closed: a.closed }] : [];
+      if (!accountClass || excludedIds.has(a.id)) return [];
+      const treatment = validSavedTreatment(accountClass, reportingByAccount.get(a.id));
+      return [{
+        id: a.id, name: a.name, groupId: a.groupId ?? null, groupName: a.groupId ? groupNames.get(a.groupId) ?? null : null, accountClass, treatment, offBudget: a.offBudget, closed: a.closed,
+        accessible: hasFlag("accessible", a.id, accountClass, a.offBudget, treatment, flagMaps),
+        offBudgetIncome: hasFlag("offbudget-income", a.id, accountClass, a.offBudget, treatment, flagMaps),
+      }];
     });
-    const excluded = accounts.filter((a) => classOf.get(a.id) === "excluded").map((a) => ({ id: a.id, name: a.name }));
+    const excluded = accounts.filter((a) => excludedIds.has(a.id)).map((a) => ({ id: a.id, name: a.name }));
     return { state: "ready", accounts: facts, excluded };
-  }, [connection, classesEnabled, classesAvailable, classesFailed, refetchClasses, classMaps, reportingAvailable, reportingFailed, refetchReporting, reportingByAccount, accounts, accountsFetchedAfterMount, accountsFailed, refetchAccounts, groupsFailed, refetchGroups, groupsData, activityFailed, refetchActivity, activityData]);
+  }, [connection, classesEnabled, classesAvailable, classesFailed, refetchClasses, classMaps, reportingAvailable, reportingFailed, refetchReporting, reportingByAccount, flagsAvailable, flagsFailed, refetchFlags, flagMaps, accounts, accountsFetchedAfterMount, accountsFailed, refetchAccounts, groupsFailed, refetchGroups, groupsData, activityFailed, refetchActivity, activityData]);
 }
 
 // ─── Data ────────────────────────────────────────────────────────────────────

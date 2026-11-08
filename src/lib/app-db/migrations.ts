@@ -65,6 +65,7 @@ import {
   ASSETS_DEBT_V44_INDEX_SQL,
   ASSETS_DEBT_V44_TRIGGER_SQL,
   ACCOUNT_CLASS_TABLE_SQL,
+  ACCOUNT_FLAGS_TABLE_SQL,
   ACCOUNT_REPORTING_TABLE_SQL,
   CASH_BUFFER_SCENARIOS_TABLE_SQL,
   CASH_BUFFER_SETTINGS_TABLE_SQL,
@@ -76,7 +77,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 64;
+export const LATEST_SCHEMA_VERSION = 65;
 
 type Migration = {
   version: number;
@@ -712,7 +713,18 @@ const MIGRATIONS: readonly Migration[] = [
   { version: 63, statements: [CASH_BUFFER_SCENARIOS_TABLE_SQL] },
   // Cash buffer settings per budget: the months of cover aimed for, and how a typical month is worked out. Additive.
   { version: 64, statements: [CASH_BUFFER_SETTINGS_TABLE_SQL] },
+  // Account flags (Financial Insights): "Excluded" stops being a class and becomes the flag `excluded` (rows of both scopes move over as
+  // they are), and the current / non-current treatments are removed. The Fixed asset and Fixed / restricted deposit treatments stay.
+  { version: 65, apply: applyAccountFlags },
 ];
+
+function applyAccountFlags(db: SqliteDatabase): void {
+  db.exec(ACCOUNT_FLAGS_TABLE_SQL);
+  db.exec(`INSERT OR IGNORE INTO account_flags (budget_sync_id, scope, target_id, flag, updated_at)
+    SELECT budget_sync_id, scope, account_id, 'excluded', updated_at FROM account_classes WHERE account_class = 'excluded'`);
+  db.exec("DELETE FROM account_classes WHERE account_class = 'excluded'");
+  db.exec(`DELETE FROM account_reporting WHERE treatment IN ('current-investment','non-current-investment','current-asset','non-current-asset','current-liability','non-current-liability')`);
+}
 
 function applyFixedAssetsOnly(db: SqliteDatabase): void {
   const doomed = db.prepare("SELECT id, budget_sync_id AS budget, actual_account_id AS account FROM assets WHERE asset_type IN ('investment','retirement','crypto')").all<{ id: string; budget: string; account: string }>();

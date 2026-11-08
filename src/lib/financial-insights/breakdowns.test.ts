@@ -8,7 +8,7 @@ const today = "2026-11-18";
 const accounts: AccountFact[] = [
   { id: "chk", name: "Checking", accountClass: "bank", treatment: null, offBudget: false },
   { id: "sav", name: "Savings", accountClass: "bank", treatment: null, offBudget: true },
-  { id: "inv", name: "Brokerage", accountClass: "investment", treatment: "non-current-investment", offBudget: true },
+  { id: "inv", name: "Brokerage", accountClass: "investment", treatment: null, offBudget: true },
   { id: "loan", name: "Mortgage", accountClass: "loan", treatment: null, offBudget: true },
   { id: "visa", name: "Visa", accountClass: "credit-card", treatment: null, offBudget: false },
   { id: "house", name: "House", accountClass: "property", treatment: null, offBudget: true },
@@ -56,7 +56,7 @@ const reclassified: ReclassifiedRow[] = [{ id: "rv", payeeId: null, month: "2026
 
 function factsFrom(rows: Tx[], loanCosts: FinancialFacts["loanCosts"] = []): FinancialFacts {
   const movement = new Map<string, MovementRow>();
-  const uncategorizedIn = new Map<string, { month: string; accountId: string; amountMinor: number }>();
+  const uncategorizedIn = new Map<string, { month: string; accountId: string; amountMinor: number; count: number }>();
   const starting: { month: string; accountId: string; amountMinor: number }[] = [];
   for (const r of rows) {
     const month = r.date.slice(0, 7);
@@ -66,8 +66,8 @@ function factsFrom(rows: Tx[], loanCosts: FinancialFacts["loanCosts"] = []): Fin
     cell.amountMinor += r.amount; cell.count += 1; movement.set(key, cell);
     if (r.category === null && !r.transferAcct && r.amount > 0) {
       const k = `${month}|${r.account}`;
-      const c = uncategorizedIn.get(k) ?? { month, accountId: r.account, amountMinor: 0 };
-      c.amountMinor += r.amount; uncategorizedIn.set(k, c);
+      const c = uncategorizedIn.get(k) ?? { month, accountId: r.account, amountMinor: 0, count: 0 };
+      c.amountMinor += r.amount; c.count += 1; uncategorizedIn.set(k, c);
     }
   }
   const transfersIn = new Map<string, { month: string; accountId: string; transferAccountId: string; amountMinor: number }>();
@@ -662,3 +662,73 @@ describe("financial insights: lender charges, loan accounts and excluded account
     expect(debtRepayments(m.ledger, range, new Set(["loan"]), 0)).toMatchObject({ chargedInterestMinor: 20_000 });
   });
 });
+
+describe("financial insights: income in off-budget accounts", () => {
+  const range = resolvePeriod({ kind: "custom", startMonth: "2026-10", endMonth: "2026-10" }, today, "2026-09");
+  const review = { unavailableReason: null, rowCount: 0, amountMinor: 0 };
+  const flagged = accounts.map((a) => (a.id === "sav" ? { ...a, offBudgetIncome: true } : a));
+  const base: Tx[] = [
+    tx("start", "2026-09-01", "sav", 900_000, { payee: "p-start", payeeName: STARTING }),
+    tx("salary", "2026-10-01", "chk", 500_000, { category: "salary", payee: "p1" }),
+    tx("food", "2026-10-03", "chk", -100_000, { category: "food", payee: "p2" }),
+    tx("interest", "2026-10-31", "sav", 5_000),
+    tx("fee", "2026-10-31", "sav", -300),
+  ];
+  const model = (rows: Tx[], on: boolean, extra: Partial<FinancialFacts> = {}) => ({ rows, ledger: buildLedger({ ...factsFrom(rows), reclassified: [], accounts: on ? flagged : accounts, ...extra }), period: range, reclassifiedIds: (extra.reclassified ?? []).map((r) => r.id) });
+
+  it("counts money in as income and leaves money out unidentified, with the identity intact", () => {
+    const on = summarize(model(base, true).ledger, range, review);
+    const off = summarize(model(base, false).ledger, range, review);
+    expect(off.received).toBe(500_000);
+    expect(off.flows.unidentified).toBe(4_700);
+    expect(on.received).toBe(505_000);
+    expect(on.flows).toMatchObject({ income: 505_000, offBudgetIncome: 5_000, unidentified: -300, unidentifiedCount: 1 });
+    expect(on.unexplained).toBe(0);
+    expect(off.unexplained).toBe(0);
+    // Money kept rises by the same amount; spending does not move.
+    expect(on.spent).toBe(off.spent);
+  });
+
+  it("adds a row to the income breakdown that keeps it equal to Received, and opens a drill that matches", () => {
+    const m = model(base, true);
+    const summary = summarize(m.ledger, range, review);
+    const monthly = monthlyFlows(m.ledger, range, today, true);
+    const bd = incomeBreakdown(m.ledger, range, categories, monthly);
+    expect(bd.totalMinor).toBe(summary.received);
+    expect(bd.rows.find((r) => r.special === "offBudgetIncome")).toMatchObject({ id: SPECIAL_ROW_ID.offBudgetIncome, name: "Interest & income in off-budget accounts", totalMinor: 5_000 });
+    expect(bd.rows.find((r) => r.id === null)).toBeUndefined();
+    const own = listed({ kind: "offBudgetIncome" }, m);
+    expect(own.ids).toEqual(["interest"]);
+    expect(own.total).toBe(own.scope.expectedMinor);
+    const groups = spendingGroups(bd).groups.find((g) => g.offBudgetIncome)!;
+    const group = listed({ kind: "category", categoryIds: groups.categoryIds, offBudgetIncome: true, income: true, name: groups.name, amountMinor: 5_000 }, m);
+    expect(group.ids).toEqual(["interest"]);
+    expect(group.total).toBe(group.scope.expectedMinor);
+    // Received and the unidentified drill both still match.
+    for (const target of [{ kind: "received" }, { kind: "unidentified" }] as const) {
+      const d = listed(target, m);
+      expect(d.total).toBe(d.scope.expectedMinor);
+    }
+    expect(listed({ kind: "unidentified" }, m).ids).toEqual(["fee"]);
+  });
+
+  it("does nothing while the setting is off", () => {
+    const m = model(base, false);
+    const bd = incomeBreakdown(m.ledger, range, categories, monthlyFlows(m.ledger, range, today, true));
+    expect(bd.rows.some((r) => r.special === "offBudgetIncome")).toBe(false);
+    expect(summarize(m.ledger, range, review).flows.offBudgetIncome).toBe(0);
+  });
+
+  it("takes an entry the Asset Registry classifies back out of income", () => {
+    const registry: ReclassifiedRow = { id: "interest", payeeId: null, month: "2026-10", accountId: "sav", categoryId: null, amountMinor: 5_000, to: "valueChange" };
+    const m = model(base, true, { reclassified: [registry] });
+    const summary = summarize(m.ledger, range, review);
+    expect(summary.flows).toMatchObject({ income: 500_000, offBudgetIncome: 0, valueChanges: 5_000 });
+    expect(summary.unexplained).toBe(0);
+    const bd = incomeBreakdown(m.ledger, range, categories, monthlyFlows(m.ledger, range, today, true));
+    expect(bd.totalMinor).toBe(summary.received);
+    const d = listed({ kind: "received" }, m);
+    expect(d.total).toBe(d.scope.expectedMinor);
+  });
+});
+

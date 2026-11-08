@@ -11,6 +11,14 @@ const classesState = {
   maps: { accounts: new Map<string, AccountClass>(), groups: new Map<string, AccountClass>() },
 };
 jest.mock("../hooks/useAccountClasses", () => ({ useAccountClasses: () => classesState }));
+const flagsState = {
+  available: true,
+  failed: false,
+  apply: jest.fn(),
+  refetch: jest.fn(),
+  maps: { accounts: new Map<string, Set<string>>(), groups: new Set<string>() },
+};
+jest.mock("../hooks/useAccountFlags", () => ({ useAccountFlags: () => flagsState }));
 
 const store = () => useStagedStore.getState();
 
@@ -19,6 +27,9 @@ beforeEach(() => {
   classesState.available = false;
   classesState.apply.mockClear();
   classesState.maps = { accounts: new Map(), groups: new Map() };
+  flagsState.available = true;
+  flagsState.apply.mockClear();
+  flagsState.maps = { accounts: new Map(), groups: new Set() };
   store().discardAll();
   store().loadAccounts([
     { id: "a1", name: "Checking", offBudget: false, closed: false, groupId: "g1" },
@@ -181,6 +192,49 @@ describe("AccountGroupsDialog", () => {
       act(() => store().stageUpdate("accounts", "a1", { offBudget: false }));
       fireEvent.click(screen.getByRole("button", { name: "Set group class" }));
       expect(classesState.apply).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("Include in Financial Insights", () => {
+    it("is hidden when account classes are unavailable, and for a group with an on-budget member", () => {
+      render(<AccountGroupsDialog open onOpenChange={() => undefined} />);
+      expect(screen.queryByRole("checkbox", { name: /in Financial Insights/ })).not.toBeInTheDocument();
+    });
+
+    it("leaves a group out, and puts it back, as soon as it is clicked, when all its members are off budget", () => {
+      classesState.enabled = true;
+      classesState.available = true;
+      store().loadAccounts([{ id: "a1", name: "Home", offBudget: true, closed: false, groupId: "g1" }]);
+      const { rerender } = render(<AccountGroupsDialog open onOpenChange={() => undefined} />);
+      const box = screen.getByRole("checkbox", { name: "Include group Everyday in Financial Insights" });
+      expect(box).toBeChecked();
+      fireEvent.click(box);
+      expect(flagsState.apply).toHaveBeenCalledWith([{ scope: "group", id: "g1", flag: "excluded", on: true }]);
+
+      flagsState.maps = { accounts: new Map(), groups: new Set(["g1"]) };
+      rerender(<AccountGroupsDialog open onOpenChange={() => undefined} />);
+      const off = screen.getByRole("checkbox", { name: "Include group Everyday in Financial Insights" });
+      expect(off).not.toBeChecked();
+      fireEvent.click(off);
+      expect(flagsState.apply).toHaveBeenLastCalledWith([{ scope: "group", id: "g1", flag: "excluded", on: false }]);
+    });
+
+    it("is not offered for a group with an on-budget member, unless it is already left out (so it can be turned back on)", () => {
+      classesState.enabled = true;
+      classesState.available = true;
+      const { rerender } = render(<AccountGroupsDialog open onOpenChange={() => undefined} />);
+      expect(screen.queryByRole("checkbox", { name: "Include group Everyday in Financial Insights" })).not.toBeInTheDocument();
+      flagsState.maps = { accounts: new Map(), groups: new Set(["g1"]) };
+      rerender(<AccountGroupsDialog open onOpenChange={() => undefined} />);
+      expect(screen.getByRole("checkbox", { name: "Include group Everyday in Financial Insights" })).not.toBeChecked();
+    });
+
+    it("cannot be changed for a group that is not saved yet", () => {
+      classesState.enabled = true;
+      classesState.available = true;
+      store().stageNew("accountGroups", { id: "tmp", name: "Draft" });
+      render(<AccountGroupsDialog open onOpenChange={() => undefined} />);
+      expect(screen.getByRole("checkbox", { name: "Include group Draft in Financial Insights" })).toBeDisabled();
     });
   });
 });

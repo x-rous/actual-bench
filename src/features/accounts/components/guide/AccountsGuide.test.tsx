@@ -26,7 +26,10 @@ describe("the Accounts guide", () => {
     const map = screen.getByLabelText("The account classes");
     for (const info of ACCOUNT_CLASS_INFO) expect(within(map).getByText(info.label)).toBeInTheDocument();
     const marked = [...map.querySelectorAll("li")].filter((li) => li.textContent?.includes("off-budget only")).map((li) => li.querySelector("b")?.textContent);
-    expect(marked).toEqual(["Vehicle", "Property", "Investment", "Retirement", "Loan", "Excluded"]);
+    expect(marked).toEqual(["Vehicle", "Property", "Investment", "Retirement", "Loan"]);
+    const onBudget = [...map.querySelectorAll("li")].filter((li) => li.textContent?.includes("on-budget only")).map((li) => li.querySelector("b")?.textContent);
+    expect(onBudget).toEqual(["Credit Card"]);
+    expect(within(map).queryByText("Excluded")).not.toBeInTheDocument();
   });
 
   it("shows what Financial Reporting does for every class: the default, the alternative and the choices", () => {
@@ -35,15 +38,19 @@ describe("the Accounts guide", () => {
     for (const info of ACCOUNT_CLASS_INFO) {
       const r = reportingRequirement(info.value);
       expect(within(table).getAllByText(info.label).length).toBeGreaterThan(0);
-      if (r.kind === "required") for (const option of r.options) expect(within(table).getAllByText(REPORTING_LABELS[option]).length).toBeGreaterThan(0);
+      if (r.kind === "optional") for (const option of r.options) expect(within(table).getAllByText(REPORTING_LABELS[option]).length).toBeGreaterThan(0);
     }
     // Bank shows both: the default, in green, and the alternative.
     const bankCells = [...(within(table).getByText("Bank").parentElement as HTMLElement).children];
     expect(bankCells[1]).toHaveTextContent("Cash & cash equivalents · default");
     expect(bankCells[1].querySelector("span")?.className).toMatch(/green/);
     expect(bankCells[2]).toHaveTextContent("Fixed / restricted deposit");
-    // The three that ask say Choose… and list their options.
-    expect(within(table).getAllByText("Choose…")).toHaveLength(3);
+    // Nothing is required: no row asks the user to choose, and Other Asset shows its default and its alternatives.
+    expect(within(table).queryByText("Choose…")).not.toBeInTheDocument();
+    const otherCells = [...(within(table).getByText("Other Asset").parentElement as HTMLElement).children];
+    expect(otherCells[1]).toHaveTextContent("Holding · default");
+    expect(otherCells[2]).toHaveTextContent("Accessible money");
+    expect(otherCells[2]).toHaveTextContent("Fixed asset");
   });
 
   it("names where the classes are used by page or module, not by tab, and says what happens without them", () => {

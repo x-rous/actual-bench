@@ -147,7 +147,7 @@ export function AccountsView() {
           return !isAccountClassAllowed(group ? accountClasses.maps.groups.get(group.id) : null, account.offBudget);
         });
         if (incompatible) {
-          toast.error("An on-budget account in the CSV belongs to a group that requires off-budget accounts. Change its budget placement or group before importing.");
+          toast.error("An account in the CSV belongs to a group whose class does not suit its budget type. Change its budget placement or group before importing.");
           return;
         }
       }

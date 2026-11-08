@@ -1,5 +1,5 @@
 import type { AccountClass } from "@/lib/account-class";
-import { REPORTING_LABELS, isCashEquivalent, reportingRequirement } from "@/lib/account-class/reporting";
+import { REPORTING_LABELS, isCashEquivalent, reportingRequirement, validSavedTreatment } from "@/lib/account-class/reporting";
 import { trackedEquity, type AssetDebtLink } from "@/lib/asset-registry/financing";
 import { valueBridge, type ValueBridge } from "@/lib/asset-registry/valueBridge";
 import { ASSET_CLASSES, CLASS_LABEL, LIABILITY_CLASSES, type ClassKey } from "./breakdowns";
@@ -52,12 +52,13 @@ const emptySums = (): Sums => ({
   openingBalances: 0, unexplained: 0,
 });
 
-/** The label of the account's reporting treatment: automatic for most classes, the saved choice for the rest. */
+/** The label of the account's reporting treatment: automatic for most classes, the saved choice (or the default label) for Bank and Other Asset. */
 export function treatmentLabel(account: AccountFact): string {
   const requirement = reportingRequirement(account.accountClass);
   if (requirement.kind === "automatic") return requirement.label;
   if (requirement.kind === "bank-default") return isCashEquivalent("bank", account.treatment) ? requirement.label : REPORTING_LABELS["fixed-deposit"];
-  return account.treatment ? REPORTING_LABELS[account.treatment] : "Not set";
+  const saved = validSavedTreatment(account.accountClass, account.treatment);
+  return saved ? REPORTING_LABELS[saved] : requirement.label;
 }
 
 export function portfolioBridge(ledger: Ledger, period: ResolvedPeriod): PortfolioBridge {
@@ -166,8 +167,8 @@ export type AssetValueRow =
   | { kind: "unregistered"; accountId: string; name: string; accountClass: AccountClass; openingMinor: number; closingMinor: number; /** Set when the registry could not be read: the account is not known to be missing from it. */ reason?: string };
 
 /**
- * An account that is a fixed asset: Property, Vehicle, or an Other Asset marked Fixed asset. An Other Asset that is a current or
- * non-current holding (money owed to you, a long-term deposit) is not one: it has no place among the assets of the Assets module.
+ * An account that is a fixed asset: Property, Vehicle, or an Other Asset marked Fixed asset. An Other Asset that is only a holding
+ * (money owed to you, a deposit) is not one: it has no place among the assets of the Assets module.
  */
 export const isFixedAssetAccount = (a: Pick<AccountFact, "accountClass" | "treatment">): boolean => a.accountClass === "property" || a.accountClass === "vehicle" || (a.accountClass === "other-asset" && a.treatment === "fixed-asset");
 
@@ -218,8 +219,8 @@ export function assetValues(input: { ledger: Ledger; period: ResolvedPeriod; ass
   for (const asset of assets) {
     const owner = ledger.account.get(asset.actualAccountId);
     if (!owner || asset.status === "archived") continue;
-    // A fixed asset by class and treatment. An asset whose account has lost that (an Other Asset now marked as a current or
-    // non-current holding) stays in the list as unavailable, so its linked loan and its value are not silently dropped.
+    // A fixed asset by class and treatment. An asset whose account has lost that (an Other Asset no longer marked as a
+    // fixed asset) stays in the list as unavailable, so its linked loan and its value are not silently dropped.
     if (!isFixedAssetAccount(owner)) {
       if (owner.accountClass === "property" || owner.accountClass === "vehicle" || owner.accountClass === "other-asset") {
         rows.push({ kind: "registered", assetId: asset.id, name: asset.name, accountId: asset.actualAccountId, accountClass: owner.accountClass, linked: links.some((l) => l.assetId === asset.id), loans: [], state: "unavailable", reason: "Its account is no longer a fixed asset in Financial Reporting, so Assets and Financial Insights disagree about it; review it in Assets", openingMinor: ledger.balanceAt(asset.actualAccountId, before), closingMinor: ledger.balanceAt(asset.actualAccountId, period.endMonth) });

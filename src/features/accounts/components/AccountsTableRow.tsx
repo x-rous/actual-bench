@@ -19,7 +19,8 @@ import { cn } from "@/lib/utils";
 import type { Account, AccountGroup } from "@/types/entities";
 import { AccountGroupCell } from "./AccountGroupCell";
 import { AccountClassCell } from "./AccountClassCell";
-import { AccountReportingCell } from "./AccountReportingCell";
+import { AccountReportingCell, type AccountFlagState } from "./AccountReportingCell";
+import type { AccountFlag } from "@/lib/account-class/flags";
 import type { ReportingTreatment } from "@/lib/account-class/reporting";
 import { isAccountClassAllowed, type AccountClass, type EffectiveAccountClass } from "@/lib/account-class";
 import type { StagedEntity } from "@/types/staged";
@@ -55,9 +56,12 @@ type AccountsTableRowProps = {
   savedReporting?: ReportingTreatment;
   /** False until the saved choices have loaded. */
   canSetReporting: boolean;
-  /** A closed account with no activity needs no Financial Reporting choice. */
-  reportingExempt?: boolean;
+  /** The saved yes/no settings of this account (left out, accessible money, income in an off-budget account). */
+  flagState: AccountFlagState;
+  /** The account's group is left out of Financial Insights. */
+  excludedByGroup?: boolean;
   onSetReporting: (accountId: string, treatment: ReportingTreatment | null) => void;
+  onSetFlag: (accountId: string, flag: AccountFlag, on: boolean) => void;
   onToggleSelect: (id: string, checked: boolean) => void;
   onSelectNameCell: (id: string) => void;
   onStartEditingName: (id: string) => void;
@@ -141,8 +145,10 @@ function AccountsTableRowComponent({
   onSetClass,
   savedReporting,
   canSetReporting,
-  reportingExempt = false,
+  flagState,
+  excludedByGroup = false,
   onSetReporting,
+  onSetFlag,
   onToggleSelect,
   onSelectNameCell,
   onStartEditingName,
@@ -292,12 +298,15 @@ function AccountsTableRowComponent({
             accountId={entity.id}
             accountName={entity.name}
             accountClass={effective.accountClass}
+            offBudget={entity.offBudget}
             saved={savedReporting}
+            flags={flagState}
+            excludedByGroup={excludedByGroup}
+            groupName={classGroupName}
             unsaved={isNew}
             disabled={isDeleted || !canSetReporting}
-            choicesLoaded={canSetReporting}
-            exempt={reportingExempt}
-            onChange={onSetReporting}
+            onChangeTreatment={onSetReporting}
+            onChangeFlag={onSetFlag}
           />
         </td>
       )}
@@ -334,7 +343,7 @@ function AccountsTableRowComponent({
         ) : (
           <button
             disabled={isDeleted || !isAccountClassAllowed(effective?.accountClass, !entity.offBudget) || !isAccountClassAllowed(row.pendingAccountClass, !entity.offBudget)}
-            title={!isAccountClassAllowed(effective?.accountClass, !entity.offBudget) || !isAccountClassAllowed(row.pendingAccountClass, !entity.offBudget) ? "The selected class requires an off-budget account" : undefined}
+            title={!isAccountClassAllowed(effective?.accountClass, !entity.offBudget) || !isAccountClassAllowed(row.pendingAccountClass, !entity.offBudget) ? "The selected class does not suit that budget type" : undefined}
             onClick={() => onToggleNewBudgetType(entity.id, !entity.offBudget)}
             className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground transition-colors hover:text-foreground/80"
           >
@@ -469,8 +478,12 @@ function areEqual(prev: AccountsTableRowProps, next: AccountsTableRowProps) {
     prev.onSetClass === next.onSetClass &&
     prev.savedReporting === next.savedReporting &&
     prev.canSetReporting === next.canSetReporting &&
-    prev.reportingExempt === next.reportingExempt &&
+    prev.flagState.excluded === next.flagState.excluded &&
+    prev.flagState.accessible === next.flagState.accessible &&
+    prev.flagState.offbudgetIncome === next.flagState.offbudgetIncome &&
+    prev.excludedByGroup === next.excludedByGroup &&
     prev.onSetReporting === next.onSetReporting &&
+    prev.onSetFlag === next.onSetFlag &&
     prev.isAnotherCellEditing === next.isAnotherCellEditing
   );
 }

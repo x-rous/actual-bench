@@ -15,7 +15,7 @@ const FLOW_GROUPS: { name: string; icon: LucideIcon; placement: string; examples
     { label: "Off-budget payment", left: other("Outside payee"), right: account("Savings · off budget", "bank"), direction: "left", recorded: "Uncategorized entry in the off-budget account.", result: "Unidentified movements; not Spent." },
     { label: "Restricted deposit", left: account("Checking · on budget", "bank"), right: account("Deposit · off budget", "bank"), direction: "right", recorded: "Transfer into a Bank marked Fixed / restricted deposit.", result: "Fixed / restricted deposits rise; cash falls. Still in net worth, not the cash buffer." },
   ] },
-  { name: "Investments", icon: ACCOUNT_CLASS_ICONS.investment, placement: "Off budget · Investment needs a current / non-current choice", examples: [
+  { name: "Investments", icon: ACCOUNT_CLASS_ICONS.investment, placement: "Off budget · Investment, with an optional Accessible money setting", examples: [
     { label: "Put in", left: account("Checking · on budget", "bank"), right: account("Brokerage · off budget", "investment"), direction: "right", recorded: "Transfer; the on-budget side carries the category.", result: "Funding / Put into investments; not Spent." },
     { label: "Withdraw", left: account("Checking · on budget", "bank"), right: account("Brokerage · off budget", "investment"), direction: "left", recorded: "Withdrawal recorded as a transfer.", result: "Withdrawals / Withdrawn from investments; not Received." },
     { label: "Between investments", left: account("Brokerage A · off budget", "investment"), right: account("Brokerage B · off budget", "investment"), direction: "right", recorded: "Transfer between two portfolio accounts; neither side has a category.", result: "Other per account; cancels in the portfolio total when both sides are in the period." },
@@ -27,19 +27,19 @@ const FLOW_GROUPS: { name: string; icon: LucideIcon; placement: string; examples
     { label: "Interest & fees", left: account("Checking · on budget", "bank"), right: other("Lender · outside payee"), direction: "right", impact: "spent", recorded: "Separate interest or fee entry with an expense category.", result: "Spent. Interest paid / Fees paid identified for tracked loans only." },
     { label: "Loan adjustment", left: other("Recorded charge"), right: account("Loan · off budget", "loan"), direction: "entry", recorded: "Uncategorized non-transfer entry, for example capitalized interest.", result: "Unidentified movements; not Interest paid or Spent." },
   ] },
-  { name: "Credit cards", icon: ACCOUNT_CLASS_ICONS["credit-card"], placement: "On or off budget · Current liability", examples: [
+  { name: "Credit cards", icon: ACCOUNT_CLASS_ICONS["credit-card"], placement: "On budget only · Credit card liability", examples: [
     { label: "Card purchase", left: account("Card · on budget", "credit-card"), right: other("Grocery store · outside payee"), direction: "right", impact: "spent", recorded: "Purchase with a grocery category.", result: "Spent rises when recorded; card debt rises." },
     { label: "Pay card", left: account("Checking · on budget", "bank"), right: account("Card · on budget", "credit-card"), direction: "right", recorded: "Transfer to pay the card. Both accounts are on budget.", result: "Cash falls; not Spent again." },
-    { label: "Off-budget card", left: other("Outside payee"), right: account("Card · off budget", "credit-card"), direction: "left", recorded: "Uncategorized non-transfer entry.", result: "Unidentified movements; not Spent." },
+    { label: "Card kept off budget", left: other("Outside payee"), right: account("Card · off budget", "credit-card"), direction: "left", recorded: "A credit card must be on budget so its purchases count as spending. An off-budget card is not ready.", result: "Financial Insights shows nothing until the card is moved on budget in Actual, or another class is chosen." },
   ] },
   { name: "Property & assets", icon: ACCOUNT_CLASS_ICONS.property, placement: "Property and Vehicle classes are off budget · Fixed assets", examples: [
     { label: "Buy property", left: account("Checking · on budget", "bank"), right: account("Property · off budget", "property"), direction: "right", recorded: "Purchase recorded as a transfer; the on-budget side carries a category.", result: "Asset value rises; not Spent. Assets may classify Capital added." },
     { label: "Value change", left: other("Recorded value change"), right: account("Property · off budget", "property"), direction: "entry", recorded: "Entry classified in Assets as revaluation or depreciation.", result: "Revaluation / Depreciation when classified in Assets." },
     { label: "Link a loan", left: account("Loan · off budget", "loan"), right: account("Property · off budget", "property"), direction: "link", recorded: "The loan is linked to the asset in Assets. This link is not a transaction.", result: "Debt against assets and Equity in Property & assets." },
   ] },
-  { name: "Other accounts", icon: ACCOUNT_CLASS_ICONS["other-liability"], placement: "Other Liability may be on or off budget; Excluded is off budget", examples: [
-    { label: "Other liability", left: account("Checking · on budget", "bank"), right: account("Liability · off budget", "other-liability"), direction: "right", recorded: "A transfer to an Other Liability account; choose current or non-current in Financial Reporting.", result: "Other liabilities change; the transfer is not Spent." },
-    { label: "Excluded account", left: account("Checking · on budget", "bank"), right: account("Excluded · off budget", "excluded"), direction: "right", recorded: "A transfer to an account excluded from Financial Insights.", result: "Transfers with excluded accounts; excluded balance is outside net worth." },
+  { name: "Other accounts", icon: ACCOUNT_CLASS_ICONS["other-liability"], placement: "Other Liability may be on or off budget; an off-budget account can be left out of Financial Insights", examples: [
+    { label: "Other liability", left: account("Checking · on budget", "bank"), right: account("Liability · off budget", "other-liability"), direction: "right", recorded: "A transfer to an Other Liability account.", result: "Other liabilities change; the transfer is not Spent." },
+    { label: "Account left out", left: account("Checking · on budget", "bank"), right: account("Savings · off budget", "bank"), direction: "right", recorded: "A transfer to an off-budget account set to “Include in Financial Insights: off”.", result: "Transfers with excluded accounts; excluded balance is outside net worth." },
   ] },
 ];
 

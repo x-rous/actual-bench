@@ -3,24 +3,26 @@
 import React, { useMemo, useState } from "react";
 import { Select } from "@/components/ui/select";
 import type { AccountGroup } from "@/types/entities";
-import { isAccountClassAllowed, type AccountClass } from "@/lib/account-class";
+import { accountClassRequiresOnBudget, isAccountClassAllowed, isAccountClassAllowedForSet, type AccountClass } from "@/lib/account-class";
 import { NEW_GROUP, NO_GROUP, groupLabel } from "../lib/accountGroups";
 
 /** Options for any "pick a group" dropdown: no group, each group, then "New group…". */
 export function buildGroupOptions(
   groups: AccountGroup[],
   groupClasses?: ReadonlyMap<string, AccountClass>,
-  hasOnBudgetAccounts = false
+  hasOnBudgetAccounts = false,
+  hasOffBudgetAccounts = !hasOnBudgetAccounts
 ) {
   return [
     { value: NO_GROUP, label: "No group" },
     ...groups.map((g) => {
-      const disabled = !isAccountClassAllowed(groupClasses?.get(g.id), !hasOnBudgetAccounts);
+      const groupClass = groupClasses?.get(g.id);
+      const disabled = !isAccountClassAllowedForSet(groupClass, { onBudget: hasOnBudgetAccounts, offBudget: hasOffBudgetAccounts });
       return {
         value: g.id,
         disabled,
         label: disabled
-          ? <span className="flex flex-col gap-0.5"><span>{g.name}</span><span className="text-[10px] text-muted-foreground">Requires off-budget accounts</span></span>
+          ? <span className="flex flex-col gap-0.5"><span>{g.name}</span><span className="text-[10px] text-muted-foreground">{accountClassRequiresOnBudget(groupClass) ? "Requires on-budget accounts" : "Requires off-budget accounts"}</span></span>
           : g.name,
       };
     }),

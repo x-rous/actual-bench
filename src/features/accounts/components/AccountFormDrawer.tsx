@@ -145,6 +145,8 @@ export function AccountFormDrawer({ open, onOpenChange, onSubmit, groups, groupC
                 type="button"
                 role="switch"
                 aria-checked={offBudget}
+                disabled={!isAccountClassAllowed(effectiveClass, true)}
+                title={!isAccountClassAllowed(effectiveClass, true) ? "On-budget accounts only" : undefined}
                 onClick={() => setValue("offBudget", true)}
                 className="flex h-8 flex-1 items-center justify-center rounded-md border text-sm font-medium transition-colors aria-checked:bg-primary aria-checked:text-primary-foreground aria-not-checked:border-border aria-not-checked:bg-background aria-not-checked:text-foreground"
               >

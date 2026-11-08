@@ -19,6 +19,28 @@ import { CardTitle } from "./InfoTip";
 type Ready = Extract<FinancialInsightsView["data"], { state: "ready" }>;
 
 /** Today's cash equivalents less the credit cards owed, from the same ledger and month as the buffer. Amounts are integer minor units; `cashMinor` = `grossMinor` − `cardsOwedMinor`. */
+/** The second figure: the months of cover if the accounts set to "Accessible money" were counted too. The main figure, the goal and scenarios stay cash-based. */
+function AccessibleLine({ months, accounts, totalMinor, today }: { months: number; accounts: { accountId: string; name: string; balanceMinor: number }[]; totalMinor: number; today: string }) {
+  return (
+    <p className="mt-2 text-xs text-muted-foreground">
+      <Popover>
+        <PopoverTrigger openOnHover delay={150} render={<button type="button" aria-label={`With accessible investments: ${months.toFixed(1)} months. See the accounts`} className="cursor-help font-medium text-foreground underline decoration-dotted underline-offset-4 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">With accessible investments: {months.toFixed(1)} months</button>} />
+        <PopoverContent align="start" className="w-80 p-3 text-xs">
+          <p className="mb-1.5 font-medium">Accounts set to Accessible money</p>
+          <p className="mb-2 text-muted-foreground">Balances as of {formatDay(today)}, positive balances only. They are added to cash &amp; bank less card balances for this second figure; the main figure above does not include them.</p>
+          <table className="w-full border-collapse">
+            <tbody>
+              {accounts.map((a) => <tr key={a.accountId} className="border-b border-border/40 last:border-0"><th scope="row" className="py-1 text-left font-normal">{a.name}</th><td className="py-1 text-right tabular-nums">{money(a.balanceMinor)}</td></tr>)}
+              <tr className="font-semibold"><th scope="row" className="pt-1.5 text-left">Total</th><td className="pt-1.5 text-right tabular-nums">{money(totalMinor)}</td></tr>
+            </tbody>
+          </table>
+        </PopoverContent>
+      </Popover>
+      {" "}(cash &amp; bank less card balances, plus those accounts)
+    </p>
+  );
+}
+
 function CashAccountsTip({ data, today, cashMinor, grossMinor, cardsOwedMinor }: { data?: Ready; today: string; cashMinor: number; grossMinor: number; cardsOwedMinor: number }) {
   const ledger = data?.ledger;
   const cashAccounts = ledger ? [...ledger.account.values()]
@@ -186,6 +208,9 @@ export function CashBuffer({ buffer, groups, today, data }: { buffer: Ready["buf
               <p className="text-xl font-semibold leading-tight tabular-nums"><CashAccountsTip data={data} today={today} cashMinor={shown.cashMinor} grossMinor={buffer.value.grossCashMinor} cardsOwedMinor={buffer.value.cardsOwedMinor} /></p>
             </div>
           </div>
+          {shown.monthsWithAccessible !== undefined && (buffer.value.accessibleMinor ?? 0) > 0 && buffer.value.accessibleAccounts && (
+            <AccessibleLine months={shown.monthsWithAccessible} accounts={buffer.value.accessibleAccounts} totalMinor={buffer.value.accessibleMinor ?? 0} today={today} />
+          )}
           <div className={`relative ${goal !== null ? "mt-7" : "mt-3"}`}>
             {/* The goal is named above the bar, ending at its mark near the right edge, so it never meets the labels under the bar. */}
             {goal !== null && (() => {

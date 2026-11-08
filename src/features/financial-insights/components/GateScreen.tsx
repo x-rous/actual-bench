@@ -8,7 +8,6 @@ import { LoadingState } from "./LoadingState";
 
 const REASON: Record<SetupRow["status"], string> = {
   "needs-class": "Needs an account class",
-  "needs-choice": "Needs a Financial Reporting choice",
   "incompatible-placement": "Its class does not fit its budget placement",
 };
 
@@ -30,14 +29,17 @@ export function GateScreen({ gate, onCheckAgain }: { gate: Exclude<Gate, { state
     <div className="mx-auto w-full max-w-3xl p-8">
       <h2 className="text-lg font-semibold">Let’s make sure every account is understood.</h2>
       <p className="mt-1 text-sm text-muted-foreground">
-        Financial Insights needs an account class for every account, and a current or non-current choice for Investment, Other Asset and Other Liability accounts, before it shows any figure.
+        Financial Insights needs two things from every account before it shows any figure: an account class, and a class that fits where the account sits (on or off budget). An off-budget account you do not want counted can be left out instead; it then needs neither.
         {" "}{gate.rows.length} {gate.rows.length === 1 ? "account needs" : "accounts need"} attention.
       </p>
       <ul className="mt-4 divide-y divide-border rounded-lg border border-border" aria-label="Accounts that need attention">
         {gate.rows.map((row) => (
           <li key={row.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
             <span className="truncate font-medium">{row.name}</span>
-            <span className="flex shrink-0 items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400"><AlertTriangle className="size-3.5" aria-hidden />{REASON[row.status]}</span>
+            <span className="flex min-w-0 shrink-0 flex-col items-end gap-0.5 text-right text-xs text-amber-700 dark:text-amber-400">
+              <span className="flex items-center gap-1.5"><AlertTriangle className="size-3.5" aria-hidden />{REASON[row.status]}</span>
+              {row.detail && <span className="max-w-md text-muted-foreground">{row.detail}</span>}
+            </span>
           </li>
         ))}
       </ul>
@@ -45,7 +47,7 @@ export function GateScreen({ gate, onCheckAgain }: { gate: Exclude<Gate, { state
         <Link href="/accounts" className="inline-flex h-8 items-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:opacity-90">Open Accounts</Link>
         <Button size="sm" variant="outline" onClick={onCheckAgain}>Check again</Button>
       </div>
-      <p className="mt-2 text-xs text-muted-foreground">Set the class and the choice in the Accounts table, then come back. This page also checks again each time it opens.</p>
+      <p className="mt-2 text-xs text-muted-foreground">Set the class, or the “Include in Financial Insights” setting, in the Accounts table, then come back. This page also checks again each time it opens.</p>
     </div>
   );
 }
