@@ -195,15 +195,15 @@ export function CashBuffer({ buffer, groups, today, data }: { buffer: Ready["buf
         </>
       ) : buffer.state === "ready" && shown ? (
         <>
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <div className="mt-3 flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+            <div className="min-w-0 flex-1 basis-56">
               <p className="text-4xl font-semibold leading-none tracking-tight tabular-nums">{shown.months.toFixed(1)} <span className="text-base font-normal text-muted-foreground">months</span></p>
-              <div className="text-xs text-muted-foreground">
+              <div className="mt-1.5 text-xs text-muted-foreground">
                 <p>of cover: cash &amp; bank less card balances ÷ needed per month</p>
                 {delta !== null && <p className={delta > 0 ? "text-green-700 dark:text-green-400" : delta < 0 ? "text-red-700 dark:text-red-400" : undefined}>{delta === 0 ? "Same as" : `${delta > 0 ? "▲ +" : "▼ −"}${Math.abs(delta).toFixed(1)} months against`} the actual {buffer.value.months.toFixed(1)}</p>}
               </div>
             </div>
-            <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-right">
+            <div className="ml-auto shrink-0 rounded-md border border-border bg-muted/40 px-3 py-2 text-right">
               <p className="text-xs text-muted-foreground">Cash &amp; bank less card balances</p>
               <p className="text-xl font-semibold leading-tight tabular-nums"><CashAccountsTip data={data} today={today} cashMinor={shown.cashMinor} grossMinor={buffer.value.grossCashMinor} cardsOwedMinor={buffer.value.cardsOwedMinor} /></p>
             </div>

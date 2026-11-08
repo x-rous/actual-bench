@@ -223,6 +223,23 @@ describe("signedLabelMoney", () => {
   });
 });
 
+describe("FlowChart savings rate", () => {
+  const props = { labels: ["Jan", "Feb", "Mar", "Apr"], received: [500_000, 100_000, 300_000, 0], spent: [380_000, 150_000, 300_000, 10_000], kept: [120_000, -50_000, 0, null], tip, onSelect: () => undefined };
+  const rates = (container: HTMLElement) => [...container.querySelectorAll("text")].filter((t) => /^Savings rate /.test(t.getAttribute("aria-label") ?? "")).map((t) => [t.getAttribute("aria-label"), t.textContent]);
+
+  it("writes each period's savings rate above its bar, and nothing for a period with no rate", () => {
+    const { container } = render(<FlowChart {...props} partialIndex={null} savingsRate={["24.0%", "-50.0%", "0.0%", null]} />);
+    expect(rates(container)).toEqual([["Savings rate Jan: 24.0%", "24.0%"], ["Savings rate Feb: -50.0%", "-50.0%"], ["Savings rate Mar: 0.0%", "0.0%"]]);
+    expect(container.textContent).toContain("Saved");
+  });
+
+  it("draws nothing extra, and keeps its old top margin, when no rate is given", () => {
+    const { container } = render(<FlowChart {...props} partialIndex={null} />);
+    expect(rates(container)).toEqual([]);
+    expect(container.textContent).not.toContain("Saved");
+  });
+});
+
 describe("FlowChart kept labels", () => {
   const labels = ["Jan", "Feb", "Mar", "Apr"];
   const props = { labels, received: [500_000, 100_000, 300_000, 20_000], spent: [380_000, 150_000, 300_000, 10_000], tip, onSelect: () => undefined };

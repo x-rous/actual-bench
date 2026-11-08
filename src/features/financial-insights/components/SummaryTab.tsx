@@ -201,6 +201,7 @@ export function SummaryTab({ data, today, accountNames, onDrill }: { data: Ready
         <Tile label="Change in cash" detail="Cash & bank, end less start">{signedMoney(summary.eligibleCash.change)}</Tile>
         <Tile label="Savings rate" tone={summary.savingsRate.state === "ready" && !summary.savingsRate.warning ? undefined : "warning"} info={summary.savingsRate.state === "ready" && summary.savingsRate.warning ? <p>{summary.savingsRate.warning}.</p> : undefined} delta={summary.savingsRate.state === "ready" && comparison && comparison.current.received > 0 && comparison.previous.received > 0 && <Delta points now={(comparison.current.kept / comparison.current.received) * 100} before={(comparison.previous.kept / comparison.previous.received) * 100} label={comparison.label} good="up" />} detail={summary.savingsRate.state === "ready" ? <>Money kept ÷ money received{summary.savingsRate.warning && <WarningLine />}</> : summary.savingsRate.reason}>{summary.savingsRate.state === "ready" ? percent(summary.savingsRate.value) : "Needs review"}</Tile>
       </div>
+      {/* Left: what you own, what changed it, where the money went. Right: the cash buffer, then what you own and owe now. */}
       <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,6fr)_minmax(0,5fr)]">
         <ChartFrame
           id="composition" title={`What you own and owe, ${names.one} by ${names.one}`} hint="Select a class in the legend to add or remove it"
@@ -213,9 +214,6 @@ export function SummaryTab({ data, today, accountNames, onDrill }: { data: Ready
           <CompositionChart labels={labels} partialIndex={partialIndex} months={chartMonths} netWorth={chartNetWorth} hasData={chartKnown} hidden={hidden} showNetWorth={!hideLine} unitName={names.one} partialText={summary.period.partial ? "balance today" : "balance at the end of the period"} />
         </ChartFrame>
         <CashBuffer buffer={buffer} groups={bufferSpending} today={today} data={data} />
-      </div>
-      <WhereMoneyWentCard data={data} csvScope={[["Period", period]]} onDrill={onDrill} />
-      <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,6fr)_minmax(0,5fr)]">
         <ChartFrame
           id="net-worth-change"
           title={<span className="flex flex-wrap items-center gap-2">What changed your net worth {netWorthChange.unexplainedMinor === 0 ? <span className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[11px] font-normal text-muted-foreground"><CheckCircle2 className="size-3" aria-hidden />Reconciled</span> : <span className={`inline-flex items-center gap-1 rounded-full border border-amber-500/60 px-2 py-0.5 text-[11px] font-normal ${WARNING}`}><AlertTriangle className="size-3" aria-hidden />{money(Math.abs(netWorthChange.unexplainedMinor))} unexplained</span>}</span>}
@@ -229,7 +227,12 @@ export function SummaryTab({ data, today, accountNames, onDrill }: { data: Ready
         >
           <Waterfall steps={steps} floorMinor={floorMinor} ariaLabel="Components of the change in net worth" canSelect={(s) => stepTarget(s.key) !== null} onSelect={(s) => { const t = stepTarget(s.key); if (t) onDrill(t); }} />
         </ChartFrame>
-        <OwnAndOwe data={data} />
+        <div className="flex min-w-0 xl:row-span-2">
+          <div className="flex min-w-0 flex-1 flex-col [&>*]:flex-1">
+            <OwnAndOwe data={data} />
+          </div>
+        </div>
+        <WhereMoneyWentCard data={data} csvScope={[["Period", period]]} onDrill={onDrill} />
       </div>
       <details className="rounded-lg border border-border bg-card px-4 py-3 text-xs">
         <summary className="cursor-pointer font-medium">How money kept, change in cash and change in net worth differ</summary>

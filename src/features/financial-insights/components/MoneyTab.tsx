@@ -104,6 +104,8 @@ export function MoneyTab({ data, onDrill }: { data: Ready; onDrill: (target: Dri
   // Kept needs review for a whole quarter or year when it does for any month of it.
   const keptSeries = buckets.map((b) => (!b.hasData || b.indexes.some((i) => monthly[i].hasData && monthly[i].kept === null) ? null : b.indexes.reduce((sum, i) => sum + (monthly[i].hasData ? (monthly[i].kept ?? 0) : 0), 0)));
   const keptReady = summary.moneyKept.state === "ready";
+  // The savings rate of each period: what was kept out of every 100 received. None when nothing was received or Money kept needs review.
+  const rates = buckets.map((_, i) => { const r = received[i], k = keptSeries[i]; return r !== null && k !== null && r > 0 ? (k / r) * 100 : null; });
   const spentShare = summary.received > 0 ? Math.max(0, Math.min(100, (summary.spent / summary.received) * 100)) : null;
   const flows = summary.flows;
   const bridge = cashBridgeLines(summary);
@@ -189,12 +191,12 @@ export function MoneyTab({ data, onDrill }: { data: Ready; onDrill: (target: Dri
       </div>
 
       <ChartFrame
-        id="money-in-out" title="Money in, money out" hint="Received above the line, spent below it" actions={<UnitPills value={unit} onChange={setUnit} label="Show money in and out by" />} subtitle={<><p>Received rises above the line and spent hangs below it; the dashed line is what was kept (received less spent). Nothing is stacked, so nothing is counted twice.{unit !== "month" && ` A ${names.one} adds up its months; it is a calendar ${names.one}, and one the period only partly covers is marked *.`}</p><p>Select a bar to see its transactions.</p></>}
+        id="money-in-out" title="Money in, money out" hint="Received above the line, spent below it, savings rate on top" actions={<UnitPills value={unit} onChange={setUnit} label="Show money in and out by" />} subtitle={<><p>Received rises above the line and spent hangs below it; the dashed line is what was kept (received less spent). Nothing is stacked, so nothing is counted twice. The percentage above each bar is the savings rate: the share of what was received that was kept.{unit !== "month" && ` A ${names.one} adds up its months; it is a calendar ${names.one}, and one the period only partly covers is marked *.`}</p><p>Select a bar to see its transactions.</p></>}
         legend={[{ label: "Received", colour: "var(--fi-income)" }, { label: "Spent", colour: "var(--fi-spend)" }, { label: "Kept (received less spent)", colour: "var(--fi-kept)", line: true }]}
-        table={{ head: [names.one[0].toUpperCase() + names.one.slice(1), "Received", "Spent", "Kept"], rows: buckets.map((b, i) => [unitLabels[i] + (b.partial ? " (partial)" : ""), received[i], spent[i], keptSeries[i]]) }} csvScope={scope}
+        table={{ head: [names.one[0].toUpperCase() + names.one.slice(1), "Received", "Spent", "Kept", "Savings rate"], rows: buckets.map((b, i) => [unitLabels[i] + (b.partial ? " (partial)" : ""), received[i], spent[i], keptSeries[i], rates[i] === null ? "" : percent(rates[i] as number)]) }} csvScope={scope}
         footnote={flowFootnote}
       >
-        <FlowChart labels={unitLabels} partialIndex={unitPartials.length ? unitPartials : null} received={received} spent={spent} kept={keptSeries} tip={flowTip} onSelect={(i, series) => onDrill({ kind: series, month: buckets[i].first, throughMonth: buckets[i].last !== buckets[i].first ? buckets[i].last : undefined })} />
+        <FlowChart labels={unitLabels} partialIndex={unitPartials.length ? unitPartials : null} received={received} spent={spent} kept={keptSeries} savingsRate={rates.map((r) => (r === null ? null : percent(r)))} tip={flowTip} onSelect={(i, series) => onDrill({ kind: series, month: buckets[i].first, throughMonth: buckets[i].last !== buckets[i].first ? buckets[i].last : undefined })} />
       </ChartFrame>
 
       <ChartFrame

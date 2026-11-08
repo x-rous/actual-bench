@@ -16,14 +16,18 @@ import { useTip, useWidth } from "./Tip";
  */
 /** The narrowest a month's slot may be for the Kept figure beside its marker. */
 const KEPT_LABEL_MIN_SLOT = 44;
+/** The narrowest slot that still has room for a savings rate such as "34.1%" above its bar. */
+const RATE_MIN_SLOT = 40;
 
-export function FlowChart({ labels, partialIndex, received, spent, kept, height = 260, tip, onSelect }: {
+export function FlowChart({ labels, partialIndex, received, spent, kept, savingsRate, height = 260, tip, onSelect }: {
   labels: string[];
   partialIndex: number | readonly number[] | null;
   received: (number | null)[];
   spent: (number | null)[];
   /** Null while Money kept needs review: the marker is left out, not shown as zero. */
   kept: (number | null)[];
+  /** The savings rate of each period (kept ÷ received, as text, e.g. "34.1%"), drawn above its bar; null leaves it out (no income, or Money kept needs review). */
+  savingsRate?: (string | null)[];
   height?: number;
   tip: (index: number) => ReactNode;
   onSelect: (index: number, series: "received" | "spent") => void;
@@ -31,7 +35,7 @@ export function FlowChart({ labels, partialIndex, received, spent, kept, height 
   const host = useRef<HTMLDivElement>(null);
   const width = useWidth(host);
   const { show, hide } = useTip();
-  const M = { l: 50, r: 10, t: 14, b: 24 };
+  const M = { l: 50, r: 10, t: savingsRate ? 30 : 14, b: 24 };
   const hi = Math.max(1, ...received.map((v) => v ?? 0), ...kept.map((v) => v ?? 0)) * 1.08;
   const lo = Math.min(-1, ...spent.map((v) => -(v ?? 0)), ...kept.map((v) => v ?? 0)) * 1.08;
   const { y, marks } = scaleY(lo, hi, height, M.t, M.b, 5);
@@ -50,6 +54,10 @@ export function FlowChart({ labels, partialIndex, received, spent, kept, height 
           </g>
         ))}
         <line x1={M.l} x2={width - M.r} y1={y(0)} y2={y(0)} stroke="var(--muted-foreground)" strokeWidth={1.25} />
+        {savingsRate && <text x={M.l - 8} y={11} textAnchor="end" className="fill-muted-foreground text-[10px]">Saved</text>}
+        {savingsRate && slot >= RATE_MIN_SLOT && savingsRate.map((rate, i) => rate === null ? null : (
+          <text key={`rate${i}`} x={M.l + (i + 0.5) * slot} y={11} textAnchor="middle" className="fill-foreground text-[10.5px] font-semibold" opacity={isPartial(i) ? 0.55 : 1} aria-label={`Savings rate ${labels[i]}: ${rate}`} pointerEvents="none">{rate}</text>
+        ))}
         {labels.map((label, i) => {
           const cx = M.l + (i + 0.5) * slot;
           const partial = isPartial(i);

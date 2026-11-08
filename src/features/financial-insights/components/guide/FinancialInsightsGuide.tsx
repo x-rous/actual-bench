@@ -256,7 +256,7 @@ export function FinancialInsightsGuide({ section, onSection, onClose, docsUrl }:
         <OwnAndOweSketch />
         <Para>Assets are stacked above zero by class, liabilities below, and net worth is the line. Mo, Qtr and Yr show the balance at the end of each month, quarter or year; the chart opens in the unit that suits the length of the period. Select a class in the legend to take it out of the bars. The net worth line always stays the true total.</Para>
         <Heading>Where your money went</Heading>
-        <Para>This card splits what you received into the uses it went to, in parts that add up to it exactly: <b>Spent</b>, <b>Debt repaid (principal)</b>, <b>Borrowed</b>, <b>Put into investments (net)</b>, <b>Moved to deposits, assets and other liabilities</b>, the <b>change in card balances</b> and the <b>change in cash &amp; bank</b>. <b>Other</b> is whatever those do not explain; it is shown whenever it is not zero and is never forced to zero. Money kept is everything here except Spent.</Para>
+        <Para>This card splits what you received into the uses it went to, in parts that add up to it exactly: <b>Spent</b>, <b>Debt repaid (principal)</b>, <b>Borrowed</b>, <b>Put into investments (net)</b>, <b>Moved to deposits, assets and other liabilities</b>, the <b>change in card balances</b> and the <b>change in cash &amp; bank</b>. <b>Other</b> is whatever those do not explain; it is shown whenever it is not zero and is never forced to zero. Money kept is everything here except Spent. Every line has an (i) that says what it means in plain words. Select the amount of <b>Spent</b>, <b>Debt repaid</b> or <b>Borrowed</b> to see the transactions behind it; the other lines are changes in balances, so they have no transactions to list.</Para>
         <Heading>What changed your net worth</Heading>
         <WaterfallSketch label="Sketch of what changed net worth" steps={[
           { name: "Start", value: 100, kind: "total" }, { name: "Money kept", value: 18, kind: "up" }, { name: "Investment activity", value: 6, kind: "up" },
@@ -284,7 +284,7 @@ export function FinancialInsightsGuide({ section, onSection, onClose, docsUrl }:
         </Tiles>
         <Heading>Money in, money out</Heading>
         <FlowSketch />
-        <Para>Received rises above the line, spent hangs below it, and what you kept is a dashed line with a marker for each month. Nothing is stacked, so nothing is counted twice. Quarters and years add up their months; one the period only partly covers is marked * and drawn lighter.</Para>
+        <Para>Received rises above the line, spent hangs below it, and what you kept is a dashed line with a marker for each month. Nothing is stacked, so nothing is counted twice. The percentage above each month, quarter or year is the savings rate: the share of what was received that was kept. Quarters and years add up their months; one the period only partly covers is marked * and drawn lighter.</Para>
         <Heading>Cash change, one step at a time</Heading>
         <WaterfallSketch label="Sketch of how cash moved" steps={[
           { name: "Cash at start", value: 100, kind: "total" }, { name: "Income", value: 40, kind: "up" }, { name: "Spending", value: -30, kind: "down" },
