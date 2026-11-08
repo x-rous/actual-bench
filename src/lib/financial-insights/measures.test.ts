@@ -283,6 +283,16 @@ describe("financial insights: cash buffer", () => {
     expect(buffer(f, [["loan", { state: "ready", monthlyMinor: 100_000 }]])).toMatchObject({ state: "ready", value: { spendingMinor: 45_000 } });
   });
 
+  it("does not take a registry-classified loan cost out of the spending twice", () => {
+    // The interest lines are categorized, but Assets classifies them as a change in value: spending already leaves them out.
+    const interest = months6.map((m) => row(m, "chk", -20_000, { categoryId: "loan-interest" }));
+    const f = facts([...base, ...spending(months6), ...interest, owing], {
+      loanCosts: months6.map((m) => ({ id: `i-${m}`, month: m, accountId: "chk", categoryId: "loan-interest", amountMinor: -20_000, loanAccountId: "loan", kind: "interest" as const, charged: false })),
+      reclassified: months6.map((m) => ({ id: `i-${m}`, payeeId: null, month: m, accountId: "chk", categoryId: "loan-interest", amountMinor: -20_000, to: "valueChange" as const })),
+    });
+    expect(buffer(f, [["loan", { state: "ready", monthlyMinor: 100_000 }]])).toMatchObject({ state: "ready", value: { spendingMinor: 100_000 } });
+  });
+
   it("only takes out a recorded interest line that counted as spending", () => {
     const f = facts([...base, ...spending(months6), owing], {
       loanCosts: [{ month: "2026-09", accountId: "sav", categoryId: null, amountMinor: -20_000 }, { month: "2026-09", accountId: "chk", categoryId: "salary", amountMinor: -20_000 }],

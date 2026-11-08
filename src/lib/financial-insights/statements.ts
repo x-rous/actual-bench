@@ -92,7 +92,13 @@ export function buildStatements(input: {
     const other = entry.transferAccountId ? ledger.account.get(entry.transferAccountId) : undefined;
     return cashIds.has(entry.accountId) && !entry.startingBalance && !!entry.transferId && entry.amountMinor < 0 && other?.accountClass === "loan" && !cashIds.has(other.id) && !(entry.parentId && expenseParents.has(entry.parentId));
   };
-  const paidLoans = new Set(entries.filter((e) => unsplitPayment(e) && chargedByLoan.has(e.transferAccountId!)).map((e) => e.transferAccountId!));
+  const paymentSum = new Map<string, number>();
+  for (const e of entries) if (unsplitPayment(e) && chargedByLoan.has(e.transferAccountId!)) paymentSum.set(e.transferAccountId!, (paymentSum.get(e.transferAccountId!) ?? 0) + e.amountMinor);
+  const paidLoans = new Set(paymentSum.keys());
+  const chargeSum = (loanId: string) => (chargedByLoan.get(loanId) ?? []).reduce((sum, e) => sum + e.amountMinor, 0);
+  // Interest and fees are paid in cash only up to what was paid to the loan. A loan charged more than it was paid has all its payments
+  // read as interest and fees (no principal), and the rest of the charge stays an expense that no cash has paid.
+  const overCharged = new Set([...paidLoans].filter((id) => chargeSum(id) < paymentSum.get(id)!));
   const operating = [line("receipts", "Categorized cash receipts"), line("payments", "Categorized cash payments"), line("card", "Credit-card settlements", "Ordinary card settlements are operating payments. Purchase categories remain in P&L; no allocation of a settlement to particular purchases is inferred."), line("interest", "Recorded loan interest and fees paid"), line("uncategorized-in", "Uncategorized cash receipts"), line("uncategorized-out", "Uncategorized cash payments")];
   const investing = [line("invest-out", "Put into investments and retirement"), line("invest-in", "Withdrawn from investments and retirement"), line("fixed-out", "Placed in fixed / restricted deposits"), line("fixed-in", "Released from fixed / restricted deposits"), line("asset-out", "Fixed-asset purchases and capital added"), line("asset-in", "Fixed-asset transfers received"), line("sales", "Asset sale proceeds and selling costs")];
   const financing = [line("borrowed", "Borrowing received from loans"), line("principal", "Recorded loan principal repaid"), line("principal-net", "Loan payments less interest and fees the lender charged", "Payments to loans whose lender charges interest and fees as their own entries. What the lender charged is shown as interest and fees paid under operating activities; the rest is principal. Opened from the loan accounts: what was paid in, less what was charged.")];
@@ -118,7 +124,7 @@ export function buildStatements(input: {
     if (entry.startingBalance) { if (cash) add(starting, entry); continue; }
     if (chargedIds.has(entry.id) && !entry.transferAccountId) {
       add(lenderCharges, entry);
-      if (paidLoans.has(entry.accountId)) add(operating[3], entry); else otherNoncashPnlMinor += entry.amountMinor;
+      if (paidLoans.has(entry.accountId)) { if (!overCharged.has(entry.accountId)) add(operating[3], entry); } else otherNoncashPnlMinor += entry.amountMinor;
       continue;
     }
     if (entry.transferAccountId) {
@@ -139,7 +145,10 @@ export function buildStatements(input: {
       else if (other.accountClass === "credit-card" && entry.amountMinor < 0) add(operating[2], entry);
       else if (other.accountClass === "loan" && entry.amountMinor > 0) add(financing[0], entry);
       else if (other.accountClass === "loan" && entry.parentId && expenseParents.has(entry.parentId)) add(financing[1], entry);
-      else if (unsplitPayment(entry) && paidLoans.has(other.id)) { add(financing[2], entry); principalNetIds.push(entry.transferId!); }
+      else if (unsplitPayment(entry) && paidLoans.has(other.id)) {
+        if (overCharged.has(other.id)) add(operating[3], entry);
+        else { add(financing[2], entry); principalNetIds.push(entry.transferId!); }
+      }
       else if (other.accountClass === "loan") unknown(entry, "loan-allocation", "Loan payments: allocation unidentified", "The recorded payment does not identify separate principal and interest/fee amounts. A calculated loan schedule is not used to split it.");
       else unknown(entry, `transfer-${other.accountClass}`, `Transfers with ${other.accountClass === "other-liability" ? "other liabilities" : other.accountClass === "other-asset" ? "other assets" : "credit cards"}: purpose unidentified`, "Account class and current/non-current treatment do not establish the purpose of this cash movement.");
       continue;
@@ -192,7 +201,8 @@ export function buildStatements(input: {
     return result;
   };
   // The charged amount comes out of the payments: what was paid in interest and fees is not principal.
-  const chargedPaid = [...paidLoans].flatMap((id) => chargedByLoan.get(id) ?? []);
+  const chargedPaid = [...paidLoans].filter((id) => !overCharged.has(id)).flatMap((id) => chargedByLoan.get(id) ?? []);
+  for (const id of overCharged) otherNoncashPnlMinor += chargeSum(id) - paymentSum.get(id)!;
   financing[2].amountMinor -= total(chargedPaid);
   financing[2].ids.push(...chargedPaid.map((e) => e.id));
   // Opened from the loan accounts: the payments received there, less the charges, add up to the principal (the cash flow shows it as money out).

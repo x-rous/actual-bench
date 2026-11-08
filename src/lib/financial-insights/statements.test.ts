@@ -249,6 +249,22 @@ describe("recorded financial statements", () => {
       expect(sumBridge(model)).toBe(model.cash.changeMinor);
     });
 
+    it("pays interest and fees in cash only up to the payments: a larger charge leaves the rest as a noncash expense, and principal is never an inflow", () => {
+      const rows = [salary, entry("charge", "loan", -50_000), ...transfer("repay", "bank", "loan", 30_000)];
+      const { model } = fixture(rows, { loanCosts: [{ ...charge, amountMinor: -50_000 }] });
+      const interest = line(section(model, "operating").rows, "interest") as ReturnType<typeof section>["rows"][number];
+      expect(interest.amountMinor).toBe(-30_000);
+      // Opened from the payments that paid it, so the list adds up to the figure.
+      expect(interest.ids).toEqual(["repay-from"]);
+      expect(interest.ids.reduce((sum, id) => sum + rows.find((r) => r.id === id)!.amountMinor, 0)).toBe(interest.amountMinor);
+      expect(line(section(model, "financing").rows, "principal-net")).toBeUndefined();
+      expect(model.pnl.expensesMinor).toBe(-50_000);
+      expect(model.bridge.find((r) => r.label === "Income / expenses in other noncash accounts")!.amountMinor).toBe(20_000);
+      expect(model.unresolved.find((r) => r.key === "loan-allocation")).toBeUndefined();
+      expect(model.cash.differenceMinor).toBe(0);
+      expect(sumBridge(model)).toBe(model.cash.changeMinor);
+    });
+
     it("leaves a loan whose lender charges nothing as before: the unsplit payment stays unidentified", () => {
       const { model } = fixture([salary, ...transfer("repay", "bank", "loan", 12_000)]);
       expect(model.unresolved.find((r) => r.key === "loan-allocation")?.amountMinor).toBe(-12_000);

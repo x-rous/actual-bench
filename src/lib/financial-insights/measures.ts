@@ -545,9 +545,10 @@ function reclassifiedIds(facts: FinancialFacts): ReadonlySet<string> {
 export function isLoanCostInSpent(ledger: Ledger, row: LoanCostRow): boolean {
   const owner = ledger.account.get(row.accountId);
   if (!owner) return false;
+  // An entry the Asset Registry classifies as a change in value or a sale is not spending, whatever else it is (categorized, split from a repayment or charged by the lender).
+  if (row.id !== undefined && reclassifiedIds(ledger.facts).has(row.id)) return false;
   if (row.categoryId !== null) return !ledger.facts.incomeCategories.has(row.categoryId);
-  // An entry the Asset Registry classifies as a change in value or a sale is not spending, even when the lender charged it.
-  if (row.charged) return ledger.role.get(row.accountId) === "loan" && owner.offBudget && !(row.id !== undefined && reclassifiedIds(ledger.facts).has(row.id));
+  if (row.charged) return ledger.role.get(row.accountId) === "loan" && owner.offBudget;
   return !owner.offBudget && row.amountMinor < 0;
 }
 
