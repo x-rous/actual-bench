@@ -1,5 +1,5 @@
 import { debtMonthly } from "./debt";
-import { classBalances, compositionSeries, debtRepayments, whereMoneyWent, SPECIAL_ROW_ID, incomeBreakdown, netWorthSteps, spendingGroups, cashBridgeLines, heatBand, monthlyFlows, payeeSpending, spendingBreakdown, spendingFacts, type CategoryInfo } from "./breakdowns";
+import { classBalances, compositionSeries, debtRepayments, moneyInOut, SPECIAL_ROW_ID, incomeBreakdown, netWorthSteps, spendingGroups, cashBridgeLines, heatBand, monthlyFlows, payeeSpending, spendingBreakdown, spendingFacts, type CategoryInfo } from "./breakdowns";
 import { drillScope, type DrillKind, type DrillTarget } from "./drill";
 import { buildLedger, summarize, type AccountFact, type FinancialFacts, type MovementRow, type ReclassifiedRow } from "./measures";
 import { resolvePeriod } from "./period";
@@ -563,20 +563,42 @@ describe("financial insights: a lender that charges interest to the loan account
     expect(summary.unexplained).toBe(0);
   });
 
-  it("whereMoneyWent: lines and Other add up to Received; Other is zero when income and spending are in cash and card accounts only", () => {
+  it("moneyInOut: money in and money out total the same, nothing is negative, and Other is zero when income and spending are in cash and card accounts only", () => {
     const cards: Tx[] = [
       tx("pay", "2026-10-01", "chk", 500_000, { category: "salary" }), tx("groceries", "2026-10-03", "visa", -100_000, { category: "food" }),
       tx("settle", "2026-10-20", "chk", -80_000, { transferAcct: "visa", payee: "t-visa" }), tx("settle-leg", "2026-10-20", "visa", 80_000, { transferAcct: "chk", payee: "t-chk" }),
     ];
     for (const m of [model(cards), model(lender, [charge])]) {
       const { summary, debt } = figures(m, true);
-      const went = whereMoneyWent(summary, debt);
-      expect(went.receivedMinor).toBe(summary.received);
-      expect(went.lines.reduce((a, l) => a + l.amountMinor, 0)).toBe(summary.received);
-      expect(went.lines.find((l) => l.key === "other")?.amountMinor).toBe(0);
+      const flow = moneyInOut(summary, debt);
+      const sum = (lines: { amountMinor: number }[]) => lines.reduce((a, l) => a + l.amountMinor, 0);
+      expect(flow.receivedMinor).toBe(summary.received);
+      expect(sum(flow.sources)).toBe(flow.totalMinor);
+      expect(sum(flow.uses)).toBe(flow.totalMinor);
+      expect([...flow.sources, ...flow.uses].every((l) => l.amountMinor > 0 || l.key === "received")).toBe(true);
+      expect(flow.sources[0]).toMatchObject({ key: "received", amountMinor: summary.received });
+      expect([...flow.sources, ...flow.uses].some((l) => l.key === "otherIn" || l.key === "otherOut")).toBe(false);
     }
+    // 5,000.00 received, 1,000.00 spent on a card and 800.00 paid to it: 200.00 more is owed, and the rest stayed in cash.
     const { summary, debt } = figures(model(cards), true);
-    expect(Object.fromEntries(whereMoneyWent(summary, debt).lines.map((l) => [l.key, l.amountMinor]))).toMatchObject({ spent: 100_000, cards: -20_000, cash: 420_000 });
+    const flow = moneyInOut(summary, debt);
+    expect(Object.fromEntries([...flow.sources, ...flow.uses].map((l) => [l.key, l.amountMinor]))).toMatchObject({ received: 500_000, moreOwedCards: 20_000, spent: 100_000, cash: 420_000 });
+    expect(flow.totalMinor).toBe(520_000);
+  });
+
+  it("moneyInOut: borrowing and money drawn from cash are money in; principal paid off is money out, not spending", () => {
+    // 5,000.00 received, 1,200.00 paid to the mortgage, 1,000.00 spent; cash fell because more went out than came in.
+    const { summary, debt } = figures(model(lender, [charge]), true);
+    const flow = moneyInOut(summary, debt);
+    const out = Object.fromEntries(flow.uses.map((l) => [l.key, l.amountMinor]));
+    expect(out.debtRepaid).toBe(debt.principalMinor);
+    expect(out.spent).toBe(summary.spent);
+    expect(flow.uses.find((l) => l.key === "debtRepaid")?.label).toBe("Paid off loans (principal)");
+    // Borrowing, when there is some, is a source and never a negative use.
+    const borrowed = summarize(buildLedger({ ...factsFrom([tx("pay", "2026-10-01", "chk", 500_000, { category: "salary" }), tx("loan-in", "2026-10-05", "chk", 200_000, { transferAcct: "loan", payee: "t-loan" }), tx("loan-leg", "2026-10-05", "loan", -200_000, { transferAcct: "chk", payee: "t-chk" })]), reclassified: [] }), range, review);
+    const bflow = moneyInOut(borrowed, debtRepayments(buildLedger({ ...factsFrom([]), reclassified: [] }), range, new Set(), 0));
+    expect(bflow.sources.find((l) => l.key === "borrowed")?.amountMinor).toBe(200_000);
+    expect(bflow.sources.reduce((a, l) => a + l.amountMinor, 0)).toBe(bflow.uses.reduce((a, l) => a + l.amountMinor, 0));
   });
 });
 

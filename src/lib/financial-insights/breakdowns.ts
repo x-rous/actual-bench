@@ -268,30 +268,40 @@ export function cashBridgeLines(summary: Summary): CashBridgeLines {
 
 // ─── Where the money went ────────────────────────────────────────────────────
 
-export type MoneyWentLine = { key: "spent" | "debtRepaid" | "borrowed" | "invested" | "depositsAndAssets" | "cards" | "cash" | "other"; label: string; /** Integer minor units: positive when money went to this use, negative when it came in (borrowed, more owed on cards). */ amountMinor: number };
+export type MoneyFlowKey =
+  | "received" | "borrowed" | "moreOwedCards" | "withdrawn" | "released" | "fromCash" | "addedToLoans" | "refunds" | "otherIn"
+  | "spent" | "debtRepaid" | "borrowingPaidBack" | "invested" | "depositsAndAssets" | "cardsPaid" | "cash" | "otherOut";
+/** One line of the money-in or money-out list. `amountMinor` is always positive (integer minor units): which side it is on says which way the money moved. */
+export type MoneyFlowLine = { key: MoneyFlowKey; label: string; amountMinor: number };
 
 /**
- * What the money received went to, in parts that add up to it exactly: spending, debt repaid, investing, deposits and assets, the
- * change in card balances and the change in cash & bank. Every line is an existing figure (the cash bridge, the loans, the
- * positions); `other` is whatever they do not explain, never forced to zero. Money kept is everything here except Spent.
+ * Where the money came from and where it went, as two lists that total the same: a use of money (spent, loans paid off, put into
+ * investments, moved to deposits, added to cash, cards paid down) and a source (what was received, borrowed, taken out of investments,
+ * released from deposits, more owed on cards, taken from cash). Every line is an existing figure (the cash bridge, the loans, the
+ * positions) turned into the side its sign puts it on, so nothing is negative and nothing is called "kept". `other` is whatever
+ * they do not explain, never forced to zero. Money in always starts with what was received.
  */
-export function whereMoneyWent(summary: Summary, debt: DebtRepayments): { receivedMinor: number; lines: MoneyWentLine[] } {
+export function moneyInOut(summary: Summary, debt: DebtRepayments): { receivedMinor: number; sources: MoneyFlowLine[]; uses: MoneyFlowLine[]; totalMinor: number } {
   const b = summary.cashBridge;
-  const listed: Omit<MoneyWentLine, "label">[] = [
-    { key: "spent", amountMinor: summary.spent },
-    { key: "debtRepaid", amountMinor: debt.principalMinor },
-    { key: "borrowed", amountMinor: 0 - b.loanIn },
-    { key: "invested", amountMinor: 0 - (b.investmentOut + b.investmentIn) },
-    { key: "depositsAndAssets", amountMinor: 0 - (b.fixedDeposits + b.assets + b.liabilities + b.excluded) },
-    { key: "cards", amountMinor: summary.closing.cards - summary.opening.cards },
-    { key: "cash", amountMinor: summary.eligibleCash.change },
+  // Each figure signed as a use: positive went to that use, negative came in.
+  const figures: { amountMinor: number; use: [MoneyFlowKey, string]; source: [MoneyFlowKey, string] }[] = [
+    { amountMinor: summary.spent, use: ["spent", "Spent"], source: ["refunds", "Refunds beyond what was spent"] },
+    { amountMinor: debt.principalMinor, use: ["debtRepaid", "Paid off loans (principal)"], source: ["addedToLoans", "Added to loans (charges beyond payments)"] },
+    { amountMinor: 0 - b.loanIn, use: ["borrowingPaidBack", "Borrowing paid back"], source: ["borrowed", "Borrowed"] },
+    { amountMinor: 0 - (b.investmentOut + b.investmentIn), use: ["invested", "Put into investments (net)"], source: ["withdrawn", "Taken out of investments (net)"] },
+    { amountMinor: 0 - (b.fixedDeposits + b.assets + b.liabilities + b.excluded), use: ["depositsAndAssets", "Moved to deposits, assets and other liabilities"], source: ["released", "Released from deposits, assets and other liabilities"] },
+    { amountMinor: summary.closing.cards - summary.opening.cards, use: ["cardsPaid", "Paid down credit cards"], source: ["moreOwedCards", "More owed on credit cards"] },
+    { amountMinor: summary.eligibleCash.change, use: ["cash", "Added to cash & bank"], source: ["fromCash", "Taken from cash & bank"] },
   ];
-  const labels: Record<MoneyWentLine["key"], string> = {
-    spent: "Spent", debtRepaid: "Debt repaid (principal)", borrowed: "Borrowed", invested: "Put into investments (net)",
-    depositsAndAssets: "Moved to deposits, assets and other liabilities", cards: "Change in card balances", cash: "Change in cash & bank", other: "Other",
-  };
-  const other = summary.received - listed.reduce((sum, l) => sum + l.amountMinor, 0);
-  return { receivedMinor: summary.received, lines: [...listed, { key: "other" as const, amountMinor: other }].map((l) => ({ ...l, label: labels[l.key] })) };
+  const other = summary.received - figures.reduce((sum, f) => sum + f.amountMinor, 0);
+  figures.push({ amountMinor: other, use: ["otherOut", "Other (not explained)"], source: ["otherIn", "Other (not explained)"] });
+  const sources: MoneyFlowLine[] = [{ key: "received", label: "Received", amountMinor: summary.received }];
+  const uses: MoneyFlowLine[] = [];
+  for (const f of figures) {
+    if (f.amountMinor > 0) uses.push({ key: f.use[0], label: f.use[1], amountMinor: f.amountMinor });
+    else if (f.amountMinor < 0) sources.push({ key: f.source[0], label: f.source[1], amountMinor: 0 - f.amountMinor });
+  }
+  return { receivedMinor: summary.received, sources, uses, totalMinor: uses.reduce((sum, l) => sum + l.amountMinor, 0) };
 }
 
 // ─── Payees ──────────────────────────────────────────────────────────────────

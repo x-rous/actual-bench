@@ -74,3 +74,19 @@ describe("the Summary's start and end card", () => {
     expect(screen.queryByRole("button", { name: /^Loans: / })).not.toBeInTheDocument();
   });
 });
+
+describe("the Money kept tile and loans", () => {
+  const loan: AccountFact = { id: "loan", name: "Mortgage", accountClass: "loan", treatment: null, offBudget: true };
+  const show = (accounts: AccountFact[], movement: MovementRow[]) => render(<TipProvider><SummaryTab data={data(accounts, movement, { buffer: { state: "unavailable", reason: "none" }, bufferSpending: [] }) as never} today="2026-11-18" accountNames={new Map()} onDrill={jest.fn()} /></TipProvider>);
+
+  it("says how much of what was kept went to paying off loans, since that is not spending", () => {
+    // 5,000.00 received, 1,200.00 paid to the mortgage.
+    show([chk, loan], [row("2026-09", "chk", 500_000), row("2026-09", "chk", -120_000, { transferAccountId: "loan" }), row("2026-09", "loan", 120_000, { transferAccountId: "chk" })]);
+    expect(screen.getByText("Includes 1,200.00 paid off loans")).toBeInTheDocument();
+  });
+
+  it("says nothing about loans when none was paid", () => {
+    show([chk], [row("2026-09", "chk", 500_000)]);
+    expect(screen.queryByText(/paid off loans/)).not.toBeInTheDocument();
+  });
+});
