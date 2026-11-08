@@ -18,8 +18,8 @@ import { CardTitle } from "./InfoTip";
 
 type Ready = Extract<FinancialInsightsView["data"], { state: "ready" }>;
 
-/** Today's cash equivalents, from the same ledger and month as the buffer. Amounts are integer minor units. */
-function CashAccountsTip({ data, today, cashMinor }: { data?: Ready; today: string; cashMinor: number }) {
+/** Today's cash equivalents less the credit cards owed, from the same ledger and month as the buffer. Amounts are integer minor units; `cashMinor` = `grossMinor` − `cardsOwedMinor`. */
+function CashAccountsTip({ data, today, cashMinor, grossMinor, cardsOwedMinor }: { data?: Ready; today: string; cashMinor: number; grossMinor: number; cardsOwedMinor: number }) {
   const ledger = data?.ledger;
   const cashAccounts = ledger ? [...ledger.account.values()]
     .filter((account) => ledger.role.get(account.id) === "cash")
@@ -27,17 +27,18 @@ function CashAccountsTip({ data, today, cashMinor }: { data?: Ready; today: stri
   const accounts = cashAccounts.filter((account) => !account.closed).sort((a, b) => b.balanceMinor - a.balanceMinor || a.name.localeCompare(b.name));
   const closedBalanceMinor = cashAccounts.filter((account) => account.closed).reduce((sum, account) => sum + account.balanceMinor, 0);
   // Do not show a breakdown when it cannot explain the displayed total.
-  if (!ledger || accounts.reduce((sum, account) => sum + account.balanceMinor, closedBalanceMinor) !== cashMinor) return <>{withSmallDecimals(money(cashMinor))}</>;
+  if (!ledger || accounts.reduce((sum, account) => sum + account.balanceMinor, closedBalanceMinor) !== grossMinor) return <>{withSmallDecimals(money(cashMinor))}</>;
   return <Popover>
-    <PopoverTrigger openOnHover delay={150} render={<button type="button" aria-label={`Cash & bank today ${money(cashMinor)}: see account balances`} className="cursor-help tabular-nums underline decoration-dotted underline-offset-4 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">{withSmallDecimals(money(cashMinor))}</button>} />
+    <PopoverTrigger openOnHover delay={150} render={<button type="button" aria-label={`Cash & bank less card balances today ${money(cashMinor)}: see account balances`} className="cursor-help tabular-nums underline decoration-dotted underline-offset-4 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">{withSmallDecimals(money(cashMinor))}</button>} />
     <PopoverContent align="end" className="w-80 p-3 text-xs">
-      <p className="mb-1.5 font-medium">Cash &amp; bank, by account</p>
-      <p className="mb-2 text-muted-foreground">Balances as of {formatDay(today)}. Fixed / restricted deposits are excluded.</p>
+      <p className="mb-1.5 font-medium">Cash &amp; bank less card balances, by account</p>
+      <p className="mb-2 text-muted-foreground">Balances as of {formatDay(today)}. Fixed / restricted deposits are excluded. What you owe on credit cards is taken off, because it is already committed out of this cash.</p>
       <table className="w-full border-collapse">
         <tbody>
           {accounts.map((account) => <tr key={account.id} className="border-b border-border/40"><th scope="row" className="max-w-52 py-1 text-left font-normal"><span className="block truncate" title={account.name}>{account.name}</span></th><td className="text-right tabular-nums">{money(account.balanceMinor)}</td></tr>)}
           {closedBalanceMinor !== 0 && <tr className="border-b border-border/40"><th scope="row" className="py-1 text-left font-normal">Closed account balances</th><td className="text-right tabular-nums">{money(closedBalanceMinor)}</td></tr>}
-          <tr className="font-semibold"><th scope="row" className="py-1.5 text-left">Cash &amp; bank today</th><td className="text-right tabular-nums">{money(cashMinor)}</td></tr>
+          <tr className="border-b border-border/40"><th scope="row" className="py-1 text-left font-normal">Credit cards owed</th><td className="text-right tabular-nums">{money(0 - cardsOwedMinor)}</td></tr>
+          <tr className="font-semibold"><th scope="row" className="py-1.5 text-left">Cash &amp; bank less card balances</th><td className="text-right tabular-nums">{money(cashMinor)}</td></tr>
         </tbody>
       </table>
     </PopoverContent>
@@ -155,7 +156,7 @@ export function CashBuffer({ buffer, groups, today, data }: { buffer: Ready["buf
         <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <CardTitle title="Your cash buffer" hint={`As of ${formatDay(today)}`} infoLabel="your cash buffer"
-          info={<><p>It is always as of today, whatever period is selected. How many months your cash &amp; bank balance would cover at your usual spending, plus every loan repayment.</p><p>The all-in figure counts every recorded expense. Investments and fixed / restricted deposits are not counted as cash; card payments and loan interest are not counted twice. The 0–12 month scale is not a recommended target.</p><p>Simulate shows what the buffer would be if you left some spending out or changed what it costs. It is your own what-if, saved here; the real buffer is never changed.</p><p>The goal is the months of cover you aim for, and a typical month can be the average or the median of the last 3, 6 or 12 complete months: both are set with the sliders button and apply everywhere here.</p></>} />
+          info={<><p>It is always as of today, whatever period is selected. How many months your cash &amp; bank balance, less what you owe on credit cards, would cover at your usual spending, plus every loan repayment.</p><p>The all-in figure counts every recorded expense. Investments and fixed / restricted deposits are not counted as cash; card payments and loan interest are not counted twice. The 0–12 month scale is not a recommended target.</p><p>Simulate shows what the buffer would be if you left some spending out or changed what it costs. It is your own what-if, saved here; the real buffer is never changed.</p><p>The goal is the months of cover you aim for, and a typical month can be the average or the median of the last 3, 6 or 12 complete months: both are set with the sliders button and apply everywhere here.</p></>} />
         {active && (
           <p className="inline-flex w-fit shrink-0 items-center gap-1.5 rounded-full border border-amber-500/60 px-2 py-0.5 text-[11px] text-amber-700 dark:text-amber-400" role="status">
             <FlaskConical className="size-3" aria-hidden />Simulated: {active.name}
@@ -176,13 +177,13 @@ export function CashBuffer({ buffer, groups, today, data }: { buffer: Ready["buf
             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <p className="text-4xl font-semibold leading-none tracking-tight tabular-nums">{shown.months.toFixed(1)} <span className="text-base font-normal text-muted-foreground">months</span></p>
               <div className="text-xs text-muted-foreground">
-                <p>of cover: cash &amp; bank ÷ needed per month</p>
+                <p>of cover: cash &amp; bank less card balances ÷ needed per month</p>
                 {delta !== null && <p className={delta > 0 ? "text-green-700 dark:text-green-400" : delta < 0 ? "text-red-700 dark:text-red-400" : undefined}>{delta === 0 ? "Same as" : `${delta > 0 ? "▲ +" : "▼ −"}${Math.abs(delta).toFixed(1)} months against`} the actual {buffer.value.months.toFixed(1)}</p>}
               </div>
             </div>
             <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-right">
-              <p className="text-xs text-muted-foreground">Cash &amp; bank today</p>
-              <p className="text-xl font-semibold leading-tight tabular-nums"><CashAccountsTip data={data} today={today} cashMinor={shown.cashMinor} /></p>
+              <p className="text-xs text-muted-foreground">Cash &amp; bank less card balances</p>
+              <p className="text-xl font-semibold leading-tight tabular-nums"><CashAccountsTip data={data} today={today} cashMinor={shown.cashMinor} grossMinor={buffer.value.grossCashMinor} cardsOwedMinor={buffer.value.cardsOwedMinor} /></p>
             </div>
           </div>
           <div className={`relative ${goal !== null ? "mt-7" : "mt-3"}`}>
@@ -222,7 +223,7 @@ export function CashBuffer({ buffer, groups, today, data }: { buffer: Ready["buf
               return (
                 <div key={loan.accountId} className="grid grid-cols-[1rem_minmax(0,1fr)_auto] items-baseline gap-x-2 border-t border-border/40 py-1">
                   <dd className="text-muted-foreground" aria-hidden>+</dd>
-                  <dt className="min-w-0"><span className={`block truncate ${left ? "text-muted-foreground line-through" : ""}`} title={loan.name}>{loan.name}</span><span className="block text-muted-foreground">{left ? "left out of this scenario" : loan.source === "schedule" ? "scheduled repayment, principal + interest" : "recorded repayments, principal only"}</span></dt>
+                  <dt className="min-w-0"><span className={`block truncate ${left ? "text-muted-foreground line-through" : ""}`} title={loan.name}>{loan.name}</span><span className="block text-muted-foreground">{left ? "left out of this scenario" : loan.source === "schedule" ? "scheduled repayment, principal + interest" : "recorded repayments paid in"}</span></dt>
                   <dd className="tabular-nums">{money(loan.monthlyMinor)}</dd>
                 </div>
               );

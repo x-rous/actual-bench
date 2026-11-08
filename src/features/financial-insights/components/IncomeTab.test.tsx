@@ -31,7 +31,7 @@ function build() {
   const f: FinancialFacts = { accounts: [chk], incomeCategories: new Set(["salary", "bonus", "rentIn"]), movement, excluded: new Set(), startingBalances: [], uncategorizedIn: [{ month: "2026-09", accountId: "chk", amountMinor: 25_000 }], transfersIn: [], reclassified: [], loanCosts: [] };
   const ledger = buildLedger(f);
   const period = resolvePeriod({ kind: "custom", startMonth: months[0], endMonth: months[months.length - 1] }, today, ledger.firstMonth);
-  const summary = summarize(ledger, period, { unavailableReason: null, rowCount: 0 });
+  const summary = summarize(ledger, period, { unavailableReason: null, rowCount: 0, amountMinor: 0 });
   const monthly = monthlyFlows(ledger, period, today, true);
   const breakdown = spendingBreakdown(ledger, period, categories, monthly);
   const incomeRows = incomeBreakdown(ledger, period, categories, monthly);

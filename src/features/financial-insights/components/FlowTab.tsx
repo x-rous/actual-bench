@@ -32,8 +32,8 @@ const BELOW = ["", "var(--fi-below1)", "var(--fi-below2)", "var(--fi-below3)", "
 const ABOVE = ["", "var(--fi-above1)", "var(--fi-above2)", "var(--fi-above3)", "var(--fi-above4)"];
 
 /** The transactions of a group, or of one category, in a month or in the whole period; the figure it sits on is the clicked amount. */
-const groupTarget = (g: Pick<GroupSeries, "name" | "categoryIds" | "hasUncategorized">, amountMinor: number, month?: string, throughMonth?: string, income = false): DrillTarget => ({ kind: "category", categoryIds: g.categoryIds, includeUncategorized: g.hasUncategorized, name: g.name, amountMinor, month, throughMonth: throughMonth && throughMonth !== month ? throughMonth : undefined, income: income || undefined });
-const rowTarget = (r: SpendingRow, amountMinor: number, month?: string, throughMonth?: string, income = false): DrillTarget => groupTarget({ name: r.name, categoryIds: r.id === null ? [] : [r.id], hasUncategorized: r.id === null }, amountMinor, month, throughMonth, income);
+const groupTarget = (g: Pick<GroupSeries, "name" | "categoryIds" | "hasUncategorized" | "chargeKinds">, amountMinor: number, month?: string, throughMonth?: string, income = false): DrillTarget => ({ kind: "category", categoryIds: g.categoryIds, includeUncategorized: g.hasUncategorized, chargeKinds: g.chargeKinds.length ? g.chargeKinds : undefined, name: g.name, amountMinor, month, throughMonth: throughMonth && throughMonth !== month ? throughMonth : undefined, income: income || undefined });
+const rowTarget = (r: SpendingRow, amountMinor: number, month?: string, throughMonth?: string, income = false): DrillTarget => groupTarget({ name: r.name, categoryIds: r.id === null || r.special ? [] : [r.id], hasUncategorized: r.id === null, chargeKinds: r.special === "loanInterest" ? ["interest"] : r.special === "loanFees" ? ["fee"] : [] }, amountMinor, month, throughMonth, income);
 
 
 function Ranking({ data, onDrill, income }: { data: Ready; onDrill: (target: DrillTarget) => void; income: boolean }) {
@@ -99,7 +99,7 @@ function Payees({ data, today, onDrill, switcher, income }: { data: Ready; today
   return (
     <section className="min-w-0 rounded-lg border border-border bg-card p-4" aria-label={income ? "Frequent payers" : "Frequent payees"}>
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <CardTitle title={income ? "Frequent payers" : "Frequent payees"} hint={income ? "Where most of the money came from, by payer" : "Where most of the money went, by payee"} info={<p>Transfers are not {who}s. Entries with no {who} are kept apart below the table.</p>} infoLabel={income ? "frequent payers" : "frequent payees"} />
+        <CardTitle title={income ? "Frequent payers" : "Frequent payees"} hint={income ? "Where most of the money came from, by payer" : "Where most of the money went, by payee"} info={<><p>Transfers are not {who}s. Entries with no {who} are kept apart below the table.</p>{!income && <p>Only entries with a spending category are ranked. Interest and fees a lender charged to a loan account have none, so they are in Spent but not here.</p>}</>} infoLabel={income ? "frequent payers" : "frequent payees"} />
         {switcher}
       </div>
       {isError ? (

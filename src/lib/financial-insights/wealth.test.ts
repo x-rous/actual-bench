@@ -53,7 +53,7 @@ describe("portfolio bridge", () => {
   it("agrees with Money in & out: funding and withdrawals from cash accounts are what the cash bridge calls put into and withdrawn", () => {
     const { ledger, period } = setup(facts([...both("2026-09", "chk", "inv", 500_000), ...both("2026-09", "inv", "chk", 100_000)]));
     const { total } = portfolioBridge(ledger, period);
-    const cash = summarize(ledger, period, { unavailableReason: null, rowCount: 0 }).cashBridge;
+    const cash = summarize(ledger, period, { unavailableReason: null, rowCount: 0, amountMinor: 0 }).cashBridge;
     expect(total.fundingFromCash).toBe(0 - cash.investmentOut);
     expect(total.withdrawalsToCash).toBe(0 - cash.investmentIn);
   });
@@ -95,7 +95,7 @@ describe("a registry-classified row in a portfolio account", () => {
     const { total } = portfolioBridge(ledger, period);
     expect(total.activity).toBe(40_000);
     expect(otherOf(total)).toBe(-9_000);
-    expect(summarize(ledger, period, { unavailableReason: null, rowCount: 0 }).flows.investmentResults).toBe(40_000);
+    expect(summarize(ledger, period, { unavailableReason: null, rowCount: 0, amountMinor: 0 }).flows.investmentResults).toBe(40_000);
   });
 });
 
@@ -155,7 +155,7 @@ describe("everything you own and owe", () => {
     const f = facts([row("2026-09", "chk", 100_000), row("2026-09", "visa", -20_000)], { startingBalances: [start("inv", 500_000), start("house", 30_000_000), start("mortgage", -20_000_000)] });
     const { ledger, period } = setup(f);
     const own = holdings(ledger, period);
-    const summary = summarize(ledger, period, { unavailableReason: null, rowCount: 0 });
+    const summary = summarize(ledger, period, { unavailableReason: null, rowCount: 0, amountMinor: 0 });
     expect(own.netWorth).toEqual({ openingMinor: summary.netWorth.opening, closingMinor: summary.netWorth.closing });
     expect(own.groups.flatMap((g) => g.rows).length).toBe(accounts.length);
     expect(own.groups.find((g) => g.key === "loans")).toMatchObject({ closingMinor: -20_000_000 });

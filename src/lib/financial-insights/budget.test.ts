@@ -178,6 +178,19 @@ describe("my budget: reconciliation to the Spending tab", () => {
     expect(rec.parts.reduce((a, p) => a + p.contributionMinor, 0) + rec.otherMinor).toBe(rec.differenceMinor);
   });
 
+  it("explains the interest and fees a lender charged to a loan account: Spending counts them, Actual cannot see them", () => {
+    // 200.00 charged to a tracked loan's off-budget account in October: Spent includes it, the budget does not.
+    const loanAccounts: AccountFact[] = [...accounts, { id: "loan", name: "Mortgage", accountClass: "loan", treatment: null, offBudget: true }];
+    const charged = buildLedger({ ...facts, accounts: loanAccounts, movement: [...movement, row("2026-10", "loan", null, -20_000)], loanCosts: [{ id: "c1", month: "2026-10", accountId: "loan", categoryId: null, amountMinor: -20_000, loanAccountId: "loan", kind: "interest", charged: true }] });
+    const bd = spendingBreakdown(charged, period, categories, monthlyFlows(charged, period, today, true));
+    const rec = buildBudgetPlan({ mode: "tracking", today, reads, ledger: charged, breakdown: bd }).reconciliation;
+    if (!rec) throw new Error("no reconciliation");
+    expect(rec.spendingMinor).toBe(20_000 + 30_000 + 3_000 + 1_500 + 20_000);
+    expect(rec.parts.find((p) => p.key === "loanCharges")).toMatchObject({ contributionMinor: -20_000, spentMinor: 20_000 });
+    expect(rec.otherMinor).toBe(0);
+    expect(rec.otherRows).toEqual([]);
+  });
+
   it("explains the entries the Asset Registry classifies, which Spending sets aside and Actual still counts", () => {
     // A 4,000 food entry in Checking that the registry calls a value change: Spending drops it, Actual keeps it.
     const withRegistry = buildLedger({ ...facts, reclassified: [{ id: "rv", payeeId: null, month: "2026-10", accountId: "chk", categoryId: "food", amountMinor: -4_000, to: "valueChange" }] });

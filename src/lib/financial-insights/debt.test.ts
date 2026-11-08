@@ -50,7 +50,7 @@ describe("financial insights: loans and cards", () => {
   it("lists every liability account once, and their balances add up to Summary's liabilities", () => {
     const { ledger, period } = setup();
     const rows = debtAccounts(ledger, period, today, repayments(ledger, period), schedule);
-    const summary = summarize(ledger, period, { unavailableReason: null, rowCount: 0 });
+    const summary = summarize(ledger, period, { unavailableReason: null, rowCount: 0, amountMinor: 0 });
     expect(rows.map((r) => r.accountId)).toEqual(["mortgage", "car", "van", "visa", "tax"]); // the loan paid off in March has nothing in the period
     expect(new Set(rows.map((r) => r.accountId)).size).toBe(rows.length);
     const totals = debtTotals(rows);
@@ -124,7 +124,7 @@ describe("financial insights: loan drilldown scopes", () => {
     const repaid = repayments(ledger, period);
     const ctx = { ledger, period, today, reclassifiedIds: new Set<string>() };
     expect(drillScope({ kind: "loanPrincipal" }, ctx).expectedMinor).toBe(repaid.principalMinor);
-    expect(drillScope({ kind: "loanPrincipal", accountId: "car" }, ctx)).toMatchObject({ expectedMinor: 30_000, constraints: { amountSign: "positive" } });
+    expect(drillScope({ kind: "loanPrincipal", accountId: "car" }, ctx)).toMatchObject({ expectedMinor: 30_000, constraints: { where: { $and: expect.arrayContaining([{ amount: { $gt: 0 } }]) } } });
     expect(drillScope({ kind: "loanPrincipal", month: "2026-10" }, ctx).expectedMinor).toBe(101_000);
     // Interest and fees are the expense lines (negative as listed); the figure on the page is their opposite.
     expect(drillScope({ kind: "loanInterest" }, ctx).expectedMinor).toBe(0 - repaid.interestMinor);

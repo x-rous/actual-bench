@@ -24,7 +24,7 @@ function data(count: number) {
   const f: FinancialFacts = { accounts: [chk, inv], incomeCategories: new Set(["pay"]), movement, excluded: new Set(), startingBalances: [], uncategorizedIn: movement.filter((r) => r.amountMinor > 0 && r.accountId === "chk").map((r) => ({ month: r.month, accountId: r.accountId, amountMinor: r.amountMinor })), transfersIn: [], reclassified: [], loanCosts: [] };
   const ledger = buildLedger(f);
   const period = resolvePeriod({ kind: "custom", startMonth: months[0], endMonth: "2026-10" }, today, ledger.firstMonth);
-  const summary = summarize(ledger, period, { unavailableReason: null, rowCount: 0 });
+  const summary = summarize(ledger, period, { unavailableReason: null, rowCount: 0, amountMinor: 0 });
   return { ledger, period, summary, composition: compositionSeries(ledger, period, summary.opening), netWorthChange: netWorthSteps(summary), monthly: monthlyFlows(ledger, period, today, true), debt: debtRepayments(ledger, period, new Set<string>(), 0), schedules: [], review: [], buffer: { state: "unavailable", reason: "none" }, bufferSpending: [], registry: { read: true, assets: [], metadata: [], debtLinks: [] } } as never;
 }
 function monthsFromEnd(count: number) { const t = 2026 * 12 + 9 - (count - 1); return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, "0")}`; }
@@ -81,15 +81,15 @@ describe("investments and loan principal by month, quarter or year", () => {
     ui(<MoneyTab data={rich()} onDrill={jest.fn()} />);
     expect(screen.getByRole("region", { name: "Investments" })).toBeInTheDocument();
     expect(within(screen.getByRole("group", { name: "Show investments by" })).getByRole("button", { name: "Quarterly" })).toHaveAttribute("aria-pressed", "true");
-    expect(within(screen.getByRole("group", { name: "Show loan principal by" })).getByRole("button", { name: "Quarterly" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(screen.getByRole("group", { name: "Show payments to loans by" })).getByRole("button", { name: "Quarterly" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("keeps the cards independent, and adds the borrowing of a quarter up", () => {
     ui(<MoneyTab data={rich()} onDrill={jest.fn()} />);
-    fireEvent.click(pills("Show loan principal by").getByRole("button", { name: "Yearly" }));
-    expect(pills("Show loan principal by").getByRole("button", { name: "Yearly" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(pills("Show payments to loans by").getByRole("button", { name: "Yearly" }));
+    expect(pills("Show payments to loans by").getByRole("button", { name: "Yearly" })).toHaveAttribute("aria-pressed", "true");
     expect(pills("Show investments by").getByRole("button", { name: "Quarterly" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("region", { name: "Loan principal repaid" })).toHaveTextContent("borrowed (received from loans)");
+    expect(screen.getByRole("region", { name: "Paid to loans" })).toHaveTextContent("borrowed (received from loans)");
   });
 });
 

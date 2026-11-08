@@ -105,6 +105,7 @@ function ExplainBox({ plan }: { plan: BudgetPlan }) {
       <p className="mt-0.5">Figures follow Actual&apos;s own budget calculations, the same as Budget Cockpit.</p>
       <ul className="mt-2 list-disc space-y-1 pl-4 leading-relaxed marker:text-muted-foreground/60">
         <li><strong className="font-semibold text-foreground">Moving money isn&apos;t spending:</strong> transferring money from an account in your budget to an off-budget investment, savings or loan account doesn&apos;t necessarily mean an expense. You are moving money between assets or reducing what you owe. For loan repayments, principal reduces your debt, while interest and fees are expenses. This is one reason My budget and Spending show different totals.</li>
+        <li><strong className="font-semibold text-foreground">Interest and fees a lender charges:</strong> a lender&apos;s interest and fees on a loan tracked in Loans sit in the off-budget loan account with no category, so Actual&apos;s budget never sees them. Spending counts them as spent.</li>
         {plan.hidden && <li><strong className="font-semibold text-foreground">Hidden categories:</strong> Actual&apos;s Tracking budget excludes hidden categories from its totals. Spending still includes their expenses, because hiding a category doesn&apos;t mean the money wasn&apos;t spent. This gives a complete spending picture and explain changes in cash and net worth.</li>}
         {!tracking && <li><strong className="font-semibold text-foreground">Not covered:</strong> overspending Actual takes from the next month. Spending that earlier money covered is not overspending.</li>}
         {plan.unavailable.length > 0 && <li><strong className="font-semibold text-foreground">Not in your budget:</strong> {plan.unavailable.map(monthLabel).join(", ")}.</li>}
@@ -117,7 +118,7 @@ function ExplainBox({ plan }: { plan: BudgetPlan }) {
 /** Spending tab figure, each adjustment and Actual's figure as one short column of rows; every adjustment opens its transactions. */
 function ReconcileBox({ rec, onDrill }: { rec: Reconciliation; onDrill: (target: DrillTarget) => void }) {
   const first = rec.months[0], last = rec.months[rec.months.length - 1];
-  const partLabel = { categorizedTransfers: "Categorized transfers", uncategorized: "Entries with no category", offBudget: "Categorized entries in off-budget accounts", registry: "Entries the Asset Registry classifies", hidden: "Hidden categories left out of Actual's totals" } as const;
+  const partLabel = { categorizedTransfers: "Categorized transfers", uncategorized: "Entries with no category", loanCharges: "Interest and fees lenders charged to loan accounts", offBudget: "Categorized entries in off-budget accounts", registry: "Entries the Asset Registry classifies", hidden: "Hidden categories left out of Actual's totals" } as const;
   const target = (p: Reconciliation["parts"][number]): DrillTarget =>
     p.key === "uncategorized" ? { kind: "uncategorizedOut", month: first, throughMonth: last }
       : p.key === "hidden" ? { kind: "category", categoryIds: p.categoryIds ?? [], name: "Hidden categories", amountMinor: p.spentMinor, month: first, throughMonth: last }

@@ -15,7 +15,7 @@ const categories: BufferCategoryRow[] = [
   { id: "rent", name: "Rent", group: "Housing", hidden: false, avgMinor: 200_000 },
   { id: "fun", name: "Fun", group: "Leisure", hidden: false, avgMinor: 40_000 },
 ];
-const value = { months: 3_000_000 / 340_000, cashMinor: 3_000_000, monthlyNeedMinor: 340_000, spendingMinor: 240_000, spendingMonths: 12, loans: [{ accountId: "m", name: "Mortgage", monthlyMinor: 100_000, source: "schedule" as const }] };
+const value = { months: 3_000_000 / 340_000, cashMinor: 3_000_000, grossCashMinor: 3_000_000, cardsOwedMinor: 0, monthlyNeedMinor: 340_000, spendingMinor: 240_000, spendingMonths: 12, loans: [{ accountId: "m", name: "Mortgage", monthlyMinor: 100_000, source: "schedule" as const }] };
 const ready = { state: "ready" as const, value: value as CashBuffer };
 const groups = { groups: [{ name: "Housing", avgMinor: 200_000 }, { name: "Leisure", avgMinor: 40_000 }], categories, spendingMinor: 240_000, loanInterestMinor: 0, incomeMinor: 600_000, months: 12, startMonth: "2025-11", endMonth: "2026-10" };
 const adjustments = (over: Partial<BufferAdjustments>): BufferAdjustments => ({ excluded: [], amounts: {}, loansExcluded: [], loanAmounts: {}, ...over });
@@ -49,12 +49,13 @@ describe("the cash buffer card", () => {
     };
     const data = { ledger } as unknown as NonNullable<Parameters<typeof CashBufferCard>[0]["data"]>;
     render(<TipProvider><CashBufferCard buffer={ready} groups={groups} today="2026-11-18" data={data} /></TipProvider>);
-    fireEvent.click(screen.getByRole("button", { name: /Cash & bank today.*see account balances/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Cash & bank less card balances today.*see account balances/ }));
     const table = screen.getByRole("table");
     expect(within(table).getByRole("row", { name: /Checking/ })).toHaveTextContent("19,000.00");
     expect(within(table).getByRole("row", { name: /Off-budget savings/ })).toHaveTextContent("12,000.00");
     expect(within(table).getByRole("row", { name: /Overdraft/ })).toHaveTextContent("-2,000.00");
-    expect(within(table).getByRole("row", { name: /Cash & bank today/ })).toHaveTextContent("30,000.00");
+    expect(within(table).getByRole("row", { name: /Cash & bank less card balances/ })).toHaveTextContent("30,000.00");
+    expect(within(table).getByRole("row", { name: /Credit cards owed/ })).toHaveTextContent("0.00");
     expect(within(table).queryByText("Restricted deposit")).not.toBeInTheDocument();
     expect(within(table).queryByText("Brokerage")).not.toBeInTheDocument();
     expect(within(table).getByRole("row", { name: /Empty account/ })).toHaveTextContent("0.00");

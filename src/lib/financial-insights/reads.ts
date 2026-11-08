@@ -8,14 +8,18 @@ import type { DatedAmount, LoanCostRow, MovementRow, ReclassifiedRow } from "./m
 /**
  * The ActualQL reads behind Financial Insights. Each is one grouped query that returns the same rows in Direct and
  * HTTP, never past today, and never a name path on the transfer account (those fail): names are mapped from the
- * account and category lists. Starting balances are separated in the query itself, by their payee, so they can never
- * be counted as income or as a value change.
+ * account and category lists. Starting balances are separated in the query itself, so they can never be counted as income
+ * or as a value change: a row is a starting balance when Actual flagged it (`starting_balance_flag`), or, for a budget
+ * imported without the flag, when its payee is named "Starting Balance".
  */
 
 type Response<T> = { data: T[] };
 
 const STARTING = "Starting Balance";
-const notStarting = { $or: [{ payee: null }, { "payee.name": { $ne: STARTING } }] };
+/** Not a starting balance: the flag is not set (false or never set) and the payee is not the one Actual names "Starting Balance". */
+const notStarting = { $and: [{ $or: [{ starting_balance_flag: false }, { starting_balance_flag: null }] }, { $or: [{ payee: null }, { "payee.name": { $ne: STARTING } }] }] };
+/** A starting balance: flagged by Actual, or (imported budgets) the payee carries the name. */
+const isStarting = { $or: [{ starting_balance_flag: true }, { "payee.name": STARTING }] };
 const upToToday = (today: string) => ({ date: { $lte: today } });
 
 type MovementResult = { month: string; account: string; category: string | null; "payee.transfer_acct": string | null; amt: number; n: number };
@@ -41,7 +45,7 @@ export async function readStartingBalances(connection: ConnectionInstance, today
   const response = await runQuery<Response<PerAccountMonth>>(connection, {
     ActualQLquery: {
       table: "transactions",
-      filter: { $and: [upToToday(today), { "payee.name": STARTING }] },
+      filter: { $and: [upToToday(today), isStarting] },
       groupBy: [{ $month: "$date" }, "account"],
       select: [{ month: { $month: "$date" } }, "account", { amt: { $sum: "$amount" } }],
     },
@@ -99,7 +103,7 @@ async function readByIds<T>(connection: ConnectionInstance, transactionIds: read
   for (let i = 0; i < ids.length; i += ID_CHUNK) {
     const response = await runQuery<Response<T>>(connection, {
       ActualQLquery: { table: "transactions", // A row Actual has since turned into a transfer is in transit, not a sale or a cost: it is left out so it is not taken out twice.
-      filter: { $and: [{ id: { $oneof: ids.slice(i, i + ID_CHUNK) } }, upToToday(today), { "payee.transfer_acct": null }] }, select },
+      filter: { $and: [{ id: { $oneof: ids.slice(i, i + ID_CHUNK) } }, upToToday(today), notStarting, { "payee.transfer_acct": null }] }, select },
     });
     rows.push(...response.data);
   }
@@ -115,10 +119,10 @@ export async function readLinkedSales(connection: ConnectionInstance, transactio
 }
 
 /** The interest and fee lines the Loans tracking recorded: read by id, so only those rows are ever taken out of spending. */
-export async function readLoanCostRows(connection: ConnectionInstance, tags: readonly { id: string; loanAccountId: string; kind?: "interest" | "fee" }[], today: string): Promise<LoanCostRow[]> {
+export async function readLoanCostRows(connection: ConnectionInstance, tags: readonly { id: string; loanAccountId: string; kind?: "interest" | "fee"; charged?: boolean }[], today: string): Promise<LoanCostRow[]> {
   const tagOf = new Map(tags.map((t) => [t.id, t]));
   const data = await readByIds<LinkedResult>(connection, tags.map((t) => t.id), today, ["id", "date", "amount", "account", "category"]);
-  return data.map((r) => ({ id: r.id, month: r.date.slice(0, 7), accountId: r.account, categoryId: r.category, amountMinor: r.amount, loanAccountId: tagOf.get(r.id)?.loanAccountId, kind: tagOf.get(r.id)?.kind }));
+  return data.map((r) => ({ id: r.id, month: r.date.slice(0, 7), accountId: r.account, categoryId: r.category, amountMinor: r.amount, loanAccountId: tagOf.get(r.id)?.loanAccountId, kind: tagOf.get(r.id)?.kind, charged: tagOf.get(r.id)?.charged === true }));
 }
 
 type PayeeResult = { payee: string | null; category: string; account: string; is_child: boolean | number | null; amt: number; n: number };

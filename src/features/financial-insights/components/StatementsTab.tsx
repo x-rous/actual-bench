@@ -9,7 +9,7 @@ import { buildBalanceSheet, type BalanceSheetGroup } from "@/lib/financial-insig
 import type { DrillTarget } from "@/lib/financial-insights/drill";
 import type { AccountFact, Ledger } from "@/lib/financial-insights/measures";
 import { addMonths } from "@/lib/financial-insights/period";
-import { statementsCsvRows, type StatementGroup, type StatementLine, type Statements } from "@/lib/financial-insights/statements";
+import { statementsCsvRows, subtotalIds, type StatementGroup, type StatementLine, type Statements } from "@/lib/financial-insights/statements";
 import type { ReadyData } from "../hooks/useFinancialInsights";
 import { useStatements } from "../hooks/useStatements";
 import { formatDay, money, signedMoney } from "../format";
@@ -41,7 +41,7 @@ function Rows({ rows, onOpen, explanations = false }: { rows: StatementLine[]; o
 
 function Total({ label, amountMinor, rows, onOpen, strong = false, neutral = false }: { label: string; amountMinor: number; rows?: StatementLine[]; onOpen: OpenLine; strong?: boolean; neutral?: boolean }) {
   return <div className={`flex items-center justify-between gap-3 px-3 text-xs font-semibold ${strong ? `border-t border-border bg-muted/60 py-3 ${STATEMENT_TOTAL} text-foreground` : "border-t border-border/60 bg-muted/30 py-2 text-foreground"}`}>
-    <span>{label}</span><Figure neutral={neutral} row={{ key: label, label, amountMinor, ids: rows?.flatMap((r) => r.ids) ?? [] }} onOpen={onOpen} />
+    <span>{label}</span><Figure neutral={neutral} row={{ key: label, label, amountMinor, ids: rows ? subtotalIds(rows) : [] }} onOpen={onOpen} />
   </div>;
 }
 
@@ -171,7 +171,7 @@ export function StatementsContent({ data, model, onDrill }: Props & { model: Sta
   const [closedBalanceSections, setClosedBalanceSections] = useState<ReadonlySet<string>>(new Set());
   const { period, ledger } = data;
   const { cash, pnl } = model;
-  const open: OpenLine = (row) => onDrill({ kind: "statement", name: row.label, ids: row.ids, amountMinor: row.amountMinor, description: row.detail });
+  const open: OpenLine = (row) => onDrill({ kind: "statement", name: row.label, ids: row.drill?.ids ?? row.ids, amountMinor: row.drill?.amountMinor ?? row.amountMinor, description: row.detail });
   const scope: [string, string][] = [["Period", `${period.label}: ${formatDay(period.startDate)} to ${formatDay(period.endDate)}`], ["Basis", "Recorded categories; uncategorized on-budget receipts/payments by sign; investment activity separate"], ["Classification", model.classificationComplete ? "Complete" : "Needs review"], ["P&L status", pnl.basisIssue ?? "Recorded result"]];
   const csv = statementsCsvRows(model, period);
   const csvRows = (statement: string) => csv.filter((r) => r[0] === statement).map((r) => r.slice(1).map(String));

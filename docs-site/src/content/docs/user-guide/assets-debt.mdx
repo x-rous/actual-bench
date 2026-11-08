@@ -190,6 +190,14 @@ account scan never changes your choice. Bench compares the starting balance with
 loan account just before that installment; if they differ by more than the tolerance, **Repayments** starts with one
 **Opening adjustment** you can apply or skip.
 
+How each interest choice appears in [Financial Insights](/user-guide/financial-insights/): with **Split each repayment**,
+the interest and fees are categorized lines, so they are Spent through their category and the repayment transfer is the
+principal. With **Lender charges interest**, the lender's interest and fee rows sit in the off-budget loan account with
+no category; Bench counts them in Spent as interest and fees charged by the lender, and the principal repaid is what was
+paid into the loan less those charges. Both choices give the same Spent, principal and interest for the same loan. A loan
+that is not tracked here is read from its account alone: what was paid in is shown as principal, its interest is not
+identified, and entries the lender charged show as other entries in a loan account, outside Spent.
+
 Tracking is for term loans you owe, in a 2-decimal currency for now. A line of credit, a loan you made to someone
 else, or a loan in a currency with another number of decimals stays a calculation in **Terms & Schedule**.
 

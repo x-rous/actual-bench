@@ -62,7 +62,7 @@ const FLOW_GROUPS: { name: string; icon: LucideIcon; placement: string; examples
     { label: "Borrow", left: account("Checking · on budget", "bank"), right: account("Loan · off budget", "loan"), direction: "left", recorded: "Borrowed money recorded as a transfer.", result: "Borrowed (received from loans); not Received income." },
     { label: "Repay principal", left: account("Checking · on budget", "bank"), right: account("Loan · off budget", "loan"), direction: "right", recorded: "Principal repaid as a transfer; the on-budget side carries a category.", result: "Loan principal repaid; not Spent." },
     { label: "Interest & fees", left: account("Checking · on budget", "bank"), right: other("Lender · outside payee"), direction: "right", impact: "spent", recorded: "Separate interest or fee entry with an expense category.", result: "Spent. Interest paid / Fees paid identified for tracked loans only." },
-    { label: "Loan adjustment", left: other("Recorded charge"), right: account("Loan · off budget", "loan"), direction: "entry", recorded: "Uncategorized non-transfer entry, for example capitalized interest.", result: "Unidentified movements; not Interest paid or Spent." },
+    { label: "Loan adjustment", left: other("Recorded charge"), right: account("Loan · off budget", "loan"), direction: "entry", recorded: "Uncategorized non-transfer entry, for example interest the lender charged.", result: "Loan tracked in Loans: interest or fees, counted in Spent. Not tracked: Other entries in loan accounts; not Spent." },
   ] },
   { name: "Credit cards", icon: ACCOUNT_CLASS_ICONS["credit-card"], placement: "On or off budget · Current liability", examples: [
     { label: "Card purchase", left: account("Card · on budget", "credit-card"), right: other("Grocery store · outside payee"), direction: "right", impact: "spent", recorded: "Purchase with a grocery category.", result: "Spent rises when recorded; card debt rises." },
@@ -187,7 +187,7 @@ export function FinancialInsightsGuide({ section, onSection, onClose, docsUrl }:
               ["Asset Registry entries", ["A revaluation or depreciation classified in Assets has its own value-change line.", "Proceeds linked to an asset sale have their own Asset sales line."]],
               ["Categories", ["Other categorized entries follow their category: income in an income category, spending otherwise.", "A refund in an expense category reduces spending; its sign does not make it income."]],
               ["On-budget, no category", ["Money in or out is counted by its sign and shown separately as uncategorized.", "Starting balances are not income."]],
-              ["Off-budget, no category", ["A non-transfer entry in an investment or retirement account is Investment activity, not a calculated return.", "In another off-budget account it is an unidentified movement, unless Assets classifies it; neither is income or spending."]],
+              ["Off-budget, no category", ["A non-transfer entry in an investment or retirement account is Investment activity, not a calculated return.", "In a loan account it is an other entry in a loan account (interest or fees the lender charged to a loan tracked in Loans are Spent). In another off-budget account it is an unidentified movement. Assets can classify either; neither is income."]],
               ["Excluded accounts", ["The account’s balance and entries are left out of Financial Insights.", "Transfers between an excluded account and an included account appear on their own line."]],
             ] satisfies [string, string[]][]).map(([title, bullets], index) => <li key={title} className="flex gap-3 rounded-lg border border-border bg-muted/20 p-3">
               <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-primary/10 font-semibold text-primary">{index + 1}</span>
@@ -195,7 +195,7 @@ export function FinancialInsightsGuide({ section, onSection, onClose, docsUrl }:
             </li>)}
           </ol>
         </details>
-        <Callout title="When Money kept needs review">Money kept and the savings rate say <b>Needs review</b> when Assets classifies money put into an asset without a recorded transfer, the registry cannot be read, or an asset account has too many entries to read. Income, spending, net worth and balances still show.</Callout>
+        <Callout title="When Money kept needs review">When Assets classifies money put into an asset without a recorded transfer, Money kept and the savings rate are still shown, with a warning and the amount that may be counted twice. They say <b>Needs review</b> only when the registry cannot be read or an asset account has too many entries to read. Income, spending, net worth and balances still show.</Callout>
       </>}
 
       {section === "different" && <>
@@ -255,12 +255,14 @@ export function FinancialInsightsGuide({ section, onSection, onClose, docsUrl }:
         <Heading>What you own and owe, month by month</Heading>
         <OwnAndOweSketch />
         <Para>Assets are stacked above zero by class, liabilities below, and net worth is the line. Mo, Qtr and Yr show the balance at the end of each month, quarter or year; the chart opens in the unit that suits the length of the period. Select a class in the legend to take it out of the bars. The net worth line always stays the true total.</Para>
+        <Heading>Where your money went</Heading>
+        <Para>This card splits what you received into the uses it went to, in parts that add up to it exactly: <b>Spent</b>, <b>Debt repaid (principal)</b>, <b>Borrowed</b>, <b>Put into investments (net)</b>, <b>Moved to deposits, assets and other liabilities</b>, the <b>change in card balances</b> and the <b>change in cash &amp; bank</b>. <b>Other</b> is whatever those do not explain; it is shown whenever it is not zero and is never forced to zero. Money kept is everything here except Spent.</Para>
         <Heading>What changed your net worth</Heading>
         <WaterfallSketch label="Sketch of what changed net worth" steps={[
           { name: "Start", value: 100, kind: "total" }, { name: "Money kept", value: 18, kind: "up" }, { name: "Investment activity", value: 6, kind: "up" },
           { name: "Value change", value: -4, kind: "down" }, { name: "End", value: 120, kind: "total" },
         ]} />
-        <Para>The first and last bars are net worth at the start and the end; the steps between are what Bench can identify: money kept, unidentified movements, investment activity, changes in value and asset sales from Assets, opening balances, transfers with excluded accounts and money in transit. When they add up exactly you see a <Chip tone="income">Reconciled</Chip> mark, otherwise a dashed <b>Unexplained</b> bar shows the difference. The axis does not start at zero so the steps stay readable.</Para>
+        <Para>The first and last bars are net worth at the start and the end; the steps between are what Bench can identify: money kept, other entries in loan accounts, unidentified movements, investment activity, changes in value and asset sales from Assets, opening balances, transfers with excluded accounts and money in transit. When they add up exactly you see a <Chip tone="income">Reconciled</Chip> mark, otherwise a dashed <b>Unexplained</b> bar shows the difference. The axis does not start at zero so the steps stay readable.</Para>
         <Heading>The three measures people confuse</Heading>
         <Example caption="Money kept, change in cash and change in net worth" head={["Measure", "What it is", "Why it differs"]} rows={[
           ["Money kept", "Income − spending", "Moving money into investments or paying loan principal is not spending"],
@@ -291,8 +293,8 @@ export function FinancialInsightsGuide({ section, onSection, onClose, docsUrl }:
         <Para>A waterfall from your cash at the start to your cash at the end. Income and spending in cash accounts are two steps, each opening its transactions. Whatever the steps do not explain stays visible as <b>Unattributed</b>; it is never forced to zero. Everyday movements and loans have separate panels so a large borrowing cannot hide the rest.</Para>
         <Grid cols={3}>
           <Card icon={ArrowLeftRight} tone="warn" title="In transit">Transfers with only one side recorded, or with the other side outside the period, listed with the reason from what is recorded. Bench never guesses a cause.</Card>
-          <Card icon={TrendingUp} tone="value" title="Investments and loan principal">Money put into and withdrawn from investments, and what left cash for loans, each on its own scale so one cannot flatten the other.</Card>
-          <Card icon={CreditCard} tone="loan" title="Loan repayments">Each loan’s principal, interest and fees. Principal is a repayment, not an expense; interest and fees are expenses already in Spent.</Card>
+          <Card icon={TrendingUp} tone="value" title="Investments and loan principal">Money put into and withdrawn from investments, and what left cash for loans (principal plus any interest the lender charged), each on its own scale so one cannot flatten the other.</Card>
+          <Card icon={CreditCard} tone="loan" title="Loan repayments">Each loan’s principal, interest and fees. Principal is a repayment, not an expense; interest and fees of loans tracked in Loans are expenses counted in Spent, whether split from a repayment or charged by the lender.</Card>
         </Grid>
         <Para><b>Other movements</b> lists entries that are not plain income or spending. An entry with no category in an investment or retirement account is <b>investment activity</b> (a price change, dividend, interest or fee): it changes net worth, is not income or spending, and no return is calculated.</Para>
       </>}
@@ -414,11 +416,11 @@ export function FinancialInsightsGuide({ section, onSection, onClose, docsUrl }:
         <StackedSketch label="Sketch of principal, interest and fees by month" groups={[
           { name: "Principal", colour: "var(--fi-invest)", values: [40, 40, 41, 41, 42, 42] }, { name: "Interest", colour: "var(--fi-gap)", values: [20, 20, 19, 19, 18, 18] }, { name: "Fees", colour: "var(--fi-g2)", values: [3, 0, 0, 3, 0, 0] },
         ]} />
-        <Para>Principal lowers what you owe and is not spending; interest and fees are spending already counted in Spending. Interest and fees are only identified for loans <b>tracked in Loans</b>; an untracked loan shows principal only and says so.</Para>
+        <Para>Principal is what was paid into your loans less what the lender charged: it lowers what you owe and is not spending. Interest and fees of loans tracked in Loans are counted in Spent, whether they were split from a repayment or charged by the lender; an untracked loan’s interest is counted only if you recorded it with a spending category. Money moved in from another loan, a card or a liability repays nothing and is not counted. Interest and fees are only identified for loans <b>tracked in Loans</b>; an untracked loan shows principal only and says so.</Para>
         <Example caption="The account table" head={["Column", "What it says"]} rows={[
           ["Start, End, Change", "What was owed before the period and at its end"],
           ["Share", "Each account’s part of everything you owe"],
-          ["Principal repaid", "What was paid into the loan in the period (select it for the transactions)"],
+          ["Principal repaid", "What was paid into the loan in the period, less what the lender charged (select it for the transactions). Money moved in from another loan, a card or a liability repays nothing"],
           ["Next 12 months, Later", "Only for a tracked loan whose schedule agrees with Actual: the scheduled principal of the coming year, and what is owed after it. Otherwise Not scheduled, or Review in Loans with the reason"],
         ]} />
         <Grid cols={2}>
@@ -439,6 +441,8 @@ export function FinancialInsightsGuide({ section, onSection, onClose, docsUrl }:
           ["Transfer into investments or a restricted deposit", "Investing", "Excluded"],
           ["Recorded loan split", "Principal financing; paid interest operating", "Recorded interest expense"],
           ["Unsplit loan payment", "Allocation unidentified", "Transfer excluded; no estimated interest"],
+          ["Interest the lender charged to a tracked loan, with payments in the period", "Interest paid (operating); the rest of the payments is principal (financing)", "Recorded interest expense"],
+          ["Interest the lender charged to a tracked loan, with no payment in the period", "No cash movement", "Recorded interest expense"],
           ["Uncategorized on-budget cash entry", "Operating receipt or payment", "Uncategorized income or expense by sign"],
           ["Uncategorized on-budget card purchase", "No cash movement", "Uncategorized expense when recorded"],
           ["Uncategorized entry inside off-budget investments", "No available-cash movement", "Investment activity, outside P&L and exceptions"],
@@ -461,7 +465,7 @@ export function FinancialInsightsGuide({ section, onSection, onClose, docsUrl }:
           ["Retirement", "Cash funding and withdrawals are investing. Uncategorized internal activity stays outside P&L."],
           ["Other asset", "Fixed-asset cash transfers are investing. Other transfers need an identified purpose."],
           ["Credit card", "Purchases enter P&L once, including uncategorized on-budget payments. Ordinary settlements are operating; cash receipts need a purpose."],
-          ["Loan", "Borrowing is financing. Recorded split principal is financing; unsplit payment composition needs review."],
+          ["Loan", "Borrowing is financing. Recorded split principal is financing. Interest and fees the lender charged to a tracked loan are expenses, and the rest of its payments is principal; any other unsplit payment needs review."],
           ["Other liability", "Current / non-current does not identify borrowing versus payables; transfers need review."],
           ["Excluded", "Activity excluded. Its cash counterpart is a scope exception."],
         ]} />
@@ -472,10 +476,10 @@ export function FinancialInsightsGuide({ section, onSection, onClose, docsUrl }:
         <Para>The cash buffer on the Summary tab answers “if my income stopped, how many months could I cover?”. It is always as of today, whatever period is selected.</Para>
         <BufferSketch />
         <Example caption="How the real figure is worked out" head={["Part", "What it is"]} rows={[
-          ["Cash", "Cash & bank today. Investments and fixed or restricted deposits are not cash"],
+          ["Cash", "Cash & bank today, less what you owe on credit cards. Investments and fixed or restricted deposits are not cash"],
           ["Spending per month", "A typical month of recorded spending, without the interest and fees of tracked loans"],
-          ["Loan repayments", "Each loan you owe, in full: its scheduled repayment (principal and interest) if it is tracked and agrees with Actual, otherwise its recent recorded repayments (principal only)"],
-          ["Months of cover", "Cash ÷ (spending per month + loan repayments)"],
+          ["Loan repayments", "Each loan you owe, in full: its scheduled repayment (principal and interest) if it is tracked and agrees with Actual; if it is tracked but does not agree, the buffer is unavailable; if it is not tracked, its recorded repayments over the same recent months as your typical month (what was paid in, which can include interest the lender charged), which needs three complete months"],
+          ["Months of cover", "(Cash & bank − cards owed) ÷ (spending per month + loan repayments)"],
         ]} />
         <Callout title="Is the loan interest counted twice?">No. The interest and fee lines of tracked loans are taken out of the spending categories, because each loan’s scheduled repayment already contains them. In the simulator that category is not listed at all.</Callout>
         <Heading>Your goal and a typical month</Heading>

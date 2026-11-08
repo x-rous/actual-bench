@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { ArrowRight } from "lucide-react";
+import { AlertTriangle, ArrowRight } from "lucide-react";
 import { cashBridgeLines } from "@/lib/financial-insights/breakdowns";
 import type { DrillKind, DrillTarget } from "@/lib/financial-insights/drill";
 import { GRANULARITY_NAME, bucketMonths, type Granularity } from "@/lib/financial-insights/buckets";
@@ -64,20 +64,20 @@ function InvestmentsFlow({ monthly, period, scope, onDrill }: FlowProps) {
   );
 }
 
-/** Loan principal that left the cash accounts, by month, quarter or year, with the money borrowed listed under it. */
+/** Money paid to loans (principal plus any interest the lender charged) that left the cash accounts, by month, quarter or year, with the money borrowed listed under it. */
 function LoanPrincipalFlow({ monthly, period, scope, onDrill }: FlowProps) {
   const { unit, setUnit, names, buckets, labels, partials, sum } = useFlowUnit(monthly);
   const repaid = sum((m) => m.repaid), borrowed = sum((m) => m.borrowed);
   const borrowedIn = borrowed.flatMap((amount, i) => (amount !== null && amount > 0 ? [{ i, amount }] : []));
   return (
-    <ChartFrame id="loan-principal" title="Loan principal repaid" hint={`Left your cash accounts for loans, each ${names.one}`} subtitle={<p>Borrowing is listed below the chart, not drawn.</p>}
-      legend={[{ label: "Loan principal repaid", colour: "var(--fi-loan)" }]}
-      actions={<UnitPills value={unit} onChange={setUnit} label="Show loan principal by" />}
-      table={{ head: [names.one[0].toUpperCase() + names.one.slice(1), "Loan principal repaid", "Borrowed"], rows: buckets.map((b, i) => [labels[i] + (b.partial ? " (partial)" : ""), repaid[i], borrowed[i]]) }} csvScope={scope}
+    <ChartFrame id="loan-principal" title="Paid to loans" hint={`Left your cash accounts for loans, each ${names.one}`} subtitle={<p>Principal plus any interest the lender charged to the loan account. Borrowing is listed below the chart, not drawn.</p>}
+      legend={[{ label: "Paid to loans", colour: "var(--fi-loan)" }]}
+      actions={<UnitPills value={unit} onChange={setUnit} label="Show payments to loans by" />}
+      table={{ head: [names.one[0].toUpperCase() + names.one.slice(1), "Paid to loans", "Borrowed"], rows: buckets.map((b, i) => [labels[i] + (b.partial ? " (partial)" : ""), repaid[i], borrowed[i]]) }} csvScope={scope}
       footnote={partialFootnote(labels, partials, unit, period)}>
-      {monthly.every((m) => !m.repaid) ? <p className="py-12 text-center text-xs text-muted-foreground">No loan principal left your cash accounts in this period.</p> : <BarChart labels={labels} partialIndex={partials.length ? partials : null} height={210} valueLabels ariaLabel={`Loan principal repaid each ${names.one}`}
-        series={[{ key: "repaid", label: "Loan principal repaid", colour: "var(--fi-loan)", values: repaid }]}
-        tip={(i) => monthTip({ title: labels[i], partial: buckets[i].partial, partialNote: partialNoteOf(unit, period.endDate), rows: [{ colour: "var(--fi-loan)", name: "Loan principal repaid", value: money(repaid[i] ?? 0), strong: true }, ...(borrowed[i] ? [{ name: `◆ Borrowed that ${names.one}`, value: money(borrowed[i] ?? 0) }] : [])], compare: { values: repaid, index: i, label: "repaid" } })}
+      {monthly.every((m) => !m.repaid) ? <p className="py-12 text-center text-xs text-muted-foreground">No money was paid from your cash accounts to loans in this period.</p> : <BarChart labels={labels} partialIndex={partials.length ? partials : null} height={210} valueLabels ariaLabel={`Paid to loans each ${names.one}`}
+        series={[{ key: "repaid", label: "Paid to loans", colour: "var(--fi-loan)", values: repaid }]}
+        tip={(i) => monthTip({ title: labels[i], partial: buckets[i].partial, partialNote: partialNoteOf(unit, period.endDate), rows: [{ colour: "var(--fi-loan)", name: "Paid to loans", value: money(repaid[i] ?? 0), strong: true }, ...(borrowed[i] ? [{ name: `◆ Borrowed that ${names.one}`, value: money(borrowed[i] ?? 0) }] : [])], compare: { values: repaid, index: i, label: "repaid" } })}
         onSelect={(i) => onDrill({ kind: "repaid", ...drillRange(buckets[i]) })} />}
       {borrowedIn.length > 0 && (
         <ul className="mt-1 divide-y divide-border/50 text-xs">
@@ -148,6 +148,7 @@ export function MoneyTab({ data, onDrill }: { data: Ready; onDrill: (target: Dri
     { key: "uncategorizedIn", label: "Money in with no category", amount: flows.uncategorizedIn, note: "On-budget entries; counted as received.", target: { kind: "uncategorizedIn" } as DrillTarget },
     { key: "uncategorizedOut", label: "Money out with no category", amount: flows.uncategorizedOut, note: "On-budget entries; counted as spent.", target: { kind: "uncategorizedOut" } as DrillTarget },
     { key: "investmentResults", label: `Investment activity (${flows.investmentResultsCount})`, amount: flows.investmentResults, note: "No category, in investment and retirement accounts: price changes, dividends, interest and fees. Not income or spending.", target: { kind: "investmentResults" } as DrillTarget },
+    { key: "loanAccountOther", label: `Other entries in loan accounts (${flows.loanAccountOtherCount})`, amount: flows.loanAccountOther, note: "Not transfers, in untracked loan accounts: often interest or fees the lender charged. Not income or spending.", target: { kind: "loanAccountOther" } as DrillTarget },
     { key: "unidentified", label: `Unidentified movements (${flows.unidentifiedCount})`, amount: flows.unidentified, note: "No category, in other off-budget accounts; not income or spending.", target: { kind: "unidentified" } as DrillTarget },
     { key: "valueChange", label: "Changes in value", amount: flows.valueChanges, note: "Classified in Assets; not income or spending.", target: { kind: "valueChange" } as DrillTarget },
     { key: "assetSale", label: "Asset sales", amount: flows.assetSales, note: "Linked in Assets; not income or spending.", target: { kind: "assetSale" } as DrillTarget },
@@ -169,10 +170,10 @@ export function MoneyTab({ data, onDrill }: { data: Ready; onDrill: (target: Dri
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <Tile label="Received" detail="Income in the period" delta={comparison && <Delta now={comparison.current.received} before={comparison.previous.received} label={comparison.label} good="up" />}><DrillLink smallDecimals label={`Received ${money(summary.received)}`} onClick={() => onDrill({ kind: "received" })}>{money(summary.received)}</DrillLink></Tile>
         <Tile label="Spent" detail="Refunds lower it; transfers are not spending" delta={comparison && <Delta now={comparison.current.spent} before={comparison.previous.spent} label={comparison.label} good="down" />}><DrillLink smallDecimals label={`Spent ${money(summary.spent)}`} onClick={() => onDrill({ kind: "spent" })}>{money(summary.spent)}</DrillLink></Tile>
-        <Tile label="Kept from income" tone={keptReady ? undefined : "warning"} detail={summary.moneyKept.state === "ready" ? "Received less spent" : summary.moneyKept.reason} delta={summary.moneyKept.state === "ready" && comparison && <Delta now={comparison.current.kept} before={comparison.previous.kept} label={comparison.label} good="up" />}>
+        <Tile label="Kept from income" tone={keptReady && !(summary.moneyKept.state === "ready" && summary.moneyKept.warning) ? undefined : "warning"} info={summary.moneyKept.state === "ready" && summary.moneyKept.warning ? <p>{summary.moneyKept.warning}.</p> : undefined} detail={summary.moneyKept.state === "ready" ? <>Received less spent{summary.moneyKept.warning && <span className="mt-0.5 flex items-center gap-1 text-amber-700 dark:text-amber-400"><AlertTriangle className="size-3 shrink-0" aria-hidden />Entries to review</span>}</> : summary.moneyKept.reason} delta={summary.moneyKept.state === "ready" && comparison && <Delta now={comparison.current.kept} before={comparison.previous.kept} label={comparison.label} good="up" />}>
           {summary.moneyKept.state === "ready" ? money(summary.moneyKept.value) : "Needs review"}
         </Tile>
-        <Tile label="Savings rate" tone={summary.savingsRate.state === "ready" ? undefined : "warning"}
+        <Tile label="Savings rate" tone={summary.savingsRate.state === "ready" && !summary.savingsRate.warning ? undefined : "warning"} info={summary.savingsRate.state === "ready" && summary.savingsRate.warning ? <p>{summary.savingsRate.warning}.</p> : undefined}
           delta={summary.savingsRate.state === "ready" && comparison && comparison.current.received > 0 && comparison.previous.received > 0 && <Delta points now={(comparison.current.kept / comparison.current.received) * 100} before={(comparison.previous.kept / comparison.previous.received) * 100} label={comparison.label} good="up" />}
           detail={summary.savingsRate.state === "ready" && spentShare !== null ? (
             <>

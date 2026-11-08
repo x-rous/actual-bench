@@ -22,7 +22,7 @@ export type PickerConstraints = {
   where?: object;
   /** Leave out every transaction whose payee is a transfer payee, even one with no linked counterpart (`excludeTransfers` only leaves out linked pairs). */
   excludeTransferPayees?: boolean;
-  /** Leave out Actual's "Starting Balance" rows. */
+  /** Leave out Actual's starting balances: rows it flagged (`starting_balance_flag`) and, for imported budgets, rows whose payee is named "Starting Balance". */
   excludeStartingBalance?: boolean;
   /** Exact transaction membership, fetched in bounded ID batches. */
   namedIds?: string[];
@@ -138,7 +138,10 @@ export function buildSearchFilter(state: PickerFilterState, constraints: PickerC
   const where = advanced ? ruleWhere(advanced) : undefined;
   if (where) and.push(where);
   if (constraints.excludeTransferPayees) and.push({ "payee.transfer_acct": null });
-  if (constraints.excludeStartingBalance) and.push({ $or: [{ payee: null }, { "payee.name": { $ne: "Starting Balance" } }] });
+  if (constraints.excludeStartingBalance) {
+    and.push({ $or: [{ starting_balance_flag: false }, { starting_balance_flag: null }] });
+    and.push({ $or: [{ payee: null }, { "payee.name": { $ne: "Starting Balance" } }] });
+  }
   for (const id of constraints.excludeIds ?? []) and.push({ id: { $ne: id } });
   if (constraints.where) and.push(constraints.where);
   const term = state.search.trim();

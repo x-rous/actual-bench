@@ -23,7 +23,7 @@ import { useLocalToday } from "@/features/assets-debt/lib/useLocalToday";
 import { usePersistedFilters } from "@/hooks/usePersistedFilters";
 import type { PlanMode } from "@/lib/financial-insights/budget";
 import { ASSET_ROW_LIMIT, reviewAssetEntries, valueChangeRows, type AssetEntry, type ReviewEntry, type SavedClassification } from "@/lib/financial-insights/assetReview";
-import { compositionSeries, debtRepayments, incomeBreakdown, monthlyFlows, netWorthSteps, payeeSpending, spendingBreakdown, spendingFacts, spendingGroups, type CategoryInfo, type DebtRepayments, type MonthlyPoint, type SpendingBreakdown, type SpendingFacts } from "@/lib/financial-insights/breakdowns";
+import { SPECIAL_ROW_ID, compositionSeries, debtRepayments, incomeBreakdown, monthlyFlows, netWorthSteps, payeeSpending, spendingBreakdown, spendingFacts, spendingGroups, type CategoryInfo, type DebtRepayments, type MonthlyPoint, type SpendingBreakdown, type SpendingFacts } from "@/lib/financial-insights/breakdowns";
 import type { ScheduleInput } from "@/lib/financial-insights/debt";
 import { UNCATEGORIZED_KEY, median, type BufferCategoryRow, type BufferSettings } from "@/lib/financial-insights/bufferScenario";
 import { comparePeriods, type Comparison } from "@/lib/financial-insights/compare";
@@ -346,11 +346,11 @@ export function useFinancialInsights(): FinancialInsightsView {
     let review: ReviewEntry[] = [];
     let assetReview: AssetReview;
     // A sale linked to an asset is taken out of income and spending whatever the class of its account, so no failed read is let through.
-    if (!raw.registryRead) assetReview = { unavailableReason: "The Asset Registry could not be read, so asset entries and linked sales cannot be classified", rowCount: 0 };
-    else if (raw.assetEntries === null) assetReview = { unavailableReason: `The registered asset accounts hold ${raw.assetRowCount.toLocaleString()} entries, more than can be read to classify them`, rowCount: 0 };
+    if (!raw.registryRead) assetReview = { unavailableReason: "The Asset Registry could not be read, so asset entries and linked sales cannot be classified", rowCount: 0, amountMinor: 0 };
+    else if (raw.assetEntries === null) assetReview = { unavailableReason: `The registered asset accounts hold ${raw.assetRowCount.toLocaleString()} entries, more than can be read to classify them`, rowCount: 0, amountMinor: 0 };
     else {
       review = reviewAssetEntries(raw.assetEntries, raw.savedClassifications, resolved);
-      assetReview = { unavailableReason: null, rowCount: review.length };
+      assetReview = { unavailableReason: null, rowCount: review.length, amountMinor: review.reduce((sum, r) => sum + Math.abs(r.amountMinor), 0) };
     }
     const trackedLoans = new Set<string>([...raw.loans.schedules.filter((l) => l.state === "ready").map((l) => l.accountId), ...raw.loans.costRows.map((c) => c.loanAccountId)]);
     const schedules = new Map<string, LoanScheduleInput>(raw.loans.schedules.map((l) => [l.accountId, l.state === "ready" ? { state: "ready", monthlyMinor: l.monthlyMinor } : { state: "unavailable", reason: l.reason }]));
@@ -361,7 +361,7 @@ export function useFinancialInsights(): FinancialInsightsView {
     const incomeRows = incomeBreakdown(ledger, resolved, categories, monthly);
     const bufferSpending = bufferSpendingGroups(ledger, today, categories, bufferSettings);
     return {
-      state: "ready", summary, buffer: cashBuffer(ledger, today, schedules, { months: bufferSettings.averageMonths, spendingMinor: bufferSettings.method === "median" ? bufferSpending?.spendingMinor : undefined }), bufferSpending, bufferSettings,
+      state: "ready", summary, buffer: cashBuffer(ledger, today, schedules, { months: bufferSettings.averageMonths, method: bufferSettings.method, spendingMinor: bufferSettings.method === "median" ? bufferSpending?.spendingMinor : undefined }), bufferSpending, bufferSettings,
       review, firstMonth: ledger.firstMonth, readAt: raw.readAt, refreshing: isFetching, refreshFailed: isError,
       ledger, period: resolved, categories, monthly, breakdown, spending: spendingFacts(breakdown, monthly),
       groups: spendingGroups(breakdown), comparison: comparePeriods(ledger, resolved, today), income: { breakdown: incomeRows, facts: spendingFacts(incomeRows, monthly, (m) => m.received), groups: spendingGroups(incomeRows) }, composition: compositionSeries(ledger, resolved, summary.opening), netWorthChange: netWorthSteps(summary),
@@ -440,7 +440,8 @@ export function bufferSpendingGroups(ledger: Ledger, today: string, categories: 
   const loanCosts = new Map<string, number[]>();
   const slot = new Map(months.map((m, i) => [m, i]));
   for (const row of loanCostRowsIn(ledger, window)) {
-    const key = row.categoryId ?? UNCATEGORIZED_KEY;
+    // A charge the lender added to the loan account is its own row of the breakdown, not part of Uncategorized.
+    const key = row.charged && row.categoryId === null ? SPECIAL_ROW_ID[row.kind === "fee" ? "loanFees" : "loanInterest"] : row.categoryId ?? UNCATEGORIZED_KEY;
     const series = loanCosts.get(key) ?? months.map(() => 0);
     series[slot.get(row.month) ?? 0] += 0 - row.amountMinor;
     loanCosts.set(key, series);

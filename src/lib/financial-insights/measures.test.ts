@@ -13,7 +13,7 @@ const accounts: AccountFact[] = [
   { id: "loan", name: "Mortgage", accountClass: "loan", treatment: null, offBudget: true },
 ];
 const incomeCategories = new Set(["salary"]);
-const none: AssetReview = { unavailableReason: null, rowCount: 0 };
+const none: AssetReview = { unavailableReason: null, rowCount: 0, amountMinor: 0 };
 
 const row = (month: string, accountId: string, amountMinor: number, extra: Partial<MovementRow> = {}): MovementRow =>
   ({ month, accountId, categoryId: null, transferAccountId: null, amountMinor, count: 1, ...extra });
@@ -178,9 +178,9 @@ describe("financial insights: how a row is classified", () => {
     expect(s.netWorth.change).toBe(0);
   });
 
-  it("reads a loan account's rows like any other: interest with a category is spending, an uncategorized one is unidentified", () => {
+  it("reads a loan account's rows: interest with a category is spending, an uncategorized one (an untracked loan) is an other entry, not unidentified", () => {
     const s = run(facts([row("2026-09", "loan", -5_000, { categoryId: "interest" }), row("2026-09", "loan", -3_000)]), sep);
-    expect([s.spent, s.flows.unidentified]).toEqual([5_000, -3_000]);
+    expect([s.spent, s.flows.unidentified, s.flows.loanAccountOther]).toEqual([5_000, 0, -3_000]);
     expect(s.netWorth.change).toBe(-8_000);
     expect(s.unexplained).toBe(0);
   });
@@ -215,16 +215,16 @@ describe("financial insights: Money kept and the savings rate", () => {
     expect(value(s.savingsRate)).toBe(40);
   });
 
-  it("is withheld, with no number, only for capital the registry says was put in without a transfer", () => {
-    const s = run(earnings, sep, { unavailableReason: null, rowCount: 2 });
-    expect(s.moneyKept.state).toBe("needsReview");
-    expect(s.savingsRate.state).toBe("needsReview");
+  it("is shown with a warning and the amount at issue when the registry says capital was put in without a transfer", () => {
+    const s = run(earnings, sep, { unavailableReason: null, rowCount: 2, amountMinor: 300_000 });
+    expect(s.moneyKept).toEqual({ state: "ready", value: 400_000, warning: expect.stringContaining("2 entries (3,000.00) are classified in Assets as capital put into an asset without a recorded transfer, so this may count them twice") });
+    expect(s.savingsRate).toMatchObject({ state: "ready", value: 40, warning: expect.stringContaining("2 entries") });
     expect([s.received, s.spent]).toEqual([1_000_000, 600_000]);
     expect(s.netWorth.change).toBe(400_000);
   });
 
   it("is withheld when the registry could not be read, and nothing else is affected", () => {
-    const s = run(earnings, sep, { unavailableReason: "Too many entries to read", rowCount: 0 });
+    const s = run(earnings, sep, { unavailableReason: "Too many entries to read", rowCount: 0, amountMinor: 0 });
     expect(s.moneyKept).toEqual({ state: "needsReview", reason: "Too many entries to read" });
     expect(s.netWorth.closing).toBe(400_000);
   });
@@ -281,6 +281,16 @@ describe("financial insights: cash buffer", () => {
     const shared = months6.flatMap((m) => [row(m, "chk", -20_000, { categoryId: "debt" }), row(m, "visa", -45_000, { categoryId: "debt" })]);
     const f = facts([...base, ...shared, owing], { loanCosts: months6.map((m) => ({ month: m, accountId: "chk", categoryId: "debt", amountMinor: -20_000 })) });
     expect(buffer(f, [["loan", { state: "ready", monthlyMinor: 100_000 }]])).toMatchObject({ state: "ready", value: { spendingMinor: 45_000 } });
+  });
+
+  it("does not take a registry-classified loan cost out of the spending twice", () => {
+    // The interest lines are categorized, but Assets classifies them as a change in value: spending already leaves them out.
+    const interest = months6.map((m) => row(m, "chk", -20_000, { categoryId: "loan-interest" }));
+    const f = facts([...base, ...spending(months6), ...interest, owing], {
+      loanCosts: months6.map((m) => ({ id: `i-${m}`, month: m, accountId: "chk", categoryId: "loan-interest", amountMinor: -20_000, loanAccountId: "loan", kind: "interest" as const, charged: false })),
+      reclassified: months6.map((m) => ({ id: `i-${m}`, payeeId: null, month: m, accountId: "chk", categoryId: "loan-interest", amountMinor: -20_000, to: "valueChange" as const })),
+    });
+    expect(buffer(f, [["loan", { state: "ready", monthlyMinor: 100_000 }]])).toMatchObject({ state: "ready", value: { spendingMinor: 100_000 } });
   });
 
   it("only takes out a recorded interest line that counted as spending", () => {
@@ -348,5 +358,63 @@ describe("where a budget's data begins", () => {
   it("is not moved by rows of an account that is left out", () => {
     const ledger = buildLedger(facts([row("2025-01", "ghost", 1_000), row("2026-04", "chk", 1_000)], { startingBalances: [{ month: "2024-06", accountId: "ghost", amountMinor: 9_000 }] }));
     expect(ledger.firstMonth).toBe("2026-04");
+  });
+});
+
+describe("financial insights: the cash buffer", () => {
+  const months = ["2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10"];
+  const steady = months.flatMap((m) => [row(m, "chk", 300_000, { categoryId: "salary" }), row(m, "chk", -300_000, { categoryId: "food" })]);
+  const months9 = ["2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10"];
+  const steady9 = months9.flatMap((m) => [row(m, "chk", 300_000, { categoryId: "salary" }), row(m, "chk", -300_000, { categoryId: "food" })]);
+  const buffer = (f: FinancialFacts, schedules: ReadonlyMap<string, LoanScheduleInput> = new Map()) => cashBuffer(buildLedger(f), "2026-11-18", schedules);
+
+  it("is measured on cash & bank less what is owed on credit cards", () => {
+    const f = facts(steady, { startingBalances: [{ month: "2026-04", accountId: "chk", amountMinor: 1_000_000 }, { month: "2026-04", accountId: "visa", amountMinor: -400_000 }] });
+    const b = buffer(f);
+    expect(b).toMatchObject({ state: "ready", value: { grossCashMinor: 1_000_000, cardsOwedMinor: 400_000, cashMinor: 600_000, monthlyNeedMinor: 300_000 } });
+    expect(b.state === "ready" && b.value.months).toBeCloseTo(2, 5);
+  });
+
+  it("ignores a card in credit, and is unavailable when the cards owe more than the cash", () => {
+    const credit = buffer(facts(steady, { startingBalances: [{ month: "2026-04", accountId: "chk", amountMinor: 1_000_000 }, { month: "2026-04", accountId: "visa", amountMinor: 50_000 }] }));
+    expect(credit).toMatchObject({ state: "ready", value: { cardsOwedMinor: 0, cashMinor: 1_000_000 } });
+    const owed = buffer(facts(steady, { startingBalances: [{ month: "2026-04", accountId: "chk", amountMinor: 1_000_000 }, { month: "2026-04", accountId: "visa", amountMinor: -1_200_000 }] }));
+    expect(owed).toEqual({ state: "unavailable", reason: "What you owe on credit cards is more than your cash & bank" });
+    const below = buffer(facts(steady, { startingBalances: [{ month: "2026-04", accountId: "chk", amountMinor: -400_000 }] }));
+    expect(below).toEqual({ state: "unavailable", reason: "Cash & bank is below zero" });
+  });
+
+  it("is the same whether the lender's charge is tagged as a cost of the loan or not (it is in the repayment either way)", () => {
+    // Each month: 5,000 in, 1,000 of food, 200 charged to the loan account, and the 1,200 repayment as one whole transfer.
+    const movement = months.flatMap((m) => [
+      row(m, "chk", 500_000, { categoryId: "salary" }), row(m, "chk", -100_000, { categoryId: "food" }), row(m, "loan", -20_000), ...transfer(m, "chk", "loan", 120_000),
+    ]);
+    const start = [{ month: "2026-04", accountId: "loan", amountMinor: -10_000_000 }, { month: "2026-04", accountId: "chk", amountMinor: 5_000_000 }];
+    const tags = months.map((m) => ({ id: `c-${m}`, month: m, accountId: "loan", categoryId: null, amountMinor: -20_000, loanAccountId: "loan", kind: "interest" as const, charged: true }));
+    const schedules = new Map<string, LoanScheduleInput>([["loan", { state: "ready", monthlyMinor: 120_000 }]]);
+    const tagged = buffer(facts(movement, { startingBalances: start, loanCosts: tags }), schedules);
+    const untagged = buffer(facts(movement, { startingBalances: start }), schedules);
+    expect(tagged.state === "ready" && tagged.value.monthlyNeedMinor).toBe(100_000 + 120_000);
+    expect(tagged).toEqual(untagged);
+  });
+
+  it("works out an untracked loan's recorded repayments over the same months as a typical month, and still needs three", () => {
+    // 100.00 paid in each of the last three months, 400.00 in each of the nine before.
+    const payments = months9.flatMap((m, i) => transfer(m, "chk", "loan", i < 6 ? 40_000 : 10_000));
+    const f = facts([...steady9, ...payments], { startingBalances: [{ month: "2026-01", accountId: "loan", amountMinor: -10_000_000 }, { month: "2026-01", accountId: "chk", amountMinor: 50_000_000 }] });
+    const over = (n: number | undefined) => { const b = cashBuffer(buildLedger(f), "2026-11-18", new Map(), { months: n }); return b.state === "ready" ? b.value.loans[0].monthlyMinor : b; };
+    expect(over(3)).toBe(10_000);
+    expect(over(6)).toBe(Math.round((3 * 10_000 + 3 * 40_000) / 6));
+    expect(over(undefined)).toBe(Math.round((6 * 40_000 + 3 * 10_000) / 9));
+    expect(over(2)).toEqual({ state: "unavailable", reason: "Insufficient history: at least three complete months are needed" });
+  });
+
+  it("takes the median of an untracked loan's monthly payments when asked, so one lump sum does not lift it", () => {
+    const payments = months.flatMap((m, i) => transfer(m, "chk", "loan", i === 5 ? 1_000_000 : 100_000));
+    const f = facts([...steady, ...payments], { startingBalances: [{ month: "2026-04", accountId: "loan", amountMinor: -10_000_000 }, { month: "2026-04", accountId: "chk", amountMinor: 50_000_000 }] });
+    const average = cashBuffer(buildLedger(f), "2026-11-18", new Map(), { method: "average" });
+    const median = cashBuffer(buildLedger(f), "2026-11-18", new Map(), { method: "median" });
+    expect(average.state === "ready" && average.value.loans[0].monthlyMinor).toBe(Math.round((5 * 100_000 + 1_000_000) / 6));
+    expect(median.state === "ready" && median.value.loans[0].monthlyMinor).toBe(100_000);
   });
 });

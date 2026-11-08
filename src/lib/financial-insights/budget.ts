@@ -153,7 +153,7 @@ export type PlanKpis =
     };
 
 export type ReconciliationPart = {
-  key: "categorizedTransfers" | "uncategorized" | "offBudget" | "registry" | "hidden";
+  key: "categorizedTransfers" | "uncategorized" | "loanCharges" | "offBudget" | "registry" | "hidden";
   /** What the part adds to Actual's spending to reach the Spending tab's, signed: Actual's figure minus Spending's. */
   contributionMinor: number;
   /** The same amount as money spent (positive), as the list behind it adds up. */
@@ -422,7 +422,7 @@ export function buildBudgetPlan({ mode, reads, today, ledger, breakdown }: Build
 /**
  * Actual's spending against the Spending tab's, over the same completed months. Actual counts the categorized transfers of
  * on-budget accounts and everything in on-budget accounts the Asset Registry has since classified as a value change or a sale;
- * it leaves out entries with no category and everything in off-budget accounts. Spending is the reverse. The four parts come
+ * it leaves out entries with no category and everything in off-budget accounts, the interest and fees lenders charge to loan accounts included. Spending is the reverse. The parts come
  * from figures the page has already read; whatever they do not explain is "Other".
  */
 function reconcile(ledger: Ledger, breakdown: SpendingBreakdown, completed: readonly string[], kpis: PlanKpis, planRows: ReadonlyMap<string, PlanRow>, hiddenIds: ReadonlySet<string>): Reconciliation | null {
@@ -434,7 +434,9 @@ function reconcile(ledger: Ledger, breakdown: SpendingBreakdown, completed: read
   const spending = total(breakdown.rows);
   const uncategorized = total(breakdown.rows.filter((r) => r.id === null));
   const { facts, account } = ledger;
-  const spendingBy = new Map(breakdown.rows.filter((r) => r.id !== null).map((r) => [r.id as string, total([r])] as const));
+  // Interest and fees lenders charged sit off budget with no category, so Actual never sees them; they are rows of the breakdown, not categories.
+  const loanCharges = total(breakdown.rows.filter((r) => r.special !== undefined));
+  const spendingBy = new Map(breakdown.rows.filter((r) => r.id !== null && r.special === undefined).map((r) => [r.id as string, total([r])] as const));
   let transfers = 0, offBudget = 0;
   // The same parts by category, to find where what is left over sits.
   const explained = new Map<string, number>();
@@ -459,6 +461,7 @@ function reconcile(ledger: Ledger, breakdown: SpendingBreakdown, completed: read
   const all: ReconciliationPart[] = [
     { key: "categorizedTransfers", contributionMinor: transfers, spentMinor: transfers },
     { key: "uncategorized", contributionMinor: 0 - uncategorized, spentMinor: uncategorized },
+    { key: "loanCharges", contributionMinor: 0 - loanCharges, spentMinor: loanCharges },
     { key: "offBudget", contributionMinor: 0 - offBudget, spentMinor: offBudget },
     { key: "registry", contributionMinor: registry, spentMinor: registry },
     { key: "hidden", contributionMinor: 0 - hiddenSpending, spentMinor: hiddenSpending, categoryIds: hiddenWithSpending },

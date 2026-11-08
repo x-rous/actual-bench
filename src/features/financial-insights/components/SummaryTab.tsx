@@ -22,23 +22,27 @@ import { CashBuffer } from "./CashBufferCard";
 import { Tile } from "./Tile";
 import { CLASS_COLOUR, CompositionChart } from "./charts/CompositionChart";
 import { Waterfall, type WaterfallStep } from "./charts/Waterfall";
+import { WhereMoneyWentCard } from "./WhereMoneyWentCard";
 
 type Ready = Extract<FinancialInsightsView["data"], { state: "ready" }>;
 
 const WARNING = "text-amber-700 dark:text-amber-400";
 
-/** A figure that may be unavailable or need review: the number when ready, never a silent zero. */
-function statusText<T>(status: Status<T>, format: (value: T) => string): { text: string; detail?: string; tone?: "warning" } {
-  if (status.state === "ready") return { text: format(status.value) };
+/** A figure that may be unavailable or need review: the number when ready (with its warning, if it has one), never a silent zero. */
+function statusText<T>(status: Status<T>, format: (value: T) => string): { text: string; detail?: string; tone?: "warning"; warning?: string } {
+  if (status.state === "ready") return status.warning ? { text: format(status.value), tone: "warning", warning: status.warning } : { text: format(status.value) };
   return { text: status.state === "needsReview" ? "Needs review" : "Unavailable", detail: status.reason, tone: "warning" };
 }
+
+/** The short line under a figure that is shown with a warning: an icon and words, so it never rests on colour. The full sentence is behind the (i). */
+const WarningLine = () => <span className={`mt-0.5 flex items-center gap-1 ${WARNING}`}><AlertTriangle className="size-3 shrink-0" aria-hidden />Entries to review</span>;
 
 function ReviewList({ rows, names }: { rows: ReviewEntry[]; names: ReadonlyMap<string, string> }) {
   if (rows.length === 0) return null;
   return (
     <details className="rounded-lg border border-border bg-card px-4 py-2 text-xs">
       <summary className="cursor-pointer font-medium">Asset entries to review ({rows.length})</summary>
-      <p className="mt-2 text-muted-foreground">Assets classifies these as money put into an asset, but no transfer is recorded behind them, so they may also be counted as spending. Record the purchase as a transfer in Actual, or change the classification in Assets. Until then, Money kept and the savings rate are not shown.</p>
+      <p className="mt-2 text-muted-foreground">Assets classifies these as money put into an asset, but no transfer is recorded behind them, so they may also be counted as spending. Record the purchase as a transfer in Actual, or change the classification in Assets. Money kept and the savings rate stay visible, with a warning, until then.</p>
       <OverlayScrollArea className="mt-2 max-h-64">
         <table className="w-full border-collapse">
           <thead className="sticky top-0 bg-card"><tr className="border-b border-border text-left text-muted-foreground"><th className="py-1 pr-3 font-medium">Date</th><th className="pr-3 font-medium">Account</th><th className="pr-3 text-right font-medium">Amount</th><th className="font-medium">Why</th></tr></thead>
@@ -187,14 +191,15 @@ export function SummaryTab({ data, today, accountNames, onDrill }: { data: Ready
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <Tile label="Net worth" detail={<>Owns {money(summary.assets)} · owes {money(summary.liabilities)}</>}>{money(summary.netWorth.closing)}</Tile>
         <Tile label="Change in net worth" info={<p>Net worth at the end of the period less net worth before it: everything you own less everything you owe, then and now.</p>} detail={<>{growth !== null ? `${growth > 0 ? "+" : ""}${percent(growth)} over ` : "Over "}{months} {months === 1 ? "month" : "months"}</>}>{openingKnown ? signedMoney(summary.netWorth.change) : MISSING}</Tile>
-        <Tile label="Money kept" tone={kept.tone} info={<p>Money received less money spent in the period. Moving money between your accounts, into investments or into loan principal is not spending. The savings rate is this figure as a share of what you received.</p>}
+        <Tile label="Money kept" tone={kept.tone} info={<><p>Money received less money spent in the period. Moving money between your accounts, into investments or into loan principal is not spending. The savings rate is this figure as a share of what you received.</p>{kept.warning && <p className="mt-1">{kept.warning}.</p>}</>}
           detail={kept.detail ?? (
             <>
               <DrillLink label={`Money received ${money(summary.received)}`} onClick={() => onDrill({ kind: "received" })}>{money(summary.received)}</DrillLink> received − <DrillLink label={`Money spent ${money(summary.spent)}`} onClick={() => onDrill({ kind: "spent" })}>{money(summary.spent)}</DrillLink> spent
+              {kept.warning && <WarningLine />}
             </>)}
           delta={comparison && summary.moneyKept.state === "ready" && <Delta now={comparison.current.kept} before={comparison.previous.kept} label={comparison.label} good="up" />}>{kept.text}</Tile>
         <Tile label="Change in cash" detail="Cash & bank, end less start">{signedMoney(summary.eligibleCash.change)}</Tile>
-        <Tile label="Savings rate" tone={summary.savingsRate.state === "ready" ? undefined : "warning"} delta={summary.savingsRate.state === "ready" && comparison && comparison.current.received > 0 && comparison.previous.received > 0 && <Delta points now={(comparison.current.kept / comparison.current.received) * 100} before={(comparison.previous.kept / comparison.previous.received) * 100} label={comparison.label} good="up" />} detail={summary.savingsRate.state === "ready" ? "Money kept ÷ money received" : summary.savingsRate.reason}>{summary.savingsRate.state === "ready" ? percent(summary.savingsRate.value) : "Needs review"}</Tile>
+        <Tile label="Savings rate" tone={summary.savingsRate.state === "ready" && !summary.savingsRate.warning ? undefined : "warning"} info={summary.savingsRate.state === "ready" && summary.savingsRate.warning ? <p>{summary.savingsRate.warning}.</p> : undefined} delta={summary.savingsRate.state === "ready" && comparison && comparison.current.received > 0 && comparison.previous.received > 0 && <Delta points now={(comparison.current.kept / comparison.current.received) * 100} before={(comparison.previous.kept / comparison.previous.received) * 100} label={comparison.label} good="up" />} detail={summary.savingsRate.state === "ready" ? <>Money kept ÷ money received{summary.savingsRate.warning && <WarningLine />}</> : summary.savingsRate.reason}>{summary.savingsRate.state === "ready" ? percent(summary.savingsRate.value) : "Needs review"}</Tile>
       </div>
       <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,6fr)_minmax(0,5fr)]">
         <ChartFrame
@@ -209,6 +214,7 @@ export function SummaryTab({ data, today, accountNames, onDrill }: { data: Ready
         </ChartFrame>
         <CashBuffer buffer={buffer} groups={bufferSpending} today={today} data={data} />
       </div>
+      <WhereMoneyWentCard data={data} csvScope={[["Period", period]]} onDrill={onDrill} />
       <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,6fr)_minmax(0,5fr)]">
         <ChartFrame
           id="net-worth-change"

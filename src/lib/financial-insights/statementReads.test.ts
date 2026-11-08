@@ -34,3 +34,9 @@ it("honours cancellation before issuing a page", async () => {
   await expect(readStatementEntries({ id: "connection" } as ConnectionInstance, period, abort.signal)).rejects.toThrow();
   expect(runQuery).not.toHaveBeenCalled();
 });
+
+it("treats a row Actual flagged as a starting balance even when its payee was renamed", async () => {
+  runQuery.mockResolvedValueOnce({ data: [{ ...row("flagged"), "payee.name": "Opening", starting_balance_flag: true }, { ...row("plain"), starting_balance_flag: false }] });
+  const entries = await readStatementEntries({ id: "connection" } as ConnectionInstance, period);
+  expect(entries.map((e) => [e.id, e.startingBalance])).toEqual([["flagged", true], ["plain", false]]);
+});

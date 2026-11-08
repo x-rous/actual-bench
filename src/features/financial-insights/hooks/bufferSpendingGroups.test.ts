@@ -83,3 +83,30 @@ describe("loan interest in the typical month", () => {
     expect(adjusted.state === "ready" && adjusted.value.spendingMinor).toBe(real.value.spendingMinor - 1_000);
   });
 });
+
+describe("the typical month behind the cash buffer when a lender charges interest to the loan account", () => {
+  const loan: AccountFact = { id: "loan", name: "Mortgage", accountClass: "loan", treatment: null, offBudget: true };
+  const withCharge = (tagged: boolean) => {
+    const charges: MovementRow[] = months.map((m) => ({ month: m, accountId: "loan", categoryId: null, transferAccountId: null, amountMinor: -20_000, count: 1 }));
+    const tags = tagged ? months.map((m) => ({ id: `c-${m}`, month: m, accountId: "loan", categoryId: null, amountMinor: -20_000, loanAccountId: "loan", kind: "interest" as const, charged: true })) : [];
+    return buildLedger({ ...facts, accounts: [chk, loan], movement: [...movement, ...charges], startingBalances: [{ month: "2026-04", accountId: "chk", amountMinor: 10_000_000 }, { month: "2026-04", accountId: "loan", amountMinor: -5_000_000 }], loanCosts: tags });
+  };
+  const schedules = new Map([["loan", { state: "ready" as const, monthlyMinor: 25_000 }]]);
+
+  it("leaves the charge out of the spending average, because the scheduled repayment already holds it, and still adds up with the simulator", () => {
+    const l = withCharge(true);
+    const groups = bufferSpendingGroups(l, "2026-11-18", categories, settings({}));
+    const buffer = cashBuffer(l, "2026-11-18", schedules);
+    if (buffer.state !== "ready" || !groups) throw new Error("not ready");
+    // The charge is in Spent, but not in the buffer's typical month: 2,000 food + 5,000 rent, the same as without it.
+    expect(buffer.value.spendingMinor).toBe(7_000);
+    expect(groups.spendingMinor).toBe(7_000);
+    expect(groups.loanInterestMinor).toBe(20_000);
+    expect(groups.categories.some((c) => c.name.includes("charged by lender"))).toBe(false);
+    // A scenario with no adjustments is the real buffer.
+    const sim = adjustedBuffer(buffer.value, groups.categories, { excluded: [], amounts: {}, loansExcluded: [], loanAmounts: {} });
+    expect(sim.state === "ready" && sim.value.months).toBeCloseTo(buffer.value.months, 9);
+    // And the buffer is the same as when the charge is not tagged (it was never in the spending categories).
+    expect(cashBuffer(withCharge(false), "2026-11-18", schedules)).toEqual(buffer);
+  });
+});
