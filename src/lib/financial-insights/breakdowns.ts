@@ -289,7 +289,7 @@ export function moneyInOut(summary: Summary, debt: DebtRepayments): { receivedMi
     { amountMinor: debt.principalMinor, use: ["debtRepaid", "Paid off loans (principal)"], source: ["addedToLoans", "Added to loans (charges beyond payments)"] },
     { amountMinor: 0 - b.loanIn, use: ["borrowingPaidBack", "Borrowing paid back"], source: ["borrowed", "Borrowed"] },
     { amountMinor: 0 - (b.investmentOut + b.investmentIn), use: ["invested", "Put into investments (net)"], source: ["withdrawn", "Taken out of investments (net)"] },
-    { amountMinor: 0 - (b.fixedDeposits + b.assets + b.liabilities + b.excluded), use: ["depositsAndAssets", "Moved to deposits, assets and other liabilities"], source: ["released", "Released from deposits, assets and other liabilities"] },
+    { amountMinor: 0 - (b.fixedDeposits + b.assets + b.liabilities + b.excluded), use: ["depositsAndAssets", "Moved to deposits, assets & other liabilities"], source: ["released", "Released from deposits, assets & other liabilities"] },
     { amountMinor: summary.closing.cards - summary.opening.cards, use: ["cardsPaid", "Paid down credit cards"], source: ["moreOwedCards", "More owed on credit cards"] },
     { amountMinor: summary.eligibleCash.change, use: ["cash", "Added to cash & bank"], source: ["fromCash", "Taken from cash & bank"] },
   ];

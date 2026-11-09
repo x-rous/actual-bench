@@ -19,12 +19,13 @@ import { CardTitle, InfoTip } from "./InfoTip";
 type Ready = Extract<FinancialInsightsView["data"], { state: "ready" }>;
 
 /** Today's cash equivalents less the credit cards owed, from the same ledger and month as the buffer. Amounts are integer minor units; `cashMinor` = `grossMinor` − `cardsOwedMinor`. */
+type Accessible = { months: number; accounts: { accountId: string; name: string; balanceMinor: number }[]; totalMinor: number };
+
 /**
- * What the months of cover are measured on, behind an (i) beside the headline so the card stays short. When some accounts are set to
- * "Accessible money", it also gives the second figure: the months if those accounts were counted too. The main figure, the goal and
- * scenarios stay cash-based.
+ * The one (i) beside the headline: what the months of cover are measured on and, when some accounts are set to "Accessible money",
+ * which accounts the second figure under the headline counts. The main figure, the goal and scenarios stay cash-based.
  */
-function CoverInfo({ accessible, today }: { accessible?: { months: number; accounts: { accountId: string; name: string; balanceMinor: number }[]; totalMinor: number }; today: string }) {
+function CoverInfo({ accessible, today }: { accessible?: Accessible; today: string }) {
   return (
     <InfoTip label="the months of cover">
       <p>Months of cover are your cash &amp; bank balance, less what you owe on credit cards, divided by what you need each month.</p>
@@ -41,6 +42,15 @@ function CoverInfo({ accessible, today }: { accessible?: { months: number; accou
         </>
       )}
     </InfoTip>
+  );
+}
+
+/** The second figure, in view under the headline; its accounts are in the (i) beside the headline. */
+function AccessibleLine({ accessible }: { accessible: Accessible }) {
+  return (
+    <p className="mt-2 text-xs text-muted-foreground">
+      <b className="font-semibold tabular-nums text-foreground">{accessible.months.toFixed(1)} months</b> with accessible investments
+    </p>
   );
 }
 
@@ -173,6 +183,8 @@ export function CashBuffer({ buffer, groups, today, data }: { buffer: Ready["buf
   const shown = buffer.state === "ready" ? (sim ? (sim.state === "ready" ? sim.value : null) : buffer.value) : null;
   // The bar runs to 12 months, or further when the goal or the cover itself is beyond that.
   const scaleMax = goal === null ? 12 : Math.max(12, goal, Math.ceil(shown?.months ?? 0));
+  const accessible: Accessible | undefined = shown && shown.monthsWithAccessible !== undefined && (buffer.state === "ready" && (buffer.value.accessibleMinor ?? 0) > 0) && buffer.value.accessibleAccounts
+    ? { months: shown.monthsWithAccessible, accounts: buffer.value.accessibleAccounts, totalMinor: buffer.value.accessibleMinor ?? 0 } : undefined;
   const delta = shown && buffer.state === "ready" && sim ? shown.months - buffer.value.months : null;
 
   return (
@@ -201,8 +213,9 @@ export function CashBuffer({ buffer, groups, today, data }: { buffer: Ready["buf
           <div className="mt-3 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
             <div className="min-w-0 flex-1 basis-56">
               <p className="flex items-baseline gap-1.5 text-4xl font-semibold leading-none tracking-tight tabular-nums">{shown.months.toFixed(1)} <span className="text-base font-normal text-muted-foreground">months of cover</span>
-                <span className="self-center"><CoverInfo today={today} accessible={shown.monthsWithAccessible !== undefined && (buffer.value.accessibleMinor ?? 0) > 0 && buffer.value.accessibleAccounts ? { months: shown.monthsWithAccessible, accounts: buffer.value.accessibleAccounts, totalMinor: buffer.value.accessibleMinor ?? 0 } : undefined} /></span>
+                <span className="self-center"><CoverInfo accessible={accessible} today={today} /></span>
               </p>
+              {accessible && <AccessibleLine accessible={accessible} />}
               {delta !== null && <div className="mt-1.5 text-xs text-muted-foreground">
                 {delta !== null && <p className={delta > 0 ? "text-green-700 dark:text-green-400" : delta < 0 ? "text-red-700 dark:text-red-400" : undefined}>{delta === 0 ? "Same as" : `${delta > 0 ? "▲ +" : "▼ −"}${Math.abs(delta).toFixed(1)} months against`} the actual {buffer.value.months.toFixed(1)}</p>}
               </div>}

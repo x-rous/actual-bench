@@ -193,11 +193,10 @@ export function SummaryTab({ data, today, accountNames, onDrill }: { data: Ready
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <Tile label="Net worth" detail={<>Owns {money(summary.assets)} · owes {money(summary.liabilities)}</>}>{money(summary.netWorth.closing)}</Tile>
         <Tile label="Change in net worth" info={<p>Net worth at the end of the period less net worth before it: everything you own less everything you owe, then and now.</p>} detail={<>{growth !== null ? `${growth > 0 ? "+" : ""}${percent(growth)} over ` : "Over "}{months} {months === 1 ? "month" : "months"}</>}>{openingKnown ? signedMoney(summary.netWorth.change) : MISSING}</Tile>
-        <Tile label="Money kept" tone={kept.tone} info={<><p>Money received less money spent in the period. Moving money between your accounts, into investments or into loan principal is not spending. The savings rate is this figure as a share of what you received.</p>{paidOffLoansMinor > 0 && <p className="mt-1">The {money(paidOffLoansMinor)} you paid off your loans is not spending, so it is not taken off here. It lowers what you owe, but the cash is gone.</p>}{kept.warning && <p className="mt-1">{kept.warning}.</p>}</>}
+        <Tile label="Money kept" tone={kept.tone} info={<><p>Money received less money spent in the period. Moving money between your accounts, into investments or into loan principal is not spending. The savings rate is this figure as a share of what you received.</p>{paidOffLoansMinor > 0 && <p className="mt-1">The {money(paidOffLoansMinor)} you paid toward loan principal is not spending, because it lowers what you owe, so it is not taken off here. The cash is gone all the same. Interest and fees on your loans are spending and are already in Spent.</p>}{kept.warning && <p className="mt-1">{kept.warning}.</p>}</>}
           detail={kept.detail ?? (
             <>
               <DrillLink label={`Money received ${money(summary.received)}`} onClick={() => onDrill({ kind: "received" })}>{money(summary.received)}</DrillLink> received − <DrillLink label={`Money spent ${money(summary.spent)}`} onClick={() => onDrill({ kind: "spent" })}>{money(summary.spent)}</DrillLink> spent
-              {paidOffLoansMinor > 0 && <span className="mt-0.5 block">{money(paidOffLoansMinor)} paid off loans is not spending</span>}
               {kept.warning && <WarningLine />}
             </>)}
           delta={comparison && summary.moneyKept.state === "ready" && <Delta now={comparison.current.kept} before={comparison.previous.kept} label={comparison.label} good="up" />}>{kept.text}</Tile>
@@ -237,14 +236,6 @@ export function SummaryTab({ data, today, accountNames, onDrill }: { data: Ready
         </div>
         <WhereMoneyWentCard data={data} csvScope={[["Period", period]]} onDrill={onDrill} />
       </div>
-      <details className="rounded-lg border border-border bg-card px-4 py-3 text-xs">
-        <summary className="cursor-pointer font-medium">How money kept, change in cash and change in net worth differ</summary>
-        <dl className="mt-2 grid gap-3 md:grid-cols-3">
-          <div><dt className="font-medium">Money kept <span className="font-normal text-muted-foreground">(income − spending)</span></dt><dd className="text-muted-foreground">What you earned and did not spend. Moving money into investments or paying loan principal is not spending.</dd></div>
-          <div><dt className="font-medium">Change in cash <span className="font-normal text-muted-foreground">(cash &amp; bank, end − start)</span></dt><dd className="text-muted-foreground">How your cash balance moved after investments, card payments, loans and transfers. It can fall even when you kept money.</dd></div>
-          <div><dt className="font-medium">Change in net worth <span className="font-normal text-muted-foreground">(everything owned − owed)</span></dt><dd className="text-muted-foreground">What you kept plus changes in the value of what you own, and anything Bench cannot place (the waterfall above shows each part).</dd></div>
-        </dl>
-      </details>
       <ReviewList rows={review} names={accountNames} />
     </div>
   );

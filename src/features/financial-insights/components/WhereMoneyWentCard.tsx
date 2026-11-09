@@ -72,8 +72,11 @@ export function WhereMoneyWentCard({ data, csvScope, onDrill }: { data: Ready; c
             return (
               <tr key={l.key + l.label} className="border-b border-border/40">
                 <th scope="row" className="py-1.5 text-left font-normal">
-                  <span className="inline-flex items-center gap-2"><span className="size-2.5 shrink-0 rounded-sm" style={{ background: COLOUR[l.key] }} aria-hidden />{l.label}</span>
-                  <span className="ml-1 inline-flex align-middle"><InfoTip label={`${l.label} in where your money went`}><p>{EXPLAIN[l.key]}</p></InfoTip></span>
+                  <span className="flex items-center gap-2">
+                    <span className="size-2.5 shrink-0 rounded-sm" style={{ background: COLOUR[l.key] }} aria-hidden />
+                    <span className="min-w-0">{l.label}</span>
+                    <span className="inline-flex shrink-0"><InfoTip label={`${l.label} in where your money went`}><p>{EXPLAIN[l.key]}</p></InfoTip></span>
+                  </span>
                 </th>
                 <td className="whitespace-nowrap text-right tabular-nums">{target ? <DrillLink label={`${l.label} ${money(l.amountMinor)}`} onClick={() => onDrill(target)}>{money(l.amountMinor)}</DrillLink> : money(l.amountMinor)}</td>
                 <td className="w-14 text-right tabular-nums text-muted-foreground">{share(l.amountMinor)}</td>

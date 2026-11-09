@@ -167,17 +167,18 @@ describe("the cash buffer card", () => {
     expect(label.style.transform).toBe("translateX(-100%)"); // ends at its mark rather than running past the edge
   });
 
-  it("keeps the headline short: the formula and the accessible-money figure are behind an (i), and the bar has no 0 label", () => {
+  it("shows the accessible-money figure under the headline, with the accounts behind an (i), and the bar has no 0 label", () => {
     setHook(null);
     const accessible = { ...value, accessibleMinor: 500_000, monthsWithAccessible: (3_000_000 + 500_000) / 340_000, accessibleAccounts: [{ accountId: "inv", name: "Brokerage", balanceMinor: 500_000 }] };
     render(<TipProvider><CashBufferCard buffer={{ state: "ready", value: accessible as CashBuffer }} groups={groups} today="2026-11-18" /></TipProvider>);
-    // Not written out on the card: it is in the (i).
-    expect(screen.queryByText(/With accessible investments/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/of cover: cash/)).not.toBeInTheDocument();
-    expect(screen.getByText(/months of cover/)).toBeInTheDocument();
+    expect(screen.getByText("10.3 months")).toBeInTheDocument();
+    expect(screen.getByText(/with accessible investments/)).toBeInTheDocument();
+    expect(screen.queryByText("Brokerage")).not.toBeInTheDocument();
+    // One (i), beside the months, holds the formula and the accounts behind the second figure.
+    expect(screen.queryByRole("button", { name: "About the cover with accessible investments" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "About the months of cover" }));
-    expect(screen.getByText("With accessible investments: 10.3 months")).toBeInTheDocument();
     expect(screen.getByText("Brokerage")).toBeInTheDocument();
+    expect(screen.getByText(/Counts the accounts you set to Accessible money/)).toBeInTheDocument();
     expect(screen.getByText(/divided by what you need each month/)).toBeInTheDocument();
     // The scale starts at the bar's own left edge, so only its far end is labelled.
     expect(screen.getByText("12 months")).toBeInTheDocument();
