@@ -2,7 +2,7 @@ import type { DebtDetail, DebtSaveInput } from "@/lib/assets-debt/services/debtC
 import { addDays, addMonths, compareDates, isIsoDate } from "@/lib/financial-models/calendar/dates";
 import { generateSchedule } from "@/lib/financial-models/calendar/schedule";
 import type { BusinessDayConvention } from "@/lib/financial-models/calendar/businessDays";
-import { configBusinessDays, configLenderStatement, debtConfigVersionFor, type DebtConfig } from "@/lib/financial-models/loan/configSchema";
+import { configBusinessDays, configLenderStatement, configProgressive, debtConfigVersionFor, type DebtConfig } from "@/lib/financial-models/loan/configSchema";
 import type { LenderStatementSettings } from "@/lib/financial-models/loan/statementAllocation";
 import type { DebtPhase, FutureAssumption, LoanModelSnapshot, PaymentComponent } from "@/lib/financial-models/loan/model";
 import type { CalculationProfile } from "@/lib/financial-models/loan/profile";
@@ -10,6 +10,7 @@ import { simulate } from "@/lib/financial-models/loan/projection";
 import { repaymentScheduleSpec } from "@/lib/financial-models/loan/engineCommon";
 import { paymentCount } from "@/lib/financial-models/loan/recast";
 import type { PaymentLimit } from "@/lib/financial-models/loan/rates";
+import { dec, decInt, mul, round, toPlainString } from "@/lib/financial-models/money/kernel";
 import { labelOf, CHARGE_FREQUENCY_OPTIONS, REPAYMENT_DERIVATION_OPTIONS } from "./vocabulary";
 
 /**
@@ -120,6 +121,11 @@ export type SimulationState = {
   businessDays?: BusinessDayConvention | null;
   /** How the lender's statements allocate interest; null or absent is the default (as calculated). */
   lenderStatement?: LenderStatementSettings | null;
+  /**
+   * Progressive principal: the growth of the principal repaid each instalment, an exact decimal fraction
+   * ("0.00345924105" is 0.345924105%). Kept while another amortization method is chosen, saved only with progressive.
+   */
+  progressiveGrowthDecimal?: string | null;
 };
 
 /** Assumptions shown under Events; opening offset state is part of the offset itself. */
@@ -447,8 +453,14 @@ export function simulationToModel(sim: SimulationState, identity: { debtId?: str
       revolving: sim.shape === "revolving-credit" ? sim.revolving : null,
       businessDays: activeBusinessDays(sim),
       lenderStatement: activeLenderStatement(sim),
+      progressive: activeProgressive(sim),
     },
   };
+}
+
+/** The progressive principal settings, only while that amortization method is chosen. */
+export function activeProgressive(sim: SimulationState): { growthPerRepaymentDecimal: string } | null {
+  return sim.shape === "term-loan" && sim.profile.amortization === "progressive-principal" && sim.progressiveGrowthDecimal ? { growthPerRepaymentDecimal: sim.progressiveGrowthDecimal } : null;
 }
 
 /** The convention only when it moves dates, so "none" and absent are one configuration. */
@@ -504,8 +516,14 @@ export function switchToDayByDay(sim: SimulationState): SimulationState {
 
 // ── Summaries ───────────────────────────────────────────────────────────────
 
+/** A stored growth fraction as a percentage with up to 8 decimals: "0.00345924105" → "0.34592411". */
+export function growthPercent(fraction: string): string {
+  const percent = round(mul(dec(fraction), decInt(100)), 8, "half-even");
+  return toPlainString(percent);
+}
+
 /** One line for the collapsed Calculation method control. */
-export function summarizeProfile(profile: CalculationProfile): string {
+export function summarizeProfile(profile: CalculationProfile, progressiveGrowthDecimal?: string | null): string {
   const parts: string[] = [];
   if (profile.accrual === "per-period") {
     parts.push("interest per repayment period");
@@ -514,7 +532,8 @@ export function summarizeProfile(profile: CalculationProfile): string {
     parts.push(profile.accrual === "daily-compounded" ? "daily compounded interest" : "daily interest");
     parts.push(profile.chargeFrequency === "at-repayment" ? "charged with each repayment" : `charged ${labelOf(CHARGE_FREQUENCY_OPTIONS, profile.chargeFrequency).toLowerCase()}${profile.chargeDay ? ` on day ${profile.chargeDay}` : ""}`);
   }
-  parts.push(profile.amortization === "constant-principal" ? "constant principal" : profile.amortization === "revolving" ? "revolving" : "level payment");
+  parts.push(profile.amortization === "constant-principal" ? "constant principal" : profile.amortization === "revolving" ? "revolving"
+    : profile.amortization === "progressive-principal" ? `progressive principal${progressiveGrowthDecimal ? ` +${growthPercent(progressiveGrowthDecimal)}% per repayment` : ""}` : "level payment");
   if (profile.repaymentDerivation !== "annuity-at-payment-frequency") parts.push(labelOf(REPAYMENT_DERIVATION_OPTIONS, profile.repaymentDerivation).toLowerCase());
   return parts.join(" · ");
 }
@@ -574,6 +593,7 @@ export function detailToStates(detail: DebtDetail): { simulation: SimulationStat
     paymentRecasts: c.paymentRecasts.map((r) => ({ date: r.date, note: r.note })),
     businessDays: configBusinessDays(c),
     lenderStatement: configLenderStatement(c),
+    progressiveGrowthDecimal: configProgressive(c)?.growthPerRepaymentDecimal ?? null,
     components: simComponents,
     offsets: detail.offsets.map((o) => ({ key: `offset:${o.id}`, placeholderAccountId: `offset:${o.id}`, effectiveFrom: o.effectiveFrom, effectiveTo: o.effectiveTo, percentageBps: o.offsetPercentageBps, basis: o.balanceBasis === "cleared" ? "cleared" : "total", capMinor: o.capMinor, fundScheduledRepayments: o.fundScheduledRepayments === true, fundScheduledRepaymentsFrom: o.fundScheduledRepaymentsFrom ?? null, useActualBalance: o.useActualBalance === true })),
     assumptions: detail.assumptions.map((a) => ({
@@ -676,7 +696,8 @@ export function statesToSaveInput(sim: SimulationState, tracking: TrackingState,
     components,
     paymentRecasts: model.profile.recast === "on-contract-date" ? sim.paymentRecasts : [],
     revolving: model.revolving,
-    ...(model.businessDays || model.lenderStatement ? { businessDays: model.businessDays ?? null, lenderStatement: model.lenderStatement ?? null } : {}),
+    ...(model.businessDays || model.lenderStatement || model.progressive ? { businessDays: model.businessDays ?? null, lenderStatement: model.lenderStatement ?? null } : {}),
+    ...(model.progressive ? { progressive: model.progressive } : {}),
   };
   return {
     ok: true,

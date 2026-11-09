@@ -66,7 +66,9 @@ function InterestOnlyDialog({ open, onClose, sim, propose }: { open: boolean; on
             <li key={`${phase.from}:${index}`} className="grid grid-cols-2 gap-2 rounded border border-border p-2">
               <DateField label={`Period ${index + 1} from`} value={phase.from} onChange={(date) => setPhase(index, { from: date })} />
               <DateField label="Until" value={phase.to} onChange={(date) => setPhase(index, { to: date })} />
-              <SelectField className="col-span-2" label="At the end" value={phase.recastAtEnd} options={RECAST_OPTIONS} onChange={(value) => setPhase(index, { recastAtEnd: value as typeof phase.recastAtEnd })} />
+              {sim.profile.amortization === "progressive-principal"
+                ? <p className="col-span-2 text-[11px] text-muted-foreground">Progressive principal starts after this period, over the instalments left.</p>
+                : <SelectField className="col-span-2" label="At the end" value={phase.recastAtEnd} options={RECAST_OPTIONS} onChange={(value) => setPhase(index, { recastAtEnd: value as typeof phase.recastAtEnd })} />}
               <Button type="button" variant="ghost" size="sm" className="col-span-2 justify-self-start" onClick={() => propose({ ...sim, phases: sim.phases.filter((_, candidate) => candidate !== index) })}>
                 Remove period {index + 1}
               </Button>

@@ -1,4 +1,5 @@
 import type { LoanModelSnapshot } from "./model";
+import { periodicAssumptionProblem } from "./periodic-engine";
 
 /**
  * Which execution strategy can reproduce a contract (FR-026, FR-027, FR-030).
@@ -8,7 +9,7 @@ import type { LoanModelSnapshot } from "./model";
  * why; nothing switches silently.
  */
 
-export const ELIGIBILITY_VERSION = "eligibility@1";
+export const ELIGIBILITY_VERSION = "eligibility@2";
 
 export type ExecutionStrategy = "actual-formula-rule" | "bench-periodic" | "bench-daily";
 
@@ -25,9 +26,13 @@ function periodicReasons(model: LoanModelSnapshot): string[] {
   if (model.offsets.length > 0) reasons.push("Offset balances change interest day by day.");
   if (profile.repaymentFrequency === "custom-dated" || profile.repaymentFrequency === "semi-monthly") reasons.push(`${profile.repaymentFrequency} repayments are not a regular period.`);
   if (model.behaviorClass === "revolving-credit") reasons.push("A revolving facility has no amortization periods.");
-  if (model.assumptions.some((a) => a.kind === "extra-repayment" || a.kind === "draw" || a.kind === "offset-balance" || a.kind === "offset-deposit" || a.kind === "offset-withdrawal")) {
-    reasons.push("Extra repayments, draws or offset changes can fall between payment dates.");
+  // eligibility@2: the same rule the engine applies. Extra repayments may fall on any date; draws and fees only on
+  // repayment dates; offsets change interest day by day.
+  if (model.assumptions.some((a) => a.kind === "offset-balance" || a.kind === "offset-deposit" || a.kind === "offset-withdrawal")) {
+    reasons.push("Offset balance changes change interest day by day.");
   }
+  const between = periodicAssumptionProblem(model);
+  if (between) reasons.push(between);
   if (profile.chargeFrequency !== "at-repayment" && profile.accrual === "per-period") reasons.push("Interest is charged on its own cadence, not with each payment.");
   return reasons;
 }
@@ -36,6 +41,7 @@ function formulaReasons(model: LoanModelSnapshot, capabilities: ActualCapabiliti
   const { profile } = model;
   const reasons = periodicReasons(model);
   if (profile.amortization !== "level-payment") reasons.push(`A ${profile.amortization} loan is not a single level-payment formula.`);
+  if (model.assumptions.some((a) => a.kind === "extra-repayment" || a.kind === "draw")) reasons.push("Extra repayments and draws change the balance a single formula rule assumes.");
   if (profile.repaymentFrequency !== "monthly") reasons.push(`${profile.repaymentFrequency} repayments are not compatible with a monthly formula.`);
   if (profile.rateQuote !== "nominal-simple-periodic") reasons.push("Only a simple periodic rate (annual ÷ 12) fits the formula.");
   if (model.rates.length > 1) reasons.push("Rate changes need the rule rewritten; the formula needs a stable rate.");

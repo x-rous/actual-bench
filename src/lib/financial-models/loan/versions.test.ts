@@ -20,7 +20,7 @@ describe("component version strings", () => {
   it("keeps the engine reference docs aligned with the current contracts", () => {
     const architecture = readFileSync("docs/assets-debt/engine-architecture.md", "utf8");
     const kernel = readFileSync("docs/assets-debt/engine-kernel.md", "utf8");
-    expect(architecture).toContain("loan-daily@8");
+    expect(architecture).toContain("loan-daily@9");
     expect(architecture).toContain("event-order@3");
     expect(architecture).toContain("same-day events run in `event.key` order");
     expect(architecture).toContain("schema version 2");

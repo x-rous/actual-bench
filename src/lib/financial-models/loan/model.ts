@@ -73,6 +73,8 @@ export type LoanModelSnapshot = {
   businessDays?: BusinessDayConvention | null;
   /** How lender statements allocate interest (config v3); reporting only, never the accrual. */
   lenderStatement?: LenderStatementSettings | null;
+  /** Progressive principal (config v4): the growth of the principal repaid each instalment, an exact decimal fraction. */
+  progressive?: { growthPerRepaymentDecimal: string } | null;
 };
 
 /** Modelled starting state (FR-060): the closing state of `date`. */
@@ -87,6 +89,8 @@ export type Anchor = {
   carriedRemainder?: string | null;
   /** The scheduled payment in force at the anchor, if known (needed for payment caps). */
   scheduledPaymentMinor?: number | null;
+  /** Progressive principal: the series basis in force at the anchor, when it started after the opening. */
+  progressiveBasis?: { startNo: number; firstPrincipalExact: string } | null;
   source: string;
 };
 

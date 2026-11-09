@@ -13,6 +13,7 @@ import { EVENT_ORDER_PLACEMENT_KEYS, PLACEMENTS, SAME_DAY_TIMINGS } from "./even
 import {
   ACCRUAL_METHODS,
   AMORTIZATION_METHODS,
+  AMORTIZATION_METHODS_V1,
   BALANCE_PRECISIONS,
   CAPITALIZATIONS,
   CHARGE_FREQUENCIES,
@@ -45,7 +46,7 @@ import { FEE_TREATMENTS, FEES_VERSION } from "./fees";
 import { ALLOCATION_VERSION } from "./allocation";
 import { FINAL_PAYMENT_VERSION } from "./finalPayment";
 import { PERIODIC_ENGINE_VERSION } from "./periodic-engine";
-import { DAILY_ENGINE_VERSION, DAILY_ENGINE_VERSION_V2, DAILY_ENGINE_VERSION_V3, DAILY_ENGINE_VERSION_V4, DAILY_ENGINE_VERSION_V5, DAILY_ENGINE_VERSION_V6, DAILY_ENGINE_VERSION_V7 } from "./daily-engine";
+import { DAILY_ENGINE_VERSION, DAILY_ENGINE_VERSION_V2, DAILY_ENGINE_VERSION_V3, DAILY_ENGINE_VERSION_V4, DAILY_ENGINE_VERSION_V5, DAILY_ENGINE_VERSION_V6, DAILY_ENGINE_VERSION_V7, DAILY_ENGINE_VERSION_V8 } from "./daily-engine";
 import { REVOLVING_VERSION } from "./revolving";
 import { RECEIVABLE_VERSION } from "./receivable";
 import { ELIGIBILITY_VERSION } from "./eligibility";
@@ -53,7 +54,8 @@ import { DIAGNOSTICS_VERSION } from "./diagnostics";
 import { PROJECTION_VERSION, PROJECTION_VERSION_V1 } from "./projection";
 import { BUSINESS_DAY_ADJUSTMENTS, BUSINESS_DAYS_VERSION } from "../calendar/businessDays";
 import { INTEREST_ALLOCATIONS, STATEMENT_ALLOCATION_VERSION } from "./statementAllocation";
-import { CURRENT_COMPONENT_VERSIONS, DEBT_CONFIG_V1_IDENTIFIERS as FROZEN, DEBT_CONFIG_V2_IDENTIFIERS, DEBT_CONFIG_V3_IDENTIFIERS } from "./versions";
+import { PROGRESSIVE_VERSION } from "./progressive";
+import { CURRENT_COMPONENT_VERSIONS, DEBT_CONFIG_V1_IDENTIFIERS as FROZEN, DEBT_CONFIG_V2_IDENTIFIERS, DEBT_CONFIG_V3_IDENTIFIERS, DEBT_CONFIG_V4_IDENTIFIERS } from "./versions";
 
 /*
  * The freeze. If this fails, an identifier accepted by config version 1
@@ -62,7 +64,7 @@ import { CURRENT_COMPONENT_VERSIONS, DEBT_CONFIG_V1_IDENTIFIERS as FROZEN, DEBT_
  */
 describe("rd084.debt-config v1 identifiers are frozen", () => {
   it.each([
-    ["amortization", AMORTIZATION_METHODS],
+    ["amortization", AMORTIZATION_METHODS_V1],
     ["rateQuote", RATE_QUOTES],
     ["dayCount", DAY_COUNT_IDS],
     ["accrual", ACCRUAL_METHODS],
@@ -118,7 +120,8 @@ describe("rd084.debt-config v1 identifiers are frozen", () => {
     expect(DAILY_ENGINE_VERSION_V5).toBe("loan-daily@5");
     expect(DAILY_ENGINE_VERSION_V6).toBe("loan-daily@6");
     expect(DAILY_ENGINE_VERSION_V7).toBe("loan-daily@7");
-    expect(DAILY_ENGINE_VERSION).toBe("loan-daily@8");
+    expect(DAILY_ENGINE_VERSION_V8).toBe("loan-daily@8");
+    expect(DAILY_ENGINE_VERSION).toBe("loan-daily@9");
     expect(EVENT_ORDER_VERSION_V1).toBe("event-order@1");
     expect(EVENT_ORDER_VERSION_V2).toBe("event-order@2");
     expect(OFFSETS_VERSION_V1).toBe("offsets@1");
@@ -130,6 +133,11 @@ describe("rd084.debt-config v1 identifiers are frozen", () => {
   it("adds only the dated repayment identifier in config v2", () => {
     expect(REPAYMENT_DERIVATIONS).toEqual(DEBT_CONFIG_V2_IDENTIFIERS.repaymentDerivation);
     expect(DEBT_CONFIG_V2_IDENTIFIERS).toEqual({ ...FROZEN, repaymentDerivation: [...FROZEN.repaymentDerivation, "dated-cashflow-annuity"] });
+  });
+
+  it("adds only the progressive principal amortization method in config v4", () => {
+    expect(DEBT_CONFIG_V4_IDENTIFIERS).toEqual({ ...DEBT_CONFIG_V3_IDENTIFIERS, amortization: [...AMORTIZATION_METHODS] });
+    expect([...AMORTIZATION_METHODS]).toEqual([...AMORTIZATION_METHODS_V1, "progressive-principal"]);
   });
 
   it("adds only the business-day and lender statement fields in config v3", () => {
@@ -168,6 +176,7 @@ describe("rd084.debt-config v1 identifiers are frozen", () => {
       projection: PROJECTION_VERSION,
       "business-days": BUSINESS_DAYS_VERSION,
       "statement-allocation": STATEMENT_ALLOCATION_VERSION,
+      "progressive-principal": PROGRESSIVE_VERSION,
     });
   });
 });

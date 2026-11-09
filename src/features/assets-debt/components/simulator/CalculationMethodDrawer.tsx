@@ -24,6 +24,11 @@ import {
 } from "../../lib/vocabulary";
 import { DateField, FeatureSwitch, IntegerField, SelectField, TextField } from "../fields";
 import { DueDateSettings } from "./DueDateSettings";
+import { ProgressivePrincipalFields } from "./ProgressivePrincipalFields";
+import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog";
+import { useRef, useState } from "react";
+import { PROGRESSIVE_RECASTS } from "@/lib/financial-models/loan/profile";
+import { growthPercent } from "../../lib/simulatorModel";
 
 /**
  * Calculation method (P1.3b T207; FR-221). Every config v1 convention, kept
@@ -76,7 +81,7 @@ export function CalculationMethodSummary({ sim, onOpen }: { sim: SimulationState
           {/* The day count is set beside the interest rate, so the summary leaves it out. */}
           Interest charged {labelOf(CHARGE_FREQUENCY_OPTIONS, profile.chargeFrequency).toLowerCase()}
         </span>
-        <span className="block text-[11px] text-muted-foreground">{[frequency, profile.accrual === "per-period" ? labelOf(RATE_QUOTE_OPTIONS, profile.rateQuote) : null, accrual, labelOf(AMORTIZATION_OPTIONS, profile.amortization), derivation, businessDays, statement].filter(Boolean).join(" · ")}</span>
+        <span className="block text-[11px] text-muted-foreground">{[frequency, profile.accrual === "per-period" ? labelOf(RATE_QUOTE_OPTIONS, profile.rateQuote) : null, accrual, profile.amortization === "progressive-principal" ? `Progressive principal${sim.progressiveGrowthDecimal ? ` · +${growthPercent(sim.progressiveGrowthDecimal)}% per repayment` : ""}` : labelOf(AMORTIZATION_OPTIONS, profile.amortization), derivation, businessDays, statement].filter(Boolean).join(" · ")}</span>
       </div>
     </button>
   );
@@ -89,6 +94,53 @@ export function CalculationMethodDrawer({ open, onClose, sim, change }: { open: 
   const timing = "timing" in p.eventOrder ? p.eventOrder.timing : "custom";
   const placements = "timing" in p.eventOrder ? null : p.eventOrder;
   const daily = p.accrual !== "per-period";
+  const progressive = p.amortization === "progressive-principal";
+  // Per-period interest ignores these controls; with progressive principal they are not shown as if they worked.
+  const fixedPeriodic = progressive && !daily;
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
+  /** What switching to progressive principal changed, restored if the user switches back in this session (never saved). */
+  const beforeProgressive = useRef<Pick<Profile, "repaymentDerivation" | "recast" | "negativeAmortizationAllowed"> | null>(null);
+  const setAmortization = (amortization: Profile["amortization"]) => {
+    if (amortization !== "progressive-principal") {
+      const restore = p.amortization === "progressive-principal" ? beforeProgressive.current : null;
+      change({ ...sim, profile: { ...p, ...(restore ?? {}), amortization, presetId: null } });
+      return;
+    }
+    const cleared: string[] = [];
+    if (!PROGRESSIVE_RECASTS.includes(p.recast)) cleared.push(`Recalculate the repayment: ${labelOf(RECAST_OPTIONS, p.recast)} becomes Never`);
+    if (p.repaymentDerivation !== "annuity-at-payment-frequency") cleared.push(`Repayment amount: ${labelOf(REPAYMENT_DERIVATION_OPTIONS, p.repaymentDerivation)} no longer applies`);
+    if (p.negativeAmortizationAllowed) cleared.push("Negative amortization is turned off");
+    const capped = sim.rates.filter((r) => (r.paymentRecalcPolicy && r.paymentRecalcPolicy !== "never") || r.paymentCap);
+    if (capped.length) cleared.push(`${capped.length === 1 ? "A rate change's" : `${capped.length} rate changes'`} repayment recalculation and caps are removed`);
+    const changes = sim.assumptions.filter((a) => a.kind === "payment-change" && a.enabled !== false);
+    if (changes.length) cleared.push(`${changes.length === 1 ? "A repayment change" : `${changes.length} repayment changes`} in your what-ifs ${changes.length === 1 ? "is" : "are"} turned off`);
+    const next: SimulationState = {
+      ...sim,
+      profile: { ...p, amortization, recast: PROGRESSIVE_RECASTS.includes(p.recast) ? p.recast : "never", repaymentDerivation: "annuity-at-payment-frequency", negativeAmortizationAllowed: false, presetId: null },
+      rates: sim.rates.map((r) => (capped.includes(r) ? { ...r, paymentRecalcPolicy: null, paymentCap: null, paymentEffectiveFrom: null } : r)),
+      assumptions: sim.assumptions.map((a) => (changes.includes(a) ? { ...a, enabled: false } : a)),
+    };
+    const apply = () => {
+      beforeProgressive.current = { repaymentDerivation: p.repaymentDerivation, recast: p.recast, negativeAmortizationAllowed: p.negativeAmortizationAllowed };
+      change(next);
+    };
+    if (cleared.length === 0) { apply(); return; }
+    setConfirm({
+      title: "Switch to progressive principal?",
+      message: (
+        <span className="flex flex-col gap-2">
+          <span>Progressive principal works each repayment out from its principal growth, so these settings change. Nothing is saved until you save the loan.</span>
+          <span className="flex flex-col">{cleared.map((line) => <span key={line}>· {line}</span>)}</span>
+        </span>
+      ),
+      destructive: false,
+      destructiveLabel: "Switch",
+      onConfirm: apply,
+    });
+  };
+  const recastOptions = progressive
+    ? RECAST_OPTIONS.map((o) => (PROGRESSIVE_RECASTS.includes(o.value as Profile["recast"]) ? o : { ...o, disabled: true, label: `${o.label} (not with progressive principal)` }))
+    : RECAST_OPTIONS;
   return (
     <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
       <SheetContent
@@ -99,7 +151,7 @@ export function CalculationMethodDrawer({ open, onClose, sim, change }: { open: 
       >
         <SheetHeader className="pb-2">
           <SheetTitle>Calculation method</SheetTitle>
-          <SheetDescription>{summarizeProfile(p)}.</SheetDescription>
+          <SheetDescription>{summarizeProfile(p, sim.progressiveGrowthDecimal)}.</SheetDescription>
         </SheetHeader>
         <div className="flex min-w-0 flex-col gap-4 px-4 pb-6">
           <SelectField
@@ -143,6 +195,12 @@ export function CalculationMethodDrawer({ open, onClose, sim, change }: { open: 
             <SelectField label="Interest capitalizes" value={p.capitalization} options={CAPITALIZATION_OPTIONS} onChange={(v) => set({ capitalization: v as Profile["capitalization"] })} />
             <SelectField label="A new rate applies" value={p.rateEffectiveTiming} options={RATE_TIMING_OPTIONS} onChange={(v) => set({ rateEffectiveTiming: v as Profile["rateEffectiveTiming"] })} />
 
+            {fixedPeriodic ? (
+              <div className="mt-2 flex min-w-0 flex-col gap-1 border-t pt-4">
+                <h3 className="text-xs font-semibold text-muted-foreground">Same-day order</h3>
+                <p className="text-[11px] text-muted-foreground">Interest is worked out per repayment period on the balance at the start of the period. On a due date the repayment is applied first, then any other payment; a payment between due dates lowers the balance on its own date and the interest from the next period.</p>
+              </div>
+            ) : (
             <div className="mt-2 flex min-w-0 flex-col gap-2 border-t pt-4">
               <h3 className="text-xs font-semibold text-muted-foreground">Same-day order</h3>
               <SelectField
@@ -159,6 +217,7 @@ export function CalculationMethodDrawer({ open, onClose, sim, change }: { open: 
                 </>
               ) : null}
             </div>
+            )}
           </fieldset>
 
           <fieldset aria-label="Repayment" className="flex min-w-0 flex-col gap-2 rounded-lg border p-4">
@@ -170,7 +229,14 @@ export function CalculationMethodDrawer({ open, onClose, sim, change }: { open: 
                 </InfoHint>
               </span>
             </legend>
-            <SelectField label="Amortization" value={p.amortization} options={AMORTIZATION_OPTIONS.filter((o) => o.value !== "revolving")} onChange={(v) => set({ amortization: v as Profile["amortization"] })} />
+            <SelectField label="Amortization" value={p.amortization} options={AMORTIZATION_OPTIONS.filter((o) => o.value !== "revolving")} onChange={(v) => setAmortization(v as Profile["amortization"])} />
+            {progressive ? <ProgressivePrincipalFields sim={sim} change={change} /> : null}
+            {progressive ? (
+              <div className="flex flex-col gap-1">
+                <span className="text-xs font-medium">Repayment amount</span>
+                <p className="text-[11px] text-muted-foreground">Worked out from the principal growth: each repayment is that period&apos;s interest plus its scheduled principal.</p>
+              </div>
+            ) : (
             <SelectField
               label="Repayment amount"
               value={p.repaymentDerivation}
@@ -184,7 +250,14 @@ export function CalculationMethodDrawer({ open, onClose, sim, change }: { open: 
                 });
               }}
             />
-            <SelectField label="Recalculate the repayment" value={p.recast} options={RECAST_OPTIONS} onChange={(v) => set({ recast: v as Profile["recast"] })} />
+            )}
+            <SelectField
+              label="Recalculate the repayment"
+              value={p.recast}
+              options={recastOptions}
+              hint={progressive ? "A recast date starts a new principal series from the first instalment due on or after it, using the balance at the start of that day. A rate change changes the interest only." : undefined}
+              onChange={(v) => set({ recast: v as Profile["recast"] })}
+            />
             {p.recast === "on-contract-date" ? (
               <div className="flex flex-col gap-2">
                 <span className="text-xs font-medium">Contract recast dates</span>
@@ -202,12 +275,14 @@ export function CalculationMethodDrawer({ open, onClose, sim, change }: { open: 
                 </Button>
               </div>
             ) : null}
-            <SelectField label="A repayment counts" value={p.repaymentEffectiveTiming} options={REPAYMENT_TIMING_OPTIONS} onChange={(v) => set({ repaymentEffectiveTiming: v as Profile["repaymentEffectiveTiming"] })} />
+            {fixedPeriodic ? null : <SelectField label="A repayment counts" value={p.repaymentEffectiveTiming} options={REPAYMENT_TIMING_OPTIONS} onChange={(v) => set({ repaymentEffectiveTiming: v as Profile["repaymentEffectiveTiming"] })} />}
             <p className="text-[11px] text-muted-foreground">Interest-only repayments pay the interest charged since the previous repayment.</p>
 
             <div className="mt-2 flex min-w-0 flex-col gap-2 border-t pt-4">
               <SelectField label="Final repayment (end of loan)" value={p.finalPayment} options={FINAL_PAYMENT_OPTIONS} onChange={(v) => set({ finalPayment: v as Profile["finalPayment"] })} />
-              <FeatureSwitch label="The contract allows negative amortization" description="Unpaid interest may be added to the loan when a repayment does not cover it." checked={p.negativeAmortizationAllowed} onChange={(on) => set({ negativeAmortizationAllowed: on })} />
+              {progressive
+                ? <p className="text-[11px] text-muted-foreground">Negative amortization doesn&apos;t apply: a progressive repayment always covers its interest.</p>
+                : <FeatureSwitch label="The contract allows negative amortization" description="Unpaid interest may be added to the loan when a repayment does not cover it." checked={p.negativeAmortizationAllowed} onChange={(on) => set({ negativeAmortizationAllowed: on })} />}
             </div>
           </fieldset>
 
@@ -223,8 +298,11 @@ export function CalculationMethodDrawer({ open, onClose, sim, change }: { open: 
               </span>
             </legend>
             <div className="grid min-w-0 gap-2 sm:grid-cols-2">
-              <SelectField label="Repayment rounding" value={p.rounding.paymentRounding} options={ROUNDING_OPTIONS} onChange={(v) => set({ rounding: { ...p.rounding, paymentRounding: v as Profile["rounding"]["paymentRounding"] } })} />
+              <SelectField label="Repayment rounding" hint={progressive ? "Rounds each principal amount." : undefined} value={p.rounding.paymentRounding} options={ROUNDING_OPTIONS} onChange={(v) => set({ rounding: { ...p.rounding, paymentRounding: v as Profile["rounding"]["paymentRounding"] } })} />
               <SelectField label="Interest rounding" value={p.rounding.interestPostingRounding} options={ROUNDING_OPTIONS} onChange={(v) => set({ rounding: { ...p.rounding, interestPostingRounding: v as Profile["rounding"]["interestPostingRounding"] } })} />
+              {fixedPeriodic ? (
+                <p className="text-[11px] text-muted-foreground sm:col-span-2">Per-period interest is calculated exactly, then rounded once with the interest rounding.</p>
+              ) : (<>
               <SelectField
                 label="Working precision"
                 value={p.rounding.intermediateScale.mode}
@@ -235,6 +313,7 @@ export function CalculationMethodDrawer({ open, onClose, sim, change }: { open: 
                 <IntegerField label="Decimal places" value={p.rounding.intermediateScale.places} onChange={(n) => n !== null && n <= 30 && set({ rounding: { ...p.rounding, intermediateScale: { mode: "fixed", places: n } } })} hint="0 to 30." />
               ) : null}
               <SelectField label="Working rounding" value={p.rounding.intermediateRounding} options={ROUNDING_OPTIONS} onChange={(v) => set({ rounding: { ...p.rounding, intermediateRounding: v as Profile["rounding"]["intermediateRounding"] } })} />
+              </>)}
               <SelectField label="Balance precision" value={p.rounding.balancePrecision} options={BALANCE_PRECISION_OPTIONS} onChange={(v) => set({ rounding: { ...p.rounding, balancePrecision: v as Profile["rounding"]["balancePrecision"] } })} />
               <IntegerField label="Amount decimal places" min={0} value={sim.minorDigits} onChange={(n) => n !== null && n <= 4 && change({ ...sim, minorDigits: n })} />
               <p className="text-[11px] text-muted-foreground sm:col-span-2">Short months: a date past the end of the month moves to its last day.</p>
@@ -243,6 +322,7 @@ export function CalculationMethodDrawer({ open, onClose, sim, change }: { open: 
           </div>
         </div>
       </SheetContent>
+      <ConfirmDialog open={confirm !== null} onOpenChange={(o) => !o && setConfirm(null)} state={confirm} />
     </Sheet>
   );
 }

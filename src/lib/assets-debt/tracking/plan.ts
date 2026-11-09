@@ -1,5 +1,5 @@
 import type { SyncSourceTransaction } from "@/lib/actual/transport";
-import type { LoanModelSnapshot } from "@/lib/financial-models/loan/model";
+import type { LedgerEvent, LoanModelSnapshot } from "@/lib/financial-models/loan/model";
 import { createObservedRepaymentAllocator, type AllocatedRepayment, type ObservedRepaymentAllocator } from "@/lib/financial-models/loan/statementAllocation";
 import { alignPayments, type AlignPin } from "@/lib/financial-models/matching";
 import { ruleMatches, type ConditionSet } from "@/lib/transactions/conditions";
@@ -7,6 +7,11 @@ import type { DebtLedgerEntry } from "@/lib/app-db/debtTrackingRepository";
 import { isPostingMarker } from "../markers";
 import { untouchedCounterpartProblems } from "@/lib/actual/transactionStructure";
 import { calculatePeriod } from "../services/snapshot";
+import { rateTable } from "@/lib/financial-models/loan/engineCommon";
+import { periodInterestAt } from "@/lib/financial-models/loan/rates";
+import { paymentCount, paymentsPerYear } from "@/lib/financial-models/loan/recast";
+import { anchorBasis, progressiveBasis, progressiveGrowth, progressivePrincipalFor } from "@/lib/financial-models/loan/progressive";
+import { dec, fromMinor, round, toMinor, WORKING_SCALE } from "@/lib/financial-models/money/kernel";
 import { adjustmentMarker, adjustmentProposal, convertProposal, splitProposal, type Proposal, type ProposalContext } from "./proposals";
 
 /**
@@ -130,7 +135,13 @@ export type TrackingResult =
        * (`restartDate`) with the interest accrued since the payment (`accruedInterestMinor`, minor units); otherwise
        * `restartDate` is `date` and nothing is carried.
        */
-      anchor: { date: string; principalMinor: number; scheduledPaymentMinor: number; restartDate: string; accruedInterestMinor: number };
+      anchor: {
+        date: string; principalMinor: number; scheduledPaymentMinor: number; restartDate: string; accruedInterestMinor: number;
+        /** Per-period loans: what really happened after `restartDate`, replayed on its own dates by the projection. */
+        events: LedgerEvent[];
+        /** Progressive principal: the series basis in force at the restart, when it began after the opening. */
+        progressiveBasis?: { startNo: number; firstPrincipalExact: string };
+      };
       installments: Installment[];
       ledger: LedgerRow[];
       /** Extra principal, draws, fees and adjustments from the tracking start on: the Loan Ledger's events for the calculation. */
@@ -269,35 +280,90 @@ function findPayments(input: TrackingInput, from: string): Payment[] {
 
 type Allocation = { interestMinor: number; principalMinor: number; balanceAfterMinor: number; unpaidInterestMinor: number };
 
-/** Interest from what really happened. Falls back to the contract's figures for a loan without daily interest. */
+/**
+ * Per-period interest along what really happened (design 06 §1.3): an installment's interest is the rate times the
+ * tracked balance at the start of its contractual period. Its principal counts on its contractual due date, extra
+ * principal and other balance changes on their own dates, so the order payments arrive in never changes a period's
+ * interest. Interest a payment didn't cover is carried to the next installment, as the daily allocator does.
+ */
+class PeriodicTracker {
+  private changes: { date: string; deltaMinor: number; kind: "installment" | "extra" | "reset" }[] = [];
+  private carriedInterestMinor = 0;
+  private readonly rates;
+  private readonly ppy: number;
+  private readonly periodStart: Map<string, string>;
+  constructor(private readonly model: LoanModelSnapshot, private readonly opening: { date: string; principalMinor: number }, dues: readonly Due[]) {
+    this.rates = rateTable(model.rates);
+    this.ppy = paymentsPerYear(model.profile.repaymentFrequency) ?? 12;
+    this.periodStart = new Map(dues.map((d, i) => [d.date, i === 0 ? model.terms.openingDate : dues[i - 1].date]));
+  }
+  /** The tracked principal at the end of `date` (minor units). */
+  balanceAt(date: string): number {
+    return this.changes.reduce((sum, c) => (c.date <= date ? sum + c.deltaMinor : sum), this.opening.principalMinor);
+  }
+  get balanceMinor(): number {
+    return this.changes.reduce((sum, c) => sum + c.deltaMinor, this.opening.principalMinor);
+  }
+  /** Balance changes after `date` that are not installments: what a projection restarting then must replay. */
+  changesAfter(date: string): { date: string; deltaMinor: number }[] {
+    return this.changes.filter((c) => c.kind !== "installment" && c.date > date).map(({ date: d, deltaMinor }) => ({ date: d, deltaMinor }));
+  }
+  /** The installment's interest on the tracked balance at the start of its period, plus interest carried in. */
+  interestFor(due: Due): number {
+    const start = this.periodStart.get(due.date) ?? due.date;
+    const rate = this.rates.rateOn(start);
+    if (!rate) return due.interestMinor;
+    const exact = periodInterestAt(this.model.profile.rateQuote, rate, this.ppy, fromMinor(Math.max(0, this.balanceAt(start)), this.model.currency.minorDigits), WORKING_SCALE, "half-even");
+    const posted = toMinor(round(exact, this.model.currency.minorDigits, this.model.profile.rounding.interestPostingRounding), this.model.currency.minorDigits, "down");
+    return posted + this.carriedInterestMinor;
+  }
+  repayment(due: Due, amountMinor: number, appliedInterestMinor: number | undefined, feesMinor: number): Allocation {
+    const owedInterest = appliedInterestMinor ?? this.interestFor(due);
+    const available = Math.max(0, amountMinor - feesMinor);
+    const interest = Math.min(owedInterest, available);
+    const unpaid = owedInterest - interest;
+    const principal = Math.max(0, Math.min(this.balanceMinor, available - interest));
+    this.carriedInterestMinor = appliedInterestMinor === undefined ? unpaid : 0;
+    this.changes.push({ date: due.date, deltaMinor: -principal, kind: "installment" });
+    return { interestMinor: interest, principalMinor: principal, balanceAfterMinor: this.balanceMinor, unpaidInterestMinor: unpaid };
+  }
+  extra(date: string, amountMinor: number): void {
+    this.changes.push({ date, deltaMinor: -Math.min(amountMinor, this.balanceMinor), kind: "extra" });
+  }
+  reset(date: string, principalMinor: number): void {
+    this.changes.push({ date, deltaMinor: principalMinor - this.balanceMinor, kind: "reset" });
+  }
+}
+
+/** Interest from what really happened: daily loans on actual dates, per-period loans on their contractual periods. */
 class Allocator {
   private allocator: ObservedRepaymentAllocator | null;
-  balanceMinor: number;
-  constructor(model: LoanModelSnapshot, opening: { date: string; principalMinor: number; accruedInterestMinor?: number }) {
-    this.balanceMinor = opening.principalMinor;
+  private periodic: PeriodicTracker | null;
+  private dailyBalanceMinor: number;
+  constructor(model: LoanModelSnapshot, opening: { date: string; principalMinor: number; accruedInterestMinor?: number }, dues: readonly Due[]) {
+    this.dailyBalanceMinor = opening.principalMinor;
     const created = createObservedRepaymentAllocator({ model, opening });
     this.allocator = created.ok ? created.allocator : null;
+    this.periodic = this.allocator ? null : new PeriodicTracker(model, opening, dues);
   }
   get daily() { return this.allocator !== null; }
+  get balanceMinor(): number { return this.periodic ? this.periodic.balanceMinor : this.dailyBalanceMinor; }
+  /** The calculated principal at the end of `date`; per-period loans only (daily loans restart at their last event). */
+  balanceAt(date: string): number { return this.periodic ? this.periodic.balanceAt(date) : this.dailyBalanceMinor; }
+  changesAfter(date: string): { date: string; deltaMinor: number }[] { return this.periodic ? this.periodic.changesAfter(date) : []; }
   private take(row: AllocatedRepayment): Allocation {
-    this.balanceMinor = row.balanceAfterMinor;
+    this.dailyBalanceMinor = row.balanceAfterMinor;
     return { interestMinor: row.interestMinor, principalMinor: row.principalMinor, balanceAfterMinor: row.balanceAfterMinor, unpaidInterestMinor: row.unpaidInterestMinor ?? 0 };
   }
   preview(due: Due, paidDate: string, amountMinor: number, feesMinor: number): number | null {
-    if (!this.allocator) return due.interestMinor;
-    const result = this.allocator.preview({ dueDate: due.date, paidDate, amountMinor, feesMinor });
+    if (this.periodic) return this.periodic.interestFor(due);
+    const result = this.allocator!.preview({ dueDate: due.date, paidDate, amountMinor, feesMinor });
     return result.ok ? result.row.interestMinor : null;
   }
   repayment(due: Due, paidDate: string, amountMinor: number, appliedInterestMinor?: number, appliedFeesMinor?: number): Allocation | null {
     const fees = appliedFeesMinor ?? due.feesMinor;
-    if (!this.allocator) {
-      // Per-period interest: the schedule's interest, the rest is principal.
-      const interest = appliedInterestMinor ?? due.interestMinor;
-      const principal = Math.max(0, Math.min(this.balanceMinor, amountMinor - interest - fees));
-      this.balanceMinor -= principal;
-      return { interestMinor: interest, principalMinor: principal, balanceAfterMinor: this.balanceMinor, unpaidInterestMinor: Math.max(0, interest - amountMinor) };
-    }
-    const pushed = this.allocator.push({ dueDate: due.date, paidDate, amountMinor, feesMinor: fees <= amountMinor ? fees : 0, ...(appliedInterestMinor !== undefined ? { appliedInterestMinor } : {}) });
+    if (this.periodic) return this.periodic.repayment(due, amountMinor, appliedInterestMinor, fees);
+    const pushed = this.allocator!.push({ dueDate: due.date, paidDate, amountMinor, feesMinor: fees <= amountMinor ? fees : 0, ...(appliedInterestMinor !== undefined ? { appliedInterestMinor } : {}) });
     if (!pushed.ok) return null;
     // A payment beyond what is owed pays the loan off: its principal stops at the balance and the rest is interest.
     if (pushed.row.balanceAfterMinor < 0) {
@@ -307,9 +373,9 @@ class Allocator {
     return this.take(pushed.row);
   }
   extra(date: string, amountMinor: number): void {
-    if (!this.allocator) { this.balanceMinor = Math.max(0, this.balanceMinor - amountMinor); return; }
-    const pushed = this.allocator.push({ dueDate: date, paidDate: date, amountMinor: Math.min(amountMinor, this.balanceMinor), extra: true });
-    if (pushed.ok) this.balanceMinor = pushed.row.balanceAfterMinor;
+    if (this.periodic) { this.periodic.extra(date, amountMinor); return; }
+    const pushed = this.allocator!.push({ dueDate: date, paidDate: date, amountMinor: Math.min(amountMinor, this.dailyBalanceMinor), extra: true });
+    if (pushed.ok) this.dailyBalanceMinor = pushed.row.balanceAfterMinor;
   }
   /** Interest accrued since the last payment up to `date` (as a payment on that day would carry). */
   accruedTo(date: string): number {
@@ -319,7 +385,8 @@ class Allocator {
   }
   /** Something that changes the balance without being a repayment (a draw, a capitalized fee, a restart): carry on from there. */
   reset(date: string, principalMinor: number): Allocator {
-    if (!this.allocator || this.allocator.setBalance(date, principalMinor).ok) this.balanceMinor = principalMinor;
+    if (this.periodic) { this.periodic.reset(date, principalMinor); return this; }
+    if (this.allocator!.setBalance(date, principalMinor).ok) this.dailyBalanceMinor = principalMinor;
     return this;
   }
 }
@@ -427,9 +494,9 @@ export function planTracking(input: TrackingInput): TrackingResult {
 
   // ── Walk the tracked window in date order ──
   const ctx = proposalContext(debt, input.accounts, input.transferPayeeByAccount);
-  let calc = new Allocator(model, opening);
+  let calc = new Allocator(model, opening, dues);
   // Keep an independent calculation for cumulative drift checks. The working calculation follows recorded splits.
-  let comparison = new Allocator(model, opening);
+  let comparison = new Allocator(model, opening, dues);
   // The calculated balance today: upcoming installments are planned after it, without changing it.
   let calculatedToday = opening.principalMinor;
   // Actual's own principal for recorded installments, to tell where Actual and the calculation part ways.
@@ -470,14 +537,32 @@ export function planTracking(input: TrackingInput): TrackingResult {
   }
   steps.sort((a, b) => a.date.localeCompare(b.date) || a.order - b.order);
 
+  /**
+   * What an installment is expected to cost after what really happened (design 06 §1.3). A level payment stays the
+   * payment in force; a principal-based method pays its scheduled principal plus interest on the tracked balance.
+   */
+  const principalBased = model.profile.amortization === "constant-principal" || model.profile.amortization === "progressive-principal";
+  function expectedFor(due: Due): number {
+    if (!principalBased) return due.scheduledMinor;
+    const interest = calc.preview(due, due.date, due.scheduledMinor, due.feesMinor) ?? due.interestMinor;
+    return Math.min(scheduledPrincipal(due), calc.balanceMinor) + interest + due.feesMinor;
+  }
+  /** The contract's principal for an installment; after a progressive basis change, the tracked series' (per-period). */
+  function scheduledPrincipal(due: Due): number {
+    const growth = progressiveGrowth(model);
+    if (!growth || calc.daily) return due.principalMinor;
+    const basis = trackedProgressiveBasis(model, dues, due.date, (date) => calc.balanceAt(date));
+    return basis ? progressivePrincipalFor(model, growth, { startNo: basis.startNo, first: dec(basis.firstPrincipalExact), source: "anchor" }, due.no) : due.principalMinor;
+  }
+
   function planInstallment(due: Due, payment: Payment | null, competing: boolean): Installment {
-    const base = { no: due.no, dueDate: due.date, scheduledMinor: due.scheduledMinor, payment, feesMinor: 0, proposal: null, note: null } as const;
+    const base = { no: due.no, dueDate: due.date, scheduledMinor: expectedFor(due), payment, feesMinor: 0, proposal: null, note: null } as const;
     if (!payment) {
       const upcoming = due.date > today;
       const missing = !upcoming && addDays(due.date, debt.missingGraceDays) < today;
       if (upcoming) {
         // Planned as paid on its due date for the scheduled amount, after everything that really happened.
-        const planned = calc.repayment(due, due.date, due.scheduledMinor);
+        const planned = calc.repayment(due, due.date, base.scheduledMinor);
         return { ...base, status: "upcoming", principalMinor: planned?.principalMinor ?? due.principalMinor, interestMinor: planned?.interestMinor ?? due.interestMinor, calculatedInterestMinor: planned?.interestMinor ?? due.interestMinor, balanceAfterMinor: calc.balanceMinor, note: null };
       }
       const peek = calc.daily ? calc.accruedTo(due.date) : due.interestMinor;
@@ -556,6 +641,22 @@ export function planTracking(input: TrackingInput): TrackingResult {
   }
   installments.sort((a, b) => a.no - b.no);
 
+  // Per-period interest belongs to contractual periods, so a per-period projection restarts at the due date of the last
+  // settled installment, with the balance then, and replays what really happened after it on its own dates (an extra
+  // payment, a draw). The settled payment itself is inside that balance and is never replayed. Transaction dates stay
+  // as they are; only the calculation's starting point moves.
+  let restartPrincipal = calculatedToday;
+  let replay: LedgerEvent[] = [];
+  if (!calc.daily) {
+    restartDate = coveredThrough ?? opening.date;
+    restartAccruedMinor = 0;
+    restartPrincipal = calc.balanceAt(restartDate);
+    replay = calc.changesAfter(restartDate).filter((c) => c.date <= today && c.deltaMinor !== 0).map((c, i) => c.deltaMinor < 0
+      ? { kind: "extra-repayment" as const, date: c.date, amountMinor: -c.deltaMinor, ref: { source: "actual" as const, id: `tracked-${c.date}-${i}` } }
+      : { kind: "draw" as const, date: c.date, amountMinor: c.deltaMinor, ref: { source: "actual" as const, id: `tracked-${c.date}-${i}` } });
+  }
+  const restartBasis = calc.daily ? null : trackedProgressiveBasis(model, dues, restartDate, (date) => calc.balanceAt(date));
+
   // A missed installment paid together with the next one is covered.
   for (let i = 0; i < installments.length - 1; i++) {
     const current = installments[i];
@@ -606,7 +707,7 @@ export function planTracking(input: TrackingInput): TrackingResult {
     opening: { ...opening, source: statement ? "statement" : "calculated", actualMinor: actualAtStart, differenceMinor: openingDifference },
     before: { count: start.no - 1, firstDueDate: dues[0]?.date ?? null, lastDueDate: previous?.date ?? null },
     openingAdjustment,
-    anchor: { date: anchorDate, principalMinor: calculatedToday, scheduledPaymentMinor: (next ?? tracked.at(-1) ?? start).scheduledMinor, restartDate, accruedInterestMinor: restartAccruedMinor },
+    anchor: { date: anchorDate, principalMinor: restartPrincipal, scheduledPaymentMinor: (next ?? tracked.at(-1) ?? start).scheduledMinor, restartDate, accruedInterestMinor: restartAccruedMinor, events: replay, ...(restartBasis ? { progressiveBasis: restartBasis } : {}) },
     installments,
     ledger,
     events,
@@ -614,10 +715,28 @@ export function planTracking(input: TrackingInput): TrackingResult {
       owedInActualMinor: owed,
       calculatedMinor: calculatedToday,
       differenceMinor: owed - calculatedToday,
-      nextPayment: next ? { dueDate: next.date, no: next.no, amountMinor: next.scheduledMinor } : null,
+      nextPayment: next ? { dueDate: next.date, no: next.no, amountMinor: installments.find((i) => i.no === next.no)?.scheduledMinor ?? next.scheduledMinor } : null,
       counts,
       interestPaidMinor: installments.filter((i) => i.status === "recorded" || i.status === "unrecorded").reduce((sum, i) => sum + i.interestMinor, 0),
       interestThisYearMinor: installments.filter((i) => (i.status === "recorded" || i.status === "unrecorded") && (i.payment?.date ?? i.dueDate).startsWith(year)).reduce((sum, i) => sum + i.interestMinor, 0),
     },
   };
+}
+
+/**
+ * The progressive principal basis in force at a per-period restart, when a basis change (a contract recast date or the
+ * end of an interest-only phase) came before it: the series then started from the tracked balance at that point, which
+ * only tracking knows. Null when the contract's own opening basis still applies.
+ */
+function trackedProgressiveBasis(model: LoanModelSnapshot, dues: readonly Due[], restartDate: string, balanceAt: (date: string) => number): { startNo: number; firstPrincipalExact: string } | null {
+  const growth = progressiveGrowth(model);
+  const months = model.terms.amortizationTermMonths ?? model.terms.contractualTermMonths;
+  const total = months ? paymentCount(model.profile.repaymentFrequency, months) : null;
+  if (!growth || !total) return null;
+  const starts = [
+    ...model.paymentRecasts.map((r) => ({ startNo: dues.find((d) => d.date >= r.date)?.no ?? null, balance: () => balanceAt(addDays(r.date, -1)), reason: "contract-date" as const, on: r.date })),
+    ...model.phases.map((p) => ({ startNo: dues.find((d) => d.date > p.to)?.no ?? null, balance: () => balanceAt(p.to), reason: "interest-only-phase-end" as const, on: p.to })),
+  ].filter((b) => b.startNo !== null && b.on > model.terms.openingDate && (dues[b.startNo! - 1]?.date ?? "") <= restartDate);
+  const latest = starts.sort((a, b) => a.startNo! - b.startNo!).at(-1);
+  return latest ? anchorBasis(progressiveBasis(model, growth, latest.startNo!, latest.balance(), total, latest.reason)) : null;
 }

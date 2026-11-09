@@ -5,8 +5,8 @@ import type { AssumptionInput } from "@/lib/app-db/debtAssumptionRepository";
 import type { OffsetLinkInput } from "@/lib/app-db/debtOffsetLinkRepository";
 import type { RatePeriodInput } from "@/lib/app-db/debtRateRepository";
 import type { DebtFields } from "@/lib/app-db/debtRepository";
-import type { DebtConfigV1, DebtConfigV3 } from "@/lib/financial-models/loan/configSchema";
-import { DEBT_CONFIG_V2_IDENTIFIERS, DEBT_CONFIG_V3_IDENTIFIERS } from "@/lib/financial-models/loan/versions";
+import type { DebtConfigV1, DebtConfigV3, DebtConfigV4 } from "@/lib/financial-models/loan/configSchema";
+import { DEBT_CONFIG_V3_IDENTIFIERS, DEBT_CONFIG_V4_IDENTIFIERS } from "@/lib/financial-models/loan/versions";
 import { newTracking, statesToSaveInput, simKey, type SimulationState } from "./simulatorModel";
 import { DAILY_MONTHLY_CHARGE, offsetOf, sim } from "./simulatorTestKit";
 import * as vocabulary from "./vocabulary";
@@ -40,6 +40,7 @@ const SURFACES = {
   interestOnly: "components/simulator/InterestOnlyControl.tsx",
   drawer: "components/simulator/CalculationMethodDrawer.tsx",
   dueDates: "components/simulator/DueDateSettings.tsx",
+  progressive: "components/simulator/ProgressivePrincipalFields.tsx",
   rates: "components/simulator/RateChangesDialog.tsx",
   extras: "components/simulator/ExtraTransactionsDialog.tsx",
   tracking: "components/loan/LinkToActual.tsx",
@@ -206,10 +207,15 @@ const CONFIG_V3: Record<Exclude<Paths<DebtConfigV3, "config">, keyof typeof CONF
   "config.businessDays.holidays[]": on("A", "dueDates", "Holidays"),
   "config.lenderStatement.interestAllocation": on("A", "dueDates", "Lender statements split repayments using"),
 };
-const ALL_CONFIG: Record<string, Home> = { ...CONFIG, ...CONFIG_V3 };
+/** Config v4 adds progressive principal (design 06 §1.1). */
+const CONFIG_V4: Record<Exclude<Paths<DebtConfigV4, "config">, keyof typeof CONFIG | keyof typeof CONFIG_V3>, Home> = {
+  "config.progressive.growthPerRepaymentDecimal": on("A", "progressive", "Principal growth per repayment"),
+};
+const ALL_CONFIG: Record<string, Home> = { ...CONFIG, ...CONFIG_V3, ...CONFIG_V4 };
 
 checkHomes("config v1 paths", CONFIG);
 checkHomes("config v3 paths", CONFIG_V3);
+checkHomes("config v4 paths", CONFIG_V4);
 checkHomes("debt columns", DEBT_COLUMNS);
 checkHomes("rate period columns", RATE_COLUMNS);
 checkHomes("offset link columns", OFFSET_COLUMNS);
@@ -241,6 +247,7 @@ describe("saved configurations hold only classified paths", () => {
       businessDays: { adjustment: "following", nonBusinessWeekdays: [6, 7], holidays: ["2025-01-01"] },
       lenderStatement: { interestAllocation: "accrued-to-due-date" },
     }),
+    sim({ profile: { ...sim().profile, amortization: "progressive-principal", recast: "never" }, progressiveGrowthDecimal: "0.0034592411" }),
     sim({ shape: "revolving-credit", creditLimitMinor: 50_000_000, revolving: { paymentModel: "percent-of-balance", percentOfBalanceBps: 200, minimumFloorMinor: 2_500 }, profile: { ...sim().profile, ...DAILY_MONTHLY_CHARGE, amortization: "revolving" } }),
   ];
 
@@ -260,7 +267,7 @@ describe("saved configurations hold only classified paths", () => {
 
 describe("every current config identifier a person can choose is offered", () => {
   const offered = (options: { value: string }[]) => options.map((o) => o.value).filter(Boolean).sort();
-  const groups: [keyof typeof DEBT_CONFIG_V2_IDENTIFIERS, { value: string }[], string[]][] = [
+  const groups: [keyof typeof DEBT_CONFIG_V4_IDENTIFIERS, { value: string }[], string[]][] = [
     ["amortization", vocabulary.AMORTIZATION_OPTIONS, []],
     ["rateQuote", vocabulary.RATE_QUOTE_OPTIONS, []],
     ["dayCount", vocabulary.DAY_COUNT_OPTIONS, []],
@@ -278,7 +285,7 @@ describe("every current config identifier a person can choose is offered", () =>
     ["revolvingPaymentModel", vocabulary.REVOLVING_MODEL_OPTIONS, []],
   ];
   it.each(groups)("%s", (group, options, notOffered) => {
-    expect(offered(options)).toEqual([...DEBT_CONFIG_V2_IDENTIFIERS[group]].filter((v) => !notOffered.includes(v)).sort());
+    expect(offered(options)).toEqual([...DEBT_CONFIG_V4_IDENTIFIERS[group]].filter((v) => !notOffered.includes(v)).sort());
   });
 });
 

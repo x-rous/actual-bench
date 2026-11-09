@@ -78,7 +78,7 @@ export function LoanSettingsGuide() {
         ["Effective annual rate", "Starts from the rate after a full year of growth."],
       ] },
       { field: "Interest accrues", controls: "How often interest is calculated and whether it compounds before a charge.", values: [
-        ["Per payment period", "Calculates interest once for each repayment period."],
+        ["Per payment period", "Calculates interest once for each repayment period, on the balance at the start of the period. An extra repayment between due dates lowers the balance on its own date and the interest from the next period; a draw or fee between due dates needs daily interest."],
         ["Daily, simple (charged later)", "Accrues interest each day without adding it to the balance until charged."],
         ["Daily, compounded", "Adds interest to the balance each day, so later daily interest includes it."],
       ] },
@@ -128,7 +128,9 @@ export function LoanSettingsGuide() {
     <Heading>Repayment</Heading>
     <SettingsTable title="Repayment settings" settings={[
       { field: "Amortization", controls: "The intended pattern of principal and repayments.", values: [
-        ["Level payment", "Aims for a regular payment."], ["Constant principal plus interest", "Uses the same principal per period with interest on top."], ["Custom payment", "Uses a supplied payment."], ["Revolving", "A revolving-credit loan uses its own payment settings."],
+        ["Level payment", "Aims for a regular payment."], ["Constant principal plus interest", "Uses the same principal per period with interest on top."],
+        ["Progressive principal plus interest", "Each repayment's principal grows by a set percentage over the last, with the period's interest on top, so repayments usually rise (some French mortgages). Enter the growth per repayment, or use Work it out with one instalment from your lender's table: the balance before it, the principal it repays and the instalments left. An extra repayment keeps the series and ends the loan sooner; a rate change changes only the interest; a contract recast date starts a new series from the balance then, from the first instalment due on or after it."],
+        ["Custom payment", "Uses a supplied payment."], ["Revolving", "A revolving-credit loan uses its own payment settings."],
       ] },
       { field: "Repayment amount", controls: "How the scheduled payment is worked out, separately from how often it is paid.", values: [
         ["Level payment at the repayment frequency", "Uses a regular-period annuity."],

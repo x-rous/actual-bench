@@ -90,16 +90,18 @@ export const CURRENT_COMPONENT_VERSIONS = {
   "fees": "fees@1",
   "allocation": "allocation@1",
   "final-payment": "final-payment@1",
-  "loan-periodic": "loan-periodic@2",
-  "loan-daily": "loan-daily@8",
+  "loan-periodic": "loan-periodic@3",
+  "loan-daily": "loan-daily@9",
   "revolving": "revolving@1",
   "receivable": "receivable@1",
-  "eligibility": "eligibility@1",
+  "eligibility": "eligibility@2",
   "diagnostics": "diagnostics@1",
   "projection": "projection@2",
   // P1.6: scheduled-date business-day adjustment and lender statement allocation.
   "business-days": "business-days@1",
   "statement-allocation": "statement-allocation@1",
+  // Config v4: progressive principal.
+  "progressive-principal": "progressive-principal@1",
 } as const satisfies EngineVersions;
 
 /**
@@ -150,4 +152,10 @@ export const DEBT_CONFIG_V3_IDENTIFIERS = {
   ...DEBT_CONFIG_V2_IDENTIFIERS,
   businessDayAdjustment: ["none", "following", "modified-following", "preceding", "modified-preceding"],
   interestAllocation: ["as-calculated", "accrued-to-due-date"],
+} as const;
+
+/** Config-v4 identifier vocabulary: v3 plus the progressive principal amortization method. */
+export const DEBT_CONFIG_V4_IDENTIFIERS = {
+  ...DEBT_CONFIG_V3_IDENTIFIERS,
+  amortization: [...DEBT_CONFIG_V3_IDENTIFIERS.amortization, "progressive-principal"],
 } as const;

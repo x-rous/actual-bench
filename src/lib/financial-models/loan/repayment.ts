@@ -1,4 +1,4 @@
-import { add, cmp, DEC_ONE, DEC_ZERO, decInt, div, mul, powInt, sub, toMinor, WORKING_SCALE, type Dec } from "../money/kernel";
+import { add, cmp, dec, DEC_ONE, DEC_ZERO, decInt, div, fromMinor, mul, powInt, round, sub, toMinor, toPlainString, WORKING_SCALE, type Dec } from "../money/kernel";
 import type { RoundingMode } from "../money/rounding";
 
 /**
@@ -34,6 +34,64 @@ export function levelPayment(principal: Dec, periodicRate: Dec, payments: number
 export function constantPrincipalInstallment(originalPrincipal: Dec, principalPeriods: number, scale: number = WORKING_SCALE): Dec {
   assertPayments(principalPeriods);
   return div(originalPrincipal, decInt(principalPeriods), scale, "half-even");
+}
+
+/** The largest principal growth per repayment Bench accepts: 5%. */
+export const MAX_PROGRESSIVE_GROWTH = "0.05";
+/** Decimal places a solved growth is given with, as a fraction: 8 as a percentage (the growth field's limit). */
+export const PROGRESSIVE_GROWTH_PLACES = 10;
+
+/**
+ * Progressive principal (design 06 §1.1): the first instalment's principal of a basis repaying `principal` over
+ * `payments` instalments whose principal grows by `growth` each time, `B × g / ((1+g)^n − 1)` (`B ÷ n` at zero growth).
+ * Exact, unrounded; each instalment's principal is `progressivePrincipalAt`.
+ */
+export function progressiveFirstPrincipal(principal: Dec, growth: Dec, payments: number, scale: number = WORKING_SCALE): Dec {
+  assertPayments(payments);
+  if (cmp(growth, DEC_ZERO) < 0) throw new RangeError("Progressive principal needs a non-negative growth");
+  if (cmp(growth, DEC_ZERO) === 0) return div(principal, decInt(payments), scale, "half-even");
+  const factor = powInt(add(DEC_ONE, growth), payments, scale + ANNUITY_GUARD_DIGITS, "half-even");
+  return div(mul(principal, growth), sub(factor, DEC_ONE), scale, "half-even");
+}
+
+/**
+ * The scheduled principal of the instalment `k` places after a basis's first one: `first × (1+g)^k`, rounded once to
+ * minor units by the payment rounding. Always from the exact series, never by growing a rounded amount.
+ */
+export function progressivePrincipalAt(first: Dec, growth: Dec, k: number, rounding: { minorDigits: number; mode: RoundingMode }): number {
+  if (!Number.isSafeInteger(k) || k < 0) throw new RangeError(`An instalment offset must be a non-negative integer, got ${k}`);
+  const factor = powInt(add(DEC_ONE, growth), k, WORKING_SCALE + ANNUITY_GUARD_DIGITS, "half-even");
+  return toMinor(mul(first, factor), rounding.minorDigits, rounding.mode);
+}
+
+export type GrowthSolution =
+  | { ok: true; growthDecimal: string }
+  | { ok: false; reason: "shrinking" | "too-fast" | "invalid" };
+
+/**
+ * Solve the growth per repayment from one instalment of a lender's table: the balance before it, its principal and the
+ * instalments left including it (minor units). The first principal falls as growth rises, so bisection finds the growth
+ * whose exact first principal equals the given amount, stored to `PROGRESSIVE_GROWTH_PLACES` places.
+ */
+export function solveProgressiveGrowth(balanceMinor: number, principalMinor: number, payments: number, minorDigits: number): GrowthSolution {
+  if (!Number.isSafeInteger(payments) || payments < 1 || balanceMinor <= 0 || principalMinor <= 0 || principalMinor > balanceMinor) return { ok: false, reason: "invalid" };
+  const balance = fromMinor(balanceMinor, minorDigits);
+  const target = fromMinor(principalMinor, minorDigits);
+  const even = progressiveFirstPrincipal(balance, DEC_ZERO, payments);
+  if (toMinor(even, minorDigits, "half-even") === principalMinor) return { ok: true, growthDecimal: "0" };
+  if (cmp(target, even) > 0) return { ok: false, reason: "shrinking" };
+  const top = dec(MAX_PROGRESSIVE_GROWTH);
+  if (cmp(target, progressiveFirstPrincipal(balance, top, payments)) < 0) return { ok: false, reason: "too-fast" };
+  let low = DEC_ZERO;
+  let high = top;
+  const two = decInt(2);
+  for (let i = 0; i < 64; i++) {
+    const mid = div(add(low, high), two, PROGRESSIVE_GROWTH_PLACES + 8, "half-even");
+    if (cmp(progressiveFirstPrincipal(balance, mid, payments), target) > 0) low = mid;
+    else high = mid;
+  }
+  const growth = round(div(add(low, high), two, PROGRESSIVE_GROWTH_PLACES + 8, "half-even"), PROGRESSIVE_GROWTH_PLACES, "half-even");
+  return { ok: true, growthDecimal: toPlainString(growth) };
 }
 
 export type RepaymentDerivation =

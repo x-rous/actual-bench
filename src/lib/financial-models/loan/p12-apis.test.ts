@@ -35,7 +35,8 @@ describe("strategy eligibility (T063)", () => {
   it.each([
     ["offsets", monthlyModel({ offsets: [{ id: "o", accountId: "a", effectiveFrom: OPEN, effectiveTo: null, percentageBps: 10000, basis: "total", capMinor: null }] }), /Offset/],
     ["daily accrual with fortnightly repayments and monthly charging", monthlyModel({}, { ...AU_PROFILE }), /accrues daily/],
-    ["irregular extra repayments", monthlyModel({ assumptions: [{ kind: "extra-repayment", date: "2024-03-10", amountMinor: 1000 }] }), /between payment dates/],
+    ["irregular extra repayments", monthlyModel({ assumptions: [{ kind: "extra-repayment", date: "2024-03-10", amountMinor: 1000 }] }), /Extra repayments and draws/],
+    ["a draw between payment dates", monthlyModel({ assumptions: [{ kind: "draw", date: "2024-03-10", amountMinor: 1000 }] }), /between repayment dates/],
   ])("rejects the formula rule for %s, with a reason", (_n, model, reason) => {
     const e = evaluateStrategyEligibility(model, ALL);
     expect(e.options[0].eligible).toBe(false);
@@ -104,7 +105,7 @@ describe("projection (T067)", () => {
       ["balanceAfterMinor", "balanceBeforeMinor", "cashMovementMinor", "categoryAllocations", "certainty", "date", "debtAccountId", "diagnostics", "engineVersions", "eventType", "feesMinor", "interestMinor", "lines", "modelRevision", "principalMovementMinor", "sourceAccountId"].sort()
     );
     expect(e.modelRevision).toBe(3);
-    expect(e.engineVersions).toMatchObject({ engine: "loan-daily@8", projection: "projection@2" });
+    expect(e.engineVersions).toMatchObject({ engine: "loan-daily@9", projection: "projection@2" });
     expect(p.events.every((x) => x.date >= "2024-03-01")).toBe(true);
     expect(JSON.stringify(p)).not.toMatch(/operations|transactionId|writeActual/);
   });

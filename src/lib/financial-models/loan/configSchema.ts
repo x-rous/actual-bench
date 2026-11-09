@@ -8,6 +8,7 @@ import { EVENT_ORDER_PLACEMENT_KEYS, PLACEMENTS, SAME_DAY_TIMINGS } from "./even
 import {
   ACCRUAL_METHODS,
   AMORTIZATION_METHODS,
+  AMORTIZATION_METHODS_V1,
   BALANCE_PRECISIONS,
   CAPITALIZATIONS,
   CHARGE_FREQUENCIES,
@@ -24,6 +25,7 @@ import {
 import { RATE_QUOTES } from "./rates";
 import { FEE_TREATMENTS } from "./fees";
 import { REPAYMENT_DERIVATIONS, REPAYMENT_DERIVATIONS_V1, type RepaymentDerivation } from "./repayment";
+import type { AmortizationMethod } from "./profile";
 import { BUSINESS_DAY_ADJUSTMENTS, businessDayProblem, type BusinessDayConvention } from "../calendar/businessDays";
 import { INTEREST_ALLOCATIONS, type LenderStatementSettings } from "./lenderStatement";
 
@@ -45,8 +47,8 @@ import { INTEREST_ALLOCATIONS, type LenderStatementSettings } from "./lenderStat
  */
 
 export const DEBT_CONFIG_FORMAT = "rd084.debt-config";
-export const DEBT_CONFIG_VERSION = 3;
-export const SUPPORTED_DEBT_CONFIG_VERSIONS: readonly number[] = [1, 2, 3];
+export const DEBT_CONFIG_VERSION = 4;
+export const SUPPORTED_DEBT_CONFIG_VERSIONS: readonly number[] = [1, 2, 3, 4];
 
 export const ECONOMIC_KINDS = ["principal", "interest", "fee", "escrow", "insurance", "tax", "draw", "other"] as const;
 export const COMPONENT_DESTINATIONS = ["transfer", "category", "income-category", "tracking-only"] as const;
@@ -72,8 +74,8 @@ const rounding = z.strictObject({
 
 const placement = enumOf(PLACEMENTS);
 
-const profileSchema = <T extends string>(repaymentDerivations: readonly [T, ...T[]]) => z.strictObject({
-  amortization: enumOf(AMORTIZATION_METHODS),
+const profileSchema = <T extends string>(repaymentDerivations: readonly [T, ...T[]], amortizations: readonly AmortizationMethod[] = AMORTIZATION_METHODS_V1) => z.strictObject({
+  amortization: enumOf(amortizations),
   rateQuote: enumOf(RATE_QUOTES),
   dayCount: enumOf(DAY_COUNT_IDS),
   accrual: enumOf(ACCRUAL_METHODS),
@@ -99,6 +101,7 @@ const profileSchema = <T extends string>(repaymentDerivations: readonly [T, ...T
 
 const profileV1 = profileSchema(REPAYMENT_DERIVATIONS_V1);
 const profileV2 = profileSchema(REPAYMENT_DERIVATIONS);
+const profileV4 = profileSchema(REPAYMENT_DERIVATIONS, AMORTIZATION_METHODS);
 
 const terms = z.strictObject({
   openingDate: isoDate,
@@ -182,22 +185,46 @@ const debtConfigV3 = debtConfigV2.extend({
 });
 
 export type DebtConfigV3 = z.infer<typeof debtConfigV3>;
-export type DebtConfig = DebtConfigV1 | DebtConfigV2 | DebtConfigV3;
+
+/**
+ * v4 adds progressive principal (design 06 §1.1): the amortization method and the growth of the principal repaid each
+ * instalment, an exact decimal fraction ("0.003459241050" is 0.3459241050%). Null on every other method.
+ */
+export const PROGRESSIVE_GROWTH_PATTERN = /^0(\.\d{1,12})?$/;
+const progressive = z.strictObject({
+  growthPerRepaymentDecimal: z.string().regex(PROGRESSIVE_GROWTH_PATTERN, "must be a decimal fraction from 0 to 0.05 with at most 12 places")
+    .refine((v) => Number(v) <= 0.05, "must be at most 0.05 (5% per repayment)"),
+});
+
+const debtConfigV4 = debtConfigV3.extend({
+  version: z.literal(4),
+  profile: profileV4,
+  progressive: progressive.nullable(),
+});
+
+export type DebtConfigV4 = z.infer<typeof debtConfigV4>;
+export type DebtConfig = DebtConfigV1 | DebtConfigV2 | DebtConfigV3 | DebtConfigV4;
 
 /** The v3 additions read from any config version (v1 and v2 hold neither). */
 export function configBusinessDays(config: DebtConfig): BusinessDayConvention | null {
-  return config.version === 3 ? (config.businessDays as BusinessDayConvention | null) : null;
+  return config.version >= 3 ? ((config as DebtConfigV3).businessDays as BusinessDayConvention | null) : null;
 }
 
 export function configLenderStatement(config: DebtConfig): LenderStatementSettings | null {
-  return config.version === 3 ? config.lenderStatement : null;
+  return config.version >= 3 ? (config as DebtConfigV3).lenderStatement : null;
+}
+
+/** The v4 progressive principal settings (null before v4 and on every other amortization method). */
+export function configProgressive(config: DebtConfig): { growthPerRepaymentDecimal: string } | null {
+  return config.version === 4 ? config.progressive : null;
 }
 
 /** New records use the lowest version that holds what they use. */
 export function debtConfigVersionFor(
   repaymentDerivation: RepaymentDerivation,
-  v3?: { businessDays?: BusinessDayConvention | null; lenderStatement?: LenderStatementSettings | null }
-): 1 | 2 | 3 {
+  v3?: { businessDays?: BusinessDayConvention | null; lenderStatement?: LenderStatementSettings | null; progressive?: unknown }
+): 1 | 2 | 3 | 4 {
+  if (v3?.progressive) return 4;
   if (v3?.businessDays || v3?.lenderStatement) return 3;
   return repaymentDerivation === "dated-cashflow-annuity" ? 2 : 1;
 }
@@ -259,7 +286,7 @@ export function parseDebtConfig(raw: unknown): DebtConfigParse {
     return { ok: false, code: "unsupported-config", issues: [`version: ${JSON.stringify(version)} is not supported by this build`] };
   }
 
-  const parsed = (version === 1 ? debtConfigV1 : version === 2 ? debtConfigV2 : debtConfigV3).safeParse(value);
+  const parsed = (version === 1 ? debtConfigV1 : version === 2 ? debtConfigV2 : version === 3 ? debtConfigV3 : debtConfigV4).safeParse(value);
   if (!parsed.success) {
     // An enum value this build does not know is an identifier from a newer
     // build, not a typo in structure: that is unsupported, not invalid.
@@ -288,16 +315,19 @@ export function parseDebtConfig(raw: unknown): DebtConfigParse {
       return { ok: false, code: "invalid-config", issues: [`paymentRecasts.${i}.date: dated recasts must be in increasing date order, one per date`] };
     }
   }
-  if (config.version === 3) {
-    if (config.businessDays?.adjustment === "none") {
+  if (config.version >= 3) {
+    const v3 = config as DebtConfigV3;
+    if (v3.businessDays?.adjustment === "none") {
       return { ok: false, code: "invalid-config", issues: ["businessDays: no adjustment is stored as null"] };
     }
-    const problem = config.businessDays ? businessDayProblem(config.businessDays as BusinessDayConvention) : null;
+    const problem = v3.businessDays ? businessDayProblem(v3.businessDays as BusinessDayConvention) : null;
     if (problem) return { ok: false, code: "invalid-config", issues: [`businessDays.${problem.field}: ${problem.message}`] };
-    if (config.lenderStatement?.interestAllocation === "as-calculated") {
+    if (v3.lenderStatement?.interestAllocation === "as-calculated") {
       return { ok: false, code: "invalid-config", issues: ["lenderStatement: the default allocation is stored as null"] };
     }
   }
+  const progressiveProblem = progressiveConflict(config);
+  if (progressiveProblem) return { ok: false, code: "inconsistent-profile", issues: [progressiveProblem.message], conflicts: [progressiveProblem] };
   const recastConflict = recastScheduleConflict(config.profile.recast, config.paymentRecasts.length);
   if (recastConflict) {
     return { ok: false, code: "inconsistent-profile", issues: [recastConflict.message], conflicts: [recastConflict] };
@@ -329,4 +359,19 @@ export function parseDebtConfig(raw: unknown): DebtConfigParse {
   }
 
   return { ok: true, config };
+}
+
+/**
+ * Progressive principal settings belong to that method only, and the method works its repayment out itself: no contract
+ * repayment amount. Rate-level recalculation and caps are refused by the debt's rate periods (server validation).
+ */
+function progressiveConflict(config: DebtConfig): ProfileConflict | null {
+  const growth = configProgressive(config);
+  const isProgressive = config.profile.amortization === "progressive-principal";
+  if (isProgressive && !growth) return { axes: ["amortization"], message: "Progressive principal needs its principal growth per repayment." };
+  if (!isProgressive && growth) return { axes: ["amortization"], message: "Only progressive principal holds a principal growth." };
+  if (isProgressive && config.terms.contractualPaymentMinor !== null) {
+    return { axes: ["amortization", "repaymentDerivation"], message: "Progressive principal works each repayment out itself; it has no contract repayment amount." };
+  }
+  return null;
 }

@@ -14,6 +14,7 @@ import { applyOffsetTransitions, eligibleOffset, fundScheduledRepayment, OFFSETS
 import { interestOnlyPhaseOn } from "./phases";
 import { annualRecastDates, applyPaymentCap, derivePayment, derivePaymentV1, paymentCount, paymentEffectiveDate, recastPolicyFor } from "./recast";
 import { revolvingPayment, revolvingState } from "./revolving";
+import { initialProgressiveBasis, progressiveBasis, progressiveGrowth, progressivePrincipalFor } from "./progressive";
 
 /**
  * `bench-daily`: a real-calendar, event-driven simulation (FR-029, FR-047,
@@ -40,12 +41,13 @@ export const DAILY_ENGINE_VERSION_V4 = "loan-daily@4";
 export const DAILY_ENGINE_VERSION_V5 = "loan-daily@5";
 export const DAILY_ENGINE_VERSION_V6 = "loan-daily@6";
 export const DAILY_ENGINE_VERSION_V7 = "loan-daily@7";
-export const DAILY_ENGINE_VERSION = "loan-daily@8";
+export const DAILY_ENGINE_VERSION_V8 = "loan-daily@8";
+export const DAILY_ENGINE_VERSION = "loan-daily@9";
 
 type Day = { date: IsoDate; events: EngineEvent[] };
 
 type DailyEngineBehavior = {
-  engineVersion: "loan-daily@2" | "loan-daily@3" | "loan-daily@4" | "loan-daily@5" | "loan-daily@6" | "loan-daily@7" | "loan-daily@8";
+  engineVersion: "loan-daily@2" | "loan-daily@3" | "loan-daily@4" | "loan-daily@5" | "loan-daily@6" | "loan-daily@7" | "loan-daily@8" | "loan-daily@9";
   repaymentVersion: "repayment@1" | "repayment@2";
   recastVersion: "recast@1" | "recast@2";
   eventOrderVersion: "event-order@1" | "event-order@2" | "event-order@3";
@@ -58,6 +60,8 @@ type DailyEngineBehavior = {
   offsetFunding: boolean;
   offsetFundingStart: boolean;
   observedRepaymentsAtScheduledStep: boolean;
+  /** Honour "A repayment counts: From the next day": repayments take effect after that day's accrual. */
+  repaymentEffectiveTiming: boolean;
 };
 
 const DAILY_V2: DailyEngineBehavior = {
@@ -74,6 +78,7 @@ const DAILY_V2: DailyEngineBehavior = {
   offsetFunding: false,
   offsetFundingStart: false,
   observedRepaymentsAtScheduledStep: false,
+  repaymentEffectiveTiming: false,
 };
 
 const DAILY_V3: DailyEngineBehavior = {
@@ -118,11 +123,22 @@ const DAILY_V7: DailyEngineBehavior = {
 
 const DAILY_V8: DailyEngineBehavior = {
   ...DAILY_V7,
-  engineVersion: DAILY_ENGINE_VERSION,
+  engineVersion: DAILY_ENGINE_VERSION_V8,
   observedRepaymentsAtScheduledStep: true,
 };
 
+const DAILY_V9: DailyEngineBehavior = {
+  ...DAILY_V8,
+  engineVersion: DAILY_ENGINE_VERSION,
+  repaymentEffectiveTiming: true,
+};
+
 export function simulateDaily(req: SimulationRequest): SimulationResult {
+  return simulateDailyImpl(req, DAILY_V9);
+}
+
+/** loan-daily@8, kept for historical reproduction: ignores the repayment-effective timing. */
+export function simulateDailyV8(req: SimulationRequest): SimulationResult {
   return simulateDailyImpl(req, DAILY_V8);
 }
 
@@ -164,6 +180,7 @@ export function simulateDailyAtVersion(version: string, req: SimulationRequest):
   if (version === DAILY_ENGINE_VERSION_V5) return simulateDailyV5(req);
   if (version === DAILY_ENGINE_VERSION_V6) return simulateDailyV6(req);
   if (version === DAILY_ENGINE_VERSION_V7) return simulateDailyV7(req);
+  if (version === DAILY_ENGINE_VERSION_V8) return simulateDailyV8(req);
   if (version === DAILY_ENGINE_VERSION) return simulateDaily(req);
   throw new RangeError(`Unsupported daily engine version: ${version}`);
 }
@@ -270,6 +287,14 @@ function simulateDailyImpl(req: SimulationRequest, behavior: DailyEngineBehavior
   const madeBeforeAnchor = allScheduled.filter((d) => compareDates(d, anchor.date) <= 0).length;
   const totalPayments = amortMonths !== null ? paymentCount(profile.repaymentFrequency, amortMonths) : null;
 
+  // Progressive principal: a contractual principal series by instalment number (design 06 §1.1). Instalments are
+  // numbered by their place in the generated (adjusted) schedule, never by how many payments were made.
+  const growth = progressiveGrowth(model);
+  if (profile.amortization === "progressive-principal" && (!growth || !totalPayments || !generate)) {
+    return fail({ code: "missing-payment", classification: "blocked", date: null, message: "Progressive principal needs its principal growth per repayment, a term and generated repayments." });
+  }
+  let basis = growth && totalPayments ? initialProgressiveBasis(model, growth, anchor, allScheduled, totalPayments) : null;
+
   const charges = chargeDates(model, firstDay, req.to);
   const chargeSet = charges ? new Set(charges) : null;
 
@@ -334,7 +359,10 @@ function simulateDailyImpl(req: SimulationRequest, behavior: DailyEngineBehavior
   const components = cashComponents(model.components);
   const capitalized = capitalizedComponents(model.components);
   const scale = eventRoundingScale(profile, digits) ?? intermediateScale(profile, digits);
-  const order = dayStepOrder(profile.eventOrder);
+  // "From the next day": a repayment does not reduce that day's interest, so repayments (scheduled, observed and extra)
+  // run after the day's accrual and charge. This is the economics the observed-repayment allocator uses (paid date + 1).
+  const repaymentsNextDay = behavior.repaymentEffectiveTiming && profile.repaymentEffectiveTiming === "next-calendar-day";
+  const order = repaymentsNextDay ? repaymentsAfterAccrual(dayStepOrder(profile.eventOrder)) : dayStepOrder(profile.eventOrder);
   const scheduledAfterAccrual = order.indexOf("scheduled-repayment") > order.indexOf("accrue");
   const minor = (d: Dec) => toMinor(d, digits, "down");
   const revolving = model.behaviorClass === "revolving-credit" && model.revolving !== null;
@@ -465,7 +493,7 @@ function simulateDailyImpl(req: SimulationRequest, behavior: DailyEngineBehavior
     if (revolving) return revolvingRepayment(date, balanceBeforeAll, atRepaymentCharge);
     const phase = interestOnlyPhaseOn(model.phases, date);
     // The level payment is derived on the balance before this payment's own interest is charged.
-    if (!phase && payment === null) {
+    if (!phase && payment === null && !growth) {
       const problem = derive(date, "initial");
       if (problem) return problem;
     }
@@ -488,6 +516,11 @@ function simulateDailyImpl(req: SimulationRequest, behavior: DailyEngineBehavior
         chargedSinceRepayment = 0;
         return null;
       }
+    } else if (growth && basis) {
+      // Interest charged with (or since) the previous instalment, plus this instalment's scheduled principal.
+      const interestDue = atRepaymentCharge ? interestWithPayment : chargedSinceRepayment;
+      const principalOwed = Math.max(minor(debt) - interestDue, 0);
+      level = interestDue + Math.min(progressivePrincipalFor(model, growth, basis, allScheduled.indexOf(date) + 1), principalOwed);
     } else {
       level = payment!;
     }
@@ -684,7 +717,18 @@ function simulateDailyImpl(req: SimulationRequest, behavior: DailyEngineBehavior
           }
           for (const e of day.events.filter((x) => x.kind === "payment-change")) problem ??= applyEvent(e);
           const recast = recasts.get(date);
-          if (!problem && recast && !paidOff && payment !== null) problem = derive(date, recast);
+          if (growth && basis) {
+            // Progressive principal: only a contract date or the end of an interest-only phase starts a new series, from
+            // the principal at the start of the day, at the first instalment on or after it. A rate never does.
+            if (!problem && !paidOff && (recast === "contract-date" || recast === "interest-only-phase-end")) {
+              const startNo = allScheduled.findIndex((d) => compareDates(d, date) >= 0) + 1;
+              if (startNo > 0) {
+                const previous = basis;
+                basis = progressiveBasis(model, growth, startNo, Math.max(minor(debt) - chargedSinceRepayment, 0), totalPayments!, recast);
+                emit({ date, type: "recast", certainty: "contractual", ref: null, cashMovementMinor: 0, principalMovementMinor: 0, interestMinor: 0, feesMinor: 0, balanceBeforeMinor: minor(debt), balanceAfterMinor: minor(debt), lines: [], diagnostics: { reason: recast, progressiveBasisStartNo: startNo, previousFirstPrincipal: toDecString(previous.first), firstPrincipal: toDecString(basis.first) } });
+              }
+            }
+          } else if (!problem && recast && !paidOff && payment !== null) problem = derive(date, recast);
           break;
         }
         case "external-cash":
@@ -699,10 +743,13 @@ function simulateDailyImpl(req: SimulationRequest, behavior: DailyEngineBehavior
           }
           break;
         case "payment":
-          for (const e of day.events.filter((x) => x.kind === "extra-repayment" || x.kind === "draw" || (!behavior.observedRepaymentsAtScheduledStep && x.kind === "repayment"))) problem ??= applyEvent(e);
+          for (const e of day.events.filter((x) => (x.kind === "extra-repayment" && !repaymentsNextDay) || x.kind === "draw" || (!behavior.observedRepaymentsAtScheduledStep && x.kind === "repayment"))) problem ??= applyEvent(e);
           break;
         case "scheduled-repayment":
-          if (behavior.observedRepaymentsAtScheduledStep) {
+          if (repaymentsNextDay) {
+            for (const e of day.events.filter((x) => x.kind === "extra-repayment")) problem ??= applyEvent(e);
+          }
+          if (!problem && behavior.observedRepaymentsAtScheduledStep) {
             for (const e of day.events.filter((x) => x.kind === "repayment")) problem ??= applyEvent(e);
           }
           if (!problem && scheduledSet.has(date)) problem = scheduledRepayment(date);
@@ -773,4 +820,12 @@ function simulateDailyImpl(req: SimulationRequest, behavior: DailyEngineBehavior
     },
     versions,
   };
+}
+
+/** The day's steps with the scheduled-repayment step moved after the accrual and charge. */
+function repaymentsAfterAccrual(order: ReturnType<typeof dayStepOrder>): ReturnType<typeof dayStepOrder> {
+  if (order.indexOf("scheduled-repayment") > order.indexOf("charge")) return order;
+  const rest = order.filter((step) => step !== "scheduled-repayment");
+  const close = rest.indexOf("close");
+  return [...rest.slice(0, close), "scheduled-repayment", ...rest.slice(close)];
 }

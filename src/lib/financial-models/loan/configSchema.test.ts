@@ -40,7 +40,7 @@ describe("parseDebtConfig", () => {
   });
 
   it("returns unsupported-config for a future version instead of throwing", () => {
-    expect(parseDebtConfig({ ...validConfig(), version: 4 })).toMatchObject({ ok: false, code: "unsupported-config" });
+    expect(parseDebtConfig({ ...validConfig(), version: 5 })).toMatchObject({ ok: false, code: "unsupported-config" });
     expect(parseDebtConfig({ ...validConfig(), format: "rd084.debt-config-next" })).toMatchObject({ ok: false, code: "unsupported-config" });
   });
 

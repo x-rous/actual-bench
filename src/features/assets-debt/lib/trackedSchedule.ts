@@ -1,5 +1,6 @@
 import type { DebtProjectionEvent } from "@/lib/financial-models/loan/projection";
 import type { TrackingResult } from "@/lib/assets-debt/tracking/plan";
+import type { LedgerEvent } from "@/lib/financial-models/loan/model";
 
 /**
  * Terms & Schedule for a loan tracked in Actual (design spec 06 §5.7, §7.6). The calculation has three parts:
@@ -13,7 +14,7 @@ export type TrackedHistory = {
   startDate: string;
   today: string;
   /** Where the projection of the rest of the loan starts. */
-  anchor: { date: string; principalMinor: number; scheduledPaymentMinor: number; restartDate: string; accruedInterestMinor: number };
+  anchor: { date: string; principalMinor: number; scheduledPaymentMinor: number; restartDate: string; accruedInterestMinor: number; events?: readonly LedgerEvent[]; progressiveBasis?: { startNo: number; firstPrincipalExact: string } };
   /** What really happened, as dated engine events (repayments as paid, extra principal, draws, fees). */
   events: DebtProjectionEvent[];
   /** The loan account's own balance (the debt), from the tracking start to today. */

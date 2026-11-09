@@ -9,7 +9,7 @@ import { explainBlocks } from "@/lib/financial-models/loan/blockMessages";
 import type { DebtProjection } from "@/lib/financial-models/loan/projection";
 import { buildCalculationDiagnostics, describeEvents, diagnosticsText, engineVersionsOf, repaymentsOf } from "../../lib/calculationDiagnostics";
 import { fractionToPercent, formatAmount } from "../../lib/money";
-import { headline } from "../../lib/results";
+import { headline, describeOutlook } from "../../lib/results";
 import type { TrackedHistory } from "../../lib/trackedSchedule";
 import { ADJUSTMENT_OPTIONS, ALLOCATION_OPTIONS, WEEKDAY_LABELS } from "./DueDateSettings";
 import { derivedFirstPaymentDate, summarizeProfile, type SimulationState } from "../../lib/simulatorModel";
@@ -105,7 +105,12 @@ export function HowCalculatedDrawer({ open, onClose, sim, projection, revision, 
             <section aria-labelledby="results-heading">
               <h3 id="results-heading" className="text-sm font-semibold">Results</h3>
               <dl className="divide-y divide-border/50">
-                <Row term="Repayment">{head.regularRepaymentMinor === null ? "None" : money(head.regularRepaymentMinor)}{head.repaymentChanges ? ", and it changes over the loan" : ""}</Row>
+                {(() => {
+                  const varying = describeOutlook(head.outlook, money);
+                  return varying
+                    ? <Row term="Next repayment">{money(head.regularRepaymentMinor!)} {varying.next}; {varying.pattern.charAt(0).toLowerCase()}{varying.pattern.slice(1)}</Row>
+                    : <Row term="Repayment">{head.regularRepaymentMinor === null ? "None" : money(head.regularRepaymentMinor)}{head.repaymentChanges ? ", and it changes over the loan" : ""}</Row>;
+                })()}
                 <Row term="Number of repayments">{repayments.length ? `${repayments.length}, from ${repayments[0].date} to ${repayments[repayments.length - 1].date}` : "None"}</Row>
                 <Row term="Total repaid">{money(head.totalRepaidMinor)}</Row>
                 <Row term="Total interest">{money(head.totalInterestMinor)}</Row>
@@ -147,7 +152,7 @@ export function HowCalculatedDrawer({ open, onClose, sim, projection, revision, 
               <dl className="divide-y divide-border/50">
                 <Row term="Tracked from">{tracked.installmentsBefore > 0 ? `Installment ${tracked.installmentsBefore + 1}, due ${tracked.startDate}; the ${tracked.installmentsBefore} before count as paid as contracted` : `Installment 1, due ${tracked.startDate}`}</Row>
                 <Row term="History">From Actual up to {tracked.anchor.date}, the last real event</Row>
-                <Row term="Projection starts">{tracked.anchor.restartDate}{tracked.anchor.restartDate !== tracked.anchor.date ? `: that installment was paid early, so the projection continues from its due date with ${money(tracked.anchor.accruedInterestMinor)} of interest accrued since the payment` : ""}</Row>
+                <Row term="Projection starts">{tracked.anchor.restartDate}{tracked.anchor.restartDate > tracked.anchor.date ? `: that installment was paid early, so the projection continues from its due date with ${money(tracked.anchor.accruedInterestMinor)} of interest accrued since the payment` : tracked.anchor.restartDate < tracked.anchor.date ? ": interest is worked out per repayment period, so the projection continues from the due date of the last installment paid, and anything paid after it counts on its own date" : ""}</Row>
                 <Row term="Balance then">{money(tracked.anchor.principalMinor)}</Row>
                 <Row term="Not found in Actual">{tracked.missingDueDates.length ? `${tracked.missingDueDates.length} installment${tracked.missingDueDates.length === 1 ? "" : "s"}` : "None"}</Row>
                 <Row term="Extra principal, draws, fees">{tracked.ledgerEvents.length ? `${tracked.ledgerEvents.length} read from the Loan Ledger` : "None"}</Row>

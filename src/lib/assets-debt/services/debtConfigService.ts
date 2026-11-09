@@ -43,6 +43,7 @@ import { buildDebtRevisionSnapshot, DEBT_REVISION_FORMAT, DEBT_REVISION_VERSION 
 import { modelFromDetail } from "../model/buildModel";
 import { explainBlock, SWITCHABLE_BLOCK_CODES } from "@/lib/financial-models/loan/blockMessages";
 import { simulate } from "@/lib/financial-models/loan/projection";
+import { validateModel } from "@/lib/financial-models/loan/engineCommon";
 
 /**
  * Debt configuration (RD-084 P1.3; FR-001, FR-002, FR-010, FR-011a, FR-020–FR-025,
@@ -492,6 +493,12 @@ function writeRevisionIfMaterial(db: SqliteDatabase, id: string, changeSummary: 
  */
 function assertCalculable(db: SqliteDatabase, id: string): void {
   const built = modelFromDetail(getDebtDetail(db, id)!);
+  if (built.ok && built.model.profile.amortization === "progressive-principal") {
+    // A progressive loan's rates and what-ifs must fit its series (no rate-level repayment recalculation or cap, no
+    // repayment change); refuse the save rather than store a loan that cannot be calculated.
+    const invalid = validateModel(built.model);
+    if (invalid) throw new DebtConfigValidationError([{ field: "profile.amortization", message: invalid.message }]);
+  }
   if (!built.ok || built.model.profile.accrual !== "per-period") return;
   const { model } = built;
   const result = simulate({ model, anchor: { date: model.terms.openingDate, principalMinor: model.terms.openingPrincipalMinor, accruedInterestMinor: 0, source: "opening" }, events: [], to: `${Number(model.terms.openingDate.slice(0, 4)) + 60}-12-31` });

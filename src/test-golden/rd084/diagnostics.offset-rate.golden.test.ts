@@ -81,8 +81,8 @@ describe("offset diagnostics (O4)", () => {
   });
 
   it("the daily engine version records the new outputs", () => {
-    expect(ENGINE_VERSIONS["loan-daily"]).toBe("loan-daily@8");
-    expect(ENGINE_VERSIONS["loan-periodic"]).toBe("loan-periodic@2");
+    expect(ENGINE_VERSIONS["loan-daily"]).toBe("loan-daily@9");
+    expect(ENGINE_VERSIONS["loan-periodic"]).toBe("loan-periodic@3");
   });
 });
 

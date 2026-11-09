@@ -169,7 +169,7 @@ describe("saving a debt configuration", () => {
   });
 
   it("refuses unsupported config identifiers, and allows a draft without accounts", () => {
-    expect(issuesOf(saveInput({ config: debtConfig({ version: 4 }) }))[0]).toMatch(/unsupported-config/);
+    expect(issuesOf(saveInput({ config: debtConfig({ version: 5 }) }))[0]).toMatch(/unsupported-config/);
     const gated = debtConfig();
     (gated.profile as Record<string, unknown>).dayCount = "monthly-30-360-actual-day-allocation";
     expect(issuesOf(saveInput({ config: gated }))[0]).toMatch(/unsupported-config/);
@@ -207,7 +207,7 @@ describe("config compatibility (schema-review A-2)", () => {
   it("Blocks only the debt whose stored config is a newer version; the others stay usable", () => {
     const newer = createDebtConfiguration(db, saveInput({ name: "Newer" }), directory());
     const fine = createDebtConfiguration(db, saveInput({ name: "Fine", liabilityAccountId: "acc-car" }), directory());
-    db.prepare("UPDATE debts SET current_config_json = ? WHERE id = ?").run(JSON.stringify({ ...debtConfig(), version: 4 }), newer.debt.id);
+    db.prepare("UPDATE debts SET current_config_json = ? WHERE id = ?").run(JSON.stringify({ ...debtConfig(), version: 5 }), newer.debt.id);
     const summaries = listDebtSummaries(db, BUDGET);
     expect(summaries.find((s) => s.id === newer.debt.id)?.blocked).toEqual({ code: "unsupported-config", message: expect.stringMatching(/newer version of Actual Bench/) });
     expect(summaries.find((s) => s.id === fine.debt.id)?.blocked).toBeNull();
@@ -241,30 +241,36 @@ describe("baseline assumptions and projection", () => {
     expect(closing(projectStoredDebt(db, d.debt.id, { from: "2024-01-01", to: "2026-12-31" }))).toBe(closing(lump));
   });
 
-  it("refuses an extra repayment between repayment dates on a once-per-period loan and leaves the saved loan as it was", () => {
+  it("refuses a draw between repayment dates on a once-per-period loan and leaves the saved loan as it was", () => {
     const d = createDebtConfiguration(db, saveInput(), directory());
-    const extra = (effectiveFrom: string) => [{ kind: "extra-repayment" as const, effectiveFrom, recurrence: null, amountMinor: 1_000_000, feeTreatment: null, offsetAccountId: null, note: null }];
-    expect(() => saveBaselineAssumptions(db, d.debt.id, extra("2025-02-10"), "Extra payment")).toThrow(/between repayment dates.*day-by-day interest/);
+    const extra = (effectiveFrom: string) => [{ kind: "draw" as const, effectiveFrom, recurrence: null, amountMinor: 1_000_000, feeTreatment: null, offsetAccountId: null, note: null }];
+    expect(() => saveBaselineAssumptions(db, d.debt.id, extra("2025-02-10"), "Draw")).toThrow(/between repayment dates.*day-by-day interest/);
     const unchanged = getDebtDetail(db, d.debt.id)!;
     expect(unchanged.assumptions).toHaveLength(0);
     expect(unchanged.debt.currentRevision).toBe(d.debt.currentRevision);
-    expect(saveBaselineAssumptions(db, d.debt.id, extra("2025-02-01"), "Extra payment").assumptions).toHaveLength(1);
+    expect(saveBaselineAssumptions(db, d.debt.id, extra("2025-02-01"), "Draw").assumptions).toHaveLength(1);
   });
 
-  it("refuses to create a once-per-period loan with an extra repayment between repayment dates, and saves nothing", () => {
-    const offDate = [{ kind: "extra-repayment" as const, effectiveFrom: "2025-02-10", recurrence: null, amountMinor: 1_000_000, feeTreatment: null, offsetAccountId: null, note: null }];
+  it("refuses to create a once-per-period loan with a capitalized fee between repayment dates, and saves nothing", () => {
+    const offDate = [{ kind: "fee" as const, effectiveFrom: "2025-02-10", recurrence: null, amountMinor: 1_000_000, feeTreatment: "capitalized" as const, offsetAccountId: null, note: null }];
     expect(() => createDebtConfiguration(db, saveInput({ assumptions: offDate }), directory())).toThrow(/between repayment dates.*day-by-day interest/);
     expect(listDebtSummaries(db, BUDGET, true)).toEqual([]);
   });
 
-  it("refuses to update a once-per-period loan to an extra repayment between repayment dates, and keeps its assumptions and revision", () => {
+  it("refuses to update a once-per-period loan to a capitalized fee between repayment dates, and keeps its assumptions and revision", () => {
     const d = createDebtConfiguration(db, saveInput(), directory());
-    const offDate = [{ kind: "extra-repayment" as const, effectiveFrom: "2025-02-10", recurrence: null, amountMinor: 1_000_000, feeTreatment: null, offsetAccountId: null, note: null }];
+    const offDate = [{ kind: "fee" as const, effectiveFrom: "2025-02-10", recurrence: null, amountMinor: 1_000_000, feeTreatment: "capitalized" as const, offsetAccountId: null, note: null }];
     expect(() => updateDebtConfiguration(db, d.debt.id, saveInput({ assumptions: offDate }), directory())).toThrow(/between repayment dates.*day-by-day interest/);
     const unchanged = getDebtDetail(db, d.debt.id)!;
     expect(unchanged.assumptions).toHaveLength(0);
     expect(unchanged.debt.currentRevision).toBe(d.debt.currentRevision);
     expect(listModelRevisions(db, "debt", d.debt.id)).toHaveLength(1);
+  });
+
+  it("accepts an extra repayment between repayment dates on a once-per-period loan: interest counts it from the next period", () => {
+    const d = createDebtConfiguration(db, saveInput(), directory());
+    const extra = [{ kind: "extra-repayment" as const, effectiveFrom: "2025-02-10", recurrence: null, amountMinor: 1_000_000, feeTreatment: null, offsetAccountId: null, note: null }];
+    expect(saveBaselineAssumptions(db, d.debt.id, extra, "Extra payment").assumptions).toHaveLength(1);
   });
 
   it("reports eligibility with reasons for every rejected strategy", () => {
