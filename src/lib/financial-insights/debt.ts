@@ -16,7 +16,7 @@ export const DEBT_GROUPS: { key: DebtGroup; label: string }[] = [
 ];
 
 /** A tracked loan's schedule, as `scheduleFromLoan` read it: the principal of the next twelve months, or why there is none. */
-export type ScheduleInput = { accountId: string; state: "ready"; principalNext12Minor: number; costNext12Minor: number } | { accountId: string; state: "unavailable"; reason: string };
+export type ScheduleInput = { accountId: string; state: "ready"; principalNext12Minor: number; costNext12Minor: number; /** When the Loans page says the loan is paid off (`YYYY-MM-DD`), or null when it does not say. */ payoffDate?: string | null } | { accountId: string; state: "unavailable"; reason: string };
 
 /** Principal due in the next twelve months, as of today: a schedule, never added on top of the balance. */
 export type NextTwelve =

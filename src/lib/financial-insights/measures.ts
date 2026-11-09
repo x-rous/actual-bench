@@ -492,6 +492,23 @@ export function positionsAt(ledger: Ledger, month: string): Positions {
   return p;
 }
 
+/**
+ * The savings rate: money kept as a percent of what was received, one decimal. The one definition, for a whole period (`summarize`)
+ * and for a single month (the Progress tab). Unavailable when nothing was received, and as unavailable as the money kept itself.
+ */
+export function savingsRateOf(moneyKept: Status<number>, received: number): Status<number> {
+  if (moneyKept.state !== "ready") return moneyKept;
+  if (received <= 0) return unavailable("There was no income in this period");
+  return ready(Math.round((moneyKept.value * 1000) / received) / 10, moneyKept.warning);
+}
+
+/** What is owed on credit cards at the end of `month`, a positive amount: a card in credit is ignored. */
+export function cardsOwedAt(ledger: Ledger, month: string): number {
+  let owed = 0;
+  for (const account of ledger.account.values()) if (account.accountClass === "credit-card") owed += Math.max(0, 0 - ledger.balanceAt(account.id, month));
+  return owed;
+}
+
 const sumPositions = (p: Positions) => Object.values(p).reduce((a, b) => a + b, 0);
 
 export function summarize(ledger: Ledger, period: ResolvedPeriod, review: AssetReview): Summary {
@@ -513,10 +530,7 @@ export function summarize(ledger: Ledger, period: ResolvedPeriod, review: AssetR
     // Shown with the amount at issue, never withheld: the value is Received less Spent, and these entries may be counted twice in it.
     moneyKept = ready(kept, `${review.rowCount} ${review.rowCount === 1 ? "entry" : "entries"} (${money(review.amountMinor)}) ${review.rowCount === 1 ? "is" : "are"} classified in Assets as capital put into an asset without a recorded transfer, so this may count ${review.rowCount === 1 ? "it" : "them"} twice`);
   } else moneyKept = ready(kept);
-  let savingsRate: Status<number>;
-  if (moneyKept.state !== "ready") savingsRate = moneyKept;
-  else if (received <= 0) savingsRate = unavailable("There was no income in this period");
-  else savingsRate = ready(Math.round((moneyKept.value * 1000) / received) / 10, moneyKept.warning);
+  const savingsRate = savingsRateOf(moneyKept, received);
 
   const explained = flows.income + flows.spending + flows.uncategorizedIn + flows.uncategorizedOut + flows.unidentified + flows.loanCharges + flows.loanAccountOther + flows.investmentResults + flows.valueChanges + flows.assetSales + flows.openingBalances + flows.excludedTransfers + flows.inTransit;
   const series: SeriesPoint[] = period.months.map((month, index) => {
@@ -644,8 +658,7 @@ export function cashBuffer(ledger: Ledger, today: string, schedules: ReadonlyMap
   const grossCashMinor = positionsAt(ledger, current).eligibleCash;
   if (grossCashMinor < 0) return unavailable("Cash & bank is below zero");
   // Card purchases are in the spending average, and what is already owed on the cards is committed out of this cash.
-  let cardsOwedMinor = 0;
-  for (const account of ledger.account.values()) if (account.accountClass === "credit-card") cardsOwedMinor += Math.max(0, 0 - ledger.balanceAt(account.id, current));
+  const cardsOwedMinor = cardsOwedAt(ledger, current);
   const cashMinor = grossCashMinor - cardsOwedMinor;
   if (cashMinor < 0) return unavailable("What you owe on credit cards is more than your cash & bank");
   // Accounts set to "Accessible money" (investments you could reach): a second figure, never part of the main one.
