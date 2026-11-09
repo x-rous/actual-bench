@@ -60,23 +60,41 @@ export async function svgToPng(svg: SVGSVGElement): Promise<Blob> {
 export const SHEET_COLUMNS = 2;
 export const SHEET_GAP = 24;
 
+/** The most a canvas is trusted to hold: the larger side, and the number of pixels (browsers, Safari above all, refuse or blank a bigger one). */
+export const SHEET_MAX_SIDE = 8192;
+export const SHEET_MAX_PIXELS = 16_000_000;
+
+/** How much to scale a sheet of this size down so it is within what a canvas can hold; 1 when it already is. */
+export function sheetScale(width: number, height: number): number {
+  return Math.min(1, SHEET_MAX_SIDE / width, SHEET_MAX_SIDE / height, Math.sqrt(SHEET_MAX_PIXELS / (width * height)));
+}
+
 /**
  * Puts several cards' pictures on one sheet, two to a row, as a single PNG. The clipboard holds one image, so this is how a set of cards is
- * copied at once. `background` fills the space between them.
+ * copied at once. `background` fills the space between them. A sheet too big for a canvas is scaled down, so every card is still on it.
  */
 export async function svgsToSheetPng(svgs: readonly SVGSVGElement[], background: string): Promise<Blob> {
   if (svgs.length === 0) throw new Error("There is no picture to copy");
-  const loaded = await Promise.all(svgs.map(loadSvg));
+  // Every picture is loaded before any is used, and every address made is released whether or not all of them loaded.
+  const results = await Promise.allSettled(svgs.map(loadSvg));
+  const loaded = results.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
   try {
+    const failed = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
+    if (failed) throw failed.reason;
     const rows = Math.ceil(loaded.length / SHEET_COLUMNS);
+    const width = SHEET_COLUMNS * IMAGE_WIDTH + (SHEET_COLUMNS + 1) * SHEET_GAP;
+    const height = rows * IMAGE_HEIGHT + (rows + 1) * SHEET_GAP;
+    const scale = sheetScale(width, height);
     const canvas = document.createElement("canvas");
-    canvas.width = SHEET_COLUMNS * IMAGE_WIDTH + (SHEET_COLUMNS + 1) * SHEET_GAP;
-    canvas.height = rows * IMAGE_HEIGHT + (rows + 1) * SHEET_GAP;
+    canvas.width = Math.floor(width * scale);
+    canvas.height = Math.floor(height * scale);
     const context = contextOf(canvas);
     context.fillStyle = background;
     context.fillRect(0, 0, canvas.width, canvas.height);
     loaded.forEach(({ image }, i) => {
-      context.drawImage(image, SHEET_GAP + (i % SHEET_COLUMNS) * (IMAGE_WIDTH + SHEET_GAP), SHEET_GAP + Math.floor(i / SHEET_COLUMNS) * (IMAGE_HEIGHT + SHEET_GAP), IMAGE_WIDTH, IMAGE_HEIGHT);
+      const x = SHEET_GAP + (i % SHEET_COLUMNS) * (IMAGE_WIDTH + SHEET_GAP);
+      const y = SHEET_GAP + Math.floor(i / SHEET_COLUMNS) * (IMAGE_HEIGHT + SHEET_GAP);
+      context.drawImage(image, x * scale, y * scale, IMAGE_WIDTH * scale, IMAGE_HEIGHT * scale);
     });
     return await canvasPng(canvas);
   } finally {

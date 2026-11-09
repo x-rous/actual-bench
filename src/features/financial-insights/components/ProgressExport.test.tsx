@@ -136,6 +136,21 @@ describe("exporting a card", () => {
     expect(Math.max(...notes.map((t) => Number(t.getAttribute("y"))))).toBeLessThanOrEqual(675);
   });
 
+  it("keeps the chart clear of a stack of four notes at the foot of a savings picture", async () => {
+    const movement = [row("2026-01", "chk", 1_000, { categoryId: "salary" }), row("2026-01", "chk", 5_000, { categoryId: "food" }), row("2026-02", "chk", 1_000, { categoryId: "salary" }), row("2026-02", "chk", -5_000, { categoryId: "food" }), row("2026-03", "chk", -100, { categoryId: "food" }), row("2026-04", "chk", 1_000, { categoryId: "salary" })];
+    const input = inputOf(factsOf([chk], movement), {}, ["2026-01", "2026-04"]);
+    render(<ProgressTab view={progressView({ ...input, summary: { ...input.summary, savingsRate: { state: "ready", value: 20, warning: "x" } } })} />);
+    download("Savings rate");
+    await waitFor(() => expect(blobs.length).toBeGreaterThan(0));
+    const doc = new DOMParser().parseFromString(await svgText(), "image/svg+xml");
+    const notes = [...doc.querySelectorAll("text")].filter((t) => /^(Some entries|Months (above|below|with))/.test(t.textContent ?? ""));
+    expect(notes).toHaveLength(4);
+    const chart = [...doc.querySelectorAll("svg")].find((n) => n.getAttribute("viewBox") === "0 0 720 280" && n.parentElement === doc.documentElement)!;
+    const bottom = Number(chart.getAttribute("y")) + Number(chart.getAttribute("height"));
+    const highestNote = Math.min(...notes.map((t) => Number(t.getAttribute("y")))) - 14;
+    expect(bottom).toBeLessThanOrEqual(highestNote);
+  });
+
   it("puts Copy image and Download PNG on every card, and no Share popover", () => {
     open();
     for (const card of ["Net worth journey", "Asset composition", "Debt payoff progress", "Savings rate", "Savings consistency", "Cash buffer", "Cash buffer journey", "Property value & LTV"]) {

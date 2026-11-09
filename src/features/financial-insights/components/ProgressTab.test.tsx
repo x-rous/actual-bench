@@ -46,7 +46,7 @@ describe("the Progress tab", () => {
     expect(container.querySelectorAll("title, [data-value], [aria-valuenow]")).toHaveLength(0);
     // Not one tick label: every text node in a chart is a month, a zero marker, a reference or a mark.
     const words = [...container.querySelectorAll("svg text")].map((t) => t.textContent ?? "");
-    for (const word of words) expect(word).toMatch(/^(0|0%|100%|80%|12 months|\d+ months|Start|End of period|Today|Cash|Investments|Property|Other|Goal|Value|Loan-to-value|\d+\.\d%|(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) 20\d\d)$/);
+    for (const word of words) expect(word).toMatch(/^(0|0%|100%|80%|12 months|\d+ months|Start|End of period|Today|Cash & deposits|Investments|Property|Other|Goal|Value|Loan-to-value|\d+\.\d%|(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) 20\d\d)$/);
   });
 
   it("replaces every month name with Month N when dates are hidden, on the tab itself", () => {
@@ -118,8 +118,8 @@ describe("the Progress tab", () => {
     // One square for each month, with a mark inside it that says saved or short.
     expect(consistency.querySelectorAll("svg g path")).toHaveLength(10);
     const composition = screen.getByRole("region", { name: "Asset composition" });
-    expect(within(composition).getAllByText(/Largest now: Cash/).length).toBeGreaterThan(0);
-    for (const name of ["Start", "End of period", "Cash", "Investments", "Property", "Other"]) expect(within(composition).getAllByText(name).length).toBeGreaterThan(0);
+    expect(within(composition).getAllByText(/Largest now: Cash & deposits/).length).toBeGreaterThan(0);
+    for (const name of ["Start", "End of period", "Cash & deposits", "Investments", "Property", "Other"]) expect(within(composition).getAllByText(name).length).toBeGreaterThan(0);
     const journey = screen.getByRole("region", { name: "Cash buffer journey" });
     expect(within(journey).getAllByText(/^Cover up from /).length).toBeGreaterThan(0);
   });
@@ -160,9 +160,18 @@ describe("the Progress tab", () => {
     expect(screen.getByRole("switch", { name: "Show text" })).toHaveAttribute("aria-checked", "false");
   });
 
+  it("keeps a Savings rate card with its reason when there was no income, even with the text off", () => {
+    const f = factsOf([chk], months(1, 10).map((m) => row(m, "chk", -100, { categoryId: "food" })));
+    render(<ProgressTab view={progressView(inputOf(f))} />);
+    const card = screen.getByRole("region", { name: "Savings rate" });
+    expect(within(card).getAllByText("There was no income in this period")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("switch", { name: "Show text" }));
+    expect(within(screen.getByRole("region", { name: "Savings rate" })).getAllByText("There was no income in this period")).toHaveLength(1);
+  });
+
   it("says once that property cards are unavailable, and keeps the other cards", () => {
     render(<ProgressTab view={progressView(inputOf(richFacts(), { equity: [], equityFailed: true }))} />);
-    expect(screen.getAllByText("Property cards are unavailable because property values could not be read.")).toHaveLength(1);
+    expect(screen.getAllByText("Some property cards may be missing because property values could not be read. See Property & assets for details.")).toHaveLength(1);
     expect(screen.getByRole("region", { name: "Savings rate" })).toBeInTheDocument();
   });
 

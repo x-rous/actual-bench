@@ -96,4 +96,16 @@ describe("the page header on the Progress tab", () => {
     expect(screen.queryByText(/Read at /)).not.toBeInTheDocument();
     expect(container.textContent).not.toMatch(/\b(Jan|Oct|Nov) 2026\b/);
   });
+
+  it("keeps the failed-read warning but not the time of the earlier read when dates are hidden", () => {
+    useFinancialInsights.mockReturnValue({ ...ready({ refreshFailed: true, refreshing: false }), tab: "progress", tabs: [{ value: "summary", label: "Summary" }, { value: "progress", label: "Progress" }] });
+    sessionStorage.setItem("filters:financial-insights-progress", JSON.stringify({ showDates: false }));
+    render(<FinancialInsightsWorkspace />);
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent("The latest read failed, so these figures are from an earlier read.");
+    expect(alert).not.toHaveTextContent(/\d{1,2}:\d{2}/);
+    sessionStorage.clear();
+    const { container } = render(<FinancialInsightsWorkspace />);
+    expect(container.textContent).toMatch(/these figures are from \d{1,2}:\d{2}/);
+  });
 });

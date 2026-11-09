@@ -1,7 +1,7 @@
 import { cardsOwedAt, cashBuffer, savingsRateOf, type CashBuffer, type Ledger, type LoanScheduleInput, type SeriesPoint, type Status } from "./measures";
 import type { ClassKey, MonthlyPoint, compositionSeries } from "./breakdowns";
 import type { ScheduleInput } from "./debt";
-import { monthLabel, monthOf, type ResolvedPeriod } from "./period";
+import { addMonths, monthLabel, monthOf, type ResolvedPeriod } from "./period";
 import type { PropertySeries } from "./wealth";
 
 /**
@@ -79,6 +79,8 @@ export type ProgressView = {
   equityPending: boolean;
   /** The home cards cannot be drawn because property values could not be read (all of them, or some): one line says so. */
   equityUnavailable: boolean;
+  /** A property account is not registered in Assets, so it has no card: the tab says to register it. */
+  propertiesUnregistered: boolean;
 };
 
 export type ProgressInput = {
@@ -94,10 +96,14 @@ export type ProgressInput = {
   equity: readonly PropertySeries[] | null;
   /** Property values could not be read, wholly or in part. */
   equityFailed?: boolean;
+  /** A property account is not registered in Assets, so it has no card. */
+  propertiesUnregistered?: boolean;
   /** The cash buffer settings: the goal in months (null when none is set) and how a typical month is taken. */
   bufferSettings?: { goalMonths: number | null; averageMonths: number; method: "average" | "median" };
   /** What the tracked loans cost a month, as the cash buffer takes them (the same for every month of the journey). */
   bufferSchedules?: ReadonlyMap<string, LoanScheduleInput>;
+  /** For a median typical month: the typical month's spending as of a day, worked out as Summary's buffer does (it needs the categories, so the page supplies it). Undefined where it cannot be worked out. */
+  medianSpendingAt?: (day: string) => number | undefined;
 };
 
 // ─── Scaling ─────────────────────────────────────────────────────────────────
@@ -294,24 +300,42 @@ function debtFreeLabel(input: ProgressInput): Dated | null {
   return { on: `${lead} (${monthLabel(monthOf(last))})`, off: lead };
 }
 
+/** What was owed at the end of the month before the period, per group, when the budget has history that far back; zero otherwise. */
+function openingOwed(input: ProgressInput): Record<DebtChoiceId, number> & { other: number } {
+  const { ledger, period, composition } = input;
+  const before = addMonths(period.startMonth, -1);
+  if (ledger.firstMonth === null || ledger.firstMonth > before) return { cards: 0, loans: 0, all: 0, other: 0 };
+  const cards = cardsOwedAt(ledger, before);
+  const loans = Math.max(0, 0 - composition.opening.loans);
+  const other = Math.max(0, 0 - composition.opening.otherLiability);
+  return { cards, loans, other, all: cards + loans + other };
+}
+
 function debtCard(input: ProgressInput, when: ReturnType<typeof whenOf>): DebtCard | null {
   const { period } = input;
   const owed = owedByMonth(input);
+  const opening = openingOwed(input);
   const partial = axisOf(period).partial;
-  const owedIn = (series: (number | null)[]) => series.some((v) => v !== null && v > 0);
-  const groups = [owedIn(owed.cards), owedIn(owed.loans), owedIn(owed.other)].filter(Boolean).length;
+  // A group counts when it was owed at any month of the period, or at the start of it (a debt paid off in the first month).
+  const owedIn = (series: (number | null)[], start: number) => start > 0 || series.some((v) => v !== null && v > 0);
+  const groups = [owedIn(owed.cards, opening.cards), owedIn(owed.loans, opening.loans), owedIn(owed.other, opening.other)].filter(Boolean).length;
   const offered: DebtChoiceId[] = [];
-  if (owedIn(owed.cards)) offered.push("cards");
-  if (owedIn(owed.loans)) offered.push("loans");
-  if (groups >= 2 || owedIn(owed.other)) offered.push("all");
+  if (owedIn(owed.cards, opening.cards)) offered.push("cards");
+  if (owedIn(owed.loans, opening.loans)) offered.push("loans");
+  if (groups >= 2 || owedIn(owed.other, opening.other)) offered.push("all");
   const choices: DebtChoice[] = [];
   for (const id of offered) {
     const series = owed[id];
-    const chart = toShape(series);
+    // Nothing owed at any month of the period, but something at its start: it was paid off in the first month. The line lies on zero and the label says when.
+    const paidInFirstMonth = !series.some((v) => v !== null && v > 0) && opening[id] > 0;
+    const chart = toShape(series) ?? (paidInFirstMonth ? { points: series.map((v) => (v === null ? null : asShape(0))), zero: asShape(0) } : null);
     const drop = dropOf(series, partial);
     if (!chart) continue;
     const labels: Dated[] = [];
-    if (drop) {
+    if (paidInFirstMonth) {
+      const first = when(period.months[Math.max(0, series.findIndex((v) => v !== null))]);
+      labels.push({ on: `Paid off in ${first.on}`, off: "Paid off in the first month" });
+    } else if (drop) {
       const peak = when(period.months[drop.peak]);
       if (drop.paidOff !== null) {
         const w = when(period.months[drop.paidOff]);
@@ -350,8 +374,16 @@ function monthlyRates(monthly: readonly MonthlyPoint[]): (number | null)[] {
 
 function savingsCard(input: ProgressInput, when: ReturnType<typeof whenOf>): SavingsCard | null {
   const { period, monthly } = input;
-  if (!monthly.some((m) => m.hasData && m.received > 0)) return null;
   const rates = monthlyRates(monthly);
+  if (!monthly.some((m) => m.hasData && m.received > 0)) {
+    // No income at all: the card says so, instead of vanishing, and the reason is shown whatever Show text says.
+    const reason = "There was no income in this period";
+    return {
+      kind: "savings", id: "savings-rate", title: "Savings rate", axis: axisOf(period), bars: rates.map(() => null), zero: asShape(0), labels: [],
+      provisionalNote: null, aboveNote: null, belowNote: null, gapNote: null, empty: reason,
+      info: "How much of what you received you kept, month by month and over the period: the same savings rate as Summary. Bars below the line are months you spent more than you received.",
+    };
+  }
   const complete = rates.map((r, i) => ({ r, i })).filter((p): p is { r: number; i: number } => p.r !== null && !monthly[p.i].partial);
   const labels: Dated[] = [];
   const overall = input.summary.savingsRate;
@@ -385,7 +417,7 @@ function savingsCard(input: ProgressInput, when: ReturnType<typeof whenOf>): Sav
 /** The most months drawn: ten years, as squares small enough to fit several lines. */
 const CONSISTENCY_MONTHS = 120;
 
-/** In how many of the complete months of the period did you keep more than you received? One square for each month: saved, short, or no income. */
+/** In how many of the complete months of the period was the savings rate above 0% (you spent less than you received)? One square for each month: saved, short, or no income. */
 function consistencyCard(input: ProgressInput, when: ReturnType<typeof whenOf>): ConsistencyCard | null {
   const { period, monthly } = input;
   const rates = monthlyRates(monthly);
@@ -398,14 +430,14 @@ function consistencyCard(input: ProgressInput, when: ReturnType<typeof whenOf>):
     kind: "consistency", id: "savings-consistency", title: "Savings consistency", note: shown.length <= 12 || shown.length === CONSISTENCY_MONTHS ? `Last ${shown.length} complete months` : `${shown.length} complete months`, strip,
     axis: { months: shown.map((p) => when(period.months[p.i])), partial: shown.map(() => false) },
     labels: [both(`${saved} of ${rated} months saved`), both(`${pct(asPercent((saved / rated) * 100))} positive months`)],
-    info: "In how many of the complete months of the period you kept more money than you spent: the months with a savings rate above 0%. A month with no income is left out of the count. The savings rate is the one on Summary.",
+    info: "In how many of the complete months of the period you spent less than you received: the months with a savings rate above 0%. A month with no income is left out of the count. The savings rate is the one on Summary.",
   };
 }
 
 // ─── Asset composition ───────────────────────────────────────────────────────
 
 const COMPOSITION: { name: string; keys: ClassKey[] }[] = [
-  { name: "Cash", keys: ["cash", "fixed"] },
+  { name: "Cash & deposits", keys: ["cash", "fixed"] },
   { name: "Investments", keys: ["invest"] },
   { name: "Property", keys: ["property"] },
   { name: "Other", keys: ["vehicle", "other"] },
@@ -439,7 +471,7 @@ function compositionCard(input: ProgressInput): CompositionCard | null {
   return {
     kind: "composition", id: "asset-composition", title: "Asset composition", note: "Share of what you own", classes: names,
     startName: "Start", endName: period.partial ? "Today" : "End of period", start: start.map(asShape), end: end.map(asShape), labels,
-    info: "How what you own is split between cash, investments, property and other assets, at the start and at the end of the period. Each bar is 100% of your assets at that point: only shares are shown, never amounts. The classes are the ones on Summary.",
+    info: "How what you own is split between cash and deposits (including fixed or restricted deposits), investments, property and other assets, at the start and at the end of the period. Each bar is 100% of your assets at that point: only shares are shown, never amounts. The classes are the ones on Summary.",
   };
 }
 
@@ -450,8 +482,7 @@ const JOURNEY_MONTHS = 24;
 /**
  * Months of cover at the end of each of the last months of the period, with the goal. Every month, the current one included, is the same cash
  * buffer measure with the same settings and the same loan schedules, as of that month: its balances, over the typical month of the complete
- * months before it. So the line is one measure, and its last point is the buffer on Summary (for a median typical month, the earlier
- * points and the last use the average, as Summary's median needs spending groups that are only known for today).
+ * months before it. So the line is one measure, and its last point is the buffer on Summary, for an average or a median typical month alike.
  */
 function journeyCard(input: ProgressInput, when: ReturnType<typeof whenOf>): JourneyCard | null {
   const { period, ledger } = input;
@@ -459,7 +490,9 @@ function journeyCard(input: ProgressInput, when: ReturnType<typeof whenOf>): Jou
   const shown = period.months.map((m, i) => ({ m, i })).filter((p) => ledger.firstMonth !== null && p.m >= ledger.firstMonth).slice(-JOURNEY_MONTHS);
   const values = shown.map(({ m, i }) => {
     const current = period.partial && i === period.months.length - 1;
-    const status = cashBuffer(ledger, current ? input.today : `${m}-28`, input.bufferSchedules ?? new Map(), { months: settings.averageMonths, method: settings.method });
+    const day = current ? input.today : `${m}-28`;
+    // A median typical month takes its spending the way Summary's buffer does, for each month; the average needs nothing more.
+    const status = cashBuffer(ledger, day, input.bufferSchedules ?? new Map(), { months: settings.averageMonths, method: settings.method, spendingMinor: settings.method === "median" ? input.medianSpendingAt?.(day) : undefined });
     return status.state === "ready" ? Math.round(status.value.months * 10) / 10 : null;
   });
   const known = values.filter((v): v is number => v !== null);
@@ -513,19 +546,18 @@ const LTV_REFERENCE = 80;
 
 function propertyCards(input: ProgressInput, when: ReturnType<typeof whenOf>): PropertyCard[] {
   const { period } = input;
-  const cards: PropertyCard[] = [];
-  // Vehicles are not drawn: only a property, or another fixed asset.
-  const assets = (input.equity ?? []).filter((e) => e.accountClass !== "vehicle");
-  const base = assets.map((e) => (e.accountClass === "property" ? "Property" : "Asset"));
-  const names = assets.map((e, n) => `${base[n]} value${e.linked ? " & LTV" : ""}`);
-  const used = new Map<string, number>();
-  assets.forEach((asset, n) => {
+  // Vehicles are not drawn: only a property, or another fixed asset. Of those, only the ones with a value or a loan-to-value to draw count, so a sole card keeps its plain title.
+  const drawable = (input.equity ?? []).filter((e) => e.accountClass !== "vehicle").map((asset) => {
     // The value is a shape: a month before the asset had a value is a gap, and nothing here is an amount.
     const values = asset.points.map((p) => (p.assetValueMinor !== null && p.assetValueMinor > 0 ? p.assetValueMinor : null));
-    const valueShape = toShape(values);
     const ltv = asset.linked ? asset.points.map((p) => p.ltvPercent) : [];
     const known = ltv.map((v, i) => ({ v, i })).filter((p): p is { v: number; i: number } => p.v !== null);
-    if (!valueShape && known.length === 0) return;
+    return { asset, values, valueShape: toShape(values), ltv, known };
+  }).filter((d) => d.valueShape || d.known.length > 0);
+  const names = drawable.map((d) => `${d.asset.accountClass === "property" ? "Property" : "Asset"} value${d.asset.linked ? " & LTV" : ""}`);
+  const used = new Map<string, number>();
+  const cards: PropertyCard[] = [];
+  drawable.forEach(({ values, valueShape, ltv, known }, n) => {
     const number = (used.get(names[n]) ?? 0) + 1;
     used.set(names[n], number);
     const title = names.filter((t) => t === names[n]).length > 1 ? `${names[n]} ${number}` : names[n];
@@ -600,7 +632,7 @@ export function progressView(input: ProgressInput): ProgressView {
   if (consistency) cards.push(consistency);
   if (journey) cards.push(journey);
   cards.push(buffer);
-  return { cards, equityPending: input.equity === null && !input.equityFailed, equityUnavailable: input.equityFailed === true };
+  return { cards, equityPending: input.equity === null && !input.equityFailed, equityUnavailable: input.equityFailed === true, propertiesUnregistered: input.propertiesUnregistered === true };
 }
 
 export type { When };

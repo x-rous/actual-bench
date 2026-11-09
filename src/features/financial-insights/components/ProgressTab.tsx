@@ -45,7 +45,8 @@ export function ProgressTab({ view, switches, onSwitches }: Props) {
           <p>Cards to share your progress. They show shapes, percentages and months, never amounts. Use Copy image or Download PNG on a card to share it as a picture, or Copy all images for the cards together.</p>
           <p>To see the amounts behind a card, open the tab it comes from: Summary, Loans &amp; cards or Property &amp; assets.</p>
           {view.equityPending && <p role="status">Reading property values…</p>}
-          {view.equityUnavailable && <p role="status">Property cards are unavailable because property values could not be read.</p>}
+          {view.equityUnavailable && <p role="status">Some property cards may be missing because property values could not be read. See Property &amp; assets for details.</p>}
+          {view.propertiesUnregistered && <p role="status">A property is not registered in Assets, so it has no card here. Register it in Assets to add one.</p>}
         </div>
         {/* Show dates names the months or counts them; Show text keeps the words and percentages on the cards or takes them off */}
         <div className="flex shrink-0 flex-wrap items-center gap-4">

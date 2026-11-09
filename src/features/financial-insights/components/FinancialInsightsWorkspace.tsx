@@ -116,7 +116,7 @@ export function FinancialInsightsWorkspace() {
         <div className="min-h-full bg-muted/40">
           {data.refreshFailed && !data.refreshing && (
             <div role="alert" className="flex items-center justify-between gap-3 border-b border-amber-500/40 bg-amber-50 px-4 py-1.5 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
-              <span>The latest read failed, so these figures are from {readTime(data.readAt)}.</span>
+              <span>{hideDates ? "The latest read failed, so these figures are from an earlier read." : `The latest read failed, so these figures are from ${readTime(data.readAt)}.`}</span>
               <Button size="xs" variant="outline" onClick={view.refresh}>Try again</Button>
             </div>
           )}
