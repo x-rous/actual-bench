@@ -1138,7 +1138,7 @@ CREATE TABLE IF NOT EXISTS account_classes (
 
 // ── Account reporting ────────────────────────────────────────────────────────
 // Bench-owned metadata: the Financial Reporting choice for one Actual account
-// (current or non-current, or a Bank account that is not cash). One row per
+// (a Bank account that is a fixed / restricted deposit, or an Other Asset that is a fixed asset). One row per
 // account, scoped to one budget; the class itself stays in `account_classes`.
 // `treatment` is validated by the repository and read tolerantly, so a value
 // added by a later version does not break an older reader.
@@ -1149,6 +1149,23 @@ CREATE TABLE IF NOT EXISTS account_reporting (
   treatment text NOT NULL,
   updated_at text NOT NULL,
   PRIMARY KEY (budget_sync_id, account_id)
+);
+`;
+
+// ── Account flags ────────────────────────────────────────────────────────────
+// Bench-owned yes/no choices for one Actual account or account group (migration v65): "excluded" (left out of
+// Financial Insights), "accessible" (balance counts as money you can reach) and "offbudget-income" (uncategorized money
+// in, in an off-budget Cash or Bank account, is income). One row per flag that is on; turning a flag off deletes the row.
+// Scoped to one budget. `flag` is validated by the repository and read tolerantly, so a flag added by a later version
+// does not break an older reader.
+export const ACCOUNT_FLAGS_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS account_flags (
+  budget_sync_id text NOT NULL,
+  scope text NOT NULL CHECK (scope IN ('account', 'group')),
+  target_id text NOT NULL,
+  flag text NOT NULL,
+  updated_at text NOT NULL,
+  PRIMARY KEY (budget_sync_id, scope, target_id, flag)
 );
 `;
 

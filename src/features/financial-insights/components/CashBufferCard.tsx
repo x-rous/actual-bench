@@ -14,11 +14,46 @@ import { useCashBufferScenarios } from "../hooks/useCashBufferScenarios";
 import { useCashBufferSettings } from "../hooks/useCashBufferSettings";
 import { formatDay, money } from "../format";
 import { CashBufferScenarioDialog } from "./CashBufferScenarioDialog";
-import { CardTitle } from "./InfoTip";
+import { CardTitle, InfoTip } from "./InfoTip";
 
 type Ready = Extract<FinancialInsightsView["data"], { state: "ready" }>;
 
 /** Today's cash equivalents less the credit cards owed, from the same ledger and month as the buffer. Amounts are integer minor units; `cashMinor` = `grossMinor` − `cardsOwedMinor`. */
+type Accessible = { months: number; accounts: { accountId: string; name: string; balanceMinor: number }[]; totalMinor: number };
+
+/**
+ * The one (i) beside the headline: what the months of cover are measured on and, when some accounts are set to "Accessible money",
+ * which accounts the second figure under the headline counts. The main figure, the goal and scenarios stay cash-based.
+ */
+function CoverInfo({ accessible, today }: { accessible?: Accessible; today: string }) {
+  return (
+    <InfoTip label="the months of cover">
+      <p>Months of cover are your cash &amp; bank balance, less what you owe on credit cards, divided by what you need each month.</p>
+      {accessible && (
+        <>
+          <p className="font-medium text-foreground">With accessible investments: {accessible.months.toFixed(1)} months</p>
+          <p>Counts the accounts you set to Accessible money as well, as of {formatDay(today)} (positive balances only). The main figure, your goal and scenarios do not include them.</p>
+          <table className="w-full border-collapse">
+            <tbody>
+              {accessible.accounts.filter((a) => a.balanceMinor > 0).map((a) => <tr key={a.accountId} className="border-b border-border/40 last:border-0"><th scope="row" className="py-1 text-left font-normal">{a.name}</th><td className="py-1 text-right tabular-nums">{money(a.balanceMinor)}</td></tr>)}
+              <tr className="font-semibold text-foreground"><th scope="row" className="pt-1.5 text-left">Total</th><td className="pt-1.5 text-right tabular-nums">{money(accessible.totalMinor)}</td></tr>
+            </tbody>
+          </table>
+        </>
+      )}
+    </InfoTip>
+  );
+}
+
+/** The second figure, in view under the headline; its accounts are in the (i) beside the headline. */
+function AccessibleLine({ accessible }: { accessible: Accessible }) {
+  return (
+    <p className="mt-2 text-xs text-muted-foreground">
+      <b className="font-semibold tabular-nums text-foreground">{accessible.months.toFixed(1)} months</b> with accessible investments
+    </p>
+  );
+}
+
 function CashAccountsTip({ data, today, cashMinor, grossMinor, cardsOwedMinor }: { data?: Ready; today: string; cashMinor: number; grossMinor: number; cardsOwedMinor: number }) {
   const ledger = data?.ledger;
   const cashAccounts = ledger ? [...ledger.account.values()]
@@ -148,6 +183,8 @@ export function CashBuffer({ buffer, groups, today, data }: { buffer: Ready["buf
   const shown = buffer.state === "ready" ? (sim ? (sim.state === "ready" ? sim.value : null) : buffer.value) : null;
   // The bar runs to 12 months, or further when the goal or the cover itself is beyond that.
   const scaleMax = goal === null ? 12 : Math.max(12, goal, Math.ceil(shown?.months ?? 0));
+  const accessible: Accessible | undefined = shown && shown.monthsWithAccessible !== undefined && buffer.state === "ready" && buffer.value.accessibleAccounts && buffer.value.accessibleAccounts.length > 0
+    ? { months: shown.monthsWithAccessible, accounts: buffer.value.accessibleAccounts, totalMinor: buffer.value.accessibleMinor ?? 0 } : undefined;
   const delta = shown && buffer.state === "ready" && sim ? shown.months - buffer.value.months : null;
 
   return (
@@ -174,14 +211,16 @@ export function CashBuffer({ buffer, groups, today, data }: { buffer: Ready["buf
       ) : buffer.state === "ready" && shown ? (
         <>
           <div className="mt-3 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <p className="text-4xl font-semibold leading-none tracking-tight tabular-nums">{shown.months.toFixed(1)} <span className="text-base font-normal text-muted-foreground">months</span></p>
-              <div className="text-xs text-muted-foreground">
-                <p>of cover: cash &amp; bank less card balances ÷ needed per month</p>
+            <div className="min-w-0 flex-1 basis-56">
+              <p className="flex items-baseline gap-1.5 text-4xl font-semibold leading-none tracking-tight tabular-nums">{shown.months.toFixed(1)} <span className="text-base font-normal text-muted-foreground">months of cover</span>
+                <span className="self-center"><CoverInfo accessible={accessible} today={today} /></span>
+              </p>
+              {accessible && <AccessibleLine accessible={accessible} />}
+              {delta !== null && <div className="mt-1.5 text-xs text-muted-foreground">
                 {delta !== null && <p className={delta > 0 ? "text-green-700 dark:text-green-400" : delta < 0 ? "text-red-700 dark:text-red-400" : undefined}>{delta === 0 ? "Same as" : `${delta > 0 ? "▲ +" : "▼ −"}${Math.abs(delta).toFixed(1)} months against`} the actual {buffer.value.months.toFixed(1)}</p>}
-              </div>
+              </div>}
             </div>
-            <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-right">
+            <div className="ml-auto shrink-0 rounded-md border border-border bg-muted/40 px-4 py-2 text-right">
               <p className="text-xs text-muted-foreground">Cash &amp; bank less card balances</p>
               <p className="text-xl font-semibold leading-tight tabular-nums"><CashAccountsTip data={data} today={today} cashMinor={shown.cashMinor} grossMinor={buffer.value.grossCashMinor} cardsOwedMinor={buffer.value.cardsOwedMinor} /></p>
             </div>
@@ -198,7 +237,6 @@ export function CashBuffer({ buffer, groups, today, data }: { buffer: Ready["buf
             {goal !== null && <span className="pointer-events-none absolute -top-1 h-4 w-0.5 -translate-x-1/2 rounded bg-foreground/70" style={{ left: `${Math.min(100, Math.max(0, (goal / scaleMax) * 100))}%` }} aria-hidden title={`Your goal: ${goal} months`} />}
           </div>
           <div className="relative mt-1 h-4 text-[11px] text-muted-foreground">
-            <span className="absolute left-0">0</span>
             <span className="absolute right-0">{scaleMax} months</span>
           </div>
           {goal !== null && (

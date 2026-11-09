@@ -2,9 +2,8 @@ import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useStagedStore } from "../../../store/staged";
-import type { AccountReportingRecord } from "@/lib/app-db/types";
-import type { AccountReportingChange } from "@/lib/app-db/accountReportingRepository";
-import { chooseSelectOption } from "@/components/ui/select.testing";
+import type { AccountFlagRecord, AccountReportingRecord } from "@/lib/app-db/types";
+import type { AccountFlagChange } from "@/lib/account-class/flags";
 import { AccountsTable } from "./AccountsTable";
 
 jest.mock("next/navigation", () => ({
@@ -22,27 +21,41 @@ jest.mock("../hooks/useAccountGroups", () => ({ useAccountGroups: () => ({ suppo
 jest.mock("../hooks/useClosedAccountActivity", () => ({ useClosedAccountActivity: () => ({ data: new Map() }) }));
 jest.mock("@/hooks/useAllNotes", () => ({ useAllNotes: () => ({ data: undefined }) }));
 
-function fakeServer(options: { failReporting?: boolean } = {}) {
-  const reporting = new Map<string, AccountReportingRecord>();
+function fakeServer(options: { failFlags?: boolean } = {}) {
+  const flags = new Map<string, AccountFlagRecord>();
   global.fetch = jest.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
-    if (String(url).startsWith("/api/account-classes")) {
+    const path = String(url);
+    if (path.startsWith("/api/account-classes")) {
       return { ok: true, json: async () => ({ accountClasses: [
         { budgetSyncId: "budget-1", scope: "account", accountId: "inv", accountClass: "investment", updatedAt: "now" },
         { budgetSyncId: "budget-1", scope: "account", accountId: "prop", accountClass: "property", updatedAt: "now" },
       ] }) };
     }
-    if (init?.method === "PUT") {
-      for (const c of (JSON.parse(String(init.body)) as { changes: AccountReportingChange[] }).changes) {
-        if (c.treatment) reporting.set(c.accountId, { budgetSyncId: "budget-1", accountId: c.accountId, treatment: c.treatment, updatedAt: "now" });
-        else reporting.delete(c.accountId);
+    if (path.startsWith("/api/account-flags")) {
+      if (options.failFlags) return { ok: false, json: async () => ({}) };
+      if (init?.method === "PUT") {
+        for (const c of (JSON.parse(String(init.body)) as { changes: AccountFlagChange[] }).changes) {
+          const key = `${c.scope}:${c.id}:${c.flag}`;
+          if (c.on) flags.set(key, { budgetSyncId: "budget-1", scope: c.scope, targetId: c.id, flag: c.flag, updatedAt: "now" });
+          else flags.delete(key);
+        }
       }
+      return { ok: true, json: async () => ({ accountFlags: [...flags.values()] }) };
     }
-    if (options.failReporting) return { ok: false, json: async () => ({}) };
-    return { ok: true, json: async () => ({ accountReporting: [...reporting.values()] }) };
+    return { ok: true, json: async () => ({ accountReporting: [] as AccountReportingRecord[] }) };
   }) as unknown as typeof fetch;
 }
 
-describe("accounts table Financial Reporting", () => {
+function renderTable() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity, gcTime: Infinity } } });
+  return render(
+    <QueryClientProvider client={client}>
+      <AccountsTable onCreateRule={jest.fn()} onDeleteIntentChange={jest.fn()} onInspectIdChange={jest.fn()} />
+    </QueryClientProvider>
+  );
+}
+
+describe("accounts table Financial Reporting and account settings", () => {
   beforeEach(() => {
     sessionStorage.removeItem("filters:accounts");
     useStagedStore.getState().discardAll();
@@ -53,54 +66,41 @@ describe("accounts table Financial Reporting", () => {
     fakeServer();
   });
 
-  it("highlights an account needing a choice, filters to it, and clears once it is chosen", async () => {
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity, gcTime: Infinity } } });
-    render(
-      <QueryClientProvider client={client}>
-        <AccountsTable onCreateRule={jest.fn()} onDeleteIntentChange={jest.fn()} onInspectIdChange={jest.fn()} />
-      </QueryClientProvider>
-    );
-    // The fixed treatment of a property account (Fixed asset) needs nothing from the user.
+  it("asks for no choice: the fixed labels show as text and nothing is flagged as needing one", async () => {
+    renderTable();
     expect(await screen.findByText("Fixed asset")).toBeInTheDocument();
-    const attention = await screen.findByRole("button", { name: "1 needs a reporting choice" });
+    expect(screen.getAllByText("Investment").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/needs? a reporting choice/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Choose…/)).not.toBeInTheDocument();
+  });
 
-    fireEvent.click(attention);
+  it("leaves an account out of Financial Insights at once, filters to the left-out accounts, and forgets the filter when none are left", async () => {
+    renderTable();
+    await screen.findByText("Fixed asset");
+    fireEvent.click(screen.getByRole("button", { name: "Settings of Brokerage" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /Include in Financial Insights/ }));
+    const leftOut = await screen.findByRole("button", { name: "1 left out of Financial Insights" });
+    expect(screen.getByText("Left out")).toBeInTheDocument();
+
+    fireEvent.click(leftOut);
     expect(screen.queryByText("Flat")).not.toBeInTheDocument();
     expect(screen.getByText("Brokerage")).toBeInTheDocument();
+    await waitFor(() => expect(sessionStorage.getItem("filters:accounts") ?? "").toContain("excluded"));
 
-    const select = screen.getByRole("combobox", { name: "Financial Reporting of Brokerage (choice needed)" });
-    await chooseSelectOption(select, "Current investment");
-    await waitFor(() => expect(screen.queryByText(/needing a reporting choice/)).not.toBeInTheDocument());
-    expect(screen.getByRole("combobox", { name: "Financial Reporting of Brokerage" })).toHaveTextContent("Current investment");
+    // Put it back: the list ends on its own and the stored filter ends with it.
+    fireEvent.click(screen.getByRole("button", { name: "Settings of Brokerage" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /Include in Financial Insights/ }));
+    await waitFor(() => expect(screen.queryByText(/left out of Financial Insights/)).not.toBeInTheDocument());
+    expect(screen.getByText("Flat")).toBeInTheDocument();
+    await waitFor(() => expect(sessionStorage.getItem("filters:accounts") ?? "").not.toContain("excluded"));
   });
 
-  it("forgets the needs-a-choice filter once the list is empty, so a later account does not bring it back unasked", async () => {
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity, gcTime: Infinity } } });
-    render(
-      <QueryClientProvider client={client}>
-        <AccountsTable onCreateRule={jest.fn()} onDeleteIntentChange={jest.fn()} onInspectIdChange={jest.fn()} />
-      </QueryClientProvider>
-    );
-    fireEvent.click(await screen.findByRole("button", { name: "1 needs a reporting choice" }));
-    await waitFor(() => expect(sessionStorage.getItem("filters:accounts") ?? "").toContain("needs-choice"));
-    await chooseSelectOption(screen.getByRole("combobox", { name: "Financial Reporting of Brokerage (choice needed)" }), "Current investment");
-    await waitFor(() => expect(screen.queryByText(/needing a reporting choice/)).not.toBeInTheDocument());
-    await waitFor(() => expect(sessionStorage.getItem("filters:accounts") ?? "").not.toContain("needs-choice"));
-  });
-
-  it("says when the choices could not be loaded, does not flag a choice as missing, and retries", async () => {
-    fakeServer({ failReporting: true });
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity, gcTime: Infinity } } });
-    render(
-      <QueryClientProvider client={client}>
-        <AccountsTable onCreateRule={jest.fn()} onDeleteIntentChange={jest.fn()} onInspectIdChange={jest.fn()} />
-      </QueryClientProvider>
-    );
-    expect(await screen.findByRole("alert")).toHaveTextContent("Financial Reporting choices could not be loaded");
-    expect(screen.queryByRole("combobox", { name: /choice needed/ })).not.toBeInTheDocument();
+  it("says when the settings could not be loaded, and retries", async () => {
+    fakeServer({ failFlags: true });
+    renderTable();
+    expect(await screen.findByRole("alert")).toHaveTextContent("account settings could not be loaded");
     fakeServer();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
-    expect(await screen.findByRole("combobox", { name: /Brokerage \(choice needed\)/ })).toBeInTheDocument();
   });
 });

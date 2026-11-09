@@ -262,7 +262,7 @@ export function DrillSketch() {
 
 /** An account, the class it has and how it counts. */
 export function ReadinessSketch() {
-  const rows: [string, string, string, Tone][] = [["Everyday", "Cash & bank", "Counts as cash", "income"], ["Brokerage", "Investment", "Non-current", "value"], ["Mortgage", "Loan", "Loan liability", "loan"], ["Old card", "Needs a class", "Not set", "warn"]];
+  const rows: [string, string, string, Tone][] = [["Everyday", "Cash & bank", "Counts as cash", "income"], ["Brokerage", "Investment", "Investment", "value"], ["Mortgage", "Loan", "Loan liability", "loan"], ["Old card", "Needs a class", "Not set", "warn"]];
   return (
     <Figure label="Sketch of how each account is understood before any figure appears" wide>
       <div className="grid gap-px overflow-hidden rounded-lg border bg-border text-xs sm:grid-cols-[1fr_1fr_1fr]">

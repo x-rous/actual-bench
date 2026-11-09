@@ -868,6 +868,16 @@ export type CashBufferScenarioRecord = {
   updatedAt: string;
 };
 
+/** A Bench-owned yes/no choice about one Actual account or account group (scoped to one budget). A record means the flag is on. */
+export type AccountFlagRecord = {
+  budgetSyncId: string;
+  scope: "account" | "group";
+  /** Actual account id, or the account group id when scope is "group". */
+  targetId: string;
+  flag: import("@/lib/account-class/flags").AccountFlag;
+  updatedAt: string;
+};
+
 /** A Bench-owned Financial Reporting choice for one Actual account (scoped to one budget). */
 export type AccountReportingRecord = {
   budgetSyncId: string;

@@ -11,7 +11,7 @@ import { InfoTip } from "./InfoTip";
  */
 export function Tile({ label, children, detail, tone, info, delta }: { label: string; children: ReactNode; detail?: ReactNode; tone?: "warning"; /** How the figure is worked out, behind an (i) beside the label. */ info?: ReactNode; /** How it moved against the stretch before (a `Delta`), to the right of the figure. */ delta?: ReactNode }) {
   return (
-    <div className="flex h-[118px] min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-card px-4 py-3">
+    <div className="flex min-h-[118px] min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-card px-4 py-3">
       <p className="flex items-center gap-1 text-xs text-muted-foreground">{label}{info && <InfoTip label={label}>{info}</InfoTip>}</p>
       <div className="mt-0.5 flex min-w-0 items-start justify-between gap-2">
         <div className={cn("min-w-0 text-2xl font-semibold leading-tight tracking-tight tabular-nums", tone === "warning" && "text-amber-700 dark:text-amber-400")}>{typeof children === "string" ? withSmallDecimals(children) : children}</div>

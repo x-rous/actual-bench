@@ -148,6 +148,8 @@ export function SummaryTab({ data, today, accountNames, onDrill }: { data: Ready
   const [hidden, setHidden] = useState<ReadonlySet<ClassKey>>(new Set());
   const [hideLine, setHideLine] = useState(false);
   const kept = statusText(summary.moneyKept, money);
+  // What was paid into loans as principal: not spending, so it is inside Money kept (the cash is gone), and the tile says so.
+  const paidOffLoansMinor = data.debt.principalMinor;
   const months = summary.period.months.length;
   const period = `${summary.period.label}: ${formatDay(summary.period.startDate)} to ${formatDay(summary.period.endDate)}`;
   // The unit of the chart of balances: a quarter or a year is stood for by its last month's balance.
@@ -191,7 +193,7 @@ export function SummaryTab({ data, today, accountNames, onDrill }: { data: Ready
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <Tile label="Net worth" detail={<>Owns {money(summary.assets)} · owes {money(summary.liabilities)}</>}>{money(summary.netWorth.closing)}</Tile>
         <Tile label="Change in net worth" info={<p>Net worth at the end of the period less net worth before it: everything you own less everything you owe, then and now.</p>} detail={<>{growth !== null ? `${growth > 0 ? "+" : ""}${percent(growth)} over ` : "Over "}{months} {months === 1 ? "month" : "months"}</>}>{openingKnown ? signedMoney(summary.netWorth.change) : MISSING}</Tile>
-        <Tile label="Money kept" tone={kept.tone} info={<><p>Money received less money spent in the period. Moving money between your accounts, into investments or into loan principal is not spending. The savings rate is this figure as a share of what you received.</p>{kept.warning && <p className="mt-1">{kept.warning}.</p>}</>}
+        <Tile label="Money kept" tone={kept.tone} info={<><p>Money received less money spent in the period. Moving money between your accounts, into investments or into loan principal is not spending. The savings rate is this figure as a share of what you received.</p>{paidOffLoansMinor > 0 && <p className="mt-1">The {money(paidOffLoansMinor)} you paid toward loan principal is not spending, because it lowers what you owe, so it is not taken off here. The cash is gone all the same. Interest and fees on your loans that Bench can identify (categorized, or charged on a loan tracked in Loans) are spending and are already in Spent. Uncategorized charges on other loans are listed as other entries in loan accounts, not in Spent.</p>}{kept.warning && <p className="mt-1">{kept.warning}.</p>}</>}
           detail={kept.detail ?? (
             <>
               <DrillLink label={`Money received ${money(summary.received)}`} onClick={() => onDrill({ kind: "received" })}>{money(summary.received)}</DrillLink> received − <DrillLink label={`Money spent ${money(summary.spent)}`} onClick={() => onDrill({ kind: "spent" })}>{money(summary.spent)}</DrillLink> spent
@@ -199,8 +201,9 @@ export function SummaryTab({ data, today, accountNames, onDrill }: { data: Ready
             </>)}
           delta={comparison && summary.moneyKept.state === "ready" && <Delta now={comparison.current.kept} before={comparison.previous.kept} label={comparison.label} good="up" />}>{kept.text}</Tile>
         <Tile label="Change in cash" detail="Cash & bank, end less start">{signedMoney(summary.eligibleCash.change)}</Tile>
-        <Tile label="Savings rate" tone={summary.savingsRate.state === "ready" && !summary.savingsRate.warning ? undefined : "warning"} info={summary.savingsRate.state === "ready" && summary.savingsRate.warning ? <p>{summary.savingsRate.warning}.</p> : undefined} delta={summary.savingsRate.state === "ready" && comparison && comparison.current.received > 0 && comparison.previous.received > 0 && <Delta points now={(comparison.current.kept / comparison.current.received) * 100} before={(comparison.previous.kept / comparison.previous.received) * 100} label={comparison.label} good="up" />} detail={summary.savingsRate.state === "ready" ? <>Money kept ÷ money received{summary.savingsRate.warning && <WarningLine />}</> : summary.savingsRate.reason}>{summary.savingsRate.state === "ready" ? percent(summary.savingsRate.value) : "Needs review"}</Tile>
+        <Tile label="Savings rate" tone={summary.savingsRate.state === "ready" && !summary.savingsRate.warning ? undefined : "warning"} info={summary.savingsRate.state === "ready" && (summary.savingsRate.warning || paidOffLoansMinor > 0) ? <>{paidOffLoansMinor > 0 && <p>Paying off loans ({money(paidOffLoansMinor)}) is not spending, so it does not lower this rate, even though that cash is gone.</p>}{summary.savingsRate.warning && <p>{summary.savingsRate.warning}.</p>}</> : undefined} delta={summary.savingsRate.state === "ready" && comparison && comparison.current.received > 0 && comparison.previous.received > 0 && <Delta points now={(comparison.current.kept / comparison.current.received) * 100} before={(comparison.previous.kept / comparison.previous.received) * 100} label={comparison.label} good="up" />} detail={summary.savingsRate.state === "ready" ? <>Money kept ÷ money received{summary.savingsRate.warning && <WarningLine />}</> : summary.savingsRate.reason}>{summary.savingsRate.state === "ready" ? percent(summary.savingsRate.value) : "Needs review"}</Tile>
       </div>
+      {/* Left: what you own, what changed it, where the money went. Right: the cash buffer, then what you own and owe now. */}
       <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,6fr)_minmax(0,5fr)]">
         <ChartFrame
           id="composition" title={`What you own and owe, ${names.one} by ${names.one}`} hint="Select a class in the legend to add or remove it"
@@ -213,9 +216,6 @@ export function SummaryTab({ data, today, accountNames, onDrill }: { data: Ready
           <CompositionChart labels={labels} partialIndex={partialIndex} months={chartMonths} netWorth={chartNetWorth} hasData={chartKnown} hidden={hidden} showNetWorth={!hideLine} unitName={names.one} partialText={summary.period.partial ? "balance today" : "balance at the end of the period"} />
         </ChartFrame>
         <CashBuffer buffer={buffer} groups={bufferSpending} today={today} data={data} />
-      </div>
-      <WhereMoneyWentCard data={data} csvScope={[["Period", period]]} onDrill={onDrill} />
-      <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,6fr)_minmax(0,5fr)]">
         <ChartFrame
           id="net-worth-change"
           title={<span className="flex flex-wrap items-center gap-2">What changed your net worth {netWorthChange.unexplainedMinor === 0 ? <span className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[11px] font-normal text-muted-foreground"><CheckCircle2 className="size-3" aria-hidden />Reconciled</span> : <span className={`inline-flex items-center gap-1 rounded-full border border-amber-500/60 px-2 py-0.5 text-[11px] font-normal ${WARNING}`}><AlertTriangle className="size-3" aria-hidden />{money(Math.abs(netWorthChange.unexplainedMinor))} unexplained</span>}</span>}
@@ -229,16 +229,13 @@ export function SummaryTab({ data, today, accountNames, onDrill }: { data: Ready
         >
           <Waterfall steps={steps} floorMinor={floorMinor} ariaLabel="Components of the change in net worth" canSelect={(s) => stepTarget(s.key) !== null} onSelect={(s) => { const t = stepTarget(s.key); if (t) onDrill(t); }} />
         </ChartFrame>
-        <OwnAndOwe data={data} />
+        <div className="flex min-w-0 xl:row-span-2">
+          <div className="flex min-w-0 flex-1 flex-col [&>*]:flex-1">
+            <OwnAndOwe data={data} />
+          </div>
+        </div>
+        <WhereMoneyWentCard data={data} csvScope={[["Period", period]]} onDrill={onDrill} />
       </div>
-      <details className="rounded-lg border border-border bg-card px-4 py-3 text-xs">
-        <summary className="cursor-pointer font-medium">How money kept, change in cash and change in net worth differ</summary>
-        <dl className="mt-2 grid gap-3 md:grid-cols-3">
-          <div><dt className="font-medium">Money kept <span className="font-normal text-muted-foreground">(income − spending)</span></dt><dd className="text-muted-foreground">What you earned and did not spend. Moving money into investments or paying loan principal is not spending.</dd></div>
-          <div><dt className="font-medium">Change in cash <span className="font-normal text-muted-foreground">(cash &amp; bank, end − start)</span></dt><dd className="text-muted-foreground">How your cash balance moved after investments, card payments, loans and transfers. It can fall even when you kept money.</dd></div>
-          <div><dt className="font-medium">Change in net worth <span className="font-normal text-muted-foreground">(everything owned − owed)</span></dt><dd className="text-muted-foreground">What you kept plus changes in the value of what you own, and anything Bench cannot place (the waterfall above shows each part).</dd></div>
-        </dl>
-      </details>
       <ReviewList rows={review} names={accountNames} />
     </div>
   );

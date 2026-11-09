@@ -21,8 +21,6 @@ import { Waterfall, type WaterfallStep } from "./charts/Waterfall";
 
 type Ready = Extract<FinancialInsightsView["data"], { state: "ready" }>;
 const WARNING = "text-amber-700 dark:text-amber-400";
-/** "Non-current investment" as "Non-current": the column is headed Treatment, and the full label is in the tooltip. */
-const shortTreatment = (label: string) => label.replace(/ (investment|asset|liability)$/i, "");
 /** One colour per line, the same in the bridge and in the monthly chart. */
 const LINE_COLOUR = { funding: "var(--fi-up)", withdrawals: "var(--fi-gap)", activity: "var(--fi-invest)", opened: "var(--fi-g8)", other: "var(--fi-g10)" } as const;
 type Totals = ReturnType<typeof portfolioBridge>["total"];
@@ -89,7 +87,7 @@ export function WealthTab({ data, onDrill }: { data: Ready; onDrill: (target: Dr
     return (
       <tr key={a.accountId} className="border-b border-border/40">
         <th scope="row" className="max-w-56 py-1.5 pr-2 text-left font-normal whitespace-nowrap"><span className="block truncate" title={a.name}>{a.name}</span></th>
-        <td className="pr-2 text-left whitespace-nowrap text-muted-foreground" title={a.treatment}>{shortTreatment(a.treatment)}</td>
+        <td className="pr-2 text-left whitespace-nowrap text-muted-foreground" >{a.treatment}</td>
         <td className={TD}>{money(a.opening)}</td>
         <td className={TD}>{cell(a.funding, { kind: "contributed", accountId: a.accountId }, `${a.name} funding`)}</td>
         <td className={TD}>{cell(a.withdrawals, { kind: "withdrawn", accountId: a.accountId }, `${a.name} withdrawals`)}</td>

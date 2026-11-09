@@ -6,10 +6,10 @@ const accounts: AccountFact[] = [
   { id: "sav", name: "Savings", accountClass: "bank", treatment: null, offBudget: true },
   { id: "fd", name: "Term deposit", accountClass: "bank", treatment: "fixed-deposit", offBudget: true },
   { id: "visa", name: "Visa", accountClass: "credit-card", treatment: null, offBudget: false },
-  { id: "inv", name: "Brokerage", accountClass: "investment", treatment: "non-current-investment", offBudget: true },
+  { id: "inv", name: "Brokerage", accountClass: "investment", treatment: null, offBudget: true },
   { id: "house", name: "House", accountClass: "property", treatment: null, offBudget: true },
-  { id: "pass", name: "Pass-through", accountClass: "other-asset", treatment: "current-asset", offBudget: false },
-  { id: "owed", name: "Owed to me", accountClass: "other-asset", treatment: "current-asset", offBudget: true },
+  { id: "pass", name: "Pass-through", accountClass: "other-asset", treatment: null, offBudget: false },
+  { id: "owed", name: "Owed to me", accountClass: "other-asset", treatment: null, offBudget: true },
   { id: "loan", name: "Mortgage", accountClass: "loan", treatment: null, offBudget: true },
 ];
 const incomeCategories = new Set(["salary"]);
@@ -407,6 +407,28 @@ describe("financial insights: the cash buffer", () => {
     expect(over(6)).toBe(Math.round((3 * 10_000 + 3 * 40_000) / 6));
     expect(over(undefined)).toBe(Math.round((6 * 40_000 + 3 * 10_000) / 9));
     expect(over(2)).toEqual({ state: "unavailable", reason: "Insufficient history: at least three complete months are needed" });
+  });
+
+  it("adds a second figure for accounts set to Accessible money, and leaves the main one cash-based", () => {
+    const inv: AccountFact = { id: "inv", name: "Brokerage", accountClass: "investment", treatment: null, offBudget: true, accessible: true };
+    const idle: AccountFact = { id: "idle", name: "Pension", accountClass: "retirement", treatment: null, offBudget: true };
+    const f = facts(steady, {
+      accounts: [...accounts, inv, idle],
+      startingBalances: [{ month: "2026-04", accountId: "chk", amountMinor: 1_200_000 }, { month: "2026-04", accountId: "inv", amountMinor: 900_000 }, { month: "2026-04", accountId: "idle", amountMinor: 5_000_000 }],
+    });
+    const b = buffer(f);
+    // Cash 12,000.00 over a need of 3,000.00 a month; 9,000.00 more is accessible. The pension, not set, is left out.
+    expect(b).toMatchObject({ state: "ready", value: { cashMinor: 1_200_000, accessibleMinor: 900_000, accessibleAccounts: [{ accountId: "inv", name: "Brokerage", balanceMinor: 900_000 }] } });
+    expect(b.state === "ready" && b.value.months).toBeCloseTo(4, 5);
+    expect(b.state === "ready" && b.value.monthsWithAccessible).toBeCloseTo(7, 5);
+  });
+
+  it("has no accessible figure when no account is set, and ignores a negative balance", () => {
+    const none = buffer(facts(steady, { startingBalances: [{ month: "2026-04", accountId: "chk", amountMinor: 1_200_000 }] }));
+    expect(none.state === "ready" && "monthsWithAccessible" in none.value).toBe(false);
+    const inv: AccountFact = { id: "inv", name: "Brokerage", accountClass: "investment", treatment: null, offBudget: true, accessible: true };
+    const negative = buffer(facts(steady, { accounts: [...accounts, inv], startingBalances: [{ month: "2026-04", accountId: "chk", amountMinor: 1_200_000 }, { month: "2026-04", accountId: "inv", amountMinor: -50_000 }] }));
+    expect(negative).toMatchObject({ state: "ready", value: { accessibleMinor: 0 } });
   });
 
   it("takes the median of an untracked loan's monthly payments when asked, so one lump sum does not lift it", () => {

@@ -88,6 +88,8 @@ export type AdjustedBuffer = {
   /** Spending per month in the scenario, including what no category row holds (loan interest taken out, rounding). */
   spendingMinor: number;
   loans: AdjustedLoan[];
+  /** The months of cover with the accessible accounts counted too, in this scenario; absent when no account is set to "Accessible money". */
+  monthsWithAccessible?: number;
   /** How many categories and loans are left out or have another amount. */
   leftOut: number;
   edited: number;
@@ -116,7 +118,7 @@ export function adjustedBuffer(buffer: CashBuffer, rows: readonly BufferCategory
   const edited =
     rows.filter((r) => !a.excluded.includes(categoryKey(r)) && a.amounts[categoryKey(r)] !== undefined && a.amounts[categoryKey(r)] !== r.avgMinor).length +
     loans.filter((l) => l.included && a.loanAmounts[l.accountId] !== undefined && a.loanAmounts[l.accountId] !== l.typicalMinor).length;
-  return { state: "ready", value: { months: buffer.cashMinor / monthlyNeedMinor, cashMinor: buffer.cashMinor, monthlyNeedMinor, spendingMinor, loans, leftOut, edited } };
+  return { state: "ready", value: { months: buffer.cashMinor / monthlyNeedMinor, cashMinor: buffer.cashMinor, monthlyNeedMinor, spendingMinor, loans, leftOut, edited, ...(buffer.accessibleMinor !== undefined ? { monthsWithAccessible: (buffer.cashMinor + buffer.accessibleMinor) / monthlyNeedMinor } : {}) } };
 }
 
 /** The adjustments without the entries that say nothing (an amount equal to the typical one, an amount for a category left out). */

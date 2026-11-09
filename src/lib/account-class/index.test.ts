@@ -1,6 +1,7 @@
 import {
   ACCOUNT_CLASSES,
   ACCOUNT_CLASS_INFO,
+  accountClassRequiresOnBudget,
   isAccountClass,
   isAccountClassAllowed,
   isLiability,
@@ -19,8 +20,10 @@ describe("account classes", () => {
     expect(ACCOUNT_CLASS_INFO.map((i) => i.value)).toEqual([...ACCOUNT_CLASSES]);
     expect(ACCOUNT_CLASSES).toEqual([
       "cash", "bank", "vehicle", "property", "investment", "retirement", "other-asset",
-      "credit-card", "loan", "other-liability", "excluded",
+      "credit-card", "loan", "other-liability",
     ]);
+    // Excluded is a flag now, not a class.
+    expect(isAccountClass("excluded")).toBe(false);
   });
 
   it("validates class strings", () => {
@@ -37,11 +40,14 @@ describe("account classes", () => {
     expect(isLiability(undefined)).toBe(false);
   });
 
-  it("requires off-budget placement only for vehicle, property, investment, retirement, loan and excluded", () => {
+  it("requires off-budget placement for vehicle, property, investment, retirement and loan, and on-budget placement for a credit card", () => {
     expect(ACCOUNT_CLASSES.filter((t) => !isAccountClassAllowed(t, false)))
-      .toEqual(["vehicle", "property", "investment", "retirement", "loan", "excluded"]);
-    expect(ACCOUNT_CLASSES.every((t) => isAccountClassAllowed(t, true))).toBe(true);
+      .toEqual(["vehicle", "property", "investment", "retirement", "loan"]);
+    expect(ACCOUNT_CLASSES.filter((t) => !isAccountClassAllowed(t, true))).toEqual(["credit-card"]);
+    expect(accountClassRequiresOnBudget("credit-card")).toBe(true);
+    expect(accountClassRequiresOnBudget("bank")).toBe(false);
     expect(isAccountClassAllowed(null, false)).toBe(true);
+    expect(isAccountClassAllowed(null, true)).toBe(true);
   });
 });
 

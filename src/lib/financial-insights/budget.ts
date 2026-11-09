@@ -435,7 +435,7 @@ function reconcile(ledger: Ledger, breakdown: SpendingBreakdown, completed: read
   const uncategorized = total(breakdown.rows.filter((r) => r.id === null));
   const { facts, account } = ledger;
   // Interest and fees lenders charged sit off budget with no category, so Actual never sees them; they are rows of the breakdown, not categories.
-  const loanCharges = total(breakdown.rows.filter((r) => r.special !== undefined));
+  const loanCharges = total(breakdown.rows.filter((r) => r.special === "loanInterest" || r.special === "loanFees"));
   const spendingBy = new Map(breakdown.rows.filter((r) => r.id !== null && r.special === undefined).map((r) => [r.id as string, total([r])] as const));
   let transfers = 0, offBudget = 0;
   // The same parts by category, to find where what is left over sits.

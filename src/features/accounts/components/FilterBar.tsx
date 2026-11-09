@@ -6,15 +6,15 @@ import { SearchInput } from "@/components/ui/search-input";
 import { Select } from "@/components/ui/select";
 import type { SelectOption } from "@/components/ui/select";
 import { NEW_GROUP, NO_GROUP } from "../lib/accountGroups";
-import { UNCLASSIFIED, UNCLASSIFIED_OPTIONS, buildAccountClassGroups } from "./AccountClassCell";
+import { UNCLASSIFIED, UNCLASSIFIED_OPTIONS, buildAccountClassFilterGroups, buildAccountClassGroups } from "./AccountClassCell";
 import type { AccountClass } from "@/lib/account-class";
 import type { GroupBy } from "../lib/accountClusters";
 
 export type StatusFilter = "all" | "open" | "closed";
 export type BudgetFilter = "all" | "on" | "off";
 export type RulesFilter = "all" | "with_rules" | "no_rules";
-/** "needs-choice" keeps only the accounts that still need a Financial Reporting choice. */
-export type ReportingFilter = "all" | "needs-choice";
+/** "excluded" keeps only the accounts left out of Financial Insights. */
+export type ReportingFilter = "all" | "excluded";
 
 /** Group filter value for "any group"; NO_GROUP and group ids are the other values. */
 export const ALL_GROUPS = "all";
@@ -26,7 +26,7 @@ const CLASS_FILTER_OPTIONS = [
   { value: ALL_CLASSES, label: "All classes" },
   ...UNCLASSIFIED_OPTIONS,
 ];
-const CLASS_FILTER_GROUPS = buildAccountClassGroups();
+const CLASS_FILTER_GROUPS = buildAccountClassFilterGroups();
 
 export const STATUS_OPTIONS: { value: StatusFilter; label: string }[] = [
   { value: "all", label: "All" },
@@ -61,12 +61,13 @@ export function FilterBar({
   groupAssignOptions,
   groupAssignmentDisabled,
   selectedHasOnBudgetAccounts,
+  selectedHasOffBudgetAccounts,
   classFilter,
   onClassFilterChange,
   unclassifiedCount,
   reportingFilter,
   onReportingFilterChange,
-  needsChoiceCount,
+  leftOutCount,
   groupBy,
   onGroupByChange,
   groupByOptions,
@@ -95,6 +96,7 @@ export function FilterBar({
   groupAssignOptions?: SelectOption[];
   groupAssignmentDisabled?: boolean;
   selectedHasOnBudgetAccounts?: boolean;
+  selectedHasOffBudgetAccounts?: boolean;
   /** The class filter is shown only when `classFilter` is provided (a budget is open). */
   classFilter?: string;
   onClassFilterChange: (v: string) => void;
@@ -106,11 +108,11 @@ export function FilterBar({
   onBulkSetClass?: (accountClass: AccountClass | null) => void;
   /** Open accounts with no class; shown as a shortcut to the Unclassified filter. */
   unclassifiedCount?: number;
-  /** Shown with the class filter when `needsChoiceCount` is provided (saved choices loaded). */
+  /** Shown with the class filter when `leftOutCount` is provided (saved settings loaded). */
   reportingFilter?: ReportingFilter;
   onReportingFilterChange?: (v: ReportingFilter) => void;
-  /** Accounts whose Financial Reporting choice is still missing. */
-  needsChoiceCount?: number;
+  /** Accounts left out of Financial Insights, by their own setting or their group's. */
+  leftOutCount?: number;
   /** `groupId` is a group id, NO_GROUP-resolved `null`, or NEW_GROUP to open the new-group dialog. */
   onBulkAssignGroup: (groupId: string | null | typeof NEW_GROUP) => void;
   filteredCount: number;
@@ -122,7 +124,7 @@ export function FilterBar({
   onDeselect: () => void;
 }) {
   const hasFilters =
-    search || statusFilter !== "all" || budgetFilter !== "all" || rulesFilter !== "all" || groupFilter !== ALL_GROUPS || (classFilter !== undefined && classFilter !== ALL_CLASSES) || reportingFilter === "needs-choice";
+    search || statusFilter !== "all" || budgetFilter !== "all" || rulesFilter !== "all" || groupFilter !== ALL_GROUPS || (classFilter !== undefined && classFilter !== ALL_CLASSES) || reportingFilter === "excluded";
 
   if (selectedCount > 0) {
     return (
@@ -158,7 +160,7 @@ export function FilterBar({
               placeholder="Set class…"
               aria-label="Set the class of the selected accounts"
               options={UNCLASSIFIED_OPTIONS}
-              groups={buildAccountClassGroups(selectedHasOnBudgetAccounts)}
+              groups={buildAccountClassGroups(selectedHasOnBudgetAccounts, selectedHasOffBudgetAccounts)}
               onValueChange={(next) => onBulkSetClass(next === UNCLASSIFIED ? null : (next as AccountClass))}
             />
           </div>
@@ -222,15 +224,15 @@ export function FilterBar({
               {unclassifiedCount} need{unclassifiedCount === 1 ? "s" : ""} a class
             </button>
           )}
-          {onReportingFilterChange && needsChoiceCount !== undefined && (reportingFilter === "needs-choice" || needsChoiceCount > 0) && (
+          {onReportingFilterChange && leftOutCount !== undefined && (reportingFilter === "excluded" || leftOutCount > 0) && (
             <button
               type="button"
-              onClick={() => onReportingFilterChange(reportingFilter === "needs-choice" ? "all" : "needs-choice")}
-              className="whitespace-nowrap text-xs text-amber-700 underline hover:text-foreground dark:text-amber-400"
+              onClick={() => onReportingFilterChange(reportingFilter === "excluded" ? "all" : "excluded")}
+              className="whitespace-nowrap text-xs text-muted-foreground underline hover:text-foreground"
             >
-              {reportingFilter === "needs-choice"
-                ? `Showing ${needsChoiceCount} needing a reporting choice · show all`
-                : `${needsChoiceCount} need${needsChoiceCount === 1 ? "s" : ""} a reporting choice`}
+              {reportingFilter === "excluded"
+                ? `Showing ${leftOutCount} left out of Financial Insights · show all`
+                : `${leftOutCount} left out of Financial Insights`}
             </button>
           )}
         </div>

@@ -16,9 +16,9 @@ describe("account reporting repository", () => {
 
   it("sets, replaces and removes a choice", () => {
     const db = tempDb();
-    applyAccountReportingChanges(db, { budgetSyncId: "b1", changes: [{ accountId: "a1", treatment: "current-investment" }] });
-    applyAccountReportingChanges(db, { budgetSyncId: "b1", changes: [{ accountId: "a1", treatment: "non-current-investment" }] });
-    expect(listAccountReporting(db, "b1").map((r) => [r.accountId, r.treatment])).toEqual([["a1", "non-current-investment"]]);
+    applyAccountReportingChanges(db, { budgetSyncId: "b1", changes: [{ accountId: "a1", treatment: "fixed-asset" }] });
+    applyAccountReportingChanges(db, { budgetSyncId: "b1", changes: [{ accountId: "a1", treatment: "fixed-deposit" }] });
+    expect(listAccountReporting(db, "b1").map((r) => [r.accountId, r.treatment])).toEqual([["a1", "fixed-deposit"]]);
 
     applyAccountReportingChanges(db, { budgetSyncId: "b1", changes: [{ accountId: "a1", treatment: null }] });
     expect(listAccountReporting(db, "b1")).toEqual([]);
@@ -26,17 +26,19 @@ describe("account reporting repository", () => {
 
   it("scopes choices to one budget", () => {
     const db = tempDb();
-    applyAccountReportingChanges(db, { budgetSyncId: "b1", changes: [{ accountId: "a1", treatment: "non-current-asset" }] });
-    applyAccountReportingChanges(db, { budgetSyncId: "b2", changes: [{ accountId: "a1", treatment: "current-asset" }] });
-    expect(listAccountReporting(db, "b1")[0].treatment).toBe("non-current-asset");
-    expect(listAccountReporting(db, "b2")[0].treatment).toBe("current-asset");
+    applyAccountReportingChanges(db, { budgetSyncId: "b1", changes: [{ accountId: "a1", treatment: "fixed-asset" }] });
+    applyAccountReportingChanges(db, { budgetSyncId: "b2", changes: [{ accountId: "a1", treatment: "fixed-deposit" }] });
+    expect(listAccountReporting(db, "b1")[0].treatment).toBe("fixed-asset");
+    expect(listAccountReporting(db, "b2")[0].treatment).toBe("fixed-deposit");
   });
 
   it("rejects bad input without writing anything", () => {
     const db = tempDb();
     expect(() => applyAccountReportingChanges(db, { budgetSyncId: "b1", changes: [
-      { accountId: "a1", treatment: "current-asset" }, { accountId: "a2", treatment: "cash" },
+      { accountId: "a1", treatment: "fixed-asset" }, { accountId: "a2", treatment: "cash" },
     ] })).toThrow(AppDbValidationError);
+    // The current / non-current values are retired.
+    expect(() => applyAccountReportingChanges(db, { budgetSyncId: "b1", changes: [{ accountId: "a1", treatment: "current-asset" }] })).toThrow(AppDbValidationError);
     expect(listAccountReporting(db, "b1")).toEqual([]);
     expect(() => applyAccountReportingChanges(db, { budgetSyncId: "", changes: [] })).toThrow(AppDbValidationError);
     expect(() => applyAccountReportingChanges(db, { budgetSyncId: "b1", changes: [
@@ -55,7 +57,7 @@ describe("account reporting repository", () => {
 
   it("skips a treatment this build does not know, including the retired not-cash name", () => {
     const db = tempDb();
-    db.prepare("INSERT INTO account_reporting (budget_sync_id, account_id, treatment, updated_at) VALUES ('b1','a1','future-value','x'), ('b1','a2','not-cash','x')").run();
+    db.prepare("INSERT INTO account_reporting (budget_sync_id, account_id, treatment, updated_at) VALUES ('b1','a1','future-value','x'), ('b1','a2','not-cash','x'), ('b1','a3','non-current-asset','x')").run();
     expect(listAccountReporting(db, "b1")).toEqual([]);
   });
 });

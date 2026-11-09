@@ -11,12 +11,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { accountClassLabel, isAccountClassAllowed, planGroupAccountClass, type AccountClass, type GroupAccountClassPlan } from "@/lib/account-class";
+import { accountClassLabel, isAccountClassAllowedForSet, planGroupAccountClass, type AccountClass, type GroupAccountClassPlan } from "@/lib/account-class";
 import { useStagedStore } from "@/store/staged";
 import { useAccountGroupActions } from "../hooks/useAccountGroupActions";
 import { useAccountClasses } from "../hooks/useAccountClasses";
+import { useAccountFlags } from "../hooks/useAccountFlags";
 import { UNCLASSIFIED, UNCLASSIFIED_OPTIONS, buildAccountClassGroups } from "./AccountClassCell";
 import { GROUP_NAME_MAX, groupMemberCounts, liveGroups, validateGroupName } from "../lib/accountGroups";
 
@@ -66,13 +68,22 @@ function GroupsDialogBody({
     plan: GroupAccountClassPlan;
   } | null>(null);
 
-  function groupHasOnBudgetAccounts(groupId: string) {
-    return Object.values(stagedAccounts).some((entry) => !entry.isDeleted && entry.entity.groupId === groupId && !entry.entity.offBudget);
+  // "Include in Financial Insights" is Bench-owned too, so it applies at once. It can be turned off for a group whose accounts are all off budget.
+  const accountFlags = useAccountFlags();
+
+  function groupPlacements(groupId: string) {
+    const members = Object.values(stagedAccounts).filter((entry) => !entry.isDeleted && entry.entity.groupId === groupId);
+    return { onBudget: members.some((entry) => !entry.entity.offBudget), offBudget: members.some((entry) => entry.entity.offBudget) };
+  }
+
+  // Who belongs to the group in Actual (not in the draft). A group with a saved on-budget member cannot be left out, even if the draft moves that member.
+  function savedOnBudgetMember(groupId: string) {
+    return Object.values(stagedAccounts).some((entry) => !entry.isNew && entry.original?.groupId === groupId && !entry.original.offBudget);
   }
 
   function requestGroupClass(groupId: string, next: string, confirmed = false) {
     const accountClass = next === UNCLASSIFIED ? null : (next as AccountClass);
-    if (!accountClasses.available || !isAccountClassAllowed(accountClass, !groupHasOnBudgetAccounts(groupId))) {
+    if (!accountClasses.available || !isAccountClassAllowedForSet(accountClass, groupPlacements(groupId))) {
       setPendingClass(null);
       return;
     }
@@ -188,6 +199,7 @@ function GroupsDialogBody({
                 const isEditing = editingId === group.id;
                 const memberCount = counts.get(group.id) ?? 0;
                 const isNew = stagedGroups[group.id]?.isNew;
+                const groupExcluded = accountFlags.maps.groups.has(group.id);
                 const saveError = stagedGroups[group.id]?.saveError;
                 return (
                   <li key={group.id} className="flex flex-col gap-1 px-3 py-1.5">
@@ -243,10 +255,21 @@ function GroupsDialogBody({
                                 aria-label={`Account class of group ${group.name}`}
                                 value={accountClasses.maps.groups.get(group.id) ?? UNCLASSIFIED}
                                 options={UNCLASSIFIED_OPTIONS}
-                                groups={buildAccountClassGroups(groupHasOnBudgetAccounts(group.id))}
+                                groups={buildAccountClassGroups(groupPlacements(group.id).onBudget, groupPlacements(group.id).offBudget)}
                                 onValueChange={(next) => requestGroupClass(group.id, next)}
                               />
                             </div>
+                          )}
+                          {accountClasses.enabled && (groupExcluded || !groupPlacements(group.id).onBudget) && (
+                            <label className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground" title={isNew ? "Save the group before changing this" : "Turn off to leave every account in this group out of Financial Insights"}>
+                              <Checkbox
+                                checked={!groupExcluded}
+                                disabled={!accountFlags.available || !!isNew || (!groupExcluded && savedOnBudgetMember(group.id))}
+                                aria-label={`Include group ${group.name} in Financial Insights`}
+                                onCheckedChange={(on) => accountFlags.apply([{ scope: "group", id: group.id, flag: "excluded", on: !on }])}
+                              />
+                              Include in Insights
+                            </label>
                           )}
                           <Button
                             size="icon-xs"

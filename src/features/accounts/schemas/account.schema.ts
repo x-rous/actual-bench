@@ -16,9 +16,10 @@ export const accountFormSchema = z.object({
   initialBalance: z.number().optional(),
   groupId: z.string().min(1).nullable().optional(),
   accountClass: z.enum(ACCOUNT_CLASSES).nullable().optional(),
-}).refine((values) => isAccountClassAllowed(values.accountClass, values.offBudget), {
-  path: ["accountClass"],
-  message: "Off-budget accounts only",
+}).superRefine((values, ctx) => {
+  if (!isAccountClassAllowed(values.accountClass, values.offBudget)) {
+    ctx.addIssue({ code: "custom", path: ["accountClass"], message: values.offBudget ? "On-budget accounts only" : "Off-budget accounts only" });
+  }
 });
 
 export type AccountFormValues = z.infer<typeof accountFormSchema>;

@@ -8,7 +8,7 @@ import { TipProvider } from "./charts/Tip";
 
 
 const chk: AccountFact = { id: "chk", name: "Checking", accountClass: "bank", treatment: null, offBudget: false };
-const inv: AccountFact = { id: "inv", name: "Brokerage", accountClass: "investment", treatment: "non-current-investment", offBudget: true };
+const inv: AccountFact = { id: "inv", name: "Brokerage", accountClass: "investment", treatment: null, offBudget: true };
 const house: AccountFact = { id: "house", name: "House", accountClass: "property", treatment: null, offBudget: true };
 const row = (month: string, accountId: string, amountMinor: number, extra: Partial<MovementRow> = {}): MovementRow => ({ month, accountId, categoryId: null, transferAccountId: null, amountMinor, count: 1, ...extra });
 
@@ -38,7 +38,7 @@ describe("Investments tab states", () => {
   });
 
   it("shows each account's share of the portfolio only when there is more than one account", () => {
-    const second: AccountFact = { id: "inv2", name: "Pension", accountClass: "retirement", treatment: "non-current-investment", offBudget: true };
+    const second: AccountFact = { id: "inv2", name: "Pension", accountClass: "retirement", treatment: null, offBudget: true };
     const { unmount } = show(data([chk, inv], funded));
     expect(screen.queryByRole("columnheader", { name: "Share" })).not.toBeInTheDocument();
     unmount();

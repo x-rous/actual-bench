@@ -12,13 +12,13 @@ const accounts: AccountFact[] = [
   { id: "fd", name: "Deposit", accountClass: "bank", treatment: "fixed-deposit", offBudget: true },
   { id: "car", name: "Car", accountClass: "vehicle", treatment: null, offBudget: true },
   { id: "home", name: "Home", accountClass: "property", treatment: null, offBudget: true },
-  { id: "inv", name: "Broker", accountClass: "investment", treatment: "current-investment", offBudget: true },
+  { id: "inv", name: "Broker", accountClass: "investment", treatment: null, offBudget: true },
   { id: "ret", name: "Retirement", accountClass: "retirement", treatment: null, offBudget: true },
-  { id: "other", name: "Receivable", accountClass: "other-asset", treatment: "current-asset", offBudget: true },
+  { id: "other", name: "Receivable", accountClass: "other-asset", treatment: null, offBudget: true },
   { id: "fixed", name: "Collectible", accountClass: "other-asset", treatment: "fixed-asset", offBudget: true },
   { id: "card", name: "Card", accountClass: "credit-card", treatment: null, offBudget: false },
   { id: "loan", name: "Loan", accountClass: "loan", treatment: null, offBudget: true },
-  { id: "liability", name: "Payable", accountClass: "other-liability", treatment: "current-liability", offBudget: true },
+  { id: "liability", name: "Payable", accountClass: "other-liability", treatment: null, offBudget: true },
 ];
 const categories = new Map<string, CategoryInfo>([
   ["salary", { id: "salary", name: "Salary", groupName: "Income", hidden: false, isIncome: true, order: 1 }],
@@ -301,5 +301,18 @@ describe("recorded financial statements", () => {
       const { model } = fixture([salary, ...transfer("repay", "bank", "loan", 12_000)]);
       expect(model.unresolved.find((r) => r.key === "loan-allocation")?.amountMinor).toBe(-12_000);
     });
+  });
+
+  it("counts uncategorized money in as income in an off-budget bank account set to count it, as Received does, and reconciles", () => {
+    const flagged = accounts.map((a) => (a.id === "saving" ? { ...a, closed: false, offBudgetIncome: true } : a));
+    const entries = [entry("interest-in", "saving", 4_000), entry("fee-out", "saving", -500)];
+    // The read returns one cell per account and month, holding both signs.
+    const cell = { month: "2026-09", accountId: "saving", categoryId: null, transferAccountId: null, amountMinor: 3_500, count: 2 };
+    const { model, ledger } = fixture(entries, { accounts: flagged, movement: [cell], uncategorizedIn: [{ month: "2026-09", accountId: "saving", amountMinor: 4_000, count: 1 }] });
+    expect(model.pnl.incomeMinor).toBe(4_000);
+    expect(summarize(ledger, period, { unavailableReason: null, rowCount: 0, amountMinor: 0 }).received).toBe(4_000);
+    expect(model.unresolved.find((r) => r.key === "uncategorized")?.amountMinor).toBe(-500);
+    expect(model.cash.differenceMinor).toBe(0);
+    expect(sumBridge(model)).toBe(model.cash.changeMinor);
   });
 });

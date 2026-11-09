@@ -123,7 +123,7 @@ describe("offered tabs for property", () => {
     expect(names([chk, { ...house, accountClass: "investment" }])).toContain("wealth");
   });
   it("does not count a current or non-current Other Asset as a property or asset account", () => {
-    const owed: AccountFact = { id: "owed", name: "Owed to me", accountClass: "other-asset", treatment: "current-asset", offBudget: true };
+    const owed: AccountFact = { id: "owed", name: "Owed to me", accountClass: "other-asset", treatment: null, offBudget: true };
     const gold: AccountFact = { id: "gold", name: "Gold", accountClass: "other-asset", treatment: "fixed-asset", offBudget: true };
     expect(names([chk, owed])).not.toContain("property");
     expect(names([chk, gold])).toContain("property");

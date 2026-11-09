@@ -98,7 +98,7 @@ it("offers retry without rendering a partial statement when evidence fails", () 
 it("shows the balance sheet as a period-end snapshot and exports its account balances", () => {
   render(<StatementsTab data={data} onDrill={jest.fn()} />);
   const sheet = screen.getByRole("region", { name: "Balance Sheet" });
-  const group = within(sheet).getByRole("button", { name: /Current assets/ });
+  const group = within(sheet).getByRole("button", { name: /Cash & bank/ });
   expect(group).toHaveAttribute("aria-expanded", "true");
   const accountGroup = within(sheet).getByRole("button", { name: /No Group/ });
   expect(accountGroup).toHaveAttribute("aria-expanded", "false");
@@ -114,8 +114,10 @@ it("shows the balance sheet as a period-end snapshot and exports its account bal
   expect(group).toHaveAttribute("aria-expanded", "true");
   expect(within(sheet).getByRole("rowheader", { name: "Checking" })).toBeVisible();
   expect(within(sheet).getByText(/calculated as assets less liabilities/)).toBeInTheDocument();
+  // Grouped by class, as What you own and owe is: nothing says current or non-current.
+  expect(sheet.textContent ?? "").not.toMatch(/non-current|Current assets|Current liabilities/i);
   fireEvent.click(within(sheet).getByRole("button", { name: "Export Balance Sheet as CSV" }));
-  expect(downloadCsv).toHaveBeenCalledWith("financial-insights-balance-sheet.csv", expect.arrayContaining([["Current assets", "No Group", "Checking", "Cash & cash equivalents", "123.45"], ["Totals", "", "Net worth", "", "123.45"]]));
+  expect(downloadCsv).toHaveBeenCalledWith("financial-insights-balance-sheet.csv", expect.arrayContaining([["Cash & bank", "No Group", "Checking", "Cash & cash equivalents", "123.45"], ["Totals", "", "Net worth", "", "123.45"]]));
 });
 
 it("expands and collapses all P&L category groups without changing the balance sheet", () => {

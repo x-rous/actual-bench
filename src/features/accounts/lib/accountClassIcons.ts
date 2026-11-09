@@ -2,7 +2,6 @@ import {
   Car,
   CircleDashed,
   CircleDollarSign,
-  EyeOff,
   CreditCard,
   FileText,
   Gem,
@@ -27,7 +26,6 @@ export const ACCOUNT_CLASS_ICONS: Record<AccountClass, LucideIcon> = {
   "credit-card": CreditCard,
   loan: CircleDollarSign,
   "other-liability": FileText,
-  excluded: EyeOff,
 };
 
 export const UNCLASSIFIED_ICON: LucideIcon = CircleDashed;
