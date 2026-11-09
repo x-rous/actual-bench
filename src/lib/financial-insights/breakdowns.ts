@@ -270,7 +270,7 @@ export function cashBridgeLines(summary: Summary): CashBridgeLines {
 
 export type MoneyFlowKey =
   | "received" | "borrowed" | "moreOwedCards" | "withdrawn" | "released" | "fromCash" | "addedToLoans" | "refunds" | "otherIn"
-  | "spent" | "debtRepaid" | "borrowingPaidBack" | "invested" | "depositsAndAssets" | "cardsPaid" | "cash" | "otherOut";
+  | "incomeReversed" | "spent" | "debtRepaid" | "borrowingPaidBack" | "invested" | "depositsAndAssets" | "cardsPaid" | "cash" | "otherOut";
 /** One line of the money-in or money-out list. `amountMinor` is always positive (integer minor units): which side it is on says which way the money moved. */
 export type MoneyFlowLine = { key: MoneyFlowKey; label: string; amountMinor: number };
 
@@ -295,8 +295,9 @@ export function moneyInOut(summary: Summary, debt: DebtRepayments): { receivedMi
   ];
   const other = summary.received - figures.reduce((sum, f) => sum + f.amountMinor, 0);
   figures.push({ amountMinor: other, use: ["otherOut", "Other (not explained)"], source: ["otherIn", "Other (not explained)"] });
-  const sources: MoneyFlowLine[] = [{ key: "received", label: "Received", amountMinor: summary.received }];
-  const uses: MoneyFlowLine[] = [];
+  // Money in starts with what was received. If income reversals exceeded income, the net is money going back out instead.
+  const sources: MoneyFlowLine[] = summary.received >= 0 ? [{ key: "received", label: "Received", amountMinor: summary.received }] : [];
+  const uses: MoneyFlowLine[] = summary.received < 0 ? [{ key: "incomeReversed", label: "Income paid back (net)", amountMinor: 0 - summary.received }] : [];
   for (const f of figures) {
     if (f.amountMinor > 0) uses.push({ key: f.use[0], label: f.use[1], amountMinor: f.amountMinor });
     else if (f.amountMinor < 0) sources.push({ key: f.source[0], label: f.source[1], amountMinor: 0 - f.amountMinor });

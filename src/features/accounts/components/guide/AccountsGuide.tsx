@@ -95,7 +95,7 @@ export function AccountsGuide({ section, onSection, onClose, docsUrl }: { sectio
         <Heading>Common questions</Heading>
         <Example caption="Questions" head={["Question", "Answer"]} rows={[
           ["Can I change a class later?", "Yes. Figures that use it update the next time you open the page."],
-          ["Why can’t I pick Investment for an on-budget account?", "Investment, Retirement, Property, Vehicle and Loan are off-budget only (Credit Card is on-budget only). Move the account off budget first, or choose a class that works on budget."],
+          ["Why can’t I pick Investment for an on-budget account?", "Investment, Retirement, Property, Vehicle and Loan are off-budget only (Credit Card is on-budget only). Choose a class that works on budget."],
           ["Why is the Financial Reporting cell just text?", "The class already decides it, so there is nothing to choose."],
           ["Is a savings account cash?", "Yes, as a Bank account, unless you mark it a fixed / restricted deposit."],
           ["Where are my choices kept?", "In Bench’s own database for this budget, not in your budget file."],

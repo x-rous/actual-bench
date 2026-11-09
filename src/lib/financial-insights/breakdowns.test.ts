@@ -586,6 +586,16 @@ describe("financial insights: a lender that charges interest to the loan account
     expect(flow.totalMinor).toBe(520_000);
   });
 
+  it("moneyInOut: income reversed beyond income is money out, so no line is negative and both sides still total the same", () => {
+    const { summary, debt } = figures(model([tx("pay", "2026-10-01", "chk", 500_000, { category: "salary" })]), true);
+    const flow = moneyInOut({ ...summary, received: -30_000 }, debt);
+    const sum = (lines: { amountMinor: number }[]) => lines.reduce((x, l) => x + l.amountMinor, 0);
+    expect(flow.sources.find((l) => l.key === "received")).toBeUndefined();
+    expect(flow.uses.find((l) => l.key === "incomeReversed")?.amountMinor).toBe(30_000);
+    expect([...flow.sources, ...flow.uses].every((l) => l.amountMinor > 0)).toBe(true);
+    expect(sum(flow.sources)).toBe(sum(flow.uses));
+  });
+
   it("moneyInOut: borrowing and money drawn from cash are money in; principal paid off is money out, not spending", () => {
     // 5,000.00 received, 1,200.00 paid to the mortgage, 1,000.00 spent; cash fell because more went out than came in.
     const { summary, debt } = figures(model(lender, [charge]), true);

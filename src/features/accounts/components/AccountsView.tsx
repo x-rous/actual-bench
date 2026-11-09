@@ -24,6 +24,7 @@ import type { AccountDeleteIntent } from "./AccountsTableOverlays";
 import { liveGroups } from "../lib/accountGroups";
 import { useAccountGroupActions } from "../hooks/useAccountGroupActions";
 import { useAccountClasses } from "../hooks/useAccountClasses";
+import { useAccountFlags } from "../hooks/useAccountFlags";
 import { effectiveAccountClasses } from "../lib/accountClasses";
 import { accountClassLabel, isAccountClassAllowed } from "@/lib/account-class";
 import { FEATURES } from "@/lib/features/catalogue";
@@ -54,6 +55,7 @@ export function AccountsView() {
   const { supported: groupsSupported } = useAccountGroups();
   const { createGroup } = useAccountGroupActions();
   const accountClasses = useAccountClasses();
+  const accountFlags = useAccountFlags();
 
   const staged = useStagedStore((s) => s.accounts);
   const stagedGroups = useStagedStore((s) => s.accountGroups);
@@ -297,6 +299,7 @@ export function AccountsView() {
         onSubmit={handleCreateAccount}
         groups={groupsSupported ? liveGroups(stagedGroups) : undefined}
         groupClasses={accountClasses.maps.groups}
+        excludedGroups={accountFlags.maps.groups}
         groupsReady={!accountClasses.enabled || accountClasses.available}
       />
 

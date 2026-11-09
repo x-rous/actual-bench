@@ -56,3 +56,12 @@ describe("account flags", () => {
     expect(hasFlag("accessible", "b", "investment", true, null, m)).toBe(false);
   });
 });
+
+describe("isExcluded when the class comes from the group", () => {
+  const maps = { accounts: new Map([["excluded" as const, new Set(["a"])]]), groups: new Set(["g"]) };
+  it("ignores the account's own flag but not the group's", () => {
+    expect(isExcluded("a", "x", maps)).toBe(true);
+    expect(isExcluded("a", "x", maps, true)).toBe(false);
+    expect(isExcluded("a", "g", maps, true)).toBe(true);
+  });
+});

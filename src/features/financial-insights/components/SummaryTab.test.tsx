@@ -82,7 +82,7 @@ describe("the Money kept tile and loans", () => {
   it("says how much of what was kept went to paying off loans, since that is not spending", () => {
     // 5,000.00 received, 1,200.00 paid to the mortgage.
     show([chk, loan], [row("2026-09", "chk", 500_000), row("2026-09", "chk", -120_000, { transferAccountId: "loan" }), row("2026-09", "loan", 120_000, { transferAccountId: "chk" })]);
-    expect(screen.getByText("Includes 1,200.00 paid off loans")).toBeInTheDocument();
+    expect(screen.getByText("1,200.00 paid off loans is not spending")).toBeInTheDocument();
   });
 
   it("says nothing about loans when none was paid", () => {

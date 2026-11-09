@@ -76,6 +76,11 @@ function GroupsDialogBody({
     return { onBudget: members.some((entry) => !entry.entity.offBudget), offBudget: members.some((entry) => entry.entity.offBudget) };
   }
 
+  // Who belongs to the group in Actual (not in the draft). A group with a saved on-budget member cannot be left out, even if the draft moves that member.
+  function savedOnBudgetMember(groupId: string) {
+    return Object.values(stagedAccounts).some((entry) => !entry.isNew && entry.original?.groupId === groupId && !entry.original.offBudget);
+  }
+
   function requestGroupClass(groupId: string, next: string, confirmed = false) {
     const accountClass = next === UNCLASSIFIED ? null : (next as AccountClass);
     if (!accountClasses.available || !isAccountClassAllowedForSet(accountClass, groupPlacements(groupId))) {
@@ -259,7 +264,7 @@ function GroupsDialogBody({
                             <label className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground" title={isNew ? "Save the group before changing this" : "Turn off to leave every account in this group out of Financial Insights"}>
                               <Checkbox
                                 checked={!groupExcluded}
-                                disabled={!accountFlags.available || !!isNew}
+                                disabled={!accountFlags.available || !!isNew || (!groupExcluded && savedOnBudgetMember(group.id))}
                                 aria-label={`Include group ${group.name} in Financial Insights`}
                                 onCheckedChange={(on) => accountFlags.apply([{ scope: "group", id: group.id, flag: "excluded", on: !on }])}
                               />

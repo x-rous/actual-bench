@@ -11,18 +11,21 @@ export function buildGroupOptions(
   groups: AccountGroup[],
   groupClasses?: ReadonlyMap<string, AccountClass>,
   hasOnBudgetAccounts = false,
-  hasOffBudgetAccounts = !hasOnBudgetAccounts
+  hasOffBudgetAccounts = !hasOnBudgetAccounts,
+  excludedGroups?: ReadonlySet<string>
 ) {
   return [
     { value: NO_GROUP, label: "No group" },
     ...groups.map((g) => {
       const groupClass = groupClasses?.get(g.id);
-      const disabled = !isAccountClassAllowedForSet(groupClass, { onBudget: hasOnBudgetAccounts, offBudget: hasOffBudgetAccounts });
+      // A group left out of Financial Insights cannot take an on-budget account: it would be left out too, and Financial Insights needs every on-budget account.
+      const leftOut = !!excludedGroups?.has(g.id) && hasOnBudgetAccounts;
+      const disabled = leftOut || !isAccountClassAllowedForSet(groupClass, { onBudget: hasOnBudgetAccounts, offBudget: hasOffBudgetAccounts });
       return {
         value: g.id,
         disabled,
         label: disabled
-          ? <span className="flex flex-col gap-0.5"><span>{g.name}</span><span className="text-[10px] text-muted-foreground">{accountClassRequiresOnBudget(groupClass) ? "Requires on-budget accounts" : "Requires off-budget accounts"}</span></span>
+          ? <span className="flex flex-col gap-0.5"><span>{g.name}</span><span className="text-[10px] text-muted-foreground">{leftOut ? "Left out of Financial Insights" : accountClassRequiresOnBudget(groupClass) ? "Requires on-budget accounts" : "Requires off-budget accounts"}</span></span>
           : g.name,
       };
     }),
@@ -37,6 +40,7 @@ export const AccountGroupCell = React.memo(
     groupId,
     groups,
     groupClasses,
+    excludedGroups,
     offBudget,
     disabled,
     onAssign,
@@ -47,6 +51,7 @@ export const AccountGroupCell = React.memo(
     groupId: string | null | undefined;
     groups: AccountGroup[];
     groupClasses?: ReadonlyMap<string, AccountClass>;
+    excludedGroups?: ReadonlySet<string>;
     offBudget: boolean;
     disabled: boolean;
     onAssign: (accountId: string, groupId: string | null) => void;
@@ -54,7 +59,7 @@ export const AccountGroupCell = React.memo(
   }) {
     const [isEditing, setIsEditing] = useState(false);
     const label = groupLabel(groupId, groups);
-    const options = useMemo(() => buildGroupOptions(groups, groupClasses, !offBudget), [groups, groupClasses, offBudget]);
+    const options = useMemo(() => buildGroupOptions(groups, groupClasses, !offBudget, offBudget, excludedGroups), [groups, groupClasses, excludedGroups, offBudget]);
     const current = groupId && groups.some((g) => g.id === groupId) ? groupId : NO_GROUP;
 
     if (disabled) {
@@ -87,6 +92,7 @@ export const AccountGroupCell = React.memo(
         }}
         onValueChange={(next) => {
           if (!isAccountClassAllowed(groupClasses?.get(next), offBudget)) return;
+          if (!offBudget && excludedGroups?.has(next)) return;
           setIsEditing(false);
           if (next === NEW_GROUP) onRequestNewGroup(accountId);
           else if (next === NO_GROUP) onAssign(accountId, null);

@@ -34,9 +34,9 @@ export function GateScreen({ gate, onCheckAgain }: { gate: Exclude<Gate, { state
       </p>
       <ul className="mt-4 divide-y divide-border rounded-lg border border-border" aria-label="Accounts that need attention">
         {gate.rows.map((row) => (
-          <li key={row.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
-            <span className="truncate font-medium">{row.name}</span>
-            <span className="flex min-w-0 shrink-0 flex-col items-end gap-0.5 text-right text-xs text-amber-700 dark:text-amber-400">
+          <li key={row.id} className="flex flex-col gap-1 px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+            <span className="min-w-0 break-words font-medium">{row.name}</span>
+            <span className="flex min-w-0 flex-col gap-0.5 text-xs text-amber-700 sm:max-w-[55%] sm:items-end sm:text-right dark:text-amber-400">
               <span className="flex items-center gap-1.5"><AlertTriangle className="size-3.5" aria-hidden />{REASON[row.status]}</span>
               {row.detail && <span className="max-w-md text-muted-foreground">{row.detail}</span>}
             </span>

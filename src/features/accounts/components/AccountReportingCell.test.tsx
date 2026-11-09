@@ -41,6 +41,14 @@ describe("account reporting cell", () => {
     expect(onChangeTreatment).toHaveBeenLastCalledWith("a1", null);
   });
 
+  it("keeps the include setting reachable for a saved exclusion on an account that is on budget now", () => {
+    const onChangeFlag = jest.fn();
+    render(<AccountReportingCell {...base} accountClass="bank" offBudget={false} flags={{ ...flags, excluded: true }} onChangeFlag={onChangeFlag} />);
+    fireEvent.click(screen.getByRole("button", { name: "Settings of Brokerage" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /Include in Financial Insights/ }));
+    expect(onChangeFlag).toHaveBeenCalledWith("a1", "excluded", false);
+  });
+
   it("makes an Other Asset a holding, accessible money or a fixed asset, and never the last two together", async () => {
     const onChangeTreatment = jest.fn();
     const onChangeFlag = jest.fn();
@@ -57,7 +65,8 @@ describe("account reporting cell", () => {
     expect(select()).toHaveTextContent("Accessible money");
     await chooseSelectOption(select(), "Fixed asset");
     expect(onChangeTreatment).toHaveBeenCalledWith("a1", "fixed-asset");
-    expect(onChangeFlag).toHaveBeenCalledWith("a1", "accessible", false);
+    // A fixed asset wins over the saved flag, so choosing it is one write.
+    expect(onChangeFlag).not.toHaveBeenCalled();
 
     // From a fixed asset back to a holding: the treatment is cleared.
     onChangeTreatment.mockClear(); onChangeFlag.mockClear();

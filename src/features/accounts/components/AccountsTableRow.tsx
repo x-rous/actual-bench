@@ -42,6 +42,7 @@ type AccountsTableRowProps = {
   /** Live groups, or undefined when the server has no account groups (the Group column is hidden). */
   groups?: AccountGroup[];
   groupClasses?: ReadonlyMap<string, AccountClass>;
+  excludedGroups?: ReadonlySet<string>;
   canAssignGroups: boolean;
   onAssignGroup: (accountId: string, groupId: string | null) => void;
   onRequestNewGroup: (accountId: string) => void;
@@ -136,6 +137,7 @@ function AccountsTableRowComponent({
   ruleCount,
   groups,
   groupClasses,
+  excludedGroups,
   canAssignGroups,
   onAssignGroup,
   onRequestNewGroup,
@@ -270,6 +272,7 @@ function AccountsTableRowComponent({
             groupId={entity.groupId}
             groups={groups}
             groupClasses={groupClasses}
+            excludedGroups={excludedGroups}
             offBudget={entity.offBudget}
             disabled={isDeleted || !canAssignGroups}
             onAssign={onAssignGroup}
@@ -302,6 +305,7 @@ function AccountsTableRowComponent({
             saved={savedReporting}
             flags={flagState}
             excludedByGroup={excludedByGroup}
+            classFromGroup={effective?.source === "group"}
             groupName={classGroupName}
             unsaved={isNew}
             disabled={isDeleted || !canSetReporting}
@@ -469,6 +473,7 @@ function areEqual(prev: AccountsTableRowProps, next: AccountsTableRowProps) {
     prev.ruleCount === next.ruleCount &&
     prev.groups === next.groups &&
     prev.groupClasses === next.groupClasses &&
+    prev.excludedGroups === next.excludedGroups &&
     prev.canAssignGroups === next.canAssignGroups &&
     // `effective` is rebuilt whenever classes load or change, so compare what it says.
     prev.effective?.accountClass === next.effective?.accountClass &&

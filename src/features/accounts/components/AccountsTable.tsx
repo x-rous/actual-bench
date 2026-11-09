@@ -26,7 +26,7 @@ import type { ReportingTreatment } from "@/lib/account-class/reporting";
 import { isExcluded, type AccountFlag } from "@/lib/account-class/flags";
 import type { AccountFlagState } from "./AccountReportingCell";
 import { toast } from "sonner";
-import { ACCOUNT_CLASS_INFO, isAccountClassAllowed, isAccountClassAllowedForSet, type AccountClass } from "@/lib/account-class";
+import { ACCOUNT_CLASS_INFO, isAccountClass, isAccountClassAllowed, isAccountClassAllowedForSet, type AccountClass } from "@/lib/account-class";
 import { effectiveAccountClasses } from "../lib/accountClasses";
 import { buildClusters, type GroupBy } from "../lib/accountClusters";
 import { AccountClusterHeader, AccountTotalRow } from "./AccountClusterRows";
@@ -138,23 +138,16 @@ export function AccountsTable({
   // A group's class is inherited by its members; group membership is read from
   // the draft, so a pending move shows its effect immediately.
   const accountClasses = useAccountClasses();
+  const accountFlags = useAccountFlags();
   const classesEnabled = accountClasses.enabled;
   const selectedHasOnBudgetAccounts = [...selectedIds].some((id) => staged[id] && !staged[id].isDeleted && !staged[id].entity.offBudget);
   const selectedHasOffBudgetAccounts = [...selectedIds].some((id) => staged[id] && !staged[id].isDeleted && staged[id].entity.offBudget);
   const groupAssignOptions = useMemo(
-    () => groups ? buildGroupOptions(groups, accountClasses.maps.groups, selectedHasOnBudgetAccounts, selectedHasOffBudgetAccounts || !selectedHasOnBudgetAccounts) : undefined,
-    [groups, accountClasses.maps.groups, selectedHasOnBudgetAccounts, selectedHasOffBudgetAccounts]
+    () => groups ? buildGroupOptions(groups, accountClasses.maps.groups, selectedHasOnBudgetAccounts, selectedHasOffBudgetAccounts || !selectedHasOnBudgetAccounts, accountFlags.maps.groups) : undefined,
+    [groups, accountClasses.maps.groups, accountFlags.maps.groups, selectedHasOnBudgetAccounts, selectedHasOffBudgetAccounts]
   );
   const effectiveClasses = useMemo(() => effectiveAccountClasses(staged, groups, accountClasses.maps), [staged, groups, accountClasses.maps]);
   const groupNames = useMemo(() => new Map((groups ?? []).map((g) => [g.id, g.name])), [groups]);
-  const unclassifiedCount = useMemo(() => {
-    let n = 0;
-    for (const r of Object.values(staged) as AccountRow[]) {
-      if (r.isDeleted || r.entity.closed) continue;
-      if (!effectiveClasses.get(r.entity.id)?.accountClass) n++;
-    }
-    return n;
-  }, [staged, effectiveClasses]);
   const applyAccountClasses = accountClasses.apply;
   const handleSetClass = useCallback(
     (accountId: string, accountClass: AccountClass | null) => {
@@ -172,14 +165,18 @@ export function AccountsTable({
     },
     [applyAccountClasses, staged, accountClasses.available, effectiveClasses, pushUndo]
   );
-  const activeClassFilter = classesEnabled ? classFilter : ALL_CLASSES;
+  // A class filter saved by an older version (the retired "excluded" class) matches no option, so it counts as no filter.
+  const classFilterKnown = classFilter === ALL_CLASSES || classFilter === UNCLASSIFIED || isAccountClass(classFilter);
+  const activeClassFilter = classesEnabled && classFilterKnown ? classFilter : ALL_CLASSES;
+  useEffect(() => {
+    if (!classFilterKnown) setFilters((f) => ({ ...f, classFilter: ALL_CLASSES }));
+  }, [classFilterKnown, setFilters]);
 
   // ── Financial Reporting and account settings ─────────────────────────────────
   // Also Bench-owned and immediate. Nothing here is required: a Bank or Other Asset can be marked, and a few yes/no settings
   // (left out of Financial Insights, accessible money, income in an off-budget account) can be turned on.
   // Unsaved rows have no permanent id yet, so their choice waits for the save.
   const accountReporting = useAccountReporting();
-  const accountFlags = useAccountFlags();
   const applyAccountReporting = accountReporting.apply;
   const handleSetReporting = useCallback(
     (accountId: string, treatment: ReportingTreatment | null) => applyAccountReporting([{ accountId, treatment }]),
@@ -191,16 +188,26 @@ export function AccountsTable({
     [applyAccountFlags]
   );
   const flagStateOf = useCallback((accountId: string): AccountFlagState => ({
-    excluded: !!accountFlags.maps.accounts.get("excluded")?.has(accountId),
+    // An account that takes its class from its group is left out, or not, by the group; its own saved flag is kept but does not apply.
+    excluded: effectiveClasses.get(accountId)?.source !== "group" && !!accountFlags.maps.accounts.get("excluded")?.has(accountId),
     accessible: !!accountFlags.maps.accounts.get("accessible")?.has(accountId),
     offbudgetIncome: !!accountFlags.maps.accounts.get("offbudget-income")?.has(accountId),
-  }), [accountFlags.maps]);
+  }), [accountFlags.maps, effectiveClasses]);
   // Accounts left out of Financial Insights, by their own flag or their group's (a live group only).
   const excludedIds = useMemo(() => {
     const liveGroupIds = groups ? new Set(groups.map((g) => g.id)) : null;
     return new Set((Object.values(staged) as AccountRow[]).filter((r) => !r.isNew && !r.isDeleted
-      && isExcluded(r.entity.id, liveGroupIds && r.entity.groupId && liveGroupIds.has(r.entity.groupId) ? r.entity.groupId : null, accountFlags.maps)).map((r) => r.entity.id));
-  }, [staged, groups, accountFlags.maps]);
+      && isExcluded(r.entity.id, liveGroupIds && r.entity.groupId && liveGroupIds.has(r.entity.groupId) ? r.entity.groupId : null, accountFlags.maps, effectiveClasses.get(r.entity.id)?.source === "group")).map((r) => r.entity.id));
+  }, [staged, groups, accountFlags.maps, effectiveClasses]);
+  // Accounts waiting for a class. One that is left out of Financial Insights needs none, so it is not counted here.
+  const unclassifiedCount = useMemo(() => {
+    let n = 0;
+    for (const r of Object.values(staged) as AccountRow[]) {
+      if (r.isDeleted || r.entity.closed) continue;
+      if (!effectiveClasses.get(r.entity.id)?.accountClass && !excludedIds.has(r.entity.id)) n++;
+    }
+    return n;
+  }, [staged, effectiveClasses, excludedIds]);
   const excludedByGroupIds = useMemo(() => {
     const liveGroupIds = groups ? new Set(groups.map((g) => g.id)) : null;
     return new Set((Object.values(staged) as AccountRow[]).filter((r) => !r.isNew && !r.isDeleted && liveGroupIds && r.entity.groupId && liveGroupIds.has(r.entity.groupId) && accountFlags.maps.groups.has(r.entity.groupId)).map((r) => r.entity.id));
@@ -502,6 +509,7 @@ export function AccountsTable({
   function handleAssignGroup(accountId: string, groupId: string | null) {
     if (classesEnabled && !accountClasses.available) return;
     if (!isAccountClassAllowed(groupId ? accountClasses.maps.groups.get(groupId) : null, staged[accountId]?.entity.offBudget ?? false)) return;
+    if (groupId && accountFlags.maps.groups.has(groupId) && !(staged[accountId]?.entity.offBudget ?? false)) return;
     assignAccounts([accountId], groupId);
   }
 
@@ -513,6 +521,7 @@ export function AccountsTable({
     }
     if (classesEnabled && !accountClasses.available) return;
     if (ids.some((id) => !isAccountClassAllowed(groupId ? accountClasses.maps.groups.get(groupId) : null, staged[id].entity.offBudget))) return;
+    if (groupId && accountFlags.maps.groups.has(groupId) && ids.some((id) => !staged[id].entity.offBudget)) return;
     assignAccounts(ids, groupId);
   }
 
@@ -678,6 +687,7 @@ export function AccountsTable({
         ruleCount={accountRuleCount.get(entity.id) ?? 0}
         groups={groups}
         groupClasses={accountClasses.maps.groups}
+        excludedGroups={accountFlags.maps.groups}
         canAssignGroups={!classesEnabled || accountClasses.available}
         onAssignGroup={handleAssignGroup}
         onRequestNewGroup={handleRequestNewGroup}

@@ -18,7 +18,7 @@ require.extensions['.ts'] = (mod, filename) => {
 };
 const { getAppDb } = require('../src/lib/app-db/connection.ts');
 const { applyAccountClassChanges } = require('../src/lib/app-db/accountClassRepository.ts');
-const { applyAccountReportingChanges } = require('../src/lib/app-db/accountReportingRepository.ts');
+const { applyAccountFlagChanges } = require('../src/lib/app-db/accountFlagRepository.ts');
 const { saveAssetCashflows } = require('../src/lib/app-db/assetCashflowRepository.ts');
 const { insertFxRate } = require('../src/lib/fx/repositories/fxRateRepository.ts');
 const { createBackupDestination, createBackupPolicy } = require('../src/lib/app-db/backupRepository.ts');
@@ -111,8 +111,8 @@ for (const demo of manifest) {
     if (!projection.ok || !projection.projection.ok || projection.projection.events.length === 0) throw new Error(`${spec.name} projection is blocked: ${JSON.stringify(projection)}`);
   }
   applyAccountClassChanges(db, { budgetSyncId, changes: Object.entries({ checking: 'bank', savings: 'bank', cash: 'cash', credit: 'credit-card', installmentCard: 'credit-card', brokerage: 'investment', property: 'property', rentalProperty: 'property', vehicle: 'vehicle', mortgage: 'loan', carLoan: 'loan', personalLoan: 'loan', rentalLoan: 'loan' }).map(([key, accountClass]) => ({ scope: 'account', id: a[key], accountClass })) });
-  // An Investment account must say whether it is current or non-current before Financial Insights counts it. The brokerage can be sold at any time.
-  applyAccountReportingChanges(db, { budgetSyncId, changes: [{ accountId: a.brokerage, treatment: 'current-investment' }] });
+  // An Investment account needs no Financial Reporting choice. The brokerage can be sold at any time, so it is marked accessible money (shown as the cash buffer's second figure).
+  applyAccountFlagChanges(db, { budgetSyncId, changes: [{ scope: 'account', id: a.brokerage, flag: 'accessible', on: true }] });
   for (const spec of [{ key: 'property', name: 'Family Home', type: 'real-estate', debt: 'mortgage' }, { key: 'vehicle', name: 'Family Car', type: 'vehicle', debt: 'carLoan' }, { key: 'rentalProperty', name: 'Investment Property', type: 'real-estate', debt: 'rentalLoan' }]) {
     const id = `${budgetSyncId}-${spec.key}`;
     saveAsset(db, { budgetSyncId, asset: { id, actualAccountId: a[spec.key], name: spec.name, assetType: spec.type, description: null, status: 'active', revision: 0, ownership: [{ effectiveFrom: spec.key === 'property' ? demo.homeOpeningDate : `${first.key}-01`, ownershipBps: 10000 }] }, accountDirectory: [{ id: a[spec.key], name: spec.name, offBudget: true, closed: false }] });

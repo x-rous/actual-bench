@@ -302,4 +302,17 @@ describe("recorded financial statements", () => {
       expect(model.unresolved.find((r) => r.key === "loan-allocation")?.amountMinor).toBe(-12_000);
     });
   });
+
+  it("counts uncategorized money in as income in an off-budget bank account set to count it, as Received does, and reconciles", () => {
+    const flagged = accounts.map((a) => (a.id === "saving" ? { ...a, closed: false, offBudgetIncome: true } : a));
+    const entries = [entry("interest-in", "saving", 4_000), entry("fee-out", "saving", -500)];
+    // The read returns one cell per account and month, holding both signs.
+    const cell = { month: "2026-09", accountId: "saving", categoryId: null, transferAccountId: null, amountMinor: 3_500, count: 2 };
+    const { model, ledger } = fixture(entries, { accounts: flagged, movement: [cell], uncategorizedIn: [{ month: "2026-09", accountId: "saving", amountMinor: 4_000, count: 1 }] });
+    expect(model.pnl.incomeMinor).toBe(4_000);
+    expect(summarize(ledger, period, { unavailableReason: null, rowCount: 0, amountMinor: 0 }).received).toBe(4_000);
+    expect(model.unresolved.find((r) => r.key === "uncategorized")?.amountMinor).toBe(-500);
+    expect(model.cash.differenceMinor).toBe(0);
+    expect(sumBridge(model)).toBe(model.cash.changeMinor);
+  });
 });

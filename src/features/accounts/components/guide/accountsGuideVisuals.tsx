@@ -9,14 +9,14 @@ import { ACCOUNT_CLASS_ICONS } from "../../lib/accountClassIcons";
  * what the Class and Financial Reporting columns offer.
  */
 
-const SIDE_TITLE = { asset: "Assets: what you own", liability: "Liabilities: what you owe", none: "Not reported" } as const;
+const SIDE_TITLE = { asset: "Assets: what you own", liability: "Liabilities: what you owe" } as const;
 
 /** Every class, grouped as the Class dropdown groups them, with where it may sit. */
 export function ClassMap() {
   return (
     <Figure wide label="The account classes" caption={<span>A class marked <b>off-budget only</b> cannot be given to an on-budget account.</span>}>
-      <div className="grid gap-3 md:grid-cols-3">
-        {(["asset", "liability", "none"] as const).map((side) => (
+      <div className="grid gap-3 md:grid-cols-2">
+        {(["asset", "liability"] as const).map((side) => (
           <div key={side} className="rounded-lg border bg-card p-2.5">
             <p className="mb-2 text-[11px] font-semibold text-muted-foreground">{SIDE_TITLE[side]}</p>
             <ul className="space-y-1.5">

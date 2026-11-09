@@ -35,9 +35,14 @@ export type AccountFlagMaps = {
   groups: ReadonlySet<string>;
 };
 
-/** Excluded when the account's own flag is on, or the flag of its group (a live group, if the account is in one). Whether it is allowed is the gate's business. */
-export function isExcluded(accountId: string, groupId: string | null | undefined, maps: AccountFlagMaps): boolean {
-  return !!(groupId && maps.groups.has(groupId)) || !!maps.accounts.get("excluded")?.has(accountId);
+/**
+ * Excluded when the flag of the account's group is on (a live group, if the account is in one), or its own flag is. When the account takes
+ * its class from its group (`classFromGroup`), its own flag is kept but does not apply, as its own class never did: the group decides.
+ * Whether it is allowed is the gate's business.
+ */
+export function isExcluded(accountId: string, groupId: string | null | undefined, maps: AccountFlagMaps, classFromGroup = false): boolean {
+  if (groupId && maps.groups.has(groupId)) return true;
+  return !classFromGroup && !!maps.accounts.get("excluded")?.has(accountId);
 }
 
 /** An account-only flag counts when saved and still allowed for the account's class, placement and treatment. */

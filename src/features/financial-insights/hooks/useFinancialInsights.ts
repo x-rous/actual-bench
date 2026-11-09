@@ -115,11 +115,10 @@ export function useFinancialInsightsGate(): Gate {
 
     const groupNames = new Map((groupsData ?? []).map((g) => [g.id, g.name]));
     const liveGroups = new Set(groupNames.keys());
-    const classOf = new Map<string, AccountClass | null>(
-      accounts.map((a) => [a.id, resolveAccountClass(a.id, a.groupId && liveGroups.has(a.groupId) ? a.groupId : null, classMaps).accountClass])
-    );
+    const resolved = new Map(accounts.map((a) => [a.id, resolveAccountClass(a.id, a.groupId && liveGroups.has(a.groupId) ? a.groupId : null, classMaps)]));
+    const classOf = new Map<string, AccountClass | null>([...resolved].map(([id, r]) => [id, r.accountClass]));
     // Left out of Financial Insights: the account's own flag, or its group's (a live group only).
-    const excludedIds = new Set(accounts.filter((a) => isExcluded(a.id, a.groupId && liveGroups.has(a.groupId) ? a.groupId : null, flagMaps)).map((a) => a.id));
+    const excludedIds = new Set(accounts.filter((a) => isExcluded(a.id, a.groupId && liveGroups.has(a.groupId) ? a.groupId : null, flagMaps, resolved.get(a.id)?.source === "group")).map((a) => a.id));
     const readiness = evaluateAccountReadiness({ accounts, classOf, excluded: excludedIds, closedActivity: activityData });
     if (!readiness.ready) {
       const byId = new Map(accounts.map((a) => [a.id, a]));
@@ -128,9 +127,9 @@ export function useFinancialInsightsGate(): Gate {
         .map((a): SetupRow => {
           const account = byId.get(a.accountId);
           const detail = a.status !== "incompatible-placement" || !account ? undefined
-            : excludedIds.has(a.accountId) ? "It is left out of Financial Insights, but only off-budget accounts can be left out. Move it off budget in Actual, or include it."
-            : classOf.get(a.accountId) === "credit-card" ? "Credit cards must be on budget so their purchases count as spending. Move the account on budget in Actual, or choose another class."
-            : "Its class needs an off-budget account. Move it off budget in Actual, or choose another class.";
+            : excludedIds.has(a.accountId) ? "It is left out of Financial Insights, but only off-budget accounts can be left out. Include it again in the Accounts table."
+            : classOf.get(a.accountId) === "credit-card" ? "Credit cards must be on budget so their purchases count as spending. Choose another class, or leave the account out of Financial Insights."
+            : "Its class needs an off-budget account. Choose a class that works on budget.";
           return { id: a.accountId, name: account?.name ?? a.accountId, status: a.status, detail };
         });
       return { state: "setup", rows };

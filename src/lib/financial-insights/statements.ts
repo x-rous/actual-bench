@@ -127,7 +127,7 @@ export function buildStatements(input: {
     add(existing, entry); rows.set(key, existing);
   };
   const categoryRows = new Map<string, StatementLine>();
-  const uncategorizedIncome = line("uncategorized-income", "Uncategorized income", "Uncategorized non-transfer receipts in on-budget accounts, counted by sign as in the Income tab.");
+  const uncategorizedIncome = line("uncategorized-income", "Uncategorized income", "Uncategorized non-transfer receipts in on-budget accounts, counted by sign as in the Income tab, and in off-budget Cash and Bank accounts set to count uncategorized money in as income.");
   const uncategorizedExpenses = line("uncategorized-expenses", "Uncategorized expenses", "Uncategorized non-transfer payments in on-budget accounts, counted by sign as in the Spending tab. Card purchases count when recorded, not again when settled.");
   const investmentActivity = line("investment-activity", "Recorded investment activity", "Uncategorized non-transfer entries in off-budget Investment and Retirement accounts. These may be recorded gains, losses, dividends, interest or fees; they are investment activity, not available-cash movements or P&L income/expenses. No return or realized profit is inferred.");
   let cardPnlMinor = 0, otherNoncashPnlMinor = 0;
@@ -182,6 +182,10 @@ export function buildStatements(input: {
         if (cash) add(operating[income ? 4 : 5], entry);
         else if (owner.accountClass === "credit-card") cardPnlMinor += entry.amountMinor;
         else otherNoncashPnlMinor += entry.amountMinor;
+      } else if (owner.offBudgetIncome && entry.amountMinor > 0) {
+        // An off-budget Cash or Bank account set to count uncategorized money in as income, as Received does.
+        add(uncategorizedIncome, entry);
+        if (cash) add(operating[4], entry); else otherNoncashPnlMinor += entry.amountMinor;
       } else if (owner.accountClass === "investment" || owner.accountClass === "retirement") add(investmentActivity, entry);
       else unknown(entry, "uncategorized", cash ? "Uncategorized cash movements" : "Unidentified noncash movements", "Uncategorized non-transfer entries in off-budget accounts other than Investment or Retirement. Their purpose is not established, so they stay outside income and expenses.");
       continue;

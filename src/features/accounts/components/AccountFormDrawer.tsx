@@ -28,13 +28,14 @@ type Props = {
   onSubmit: (values: AccountFormValues) => void;
   groups?: AccountGroup[];
   groupClasses?: ReadonlyMap<string, AccountClass>;
+  excludedGroups?: ReadonlySet<string>;
   groupsReady?: boolean;
   initialValues?: Partial<AccountFormValues>;
   submitLabel?: string;
   description?: string;
 };
 
-export function AccountFormDrawer({ open, onOpenChange, onSubmit, groups, groupClasses, groupsReady = true, initialValues, submitLabel, description }: Props) {
+export function AccountFormDrawer({ open, onOpenChange, onSubmit, groups, groupClasses, excludedGroups, groupsReady = true, initialValues, submitLabel, description }: Props) {
   const isEditing = false;
 
   const {
@@ -62,7 +63,8 @@ export function AccountFormDrawer({ open, onOpenChange, onSubmit, groups, groupC
 
   function handleFormSubmit(values: AccountFormValues) {
     if (values.groupId && (!groups?.some((group) => group.id === values.groupId) ||
-      !isAccountClassAllowed(groupClasses?.get(values.groupId), values.offBudget))) {
+      !isAccountClassAllowed(groupClasses?.get(values.groupId), values.offBudget) ||
+      (!values.offBudget && excludedGroups?.has(values.groupId)))) {
       setError("groupId", { message: "Choose an available group that supports this budget type." });
       return;
     }
@@ -165,9 +167,10 @@ export function AccountFormDrawer({ open, onOpenChange, onSubmit, groups, groupC
                 id="account-group"
                 value={groupId ?? NO_GROUP}
                 disabled={!groupsReady}
-                options={buildGroupOptions(groups, groupClasses, !offBudget).filter((option) => option.value !== NEW_GROUP)}
+                options={buildGroupOptions(groups, groupClasses, !offBudget, offBudget, excludedGroups).filter((option) => option.value !== NEW_GROUP)}
                 onValueChange={(next) => {
                   if (!isAccountClassAllowed(groupClasses?.get(next), offBudget)) return;
+                  if (!offBudget && excludedGroups?.has(next)) return;
                   setValue("groupId", next === NO_GROUP ? null : next, { shouldDirty: true, shouldValidate: true });
                   if (groupClasses?.has(next)) setValue("accountClass", null, { shouldValidate: true });
                 }}

@@ -24,6 +24,7 @@ const EXPLAIN: Record<MoneyFlowKey, string> = {
   addedToLoans: "Interest and fees charged to your loans were more than you paid in, so what you owe grew.",
   refunds: "Refunds were larger than what you spent.",
   otherIn: OTHER_NOTE,
+  incomeReversed: "Income that was paid back or reversed was more than the income received, so the net went back out. Select the amount to see the transactions.",
   spent: "What you spent on things: purchases and other costs, including interest and fees a lender charged. Refunds are taken off. Select the amount to see the transactions.",
   debtRepaid: "The part of your loan payments that lowered what you owe. Interest and fees are not in it: they count as spent. Select the amount to see the transactions.",
   borrowingPaidBack: "Borrowing that went back out.",
@@ -35,10 +36,10 @@ const EXPLAIN: Record<MoneyFlowKey, string> = {
 };
 const COLOUR: Record<MoneyFlowKey, string> = {
   received: "var(--fi-income)", borrowed: "var(--fi-loan)", moreOwedCards: "var(--fi-gap)", withdrawn: "var(--fi-invest)", released: "var(--fi-g2)", fromCash: "var(--fi-cash)", addedToLoans: "var(--fi-loan)", refunds: "var(--fi-income)", otherIn: "var(--fi-balance)",
-  spent: "var(--fi-spend)", debtRepaid: "var(--fi-invest)", borrowingPaidBack: "var(--fi-loan)", invested: "var(--fi-invest)", depositsAndAssets: "var(--fi-g2)", cardsPaid: "var(--fi-gap)", cash: "var(--fi-cash)", otherOut: "var(--fi-balance)",
+  incomeReversed: "var(--fi-spend)", spent: "var(--fi-spend)", debtRepaid: "var(--fi-invest)", borrowingPaidBack: "var(--fi-loan)", invested: "var(--fi-invest)", depositsAndAssets: "var(--fi-g2)", cardsPaid: "var(--fi-gap)", cash: "var(--fi-cash)", otherOut: "var(--fi-balance)",
 };
 /** The transactions behind a line, where it has any; the others are changes in balances. */
-const DRILL: Partial<Record<MoneyFlowKey, DrillTarget>> = { received: { kind: "received" }, borrowed: { kind: "borrowed" }, spent: { kind: "spent" }, debtRepaid: { kind: "loanPrincipal" } };
+const DRILL: Partial<Record<MoneyFlowKey, DrillTarget>> = { received: { kind: "received" }, incomeReversed: { kind: "received" }, borrowed: { kind: "borrowed" }, spent: { kind: "spent" }, debtRepaid: { kind: "loanPrincipal" } };
 
 /**
  * Where your money came from and where it went: two lists that total the same. Money in starts with what was received and adds

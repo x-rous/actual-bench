@@ -29,6 +29,7 @@ export const AccountReportingCell = React.memo(function AccountReportingCell({
   saved,
   flags,
   excludedByGroup = false,
+  classFromGroup = false,
   groupName,
   unsaved,
   disabled,
@@ -43,6 +44,8 @@ export const AccountReportingCell = React.memo(function AccountReportingCell({
   flags: AccountFlagState;
   /** The account's group is left out of Financial Insights, so the account is too and cannot be changed here. */
   excludedByGroup?: boolean;
+  /** The account takes its class from its group, so the group decides whether it is left out; its own saved choice is kept but does not apply. */
+  classFromGroup?: boolean;
   groupName?: string;
   /** The account has not been saved to Actual yet, so it has no permanent id to attach a choice to. */
   unsaved: boolean;
@@ -84,15 +87,18 @@ export const AccountReportingCell = React.memo(function AccountReportingCell({
       options={options}
       onValueChange={(next) => {
         if (requirement.kind === "bank-default") { onChangeTreatment(accountId, next === CASH ? null : (next as ReportingTreatment)); return; }
-        // Other Asset: a holding, accessible money (a flag) or a fixed asset (a treatment); the last two cannot both be set.
-        if (next === "fixed-asset") { onChangeTreatment(accountId, "fixed-asset"); if (flags.accessible) onChangeFlag(accountId, "accessible", false); return; }
+        // Other Asset: a holding, accessible money (a flag) or a fixed asset (a treatment). A fixed asset wins over a saved accessible
+        // flag (it stops applying), so choosing it is a single write and a failed save cannot leave the account half changed.
+        if (next === "fixed-asset") { onChangeTreatment(accountId, "fixed-asset"); return; }
+        if (flags.accessible !== (next === ACCESSIBLE)) onChangeFlag(accountId, "accessible", next === ACCESSIBLE);
         if (treatment === "fixed-asset") onChangeTreatment(accountId, null);
-        onChangeFlag(accountId, "accessible", next === ACCESSIBLE);
       }}
     />
   );
 
-  const hasSettings = canExclude || (canAccessible && accountClass === "investment") || canIncome || excludedByGroup;
+  // A saved "left out" stays reachable after the account moves on budget, where Financial Insights needs it included again.
+  const savedLeftOut = flags.excluded && !canExclude;
+  const hasSettings = canExclude || savedLeftOut || (canAccessible && accountClass === "investment") || canIncome || excludedByGroup;
   const summary = [excluded && "Left out", !excluded && flags.accessible && canAccessible && "Accessible", !excluded && flags.offbudgetIncome && canIncome && "Income"].filter(Boolean).join(" · ");
   return (
     <span className="flex items-center gap-1">
@@ -111,12 +117,12 @@ export const AccountReportingCell = React.memo(function AccountReportingCell({
             {canIncome && (
               <SettingRow label="Uncategorized entries are income" hint="Money in with no category (interest, for example) counts as income, not as an unidentified movement." checked={flags.offbudgetIncome} disabled={disabled || excluded} onChange={(on) => onChangeFlag(accountId, "offbudget-income", on)} />
             )}
-            {(canExclude || excludedByGroup) && (
+            {(canExclude || savedLeftOut || excludedByGroup) && (
               <SettingRow
                 label="Include in Financial Insights"
-                hint={excludedByGroup ? `Excluded by group${groupName ? ` “${groupName}”` : ""}. Change it on the group.` : "Turn off to leave the account out of every figure."}
+                hint={classFromGroup && !excludedByGroup ? "This account takes its group’s class, so the group decides. Turn it off on the group instead." : excludedByGroup ? `Excluded by group${groupName ? ` “${groupName}”` : ""}. Change it on the group.` : savedLeftOut ? "This account is on budget now, so it cannot be left out. Turn on to include it." : "Turn off to leave the account out of every figure."}
                 checked={!excluded}
-                disabled={disabled || excludedByGroup}
+                disabled={disabled || excludedByGroup || classFromGroup}
                 onChange={(on) => onChangeFlag(accountId, "excluded", !on)}
               />
             )}
