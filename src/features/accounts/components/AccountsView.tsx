@@ -152,6 +152,15 @@ export function AccountsView() {
           toast.error("An account in the CSV belongs to a group whose class does not suit its budget type. Change its budget placement or group before importing.");
           return;
         }
+        // A group left out of Financial Insights cannot take an on-budget account.
+        const intoLeftOutGroup = result.accounts.some((account) => {
+          const group = existingGroups.find((g) => g.name.trim().toLowerCase() === account.groupName?.trim().toLowerCase());
+          return !!group && !account.offBudget && accountFlags.maps.groups.has(group.id);
+        });
+        if (intoLeftOutGroup) {
+          toast.error("An on-budget account in the CSV belongs to a group that is left out of Financial Insights. Change its group before importing.");
+          return;
+        }
       }
 
       pushUndo();
