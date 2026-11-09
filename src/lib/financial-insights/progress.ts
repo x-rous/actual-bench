@@ -324,6 +324,7 @@ function debtCard(input: ProgressInput, when: ReturnType<typeof whenOf>): DebtCa
   if (owedIn(owed.loans, opening.loans)) offered.push("loans");
   if (groups >= 2 || owedIn(owed.other, opening.other)) offered.push("all");
   const choices: DebtChoice[] = [];
+  let paidFirstAny = false;
   for (const id of offered) {
     const series = owed[id];
     // Nothing owed at any month of the period, but something at its start: it was paid off in the first month. The line lies on zero and the label says when.
@@ -333,6 +334,7 @@ function debtCard(input: ProgressInput, when: ReturnType<typeof whenOf>): DebtCa
     if (!chart) continue;
     const labels: Dated[] = [];
     if (paidInFirstMonth) {
+      paidFirstAny = true;
       const first = when(period.months[Math.max(0, series.findIndex((v) => v !== null))]);
       labels.push({ on: `Paid off in ${first.on}`, off: "Paid off in the first month" });
     } else if (drop) {
@@ -354,7 +356,8 @@ function debtCard(input: ProgressInput, when: ReturnType<typeof whenOf>): DebtCa
     }
     choices.push({ id, label: CHOICE_LABEL[id], chart, peak: asCount(drop?.peak ?? peakOf(series, partial)), labels: labels.slice(0, 3) });
   }
-  if (choices.length < 1 || period.months.filter((_, i) => input.composition.hasData[i]).length < 2) return null;
+  // Two months of data are needed to show a fall, except for a debt paid off in the first month, which one month with data can show.
+  if (choices.length < 1 || (period.months.filter((_, i) => input.composition.hasData[i]).length < 2 && !paidFirstAny)) return null;
   return {
     kind: "debt", id: "debt-payoff", title: "Debt payoff progress", axis: axisOf(period), choices, defaultChoice: choices.find((c) => c.id === "cards")?.id ?? choices.find((c) => c.id === "loans")?.id ?? choices[0].id,
     info: "How what you owe changed over the period, as a shape that falls toward the zero line, with the highest month marked. Credit cards, Loans or all debt: never single accounts. A card in credit counts as nothing owed. The debt-free date is shown for loans only, from the payoff dates in Loans, and only when every loan you still owe has one.",
@@ -491,8 +494,11 @@ function journeyCard(input: ProgressInput, when: ReturnType<typeof whenOf>): Jou
   const values = shown.map(({ m, i }) => {
     const current = period.partial && i === period.months.length - 1;
     const day = current ? input.today : `${m}-28`;
-    // A median typical month takes its spending the way Summary's buffer does, for each month; the average needs nothing more.
-    const status = cashBuffer(ledger, day, input.bufferSchedules ?? new Map(), { months: settings.averageMonths, method: settings.method, spendingMinor: settings.method === "median" ? input.medianSpendingAt?.(day) : undefined });
+    // A median typical month takes its spending the way Summary's buffer does, for each month. Where that cannot be worked out the month is a gap:
+    // the average is a different measure, so it is never put in its place. The average needs nothing more.
+    const median = settings.method === "median" ? input.medianSpendingAt?.(day) : undefined;
+    if (settings.method === "median" && median === undefined) return null;
+    const status = cashBuffer(ledger, day, input.bufferSchedules ?? new Map(), { months: settings.averageMonths, method: settings.method, spendingMinor: median });
     return status.state === "ready" ? Math.round(status.value.months * 10) / 10 : null;
   });
   const known = values.filter((v): v is number => v !== null);

@@ -624,8 +624,8 @@ describe("cash buffer journey", () => {
 
 describe("review fixes: round two", () => {
   it("numbers property cards only when more than one is drawn", () => {
-    // Two properties, one with nothing to draw: the other keeps its plain title.
-    const view = progressView(inputOf(richFacts(), { equity: [owned("a", Array(10).fill(null)), home("b", ltvTen)] }));
+    // Two linked properties, which would read the same, one with nothing to draw: the other keeps its plain title.
+    const view = progressView(inputOf(richFacts(), { equity: [home("a", Array(10).fill(null)), home("b", ltvTen)] }));
     expect(view.cards.filter((c) => c.kind === "property").map((c) => c.title)).toEqual(["Property value & LTV"]);
   });
 
@@ -639,6 +639,15 @@ describe("review fixes: round two", () => {
     expect(loans.chart.points.every((p) => p === 0)).toBe(true);
   });
 
+  it("shows a debt paid off in the first month even when the period is a single month", () => {
+    const f = factsOf([chk, mortgage], [...months(1, 4).map((m) => row(m, "chk", 100)), ...pay("2026-02", "chk", "mortgage", 100_000)], [{ accountId: "mortgage", amountMinor: -100_000 }]);
+    const debt = card(progressView(inputOf(f, {}, ["2026-02", "2026-02"])), "debt") as DebtCard;
+    expect(debt.choices[0].labels[0]).toEqual({ on: "Paid off in Feb 2026", off: "Paid off in the first month" });
+    // A single month with a debt that is still owed has no fall to show.
+    const owing = factsOf([chk, mortgage], months(1, 4).map((m) => row(m, "chk", 100)), [{ accountId: "mortgage", amountMinor: -100_000 }]);
+    expect(card(progressView(inputOf(owing, {}, ["2026-02", "2026-02"])), "debt")).toBeUndefined();
+  });
+
   it("does not offer a debt that was already zero before the period", () => {
     const f = factsOf([chk, mortgage], months(1, 4).map((m) => row(m, "chk", 100)), [{ accountId: "mortgage", amountMinor: 0 }]);
     expect(card(progressView(inputOf(f, {}, ["2026-02", "2026-04"])), "debt")).toBeUndefined();
@@ -649,12 +658,17 @@ describe("review fixes: round two", () => {
     const settings = { goalMonths: null, averageMonths: 12 as const, method: "median" as const };
     const calls: string[] = [];
     const j = (over: Partial<ProgressInput>) => card(progressView({ ...base, bufferSettings: settings, ...over }), "journey") as JourneyCard;
-    const average = j({});
+    const average = card(progressView({ ...base, bufferSettings: { ...settings, method: "average" } }), "journey") as JourneyCard;
     const median = j({ medianSpendingAt: (day) => { calls.push(day); return 1_000_000; } });
     // Asked for each month of the line, and the answer is used: a huge typical spend leaves little cover.
     expect(calls.length).toBeGreaterThanOrEqual(median.chart.points.filter((p) => p !== null).length);
     expect(calls.every((d) => /^2026-\d\d-28$/.test(d))).toBe(true);
     expect(median.labels[0].on).not.toBe(average.labels[0].on);
+    // Where the median cannot be worked out, a month is a gap, not the average in its place: with none supplied there is no line.
+    expect(card(progressView({ ...base, bufferSettings: settings }), "journey")).toBeUndefined();
+    const partly = j({ medianSpendingAt: (day) => (day < "2026-07" ? undefined : 1_000_000) });
+    expect(partly.chart.points.slice(0, 6).every((p) => p === null)).toBe(true);
+    expect(partly.chart.points.slice(6).every((p) => p !== null)).toBe(true);
     // The average method never asks.
     const none: string[] = [];
     card(progressView({ ...base, bufferSettings: { ...settings, method: "average" }, medianSpendingAt: (d) => { none.push(d); return 1; } }), "journey");

@@ -66,6 +66,16 @@ describe("the Progress host and unreadable properties", () => {
     expect(screen.queryByText(UNAVAILABLE)).not.toBeInTheDocument();
   });
 
+  it("warns about a read error only when the budget has a property that could be affected", () => {
+    useWealth.mockReturnValue({ state: "error", retry: jest.fn() });
+    const { unmount } = show();
+    expect(screen.getByText(UNAVAILABLE)).toBeInTheDocument();
+    unmount();
+    const onlyTruck = inputOf(factsOf([chk, truck], months(1, 10).map((m) => row(m, "chk", 1_000_000, { categoryId: "salary" }))));
+    show({ ...onlyTruck, registry: registry({ assets: [{ id: "t", name: "y", actualAccountId: "truck", status: "active" }], debtLinks: [] }), drill: { today: "2026-11-18" } } as never);
+    expect(screen.queryByText(UNAVAILABLE)).not.toBeInTheDocument();
+  });
+
   it("says a property that is not registered in Assets has no card, and that vehicles do not need registering", () => {
     useWealth.mockReturnValue({ ...READY, properties: [] });
     const REGISTER = "A property is not registered in Assets, so it has no card here. Register it in Assets to add one.";

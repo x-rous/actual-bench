@@ -21,7 +21,8 @@ export function ProgressHost({ data, today, switches, onSwitches }: { data: Read
   // Some or all of the property values could not be read: the property cards that depend on them are not drawn, and the tab says so once.
   // That includes a property whose value history could not be used (it does not reconcile, has too many entries, or the registry could not be read): it would otherwise just be missing.
   // A vehicle is never drawn, so its book failing does not count.
-  const equityFailed = wealth.state === "error" || (wealth.state === "ready" && missingProperty(data, wealth.properties));
+  // A read error warns only when the budget has a property that could be affected, with the same check as the ready state, against no series at all.
+  const equityFailed = wealth.state === "error" ? missingProperty(data, NO_PROPERTIES) : wealth.state === "ready" && missingProperty(data, wealth.properties);
   const propertiesUnregistered = unregisteredProperty(data);
   const view = useMemo(() => progressView({
     today, period: data.period, ledger: data.ledger, summary: data.summary, monthly: data.monthly, composition: data.composition, buffer: data.buffer, bufferSettings: data.bufferSettings, bufferSchedules: data.bufferSchedules, schedules: data.schedules, equity, equityFailed, propertiesUnregistered,
