@@ -82,10 +82,11 @@ describe("the Money kept tile and loans", () => {
   it("explains in the (i), not on the tile, that loan principal is not spending and interest is", () => {
     // 5,000.00 received, 1,200.00 paid to the mortgage.
     show([chk, loan], [row("2026-09", "chk", 500_000), row("2026-09", "chk", -120_000, { transferAccountId: "loan" }), row("2026-09", "loan", 120_000, { transferAccountId: "chk" })]);
-    expect(screen.queryByText(/paid off loans/)).not.toBeInTheDocument();
+    const tile = screen.getByRole("button", { name: "About Money kept" }).closest("div") as HTMLElement;
+    expect(within(tile).queryByText(/paid off loans/i)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "About Money kept" }));
     expect(screen.getByText(/1,200\.00 you paid toward loan principal is not spending/)).toBeInTheDocument();
-    expect(screen.getByText(/Interest and fees on your loans are spending and are already in Spent/)).toBeInTheDocument();
+    expect(screen.getByText(/Interest and fees on your loans that Bench can identify/)).toBeInTheDocument();
   });
 
   it("says nothing about loans when none was paid", () => {

@@ -185,6 +185,18 @@ describe("the cash buffer card", () => {
     expect(screen.queryByText("0")).not.toBeInTheDocument();
   });
 
+  it("still shows the accessible line when the set accounts hold nothing, and lists only positive balances in the (i)", () => {
+    setHook(null);
+    const accessible = { ...value, accessibleMinor: 500_000, monthsWithAccessible: (3_000_000 + 500_000) / 340_000, accessibleAccounts: [{ accountId: "inv", name: "Brokerage", balanceMinor: 500_000 }, { accountId: "old", name: "Empty fund", balanceMinor: 0 }] };
+    render(<TipProvider><CashBufferCard buffer={{ state: "ready", value: accessible as CashBuffer }} groups={groups} today="2026-11-18" /></TipProvider>);
+    fireEvent.click(screen.getByRole("button", { name: "About the months of cover" }));
+    expect(screen.getByText("Brokerage")).toBeInTheDocument();
+    expect(screen.queryByText("Empty fund")).not.toBeInTheDocument();
+    const empty = { ...value, accessibleMinor: 0, monthsWithAccessible: 3_000_000 / 340_000, accessibleAccounts: [{ accountId: "old", name: "Empty fund", balanceMinor: 0 }] };
+    render(<TipProvider><CashBufferCard buffer={{ state: "ready", value: empty as CashBuffer }} groups={groups} today="2026-11-18" /></TipProvider>);
+    expect(screen.getAllByText(/with accessible investments/).length).toBeGreaterThan(0);
+  });
+
   it("has no accessible figure in the (i) when no account is set", () => {
     setHook(null);
     show();

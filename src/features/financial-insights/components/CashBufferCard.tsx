@@ -35,7 +35,7 @@ function CoverInfo({ accessible, today }: { accessible?: Accessible; today: stri
           <p>Counts the accounts you set to Accessible money as well, as of {formatDay(today)} (positive balances only). The main figure, your goal and scenarios do not include them.</p>
           <table className="w-full border-collapse">
             <tbody>
-              {accessible.accounts.map((a) => <tr key={a.accountId} className="border-b border-border/40 last:border-0"><th scope="row" className="py-1 text-left font-normal">{a.name}</th><td className="py-1 text-right tabular-nums">{money(a.balanceMinor)}</td></tr>)}
+              {accessible.accounts.filter((a) => a.balanceMinor > 0).map((a) => <tr key={a.accountId} className="border-b border-border/40 last:border-0"><th scope="row" className="py-1 text-left font-normal">{a.name}</th><td className="py-1 text-right tabular-nums">{money(a.balanceMinor)}</td></tr>)}
               <tr className="font-semibold text-foreground"><th scope="row" className="pt-1.5 text-left">Total</th><td className="pt-1.5 text-right tabular-nums">{money(accessible.totalMinor)}</td></tr>
             </tbody>
           </table>
@@ -183,7 +183,7 @@ export function CashBuffer({ buffer, groups, today, data }: { buffer: Ready["buf
   const shown = buffer.state === "ready" ? (sim ? (sim.state === "ready" ? sim.value : null) : buffer.value) : null;
   // The bar runs to 12 months, or further when the goal or the cover itself is beyond that.
   const scaleMax = goal === null ? 12 : Math.max(12, goal, Math.ceil(shown?.months ?? 0));
-  const accessible: Accessible | undefined = shown && shown.monthsWithAccessible !== undefined && (buffer.state === "ready" && (buffer.value.accessibleMinor ?? 0) > 0) && buffer.value.accessibleAccounts
+  const accessible: Accessible | undefined = shown && shown.monthsWithAccessible !== undefined && buffer.state === "ready" && buffer.value.accessibleAccounts && buffer.value.accessibleAccounts.length > 0
     ? { months: shown.monthsWithAccessible, accounts: buffer.value.accessibleAccounts, totalMinor: buffer.value.accessibleMinor ?? 0 } : undefined;
   const delta = shown && buffer.state === "ready" && sim ? shown.months - buffer.value.months : null;
 

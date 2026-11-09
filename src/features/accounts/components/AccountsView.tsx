@@ -39,6 +39,9 @@ const RuleDrawer = dynamic(
   { ssr: false },
 );
 
+/** A group name as the import compares it: trimmed (a decoded CSV cell can carry a tab or spaces) and without case. */
+const groupKey = (name: string | undefined): string => (name ?? "").trim().toLowerCase();
+
 export function AccountsView() {
   const [ruleDrawerOpen, setRuleDrawerOpen] = useState(false);
   const [ruleSeed, setRuleSeed] = useState<RuleSeed | undefined>(undefined);
@@ -143,9 +146,13 @@ export function AccountsView() {
           toast.error("Account classes must finish loading before importing accounts with groups.");
           return;
         }
+        if (accountClasses.enabled && !accountFlags.available) {
+          toast.error("Account settings must finish loading before importing accounts with groups.");
+          return;
+        }
         const existingGroups = liveGroups(useStagedStore.getState().accountGroups);
         const incompatible = result.accounts.some((account) => {
-          const group = existingGroups.find((g) => g.name.trim().toLowerCase() === account.groupName?.trim().toLowerCase());
+          const group = existingGroups.find((g) => groupKey(g.name) === groupKey(account.groupName));
           return !isAccountClassAllowed(group ? accountClasses.maps.groups.get(group.id) : null, account.offBudget);
         });
         if (incompatible) {
@@ -154,7 +161,7 @@ export function AccountsView() {
         }
         // A group left out of Financial Insights cannot take an on-budget account.
         const intoLeftOutGroup = result.accounts.some((account) => {
-          const group = existingGroups.find((g) => g.name.trim().toLowerCase() === account.groupName?.trim().toLowerCase());
+          const group = existingGroups.find((g) => groupKey(g.name) === groupKey(account.groupName));
           return !!group && !account.offBudget && accountFlags.maps.groups.has(group.id);
         });
         if (intoLeftOutGroup) {
@@ -168,7 +175,7 @@ export function AccountsView() {
       // case) or stage a new one. Without server support the column is ignored.
       const groupIdByName = new Map<string, string>();
       for (const group of liveGroups(useStagedStore.getState().accountGroups)) {
-        groupIdByName.set(group.name.trim().toLowerCase(), group.id);
+        groupIdByName.set(groupKey(group.name), group.id);
       }
       let ignoredGroups = false;
       const rejectedGroups: string[] = [];
@@ -178,7 +185,7 @@ export function AccountsView() {
           if (!groupsSupported) {
             ignoredGroups = true;
           } else {
-            const key = groupName.toLowerCase();
+            const key = groupKey(groupName);
             let id = groupIdByName.get(key);
             if (!id) {
               const created = createGroup(groupName, [], false);
