@@ -9,7 +9,7 @@ function Guide({ start = "start" as FinancialInsightsGuideSection, onClose = jes
 
 describe("the Financial Insights guide", () => {
   it("has a section for every part of the page, each with its own heading and something to read", () => {
-    expect(FINANCIAL_INSIGHTS_GUIDE_SECTIONS.map(([id]) => id)).toEqual(["start", "different", "ready", "counted", "summary", "money", "income", "spending", "budget", "investments", "property", "loans", "statements", "buffer", "drill", "glossary"]);
+    expect(FINANCIAL_INSIGHTS_GUIDE_SECTIONS.map(([id]) => id)).toEqual(["start", "different", "ready", "counted", "summary", "money", "income", "spending", "budget", "investments", "property", "loans", "statements", "progress", "buffer", "drill", "glossary"]);
     for (const [id, label] of FINANCIAL_INSIGHTS_GUIDE_SECTIONS) {
       const { unmount } = render(<Guide start={id} />);
       expect(screen.getByRole("heading", { name: label, level: 2 })).toBeInTheDocument();
@@ -80,6 +80,7 @@ describe("the Financial Insights guide", () => {
     expect(guideSectionForTab("loans")).toBe("loans");
     expect(guideSectionForTab("budget")).toBe("budget");
     expect(guideSectionForTab("statements")).toBe("statements");
+    expect(guideSectionForTab("progress")).toBe("progress");
     expect(guideSectionForTab("something else")).toBe("start");
   });
 

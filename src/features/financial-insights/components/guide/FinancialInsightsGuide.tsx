@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import {
   ArrowLeftRight, Banknote, BookOpen, Building2, CircleHelp, CreditCard, FileSearch, Gauge, GitCompare, Home, LayoutDashboard, ListChecks,
-  Lock, MousePointerClick, PieChart, Scale, ShieldCheck, ShoppingCart, Target, TrendingUp, UserRound, FilePenLine, type LucideIcon,
+  Lock, MousePointerClick, PieChart, Scale, ShieldCheck, Share2, ShoppingCart, Target, TrendingUp, UserRound, FilePenLine, type LucideIcon,
 } from "lucide-react";
 import { GuideFrame } from "@/components/ui/guide-frame";
 import { ACCOUNT_CLASS_ICONS } from "@/features/accounts/lib/accountClassIcons";
@@ -16,23 +16,23 @@ import {
 
 /** The Financial Insights guide: one dialog, the picture first and the words second, one example household throughout. */
 export type FinancialInsightsGuideSection =
-  | "start" | "different" | "ready" | "summary" | "money" | "income" | "spending" | "budget" | "investments" | "property" | "loans" | "statements" | "buffer" | "drill" | "counted" | "glossary";
+  | "start" | "different" | "ready" | "summary" | "money" | "income" | "spending" | "budget" | "investments" | "property" | "loans" | "statements" | "progress" | "buffer" | "drill" | "counted" | "glossary";
 
 export const FINANCIAL_INSIGHTS_GUIDE_SECTIONS: [FinancialInsightsGuideSection, string][] = [
   ["start", "Start here"], ["different", "Why not Actual’s reports?"], ["ready", "Before any number"], ["counted", "How things are counted"], ["summary", "Summary"], ["money", "Money in & out"],
   ["income", "Income"], ["spending", "Spending"], ["budget", "My budget"], ["investments", "Investments"], ["property", "Property & assets"],
-  ["loans", "Loans & cards"], ["statements", "Statements"], ["buffer", "Cash buffer & scenarios"], ["drill", "The transactions behind a figure"], ["glossary", "Glossary"],
+  ["loans", "Loans & cards"], ["statements", "Statements"], ["progress", "Progress"], ["buffer", "Cash buffer & scenarios"], ["drill", "The transactions behind a figure"], ["glossary", "Glossary"],
 ];
 
 const SECTION_ICONS: Record<FinancialInsightsGuideSection, LucideIcon> = {
   start: BookOpen, different: GitCompare, ready: ShieldCheck, summary: LayoutDashboard, money: ArrowLeftRight, income: Banknote, spending: ShoppingCart,
-  budget: Target, investments: TrendingUp, property: Home, loans: CreditCard, statements: Scale, buffer: Gauge, drill: FileSearch, counted: Scale, glossary: CircleHelp,
+  budget: Target, investments: TrendingUp, property: Home, loans: CreditCard, statements: Scale, progress: Share2, buffer: Gauge, drill: FileSearch, counted: Scale, glossary: CircleHelp,
 };
 
 /** The guide section that explains the tab you are on. */
 export const guideSectionForTab = (tab: string): FinancialInsightsGuideSection => (
   tab === "money" ? "money" : tab === "income" ? "income" : tab === "spending" ? "spending" : tab === "budget" ? "budget" : tab === "wealth" ? "investments"
-    : tab === "property" ? "property" : tab === "loans" ? "loans" : tab === "statements" ? "statements" : tab === "summary" ? "summary" : "start");
+    : tab === "property" ? "property" : tab === "loans" ? "loans" : tab === "statements" ? "statements" : tab === "progress" ? "progress" : tab === "summary" ? "summary" : "start");
 
 const Grid = ({ cols = 3, children }: { cols?: 2 | 3 | 4 | 5; children: ReactNode }) => (
   <div className={`grid max-w-[64.5rem] gap-3 ${cols === 2 ? "sm:grid-cols-2" : cols === 3 ? "sm:grid-cols-3" : cols === 4 ? "sm:grid-cols-2 xl:grid-cols-4" : "sm:grid-cols-2 xl:grid-cols-5"}`}>{children}</div>
@@ -470,6 +470,26 @@ export function FinancialInsightsGuide({ section, onSection, onClose, docsUrl }:
           ["Left out of Financial Insights", "Activity excluded. Its cash counterpart is a scope exception."],
         ]} />
         <Para>Current saved account classifications apply to historical periods. Select Opening cash or Closing cash in the Cash Flow Statement to see opening and closing balances by account class and account group, including closed-account history. Expand individual groups or use Expand all, and export the breakdown. Individual card CSV exports preserve the reporting period and reporting basis. Underlined figures open exact recorded transactions and check their total against the figure.</Para>
+      </>}
+
+      {section === "progress" && <>
+        <Para>Progress turns your numbers into cards you can share as pictures, without showing how much money you have. Every card shows a shape, a percentage, a number of months or a count. No amount, currency, account, payee, loan or asset name appears on the tab, in a hover, in a hint or in the saved image.</Para>
+        <Grid cols={3}>
+          <Card icon={TrendingUp} tone="income" title="Net worth journey">A line through the period with only the zero line marked, shaded green above it and red below. It says when you crossed zero, or how much your net worth is up or down. A change of more than ten times is written as “more than 10×”, so a tiny starting point never gives its size away.</Card>
+          <Card icon={CreditCard} tone="spend" title="Debt payoff progress">How what you owe fell, for Credit cards, Loans or All debt, with the highest month marked. It says how much was paid off since that peak once the balance has fallen three months in a row, how many months in a row it fell, and when it was paid off. A date for being debt-free appears for loans only, and only when every loan you still owe has a payoff date in Loans.</Card>
+          <Card icon={Banknote} tone="income" title="Savings rate">Bars for each month above and below 0%. The rate over the period is the savings rate on Summary. A month with no income is left blank, not drawn as 0%. It also shows your best month and your run of months in a row above 0%.</Card>
+          <Card icon={Gauge} tone="value" title="Cash buffer">A bar from 0 to 12 months with marks at 3 and 6 months: how long your cash could cover your spending, as of today. It is the cash buffer on Summary, and a second lighter figure counts investments you can reach when you have set them.</Card>
+          <Card icon={Home} tone="value" title="Home equity">One card for each asset that has a loan linked, named only by its kind: Home, Vehicle or Asset. It draws loan-to-value by month with a dashed line at 80%, and says how much of it you own. These are the loan-to-value figures on Property &amp; assets.</Card>
+          <Card icon={ListChecks} title="Milestones">What you reached within the period, newest first: net worth above zero, cards or a loan paid off, 25%, 50% and 75% of loans paid off (once they have fallen three months in a row), the cash buffer as of today (the highest of 3+ and 6+ months), saving 6 and 12 months in a row, and a home passing below 80% and 50% loan-to-value. Select See all time to look across all your history.</Card>
+        </Grid>
+        <Heading>Share a card</Heading>
+        <Steps items={[
+          ["Select Share", "On any card. A preview of the picture opens; it shows exactly what the card shows."],
+          ["Choose how it looks", "Pick a Light or Dark theme, and turn the “Made with Actual Bench” footer on or off. Dates follow the Show dates switch at the top right of the tab: off turns the month names into Month 1, Month 2… and dates into “after 14 months”, on the tab and in every picture, so a screenshot and a saved image match."],
+          ["Copy or download", "Copy image puts a PNG on your clipboard where your browser allows it; Download PNG saves it. The picture is made in your browser and goes nowhere else."],
+        ]} />
+        <Callout title="What is never shown">Axis values, tooltips and hover values, drill links, CSV exports, and any amount. To see the amounts behind a card, open the tab it comes from: Summary, Loans &amp; cards or Property &amp; assets. The figures on a card are the same as on those tabs, because they are worked out by the same rules.</Callout>
+        <Para>A card that does not apply is not shown: there is no debt card without debt, and no home card without a linked loan. A card that applies but cannot be worked out says why, and never shows 0%. Credit cards in credit count as nothing owed, and a loan is never split into current and non-current parts.</Para>
       </>}
 
       {section === "buffer" && <>

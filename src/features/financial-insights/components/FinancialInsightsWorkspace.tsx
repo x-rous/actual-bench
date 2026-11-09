@@ -27,17 +27,20 @@ import { SummaryTab } from "./SummaryTab";
 import { AssetsTab } from "./AssetsTab";
 import { WealthTab } from "./WealthTab";
 import { StatementsTab } from "./StatementsTab";
+import { ProgressHost } from "./ProgressHost";
+import { useProgressSwitches } from "../hooks/useProgressSwitches";
 import { formatDay } from "../format";
 
 const readTime = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
 /**
- * Financial Insights: Summary, Money in & out, Income, Spending, My budget, Investments, Property & assets, Loans & cards and Statements, with a read-only list behind any figure. Nothing
+ * Financial Insights: Summary, Money in & out, Income, Spending, My budget, Investments, Property & assets, Loans & cards, Statements and Progress, with a read-only list behind any figure. Nothing
  * is drawn until every account is understood and the data has been read.
  */
 export function FinancialInsightsWorkspace() {
   const view = useFinancialInsights();
   const { gate, data } = view;
+  const progress = useProgressSwitches();
   const [drill, setDrill] = useState<DrillTarget | null>(null);
   const [guide, setGuide] = useState<FinancialInsightsGuideSection | null>(null);
   // Closing the list returns focus to the figure that opened it, so keyboard users do not lose their place.
@@ -116,6 +119,7 @@ export function FinancialInsightsWorkspace() {
           )}
           {view.tab === "money" ? <MoneyTab data={data} onDrill={openDrill} />
             : view.tab === "statements" ? <StatementsTab data={data} onDrill={openDrill} />
+            : view.tab === "progress" ? <ProgressHost data={data} today={view.today} period={view.period} onPeriod={view.setPeriod} switches={progress.switches} onSwitches={progress.change} />
             : view.tab === "income" ? <IncomeTab data={data} today={view.today} onDrill={openDrill} />
             : view.tab === "spending" ? <SpendingTab data={data} today={view.today} onDrill={openDrill} />
             : view.tab === "wealth" ? <WealthTab data={data} onDrill={openDrill} />

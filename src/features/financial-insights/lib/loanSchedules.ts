@@ -1,7 +1,7 @@
 import type { ConnectionInstance } from "@/store/connection";
 import { addMonths } from "@/lib/financial-models/calendar/dates";
 import { getDebt, listDebts } from "@/features/assets-debt/lib/debtsApi";
-import { projectAfterAnchor, readTrackedLoan, type TrackedLoan } from "@/features/assets-debt/lib/trackedLoan";
+import { projectAfterAnchor, readTrackedLoan, summaryOfTrackedLoan, type TrackedLoan } from "@/features/assets-debt/lib/trackedLoan";
 
 /**
  * What a tracked loan will really cost each month, from the schedule the Loans page itself shows. Financial Insights
@@ -12,7 +12,7 @@ import { projectAfterAnchor, readTrackedLoan, type TrackedLoan } from "@/feature
 
 export type LoanSchedule =
   /** `principalNext12Minor` is the part of the next twelve months' installments that reduces the loan, and `costNext12Minor` the interest and fees in them (both positive amounts). */
-  | { accountId: string; state: "ready"; monthlyMinor: number; payments: number; totalMinor: number; principalNext12Minor: number; costNext12Minor: number }
+  | { accountId: string; state: "ready"; monthlyMinor: number; payments: number; totalMinor: number; principalNext12Minor: number; costNext12Minor: number; /** When the Loans page says the loan is paid off (a date, `YYYY-MM-DD`), or null when it does not say. */ payoffDate?: string | null }
   | { accountId: string; state: "unavailable"; reason: string };
 
 export type LoanSchedules = {
@@ -107,7 +107,9 @@ export async function readLoanSchedules(connection: ConnectionInstance, input: {
       if (read.state === "unavailable") { result.schedules.push(unavailable(accountId, read.reason)); continue; }
       const tagged = recordedCostRows(read.loan.plan, accountId);
       result.costRows.push(...tagged);
-      result.schedules.push(scheduleFromLoan(accountId, read.loan, today));
+      const schedule = scheduleFromLoan(accountId, read.loan, today);
+      // The payoff date is the Loans list's own: the same events and the same rules, read once for both.
+      result.schedules.push(schedule.state === "ready" ? { ...schedule, payoffDate: summaryOfTrackedLoan(read.loan, summary, today)?.summary.payoffDate ?? null } : schedule);
     } catch (error) {
       result.schedules.push(unavailable(accountId, error instanceof Error ? error.message : "The loan could not be read"));
     }

@@ -127,10 +127,16 @@ export async function trackedLoanSummary(connection: ConnectionInstance, debt: D
   if (!debt.trackingStartDueDate || debt.status !== "active" || debt.openingPrincipalMinor === null) return null;
   const read = await readTrackedLoan(connection, await getDebt(debt.id), today);
   if (read.state !== "ready") return null;
-  const composed = trackedLoanEvents(read.loan, today);
+  return summaryOfTrackedLoan(read.loan, debt, today);
+}
+
+/** `trackedLoanSummary` for a loan that has already been read, so a caller that holds it does not read it again. */
+export function summaryOfTrackedLoan(loan: TrackedLoan, debt: DebtSummary, today: string): { ok: true; summary: LoanSummary } | null {
+  if (debt.openingPrincipalMinor === null) return null;
+  const composed = trackedLoanEvents(loan, today);
   if (!composed.ok) return null;
   return {
     ok: true,
-    summary: summarizeLoanEvents(composed.events, { today, forecastFrom: read.loan.plan.anchor.restartDate, paidOffOn: debt.paidOffOn ?? null, startingPrincipalMinor: debt.openingPrincipalMinor }),
+    summary: summarizeLoanEvents(composed.events, { today, forecastFrom: loan.plan.anchor.restartDate, paidOffOn: debt.paidOffOn ?? null, startingPrincipalMinor: debt.openingPrincipalMinor }),
   };
 }

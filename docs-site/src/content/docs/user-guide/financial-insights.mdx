@@ -7,6 +7,8 @@ Open **Financial Management → Financial Insights** after connecting your Actua
 
 Financial Insights answers one question at a time, using the same definitions everywhere, so the numbers on one chart always agree with the numbers on another. It starts with a **Summary** tab, then **Money in & out**, **Income** and **Spending**, which are always there; the other tabs appear when there is something to show: My budget once Bench can read your budget mode, Investments when you have an investment or retirement account, Property & assets when you have a property, vehicle or fixed other-asset account, and Loans & cards when you have a loan, credit card or other liability account.
 
+**Progress** is always offered too, last, with cards you can share as pictures without showing any amount.
+
 **Statements** is always offered too: cash flow beside P&L, using the existing income and spending rules. Uncategorized on-budget receipts and payments count by sign, including card purchases; recorded activity inside off-budget investments is shown separately.
 
 The **Guide** button at the top of the page opens a guide inside Bench: what every tab and card tells you, how each figure is worked out, with pictures of the charts, why this page is more than a report of transactions, and a glossary. **How things are counted** starts with common movements and explains why My budget can differ, with account-specific examples and classification rules available to expand. The Guide opens at the section for the tab you are on.
@@ -219,6 +221,34 @@ Current saved account classifications also apply to historical periods. Select *
 | Other liability | Its class does not identify borrowing versus payables; transfers need review. |
 | Left out of Financial Insights | Activity excluded. Its cash counterpart is a scope exception. |
 
+
+## The Progress tab
+
+Progress is for sharing. People post a net worth line climbing past zero or a credit card balance falling to nothing, and most do not want to show how much money they have. The cards on this tab show the shape and the achievement, and **nothing on the tab shows a money amount**: no figure, no currency symbol or code, no axis values or hover values, and no account, payee, loan or asset name. That holds for the tab, its hints, and the saved image. It shows only percentages, months, counts, dates and chart shapes with the zero line marked, and it uses the page's period like the other tabs.
+
+The tab is always offered. A card that does not apply is not shown, and one that cannot be worked out says why instead of showing 0%. Each figure is worked out by the same rules as on the tab it comes from, so a card agrees with Summary, Loans & cards and Property & assets. To see the amounts behind a card, open that tab.
+
+| Card | What it shows |
+| --- | --- |
+| Net worth journey | A line through the period with only the zero line marked, shaded above and below it. It says when you crossed zero, or how far net worth is up or down. A change of more than ten times is written as "more than 10×", so a very small starting point never gives its size away. Needs two months of data. |
+| Debt payoff progress | How what you owe fell, for **Credit cards**, **Loans** or **All debt**, with the highest month marked. It says how much was paid off since that peak once the balance has fallen three months in a row, how many months in a row it fell, and when it was paid off. For loans only, it can say when you will be debt-free, but only when every loan you still owe is tracked in Loans and has a payoff date. A card in credit counts as nothing owed. |
+| Savings rate | Bars for each month above and below 0%. The rate for the period is the savings rate on Summary. A month with no income is left blank. It names your best month and your run of months in a row above 0%. |
+| Cash buffer | A bar from 0 to 12 months with marks at 3 and 6 months: how long your cash could cover your spending, as of today. A lighter second fill counts investments you can reach when you have set them. |
+| Home equity | One card for each asset that has a loan linked, named only Home, Vehicle or Asset. Loan-to-value by month with a dashed line at 80%, and how much of it you own. The asset, its loan and the loan's terms are not shown. |
+| Milestones | What you reached within the period, newest first, up to eight: net worth above zero, credit cards paid off, a loan paid off, 25%, 50% and 75% of loans paid off since the peak (once they have fallen three months in a row), the highest of 3+ and 6+ months of cash buffer (as of today, so undated), saving 6 and 12 months in a row, and a home below 80% and 50% loan-to-value. **See all time** switches the page to all available history. |
+
+![A Savings rate card exported from the demo budget: twelve green bars above the 0% line, with the rate for the period, the best month and the run of months in a row above it, and the Made with Actual Bench footer.](../../../assets/screenshots/user-guide/financial-insights-progress.png)
+
+### Share a card
+
+Select **Share** on a card to open a preview of the picture. It shows exactly what the card shows, with the tab's Show dates setting.
+
+- **Show dates** is a switch at the top right of the tab, on by default. Turned off, month names become Month 1, Month 2… counted from the first month of the period, and dated lines become relative, such as "Crossed zero after 14 months". It applies to the whole tab and to every picture, so a screenshot and the picture match.
+- **Theme** is Light or Dark, starting from your current theme.
+- **Footer** adds or removes "Made with Actual Bench".
+- **Copy image** puts a PNG on your clipboard (only where your browser allows it). **Download PNG** saves `financial-insights-progress-<card>.png`.
+
+The picture is 1200 × 675 pixels and is drawn in your browser. It contains only what you see on the card: no metadata and no hidden text. Nothing is uploaded, and nothing is written to Actual or to Bench.
 
 ## See the transactions behind a number
 

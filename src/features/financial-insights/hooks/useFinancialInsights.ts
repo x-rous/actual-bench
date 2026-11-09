@@ -234,6 +234,7 @@ export const TABS = [
   { value: "property", label: "Property & assets" },
   { value: "loans", label: "Loans & cards" },
   { value: "statements", label: "Statements" },
+  { value: "progress", label: "Progress" },
 ] as const;
 
 /** The tabs that have something to show: My budget once its mode is known and a month was read, Investments once an investment or retirement account exists, Property & assets once a fixed asset account exists (property, vehicle or a fixed other asset), Loans & cards once a loan, credit card or other liability account exists. */
@@ -385,7 +386,7 @@ export function useFinancialInsights(): FinancialInsightsView {
       ledger, period: resolved, categories, monthly, breakdown, spending: spendingFacts(breakdown, monthly),
       groups: spendingGroups(breakdown), comparison: comparePeriods(ledger, resolved, today), income: { breakdown: incomeRows, facts: spendingFacts(incomeRows, monthly, (m) => m.received), groups: spendingGroups(incomeRows) }, composition: compositionSeries(ledger, resolved, summary.opening), netWorthChange: netWorthSteps(summary),
       debt: debtRepayments(ledger, resolved, trackedLoans, summary.cashBridge.loanOut * -1),
-      schedules: raw.loans.schedules.map((l): ScheduleInput => (l.state === "ready" ? { accountId: l.accountId, state: "ready", principalNext12Minor: l.principalNext12Minor, costNext12Minor: l.costNext12Minor } : { accountId: l.accountId, state: "unavailable", reason: l.reason })),
+      schedules: raw.loans.schedules.map((l): ScheduleInput => (l.state === "ready" ? { accountId: l.accountId, state: "ready", principalNext12Minor: l.principalNext12Minor, costNext12Minor: l.costNext12Minor, payoffDate: l.payoffDate ?? null } : { accountId: l.accountId, state: "unavailable", reason: l.reason })),
       drill: { ledger, period: resolved, today, reclassifiedIds: new Set(ledger.facts.reclassified.map((r) => r.id)) },
       registry: { read: raw.registryRead, assets: raw.registryAssets, metadata: raw.registryMetadata, debtLinks: raw.debtLinks, assetEntries: raw.assetEntries, assetRowCount: raw.assetRowCount, savedClassifications: raw.savedClassifications },
     };

@@ -290,6 +290,39 @@ export type AssetSeries = {
 };
 
 
+type SeriesInput = Parameters<typeof assetSeries>[0];
+
+/** The registered assets whose book could be read and whose account is still a fixed asset: the ones a series counts. */
+function readableAssets(input: SeriesInput): RegistryAsset[] {
+  const { ledger } = input;
+  return input.assets.filter((asset) => {
+    const owner = ledger.account.get(asset.actualAccountId);
+    const book = input.books.get(asset.actualAccountId);
+    return !!owner && isFixedAssetAccount(owner) && asset.status !== "archived" && !!book && book.available;
+  });
+}
+
+/** One asset with a loan linked, and its equity point (value, debt, equity, loan-to-value) at the end of each month of the period. */
+export type LinkedEquitySeries = { assetId: string; accountId: string; accountClass: AccountClass; points: EquityPoint[] };
+
+/**
+ * The equity points of each readable asset that has a loan linked, month by month: the same `assetEquity` as the table and the
+ * totals above, so the last point equals the table's end figures. Sorted as `assets` are.
+ */
+export function linkedEquitySeries(input: SeriesInput): LinkedEquitySeries[] {
+  const { ledger, period, links } = input;
+  const loans = new Map(input.loans.map((l) => [l.debtId, l]));
+  return readableAssets(input)
+    .filter((asset) => links.some((l) => l.assetId === asset.id))
+    .map((asset) => {
+      const equityOf = assetEquity(asset, input.books.get(asset.actualAccountId)!.rows, links, loans, ledger);
+      return {
+        assetId: asset.id, accountId: asset.actualAccountId, accountClass: ledger.account.get(asset.actualAccountId)!.accountClass,
+        points: period.months.map((month, i) => equityOf(period.partial && i === period.months.length - 1 ? period.endDate : lastDayOf(month), month)),
+      };
+    });
+}
+
 /**
  * The value of the registered assets, and the debt and equity of the ones with a loan linked, at the end of each month of the
  * period (the same `assetEquity` as the table, so the last point equals the table's end figures). Only assets whose book could be
@@ -298,11 +331,7 @@ export type AssetSeries = {
 export function assetSeries(input: { ledger: Ledger; period: ResolvedPeriod; assets: readonly RegistryAsset[]; books: ReadonlyMap<string, AssetBook | null>; links: readonly AssetDebtLink[]; loans: readonly LoanRef[] }): AssetSeries {
   const { ledger, period, links } = input;
   const loans = new Map(input.loans.map((l) => [l.debtId, l]));
-  const ready = input.assets.filter((asset) => {
-    const owner = ledger.account.get(asset.actualAccountId);
-    const book = input.books.get(asset.actualAccountId);
-    return !!owner && isFixedAssetAccount(owner) && asset.status !== "archived" && !!book && book.available;
-  });
+  const ready = readableAssets(input);
   const linkedAssets = ready.filter((a) => links.some((l) => l.assetId === a.id));
   const equityOf = new Map(ready.map((asset) => [asset, assetEquity(asset, input.books.get(asset.actualAccountId)!.rows, links, loans, ledger)]));
   const at = (date: string, month: string): AssetTotals => {
