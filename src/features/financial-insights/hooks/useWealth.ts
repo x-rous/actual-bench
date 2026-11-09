@@ -6,7 +6,7 @@ import { getTransport } from "@/lib/actual";
 import { selectActiveInstance, useConnectionStore } from "@/store/connection";
 import { attributeBook, readBook } from "@/lib/asset-registry/ledger";
 import { ASSET_ROW_LIMIT } from "@/lib/financial-insights/assetReview";
-import { assetSeries, assetValues, linkedEquitySeries, type AssetBook, type AssetSeries, type AssetValueRow, type LinkedEquitySeries, type LoanRef } from "@/lib/financial-insights/wealth";
+import { assetSeries, assetValues, propertySeries, type AssetBook, type AssetSeries, type AssetValueRow, type LoanRef, type PropertySeries } from "@/lib/financial-insights/wealth";
 import { listDebts } from "@/features/assets-debt/lib/debtsApi";
 import type { ReadyData } from "./useFinancialInsights";
 
@@ -33,7 +33,7 @@ function combineBooks(results: UseQueryResult<BookSnapshot>[]) {
 export type WealthLoad =
   | { state: "loading" }
   | { state: "error"; retry: () => void }
-  | { state: "ready"; rows: AssetValueRow[]; series: AssetSeries; /** The equity points, month by month, of each asset with a loan linked. */ linked: LinkedEquitySeries[]; /** Asset books are being read again after a refresh: the rows may still be the earlier ones. */ refreshing: boolean; /** Some asset account could not be read. */ hasFailedBooks: boolean; /** Read the accounts that failed again. */ retryBooks: () => void };
+  | { state: "ready"; rows: AssetValueRow[]; series: AssetSeries; /** The value, and where a loan is linked the loan-to-value, month by month, of each readable asset. */ properties: PropertySeries[]; /** Asset books are being read again after a refresh: the rows may still be the earlier ones. */ refreshing: boolean; /** Some asset account could not be read. */ hasFailedBooks: boolean; /** Read the accounts that failed again. */ retryBooks: () => void };
 
 /**
  * What Property & assets reads beyond the main read, when its tab opens: each registered asset account's book (the Asset
@@ -77,7 +77,7 @@ export function useWealth(data: ReadyData): WealthLoad {
   // An account that is not read at all (too many entries) has a disabled query that never settles: it must not hold the tab on loading.
   const pending = accountIds.some((id, i) => !unreadable.has(id) && books.unsettled[i]) || (linkedDebts.length > 0 && loansQuery.isPending && !loansQuery.isError);
   const failed = linkedDebts.length > 0 && loansQuery.isError;
-  const loaded = useMemo((): { rows: AssetValueRow[]; series: AssetSeries; linked: LinkedEquitySeries[] } | null => {
+  const loaded = useMemo((): { rows: AssetValueRow[]; series: AssetSeries; properties: PropertySeries[] } | null => {
     if (pending || failed) return null;
     const attributed = new Map<string, AssetBook | null>();
     accountIds.forEach((id, i) => {
@@ -90,7 +90,7 @@ export function useWealth(data: ReadyData): WealthLoad {
     return {
       rows: assetValues({ ledger, period: data.period, assets, books: attributed, links: registry.debtLinks, loans, unreadable, registryRead: data.registry.read }),
       series: assetSeries({ ledger, period: data.period, assets, books: attributed, links: registry.debtLinks, loans }),
-      linked: linkedEquitySeries({ ledger, period: data.period, assets, books: attributed, links: registry.debtLinks, loans }),
+      properties: propertySeries({ ledger, period: data.period, assets, books: attributed, links: registry.debtLinks, loans }),
     };
   }, [pending, failed, accountIds, bookData, loansQuery.data, ledger, data.period, data.registry.read, assets, registry, linkedDebts, unreadable]);
 

@@ -2,20 +2,21 @@ import { compositionSeries, monthlyFlows } from "../breakdowns";
 import { buildLedger, cashBuffer, summarize, type AccountFact, type FinancialFacts, type LoanScheduleInput, type MovementRow } from "../measures";
 import { resolvePeriod } from "../period";
 import type { ProgressInput } from "../progress";
-import type { EquityPoint, LinkedEquitySeries } from "../wealth";
+import type { EquityPoint, PropertySeries } from "../wealth";
 
 /** Test fixtures for the Progress tab: a household with distinctive names and amounts, none of which may reach a `ProgressView`. */
 
 export const today = "2026-11-18";
 
 // Distinctive names and amounts: none of them may appear anywhere in a ProgressView.
-export const NAMES = ["Zephyr Checking", "Orchid Visa", "Basil Mortgage", "Quartz Hatchback loan", "Maple Cottage"];
-export const AMOUNTS_MINOR = [98_765_432, 12_345_789, 4_567_891, 5_432_109];
-export const AMOUNTS_TEXT = ["987654.32", "987,654.32", "123457.89", "123,457.89", "45678.91", "45,678.91", "98765", "987654", "12345", "123457"];
+export const NAMES = ["Zephyr Checking", "Orchid Visa", "Basil Mortgage", "Quartz Hatchback loan", "Maple Cottage", "Saffron Brokerage"];
+export const AMOUNTS_MINOR = [98_765_432, 12_345_789, 4_567_891, 5_432_109, 54_321_098, 63_321_098];
+export const AMOUNTS_TEXT = ["987654.32", "987,654.32", "123457.89", "123,457.89", "45678.91", "45,678.91", "543210.98", "543,210.98", "633210.98", "633,210.98", "98765", "987654", "12345", "123457"];
 
 export const chk: AccountFact = { id: "chk", name: NAMES[0], accountClass: "bank", treatment: null, offBudget: false };
 export const visa: AccountFact = { id: "visa", name: NAMES[1], accountClass: "credit-card", treatment: null, offBudget: false };
 export const mortgage: AccountFact = { id: "mortgage", name: NAMES[2], accountClass: "loan", treatment: null, offBudget: true };
+export const inv: AccountFact = { id: "inv", name: NAMES[5], accountClass: "investment", treatment: null, offBudget: true };
 export const car: AccountFact = { id: "car", name: NAMES[3], accountClass: "loan", treatment: null, offBudget: true };
 
 export const row = (month: string, accountId: string, amountMinor: number, extra: Partial<MovementRow> = {}): MovementRow => ({ month, accountId, categoryId: null, transferAccountId: null, amountMinor, count: 1, ...extra });
@@ -36,7 +37,7 @@ export function inputOf(facts: FinancialFacts, over: Partial<ProgressInput> = {}
   const summary = summarize(ledger, period, { unavailableReason: null, rowCount: 0, amountMinor: 0 });
   return {
     today, period, ledger, summary, monthly: monthlyFlows(ledger, period, today, true), composition: compositionSeries(ledger, period, summary.opening),
-    buffer: cashBuffer(ledger, today, new Map<string, LoanScheduleInput>(), {}), schedules: [], equity: [], allTime: false, ...over,
+    buffer: cashBuffer(ledger, today, new Map<string, LoanScheduleInput>(), {}), schedules: [], equity: [], ...over,
   };
 }
 
@@ -55,7 +56,15 @@ export function richFacts(): FinancialFacts {
 }
 
 export const point = (value: number | null, debt: number | null, ltv: number | null): EquityPoint => ({ assetValueMinor: value, debtMinor: debt, equityMinor: value !== null && debt !== null ? value - debt : null, ltvPercent: ltv, gaps: [] });
-export const home = (id: string, ltvs: (number | null)[], accountClass: LinkedEquitySeries["accountClass"] = "property"): LinkedEquitySeries => ({ assetId: id, accountId: `${id}-acct`, accountClass, points: ltvs.map((l) => point(l === null ? null : 54_321_098, l === null ? null : 30_000_000, l)) });
+/** A property with a loan linked: its value rises by 10,000.00 a month from 543,210.98, and its loan-to-value is `ltvs`. */
+export const home = (id: string, ltvs: (number | null)[], accountClass: PropertySeries["accountClass"] = "property"): PropertySeries => ({
+  assetId: id, accountId: `${id}-acct`, accountClass, linked: true,
+  points: ltvs.map((l, i) => point(l === null ? null : 54_321_098 + i * 1_000_000, l === null ? null : 30_000_000, l)),
+});
+/** A property with no loan: only its value, from the amounts given (null before it had one). */
+export const owned = (id: string, values: (number | null)[], accountClass: PropertySeries["accountClass"] = "property"): PropertySeries => ({
+  assetId: id, accountId: `${id}-acct`, accountClass, linked: false, points: values.map((v) => point(v, null, null)),
+});
 
 export const ltvTen = [72, 71, 70, 69, 68, 66, 64, 62, 61.4, 61.4];
 

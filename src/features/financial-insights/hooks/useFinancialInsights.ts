@@ -181,6 +181,8 @@ type RawData = {
 export type ReadyData = {
   summary: ReturnType<typeof summarize>;
   buffer: ReturnType<typeof cashBuffer>;
+  /** What each tracked loan costs a month, as the buffer takes it: the cash buffer on past months uses the same ones, so a line over time is one measure. */
+  bufferSchedules: ReadonlyMap<string, LoanScheduleInput>;
   /** The goal and how a typical month is worked out, as the user chose them. */
   bufferSettings: BufferSettings;
   /** What the cash buffer's average monthly spending is made of: the average of each category group over the same months. */
@@ -381,7 +383,7 @@ export function useFinancialInsights(): FinancialInsightsView {
     const incomeRows = incomeBreakdown(ledger, resolved, categories, monthly);
     const bufferSpending = bufferSpendingGroups(ledger, today, categories, bufferSettings);
     return {
-      state: "ready", summary, buffer: cashBuffer(ledger, today, schedules, { months: bufferSettings.averageMonths, method: bufferSettings.method, spendingMinor: bufferSettings.method === "median" ? bufferSpending?.spendingMinor : undefined }), bufferSpending, bufferSettings,
+      state: "ready", summary, bufferSchedules: schedules, buffer: cashBuffer(ledger, today, schedules, { months: bufferSettings.averageMonths, method: bufferSettings.method, spendingMinor: bufferSettings.method === "median" ? bufferSpending?.spendingMinor : undefined }), bufferSpending, bufferSettings,
       review, firstMonth: ledger.firstMonth, readAt: raw.readAt, refreshing: isFetching, refreshFailed: isError,
       ledger, period: resolved, categories, monthly, breakdown, spending: spendingFacts(breakdown, monthly),
       groups: spendingGroups(breakdown), comparison: comparePeriods(ledger, resolved, today), income: { breakdown: incomeRows, facts: spendingFacts(incomeRows, monthly, (m) => m.received), groups: spendingGroups(incomeRows) }, composition: compositionSeries(ledger, resolved, summary.opening), netWorthChange: netWorthSteps(summary),

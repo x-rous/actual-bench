@@ -3,7 +3,7 @@ import { useProgressSwitches } from "../../hooks/useProgressSwitches";
 import { ProgressTab } from "../ProgressTab";
 
 /** The tab with the setting the page holds for it, for tests. */
-export function ProgressTabHarness({ view, onSeeAllTime }: { view: ProgressView; onSeeAllTime?: () => void }) {
+export function ProgressTabHarness({ view }: { view: ProgressView }) {
   const { switches, change } = useProgressSwitches();
-  return <ProgressTab view={view} switches={switches} onSwitches={change} onSeeAllTime={onSeeAllTime} />;
+  return <ProgressTab view={view} switches={switches} onSwitches={change} />;
 }

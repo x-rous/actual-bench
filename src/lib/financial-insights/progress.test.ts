@@ -1,7 +1,8 @@
-import { cashBuffer, savingsRateOf, type AccountFact, type LoanScheduleInput, type MovementRow } from "./measures";
-import { changeBetween, progressView, safeReason, toShape, type DebtCard, type MilestonesCard, type ProgressInput, type ProgressView, type SavingsCard } from "./progress";
+import { cashBuffer, savingsRateOf, type LoanScheduleInput, type MovementRow } from "./measures";
+import { changeBetween, progressView, safeReason, toShape, type DebtCard, type ProgressInput, type ProgressView, type SavingsCard } from "./progress";
 import type { ScheduleInput } from "./debt";
-import { AMOUNTS_MINOR, AMOUNTS_TEXT, NAMES, car, chk, factsOf, home, inputOf, ltvTen, mortgage, months, pay, richFacts, row, today, visa } from "./testing/progressFixture";
+import type { ConsistencyCard, CompositionCard, JourneyCard } from "./progress";
+import { AMOUNTS_MINOR, AMOUNTS_TEXT, NAMES, car, chk, inv, factsOf, home, owned, inputOf, ltvTen, mortgage, months, pay, richFacts, row, today, visa } from "./testing/progressFixture";
 
 const card = <T extends ProgressView["cards"][number]["kind"]>(view: ProgressView, kind: T) => view.cards.find((c) => c.kind === kind) as Extract<ProgressView["cards"][number], { kind: T }> | undefined;
 
@@ -72,8 +73,8 @@ describe("the percentage guards", () => {
 });
 
 describe("what the view may hold", () => {
-  const SHAPE_KEYS = new Set(["points", "bars", "zero", "fill", "accessibleFill", "at"]);
-  const NUMBER_KEYS = new Set([...SHAPE_KEYS, "peak"]);
+  const SHAPE_KEYS = new Set(["points", "bars", "zero", "fill", "accessibleFill", "at", "start", "end"]);
+  const NUMBER_KEYS = new Set([...SHAPE_KEYS, "peak", "index"]);
 
   function walk(value: unknown, key: string, inShape: boolean, seen: string[]): void {
     if (typeof value === "number") {
@@ -99,12 +100,12 @@ describe("what the view may hold", () => {
       { accountId: "mortgage", state: "ready", principalNext12Minor: 1, costNext12Minor: 1, payoffDate: "2036-03-01" },
       { accountId: "car", state: "unavailable", reason: `${NAMES[3]} does not reconcile` },
     ];
-    return progressView(inputOf(facts, { schedules, equity: [home("a", ltvTen), home("b", ltvTen.map((v) => v + 5), "vehicle")] }));
+    return progressView(inputOf(facts, { schedules, equity: [home("a", ltvTen), home("b", ltvTen.map((v) => v + 5), "other-asset")] }));
   }
 
   it("holds only Shape, Percent, Months and Count numbers, with no field named for an amount, and every Shape between -1 and 1", () => {
     const view = everything();
-    expect(view.cards.map((c) => c.kind)).toEqual(["netWorth", "debt", "savings", "buffer", "equity", "equity", "milestones"]);
+    expect(view.cards.map((c) => c.kind)).toEqual(["netWorth", "debt", "property", "property", "composition", "savings", "consistency", "journey", "buffer"]);
     walk(view, "", false, []);
   });
 
@@ -130,7 +131,7 @@ describe("what the view may hold", () => {
 
   it("gives every dated line a form without the months named", () => {
     const view = everything();
-    const lines = view.cards.flatMap((c) => ("labels" in c ? c.labels : c.kind === "milestones" ? c.items : []));
+    const lines = view.cards.flatMap((c) => ("labels" in c ? c.labels : []));
     expect(lines.length).toBeGreaterThan(5);
     for (const line of lines) expect(line.off).not.toMatch(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b|20\d\d/);
   });
@@ -149,7 +150,7 @@ describe("savings rate", () => {
     expect(savings.bars[2]).toBe(-0.125);
     expect(savings.bars[0]).toBe(0.25);
     expect(savings.labels.map((l) => l.on)).toContain("Best month: Jan 2026, 25.0%");
-    expect(savings.labels.map((l) => l.on)).toContain("Saved in 9 of 10 months · 7 months in a row");
+    expect(savings.labels.map((l) => l.on)).toContain("7 months in a row above 0%");
   });
 
   it("leaves a month with no income as a gap with a note, and the card out when no month had income", () => {
@@ -171,7 +172,7 @@ describe("savings rate", () => {
     const f = factsOf([chk], [...months(1, 11).map((m) => row(m, "chk", 4_000_000, { categoryId: "salary" })), row("2026-11", "chk", -3_900_000, { categoryId: "food" }), ...months(1, 10).map((m) => row(m, "chk", -3_000_000, { categoryId: "food" }))]);
     const savings = card(progressView(inputOf(f, {}, ["2026-01", "2026-11"])), "savings") as SavingsCard;
     expect(savings.axis.partial.at(-1)).toBe(true);
-    expect(savings.labels.map((l) => l.on).join()).toContain("Saved in 10 of 10 months");
+    expect(savings.labels.map((l) => l.on).join()).toContain("10 months in a row above 0%");
   });
 });
 
@@ -259,87 +260,64 @@ describe("debt payoff", () => {
   });
 });
 
-describe("home equity", () => {
-  it("makes one card per linked asset, titled by class only, with the same loan-to-value the equity points hold", () => {
-    const view = progressView(inputOf(richFacts(), { equity: [home("a", ltvTen), home("b", ltvTen), home("c", ltvTen, "vehicle"), home("d", ltvTen, "other-asset")] }));
-    const cards = view.cards.filter((c) => c.kind === "equity");
-    expect(cards.map((c) => c.title)).toEqual(["Home 1", "Home 2", "Vehicle", "Asset"]);
-    const first = cards[0] as Extract<typeof cards[number], { kind: "equity" }>;
-    expect(first.chart.points.at(-1)).toBe(0.614);
-    expect(first.reference).toEqual({ at: 0.8, label: "80%" });
-    expect(first.labels.map((l) => l.on)).toEqual(["You own 38.6%", "LTV down from 72.0% to 61.4%"]);
+describe("property value and loan-to-value", () => {
+  it("makes one card per property, titled by kind with its value and loan-to-value, and numbered when two read the same", () => {
+    const view = progressView(inputOf(richFacts(), { equity: [home("a", ltvTen), home("b", ltvTen), home("c", ltvTen, "vehicle"), home("d", ltvTen, "other-asset"), owned("e", [100, 110, 120, 130, 140, 150, 160, 170, 180, 190])] }));
+    const cards = view.cards.filter((c) => c.kind === "property");
+    expect(cards.map((c) => c.title)).toEqual(["Property value & LTV 1", "Property value & LTV 2", "Asset value & LTV", "Property value"]);
+    const first = cards[0] as Extract<typeof cards[number], { kind: "property" }>;
+    expect(first.ltv!.chart.points.at(-1)).toBe(0.614);
+    expect(first.ltv!.reference).toEqual({ at: 0.8, label: "80%" });
+    // The value is a shape scaled to its own highest month: the last month is 1, and no amount is in it.
+    expect(first.valueShape!.points.at(-1)).toBe(1);
+    expect(first.labels.map((l) => l.on)).toEqual(["You own 38.6%", "Value up 16.6% over the period", "LTV down from 72.0% to 61.4%"]);
   });
 
-  it("names the month it went below 80% for good, draws months with gaps as gaps, and is absent without linked assets or any LTV", () => {
+  it("draws no card for a vehicle, with or without a loan", () => {
+    const view = progressView(inputOf(richFacts(), { equity: [home("v", ltvTen, "vehicle"), owned("w", [100, 110, 120, 130, 140, 150, 160, 170, 180, 190], "vehicle")] }));
+    expect(view.cards.filter((c) => c.kind === "property")).toEqual([]);
+  });
+
+  it("labels the latest loan-to-value at the end of its line, and the month it is for", () => {
+    expect(card(progressView(inputOf(richFacts(), { equity: [home("a", ltvTen)] })), "property")!.ltv!.latest).toEqual({ index: 9, label: "61.4%" });
+    expect(card(progressView(inputOf(richFacts(), { equity: [home("a", [85, 84, 83, 82, 81, 79, 78, 77, null, null])] })), "property")!.ltv!.latest).toEqual({ index: 7, label: "77.0%" });
+  });
+
+  it("shows a property with no loan as its value alone, and a fully paid loan as 100% owned", () => {
+    const v = card(progressView(inputOf(richFacts(), { equity: [owned("a", [100, 100, 110, 120, 130, 140, 150, 160, 170, 180])] })), "property")!;
+    expect(v.ltv).toBeNull();
+    expect(v.title).toBe("Property value");
+    expect(v.labels.map((l) => l.on)).toEqual(["Value up 80.0% over the period"]);
+    const paid = card(progressView(inputOf(richFacts(), { equity: [home("a", Array(10).fill(0))] })), "property")!;
+    expect(paid.labels[0].on).toBe("You own 100.0%");
+    expect(paid.ltv!.chart.points.every((p) => p === 0)).toBe(true);
+  });
+
+  it("guards a change in value past ten times, and leaves a month before the asset had a value as a gap", () => {
+    const big = card(progressView(inputOf(richFacts(), { equity: [owned("a", [null, null, 100, 200, 400, 800, 1_200, 1_600, 2_000, 4_000])] })), "property")!;
+    expect(big.labels[0].on).toBe("Value up by more than 10×");
+    expect(big.valueShape!.points.slice(0, 2)).toEqual([null, null]);
+    const fall = card(progressView(inputOf(richFacts(), { equity: [owned("a", [1_000, 900, 800, 700, 600, 500, 400, 300, 200, 50])] })), "property")!;
+    expect(fall.labels[0].on).toBe("Value down by more than 90%");
+  });
+
+  it("names the month it went below 80% for good, draws months with gaps as gaps, and is absent with nothing to show", () => {
     const view = progressView(inputOf(richFacts(), { equity: [home("a", [85, 84, null, 79, 78, 77, 76, 75, 74, 73])] }));
-    const c = card(view, "equity")!;
+    const c = card(view, "property")!;
     expect(c.labels.map((l) => l.on)).toContain("Below 80% since Apr 2026");
-    expect(c.chart.points[2]).toBeNull();
-    expect(card(progressView(inputOf(richFacts(), { equity: [home("a", Array(10).fill(null))] })), "equity")).toBeUndefined();
-    expect(card(progressView(inputOf(richFacts(), { equity: [] })), "equity")).toBeUndefined();
+    expect(c.ltv!.chart.points[2]).toBeNull();
+    expect(c.valueShape!.points[2]).toBeNull();
+    expect(card(progressView(inputOf(richFacts(), { equity: [home("a", Array(10).fill(null))] })), "property")).toBeUndefined();
+    expect(card(progressView(inputOf(richFacts(), { equity: [owned("a", Array(10).fill(null))] })), "property")).toBeUndefined();
+    expect(card(progressView(inputOf(richFacts(), { equity: [] })), "property")).toBeUndefined();
     expect(progressView(inputOf(richFacts(), { equity: null })).equityPending).toBe(true);
-  });
-});
-
-describe("milestones", () => {
-  const milestones = (input: ProgressInput) => card(progressView(input), "milestones") as MilestonesCard;
-  const items = (input: ProgressInput) => milestones(input).items.map((i) => i.on);
-  const readyBuffer = (months: number): ProgressInput["buffer"] => ({ state: "ready", value: { months } as never });
-  const idle = (extra: MovementRow[] = []) => months(1, 10).flatMap((m) => [row(m, "chk", 1_000_000, { categoryId: "salary" }), row(m, "chk", -1_000_000, { categoryId: "food" })]).concat(extra);
-
-  it("lists net worth above zero and a streak of saved months", () => {
-    const f = factsOf([chk], months(1, 10).flatMap((m) => [row(m, "chk", 4_500_000, { categoryId: "salary" }), row(m, "chk", -3_000_000, { categoryId: "food" })]), [{ accountId: "chk", amountMinor: -10_000_000 }]);
-    const list = items(inputOf(f, { buffer: { state: "unavailable", reason: "x" } }));
-    // Net worth was -85,000.00 at the end of January and rose 15,000.00 a month: above zero in July.
-    expect(list).toEqual(["Net worth above zero: Jul 2026", "Saved 6 months in a row: Jun 2026"]);
-    expect(milestones(inputOf(f)).items[0].off).toMatch(/^(Now|Net worth above zero: Month 7)/);
-  });
-
-  it("lists the credit cards paid off, a loan paid off, and 25%, 50% and 75% of loans paid off since the peak", () => {
-    const f = factsOf([chk, visa, mortgage], [...idle(), ...months(1, 10).flatMap((m) => pay(m, "chk", "mortgage", 1_000_000)), ...months(2, 6).flatMap((m) => pay(m, "chk", "visa", 1_000_000))], [{ accountId: "chk", amountMinor: 100_000_000 }, { accountId: "visa", amountMinor: -4_000_000 }, { accountId: "mortgage", amountMinor: -9_000_000 }]);
-    const list = items(inputOf(f, { buffer: { state: "unavailable", reason: "x" } }));
-    expect(list).toEqual([
-      "A loan paid off: Sep 2026", "75% of loans paid off since the peak: Jul 2026", "Credit cards paid off: May 2026", "50% of loans paid off since the peak: May 2026", "25% of loans paid off since the peak: Mar 2026",
-    ]);
-  });
-
-  it("lists a home's loan-to-value passing below 80% and 50%, only when it was above the mark earlier in the period", () => {
-    const list = items(inputOf(factsOf([chk], idle()), { buffer: { state: "unavailable", reason: "x" }, equity: [home("a", [85, 84, 83, 82, 81, 79, 60, 59, 58, 49]), home("b", [40, 39, 38, 37, 36, 35, 34, 33, 32, 31])] }));
-    expect(list).toEqual(["Home 1 LTV below 50%: Oct 2026", "Home 1 LTV below 80%: Jun 2026"]);
-  });
-
-  it("puts what is true now first and undated, only the highest of 3+ and 6+ months of cash buffer", () => {
-    const f = factsOf([chk], idle());
-    expect(items(inputOf(f, { buffer: readyBuffer(7.2) }))).toEqual(["Now: 6+ months of cash buffer"]);
-    expect(items(inputOf(f, { buffer: readyBuffer(4.1) }))).toEqual(["Now: 3+ months of cash buffer"]);
-    expect(items(inputOf(f, { buffer: readyBuffer(2.9) }))).toEqual([]);
-    expect(milestones(inputOf(f, { buffer: readyBuffer(4.1) })).items[0]).toEqual({ on: "Now: 3+ months of cash buffer", off: "Now: 3+ months of cash buffer" });
-  });
-
-  it("names a loan paid off without naming the loan, and caps the list at 8, newest first", () => {
-    const loans: AccountFact[] = Array.from({ length: 10 }, (_, i) => ({ id: `l${i}`, name: `Secret loan ${i}`, accountClass: "loan", treatment: null, offBudget: true }));
-    const f = factsOf([chk, ...loans], loans.flatMap((l, i) => pay(`2026-${String(i + 1).padStart(2, "0")}`, "chk", l.id, 100_000)).concat(idle()), loans.map((l) => ({ accountId: l.id, amountMinor: -100_000 })));
-    const m = milestones(inputOf(f, { buffer: { state: "unavailable", reason: "x" } }));
-    expect(m.items).toHaveLength(8);
-    expect(m.items[0].on).toBe("A loan paid off: Oct 2026");
-    expect(m.items[0].off).toBe("A loan paid off: Month 10");
-    expect(JSON.stringify(m)).not.toContain("Secret loan");
-  });
-
-  it("is empty with its own words, and offers all-time history unless the page already shows it", () => {
-    const f = factsOf([chk], idle());
-    const m = milestones(inputOf(f, { buffer: { state: "unavailable", reason: "x" } }));
-    expect(m.items).toEqual([]);
-    expect(m.empty).toBe("No milestones in this period yet.");
-    expect(m.canSeeAllTime).toBe(true);
-    expect(milestones(inputOf(f, { allTime: true })).canSeeAllTime).toBe(false);
   });
 });
 
 describe("which cards appear", () => {
   it("hides the net worth card for a single month and keeps savings, buffer and milestones", () => {
     const view = progressView(inputOf(richFacts(), {}, ["2026-10", "2026-10"]));
-    expect(view.cards.map((c) => c.kind)).toEqual(["savings", "buffer", "milestones"]);
+    expect(view.cards.map((c) => c.kind)).toEqual(["composition", "savings", "buffer"]);
     expect(card(view, "savings")!.bars).toHaveLength(1);
   });
 
@@ -392,14 +370,6 @@ describe("paid off since the peak needs three months of falling", () => {
     expect(cardsOwing(1).labels).toEqual([]);
   });
 
-  it("holds back the 25, 50 and 75% loan milestones the same way", () => {
-    // 20,000.00 owed, paid down by a quarter in each of the last `falls` months.
-    const loanFacts = (falls: number) => factsOf([chk, mortgage], [...months(1, 10).map((m) => row(m, "chk", 100_000_000)), ...months(11 - falls, 10).flatMap((m) => pay(m, "chk", "mortgage", 5_000_000))], [{ accountId: "mortgage", amountMinor: -20_000_000 }]);
-    const list = (falls: number) => (card(progressView(inputOf(loanFacts(falls), { buffer: { state: "unavailable", reason: "x" } })), "milestones") as MilestonesCard).items.map((i) => i.on).filter((l) => l.includes("of loans paid off"));
-    expect(list(3)).toEqual(["75% of loans paid off since the peak: Oct 2026", "50% of loans paid off since the peak: Sep 2026", "25% of loans paid off since the peak: Aug 2026"]);
-    expect(list(2)).toEqual([]);
-  });
-
   it("counts the falls up to the month it was paid off", () => {
     const f = factsOf([chk, mortgage], [...months(1, 10).map((m) => row(m, "chk", 0)), ...pay("2026-02", "chk", "mortgage", 100_000), ...pay("2026-03", "chk", "mortgage", 100_000), ...pay("2026-04", "chk", "mortgage", 100_000)], [{ accountId: "mortgage", amountMinor: -300_000 }]);
     const loans = card(progressView(inputOf(f)), "debt")!.choices[0];
@@ -436,5 +406,214 @@ describe("small wording and drawing fixes", () => {
     expect(view.equityUnavailable).toBe(true);
     expect(view.equityPending).toBe(false);
     expect(progressView(inputOf(richFacts(), { equity: [home("a", ltvTen)] })).equityUnavailable).toBe(false);
+  });
+});
+
+describe("review fixes: net worth from the opening balance", () => {
+  const worth = (movement: MovementRow[], start: number, range: [string, string]) => card(progressView(inputOf(factsOf([chk], movement, [{ accountId: "chk", amountMinor: start }]), {}, range)), "netWorth")!;
+
+  it("measures the change from the balance before the period, as Summary does", () => {
+    // 100.00 at the end of January, then 110.00 and 120.00: Summary says +20%, not +9.1% from February's 110.00.
+    const w = worth([row("2026-01", "chk", 0), row("2026-02", "chk", 1_000), row("2026-03", "chk", 1_000)], 10_000, ["2026-02", "2026-03"]);
+    expect(w.labels[0].on).toBe("Net worth up 20.0% over the period");
+  });
+
+  it("names a crossing of zero in the first month of the period, and counts it as the first month when dates are hidden", () => {
+    const w = worth([row("2026-01", "chk", 0), row("2026-02", "chk", 1_000), row("2026-03", "chk", 100)], -500, ["2026-02", "2026-03"]);
+    expect(w.labels[0]).toEqual({ on: "Crossed zero in Feb 2026", off: "Crossed zero in the first month" });
+  });
+});
+
+describe("review fixes: savings notes", () => {
+  it("adds a share-safe warning when Summary's rate carries one, with no amount in it", () => {
+    const input = inputOf(richFacts());
+    const flagged = progressView({ ...input, summary: { ...input.summary, savingsRate: { state: "ready", value: 21.3, warning: "2 entries (987,654.32) are classified as capital" } } });
+    const note = card(flagged, "savings")!.provisionalNote;
+    expect(note).toBe("Some entries may be counted twice; see Summary");
+    expect(JSON.stringify(flagged)).not.toContain("987");
+    expect(card(progressView(input), "savings")!.provisionalNote).toBeNull();
+  });
+
+  it("says a month above 100% is drawn at 100%", () => {
+    const f = factsOf([chk], months(1, 10).flatMap((m, i) => [row(m, "chk", 1_000, { categoryId: "salary" }), row(m, "chk", i === 3 ? 5_000 : -500, { categoryId: "food" })]));
+    const savings = card(progressView(inputOf(f)), "savings")!;
+    expect(savings.aboveNote).toBe("Months above 100% are drawn at 100%");
+    expect(Math.max(...(savings.bars.filter((b) => b !== null) as number[]))).toBe(1);
+    expect(card(progressView(inputOf(richFacts())), "savings")!.aboveNote).toBeNull();
+  });
+});
+
+describe("review fixes: property loan-to-value", () => {
+  const equity = (ltvs: (number | null)[]) => card(progressView(inputOf(richFacts(), { equity: [home("a", ltvs)] })), "property")!;
+
+  it("dates the last known ownership when later months have no figure, and claims nothing about what held since", () => {
+    const e = equity([85, 84, 83, 82, 81, 79, 78, 77, null, null]);
+    expect(e.labels[0]).toEqual({ on: "You owned 23.0% in Aug 2026", off: "You owned 23.0% (Month 8)" });
+    expect(e.labels.map((l) => l.on).join()).not.toContain("Below 80%");
+  });
+
+  it("keeps saying 'You own' when the latest month has its figure", () => {
+    expect(equity(ltvTen).labels[0].on).toBe("You own 38.6%");
+  });
+
+  it("scales the chart to a loan above the value, so a fall from 150% to 120% shows", () => {
+    const e = equity([150, 145, 140, 135, 130, 128, 126, 124, 122, 120]);
+    expect(e.ltv!.chart.points[0]).toBe(1);
+    expect(e.ltv!.chart.points.at(-1)).toBe(0.8);
+    expect(e.ltv!.full).toEqual({ at: 0.667, label: "100%" });
+    expect(e.ltv!.reference.at).toBe(0.533);
+    expect(e.labels.map((l) => l.on)).toContain("LTV down from 150.0% to 120.0%");
+  });
+
+  it("keeps 100% at the top when no month is above the value", () => {
+    expect(equity(ltvTen).ltv!.full).toEqual({ at: 1, label: "100%" });
+  });
+});
+
+describe("savings consistency", () => {
+  const consistency = (f = richFacts(), over: Partial<ProgressInput> = {}) => card(progressView(inputOf(f, over)), "consistency") as ConsistencyCard | undefined;
+
+  it("counts the months saved of the months with income, and draws one square for each, in order", () => {
+    const c = consistency()!;
+    // March spent more than it received; every other month kept 25%.
+    expect(c.strip).toEqual(["saved", "saved", "short", "saved", "saved", "saved", "saved", "saved", "saved", "saved"]);
+    expect(c.labels.map((l) => l.on)).toEqual(["9 of 10 months saved", "90.0% positive months"]);
+    expect(c.note).toBe("Last 10 complete months");
+    expect(c.axis.months).toHaveLength(10);
+  });
+
+  it("marks a month with no income and leaves it out of the count", () => {
+    const f = factsOf([chk], [...months(1, 3).flatMap((m) => [row(m, "chk", 4_000_000, { categoryId: "salary" }), row(m, "chk", -3_000_000, { categoryId: "food" })]), row("2026-04", "chk", -100, { categoryId: "food" })]);
+    const c = consistency(f, {})!;
+    expect(inputOf(f).period.months).toHaveLength(10);
+    expect(c.strip.slice(0, 4)).toEqual(["saved", "saved", "saved", "none"]);
+    expect(c.labels[0].on).toBe("3 of 3 months saved");
+  });
+
+  it("covers every complete month of the period, not only twelve, and leaves the partial month out", () => {
+    const f = factsOf([chk], [...months(1, 11).flatMap((m) => [row(m, "chk", 4_000_000, { categoryId: "salary" }), row(m, "chk", -3_000_000, { categoryId: "food" })]), ...Array.from({ length: 8 }, (_, i) => row(`2025-0${i + 1}`, "chk", 4_000_000, { categoryId: "salary" }))]);
+    const wide = card(progressView(inputOf(f, {}, ["2025-01", "2026-11"])), "consistency") as ConsistencyCard;
+    // 2025-01 to 2026-10 is 22 complete months; November 2026 is the current month.
+    expect(wide.strip).toHaveLength(22);
+    expect(wide.note).toBe("22 complete months");
+    expect(wide.axis.months).toHaveLength(22);
+    expect(wide.axis.partial.every((p) => !p)).toBe(true);
+  });
+
+  it("draws at most the last 120 months, ten years", () => {
+    const long = Array.from({ length: 130 }, (_, i) => `${2016 + Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, "0")}`).filter((m) => m <= "2026-10");
+    const f = factsOf([chk], long.flatMap((m) => [row(m, "chk", 4_000_000, { categoryId: "salary" }), row(m, "chk", -3_000_000, { categoryId: "food" })]));
+    const c = card(progressView(inputOf(f, {}, ["2016-01", "2026-10"])), "consistency") as ConsistencyCard;
+    expect(c.strip).toHaveLength(120);
+    expect(c.note).toBe("Last 120 complete months");
+    expect(c.axis.months[0].on).toBe("Nov 2016");
+  });
+
+  it("is absent with fewer than two months with income", () => {
+    expect(consistency(factsOf([chk], [row("2026-10", "chk", 1_000, { categoryId: "salary" })]))).toBeUndefined();
+  });
+
+  it("moves the count off the savings rate card, which keeps the current run", () => {
+    const labels = card(progressView(inputOf(richFacts())), "savings")!.labels.map((l) => l.on).join();
+    expect(labels).not.toContain("months saved");
+    expect(labels).not.toContain("Saved in");
+  });
+});
+
+describe("asset composition", () => {
+  /** 10,000.00 in checking at the end of January, then 5,000.00 moved into a brokerage in February. */
+  const split = (): ProgressInput => inputOf(factsOf([chk, inv], [row("2026-01", "chk", 0), row("2026-02", "chk", 100), ...pay("2026-02", "chk", "inv", 500_000), row("2026-03", "chk", 100)], [{ accountId: "chk", amountMinor: 1_000_000 }]), {}, ["2026-02", "2026-03"]);
+  const composition = (input: ProgressInput) => card(progressView(input), "composition") as CompositionCard | undefined;
+
+  it("shows shares of what you own at the start and the end, adding up to 100%, in four fixed classes", () => {
+    const c = composition(split())!;
+    expect(c.classes).toEqual(["Cash", "Investments", "Property", "Other"]);
+    expect(c.start).toEqual([1, 0, 0, 0]);
+    expect(c.end[0]).toBe(0.5);
+    expect(c.end[1]).toBe(0.5);
+    expect(c.end.reduce((a, b) => a + b, 0)).toBeCloseTo(1, 2);
+    expect(c.startName).toBe("Start");
+    expect(c.endName).toBe("End of period");
+  });
+
+  it("names the biggest shift and the largest holding now, in percent of what you own", () => {
+    const c = composition(split())!;
+    expect(c.labels.map((l) => l.on)).toEqual(["Cash down from 100.0% to 50.0% of what you own", "Largest now: Cash, 50.0%"]);
+  });
+
+  it("calls the end Today while the period's last month is the current one", () => {
+    const input = inputOf(factsOf([chk, inv], [row("2026-10", "chk", 100), row("2026-11", "chk", 100)], [{ accountId: "chk", amountMinor: 100_000 }]), {}, ["2026-10", "2026-11"]);
+    expect(input.period.partial).toBe(true);
+    expect(composition(input)!.endName).toBe("Today");
+  });
+
+  it("is absent when nothing is owned, or when there is a single month and no history before it", () => {
+    expect(composition(inputOf(factsOf([chk], months(1, 10).map((m) => row(m, "chk", 0)))))).toBeUndefined();
+    expect(composition(inputOf(factsOf([chk], [row("2026-10", "chk", 500)]), {}, ["2026-10", "2026-10"]))).toBeUndefined();
+  });
+
+  it("never lets a negative balance count as owned", () => {
+    const input = inputOf(factsOf([chk, inv], [row("2026-01", "chk", 0), row("2026-02", "chk", -400_000), row("2026-03", "chk", 0), row("2026-02", "inv", 300_000), row("2026-03", "inv", 0)], [{ accountId: "chk", amountMinor: 100_000 }]), {}, ["2026-02", "2026-03"]);
+    expect(composition(input)!.end).toEqual([0, 1, 0, 0]);
+  });
+});
+
+describe("cash buffer journey", () => {
+  const journey = (over: Partial<ProgressInput> = {}) => card(progressView(inputOf(richFacts(), over)), "journey") as JourneyCard | undefined;
+  const settings = (goalMonths: number | null) => ({ goalMonths, averageMonths: 12 as const, method: "average" as const });
+
+  it("draws months of cover by month, from the same cash buffer measure, with a gap where it cannot be worked out", () => {
+    const j = journey()!;
+    // The first months have fewer than three complete months of history: a gap, never zero.
+    expect(j.chart.points.slice(0, 3)).toEqual([null, null, null]);
+    expect(j.chart.points.slice(3).every((p) => p !== null && p > 0 && p <= 1)).toBe(true);
+    expect(j.chart.points.at(-1)).toBe(1);
+    expect(j.labels[0].on).toMatch(/^Cover up from \d+\.\d to \d+\.\d months$/);
+    expect(j.goal).toBeNull();
+  });
+
+  it("ends on the buffer Summary shows while the period's last month is the current one, because every month is the same measure", () => {
+    const input = inputOf(richFacts(), {}, ["2026-01", "2026-11"]);
+    expect(input.period.partial).toBe(true);
+    expect(input.buffer.state).toBe("ready");
+    const summary = Math.round((input.buffer as { value: { months: number } }).value.months * 10) / 10;
+    const j = card(progressView(input), "journey") as JourneyCard;
+    expect(j.labels[0].on).toMatch(new RegExp(` to ${summary.toFixed(1)} months$`));
+    expect(j.axis.partial.at(-1)).toBe(true);
+    expect(j.axis.partial.slice(0, -1).every((p) => !p)).toBe(true);
+  });
+
+  it("uses the tracked loans' schedules for every month, as Summary's buffer does, so the line is not on two bases", () => {
+    const base = inputOf(richFacts(), {}, ["2026-01", "2026-11"]);
+    const without = card(progressView(base), "journey") as JourneyCard;
+    // The mortgage costs a small fixed amount a month on its schedule, against the large sums recorded into it.
+    const schedules = new Map<string, LoanScheduleInput>([["mortgage", { state: "ready", monthlyMinor: 100 }], ["car", { state: "ready", monthlyMinor: 100 }]]);
+    const withSchedules = card(progressView({ ...base, bufferSchedules: schedules, buffer: cashBuffer(base.ledger, today, schedules, {}) }), "journey") as JourneyCard;
+    const lastMonths = (j: JourneyCard) => Number(/ to (\d+\.\d) months$/.exec(j.labels[0].on)![1]);
+    // With the schedules the cover is larger, and the last point is still the buffer Summary would show.
+    expect(lastMonths(withSchedules)).toBeGreaterThan(lastMonths(without));
+    expect(lastMonths(withSchedules)).toBe(Math.round((cashBuffer(base.ledger, today, schedules, {}) as { value: { months: number } }).value.months * 10) / 10);
+    expect(withSchedules.chart.points.at(-1)).toBe(1);
+  });
+
+  it("draws the goal from the settings, and says the month the cover reached it for good", () => {
+    const j = journey({ bufferSettings: settings(24) })!;
+    expect(j.goal).toEqual({ at: 0.96, label: "Goal" });
+    expect(j.labels.map((l) => l.on).join()).toMatch(/Goal of 24 months reached in [A-Z][a-z]{2} 2026/);
+    expect(j.labels.map((l) => l.off).join()).toMatch(/Goal of 24 months reached \(Month \d+\)/);
+  });
+
+  it("makes no claim of reaching a goal it was never below, or has not reached", () => {
+    const always = journey({ bufferSettings: settings(5) })!;
+    expect(always.goal!.at).toBe(0.2);
+    expect(always.labels.map((l) => l.on).join()).not.toContain("Goal of");
+    const never = journey({ bufferSettings: settings(60) })!;
+    expect(never.goal!.at).toBe(1);
+    expect(never.labels.map((l) => l.on).join()).not.toContain("Goal of");
+  });
+
+  it("is absent with fewer than three months of cover to draw", () => {
+    expect(journey({ buffer: { state: "unavailable", reason: "x" } }, )).toBeDefined();
+    expect(card(progressView(inputOf(richFacts(), {}, ["2026-09", "2026-10"])), "journey")).toBeUndefined();
   });
 });

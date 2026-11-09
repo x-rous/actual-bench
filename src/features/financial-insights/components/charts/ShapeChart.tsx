@@ -6,18 +6,18 @@ import { FONT_STACK, type ShapePalette } from "../../lib/progressPalette";
 export const CHART_WIDTH = 720;
 export const CHART_HEIGHT = 280;
 
-const M = { r: 14, t: 18, b: 34 };
-const LABEL = { fontFamily: FONT_STACK, fontSize: 12 } as const;
+export const M = { r: 14, t: 18, b: 34 };
+export const LABEL = { fontFamily: FONT_STACK, fontSize: 12 } as const;
 
 type Reference = { at: Shape; label: string };
 
 /** Where a chart sits inside a larger drawing (the exported image). Without it the chart fills its container. */
 export type Frame = { x: number; y: number; width: number };
 
-type Common = { palette: ShapePalette; ariaLabel: string; /** Room on the left for end labels such as 0% and 100%. */ padLeft?: number; frame?: Frame };
+export type Common = { palette: ShapePalette; ariaLabel: string; /** Room on the left for end labels such as 0% and 100%. */ padLeft?: number; frame?: Frame };
 
 /** The attributes of a chart's root element: a responsive picture on the page, a placed one inside an image (which carries no accessible name). */
-function rootProps(ariaLabel: string, frame?: Frame) {
+export function rootProps(ariaLabel: string, frame?: Frame) {
   return frame
     ? { x: frame.x, y: frame.y, width: frame.width, height: (frame.width * CHART_HEIGHT) / CHART_WIDTH }
     : { width: "100%", role: "img", "aria-label": ariaLabel };
@@ -39,7 +39,7 @@ export function pickLabels(xs: readonly number[], gap: number): number[] {
   return picked;
 }
 
-function XLabels({ labels, xs, palette, left, right }: { labels: readonly string[]; xs: readonly number[]; palette: ShapePalette; left: number; right: number }) {
+export function XLabels({ labels, xs, palette, left, right }: { labels: readonly string[]; xs: readonly number[]; palette: ShapePalette; left: number; right: number }) {
   return (
     <g fill={palette.muted} {...LABEL}>
       {pickLabels(xs, 70).map((i) => (
@@ -54,7 +54,7 @@ function XLabels({ labels, xs, palette, left, right }: { labels: readonly string
  * no ticks, no hover and no tooltip, and no value is written anywhere, because the data it receives holds no amount to write.
  * A missing month is a gap. The chart runs from zero to the furthest point (or to `window`), so the axis is never cut short.
  */
-export function ShapeChart({ mode, points, zero, partial, xLabels, palette, ariaLabel, frame, padLeft = 36, area = "none", window: fixed, references = [], zeroLabel, peak = null, edgeLabels }: Common & {
+export function ShapeChart({ mode, points, zero, partial, xLabels, palette, ariaLabel, frame, padLeft = 36, area = "none", window: fixed, references = [], zeroLabel, peak = null, gutterLabels, pointLabel, backdrop, legend, padTop }: Common & {
   mode: "line" | "bars";
   points: readonly (Shape | null)[];
   zero: Shape;
@@ -68,14 +68,22 @@ export function ShapeChart({ mode, points, zero, partial, xLabels, palette, aria
   zeroLabel?: string;
   /** A point marked with a ring (the peak of what was owed). */
   peak?: number | null;
-  /** Words at the bottom and top of the window (0% and 100%). */
-  edgeLabels?: { bottom: string; top: string };
+  /** A figure written beside one point of the line (the latest loan-to-value). */
+  pointLabel?: { index: number; label: string };
+  /** A second series drawn behind the line as a filled area (a value as a shape beside a ratio), on the same -1 to 1 scale. */
+  backdrop?: readonly (Shape | null)[];
+  /** What each series is, drawn above the chart: a swatch and a word. */
+  legend?: readonly { label: string; area: boolean }[];
+  /** Room above the plot, for the legend. */
+  padTop?: number;
+  /** Words in the left margin at a height on the chart (0% and 100%). */
+  gutterLabels?: readonly { at: number; label: string }[];
 }) {
   const id = useId().replace(/[^a-zA-Z0-9_-]/g, "_");
   const known = points.filter((p): p is Shape => p !== null);
   const lo = fixed ? fixed[0] : Math.min(zero, ...known), hi = fixed ? fixed[1] : Math.max(zero, ...known);
   const span = hi - lo || 1;
-  const top = M.t, bottom = CHART_HEIGHT - M.b, left = padLeft, right = CHART_WIDTH - M.r;
+  const top = padTop ?? M.t, bottom = CHART_HEIGHT - M.b, left = padLeft, right = CHART_WIDTH - M.r;
   const y = (v: number) => bottom - ((Math.min(hi, Math.max(lo, v)) - lo) / span) * (bottom - top);
   const n = points.length;
   const slot = (right - left) / Math.max(1, n);
@@ -108,6 +116,26 @@ export function ShapeChart({ mode, points, zero, partial, xLabels, palette, aria
           ))}
         </>
       )}
+      {backdrop && (() => {
+        const runs: { x: number; y: number }[][] = [];
+        backdrop.forEach((p, i) => { if (p === null) { runs.push([]); return; } if (runs.length === 0) runs.push([]); runs[runs.length - 1].push({ x: xs[i], y: y(p) }); });
+        return runs.filter((r) => r.length > 0).map((r, k) => (
+          <g key={k}>
+            {r.length > 1 && <path d={`${path(r)} L${r[r.length - 1].x.toFixed(1)},${yz.toFixed(1)} L${r[0].x.toFixed(1)},${yz.toFixed(1)} Z`} fill={palette.good} fillOpacity={0.2} />}
+            {r.length > 1 && <path d={path(r)} fill="none" stroke={palette.good} strokeWidth={1.5} />}
+            {r.length === 1 && <circle cx={r[0].x} cy={r[0].y} r={3} fill={palette.good} />}
+          </g>
+        ));
+      })()}
+      {legend && (
+        <g fill={palette.muted} {...LABEL}>
+          {legend.reduce<{ x: number; items: React.ReactNode[] }>((acc, item) => {
+            const swatch = item.area ? <rect x={acc.x} y={5} width={16} height={9} rx={2} fill={palette.good} fillOpacity={0.35} stroke={palette.good} /> : <rect x={acc.x} y={8} width={16} height={3} rx={1.5} fill={palette.line} />;
+            acc.items.push(<g key={item.label}>{swatch}<text x={acc.x + 22} y={14}>{item.label}</text></g>);
+            return { x: acc.x + 22 + item.label.length * 7 + 24, items: acc.items };
+          }, { x: left, items: [] }).items}
+        </g>
+      )}
       {references.map((ref) => (
         <g key={ref.label}>
           <line x1={left} x2={right} y1={y(ref.at)} y2={y(ref.at)} stroke={palette.muted} strokeWidth={1} strokeDasharray="5 4" />
@@ -116,10 +144,9 @@ export function ShapeChart({ mode, points, zero, partial, xLabels, palette, aria
       ))}
       <line x1={left} x2={right} y1={yz} y2={yz} stroke={palette.muted} strokeWidth={1} />
       {zeroLabel && <text x={left - 6} y={yz + 4} textAnchor="end" fill={palette.muted} {...LABEL}>{zeroLabel}</text>}
-      {edgeLabels && (
+      {gutterLabels && (
         <g fill={palette.muted} {...LABEL} textAnchor="end">
-          <text x={left - 6} y={y(lo) + 4}>{edgeLabels.bottom}</text>
-          <text x={left - 6} y={y(hi) + 4}>{edgeLabels.top}</text>
+          {gutterLabels.map((g) => <text key={g.label} x={left - 6} y={y(g.at) + 4}>{g.label}</text>)}
         </g>
       )}
       {mode === "bars" ? points.map((p, i) => {
@@ -151,6 +178,9 @@ export function ShapeChart({ mode, points, zero, partial, xLabels, palette, aria
       {mode === "line" && peak !== null && points[peak] !== null && points[peak] !== undefined && (
         <circle cx={xs[peak]} cy={y(points[peak] as number)} r={6} fill={palette.surface} stroke={palette.bad} strokeWidth={3} />
       )}
+      {pointLabel && points[pointLabel.index] != null && (
+        <text x={xs[pointLabel.index]} y={y(points[pointLabel.index] as number) - 12} textAnchor={pointLabel.index === n - 1 ? "end" : "middle"} fill={palette.ink} fontFamily={FONT_STACK} fontSize={14} fontWeight={700}>{pointLabel.label}</text>
+      )}
       <XLabels labels={xLabels} xs={xs} palette={palette} left={left} right={right} />
     </svg>
   );
@@ -163,8 +193,9 @@ export function ShapeGauge({ fill, reachFill, marks, palette, ariaLabel, frame, 
   return (
     <svg viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`} {...rootProps(ariaLabel, frame)} style={{ display: "block" }}>
       <rect x={left} y={barTop} width={w} height={barH} rx={barH / 2} fill={palette.track} />
-      {reachFill !== null && reachFill > fill && <rect x={left} y={barTop} width={Math.max(barH, x(reachFill) - left)} height={barH} rx={barH / 2} fill={palette.good} fillOpacity={0.35} />}
-      {fill > 0 && <rect x={left} y={barTop} width={Math.max(barH / 2, x(fill) - left)} height={barH} rx={barH / 2} fill={palette.good} />}
+      {/* Each fill is exactly as wide as the months it stands for; a short one gets a smaller corner radius, so it is not drawn longer than it is. */}
+      {reachFill !== null && reachFill > fill && <rect x={left} y={barTop} width={x(reachFill) - left} height={barH} rx={Math.min(barH / 2, (x(reachFill) - left) / 2)} ry={Math.min(barH / 2, (x(reachFill) - left) / 2)} fill={palette.good} fillOpacity={0.35} />}
+      {fill > 0 && <rect x={left} y={barTop} width={x(fill) - left} height={barH} rx={Math.min(barH / 2, (x(fill) - left) / 2)} ry={Math.min(barH / 2, (x(fill) - left) / 2)} fill={palette.good} />}
       {marks.map((m) => (
         <g key={m.label}>
           <line x1={x(m.at)} x2={x(m.at)} y1={barTop - 8} y2={barTop + barH + 8} stroke={palette.ink} strokeWidth={1.5} strokeDasharray="3 3" />

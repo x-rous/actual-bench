@@ -41,6 +41,9 @@ export function FinancialInsightsWorkspace() {
   const view = useFinancialInsights();
   const { gate, data } = view;
   const progress = useProgressSwitches();
+  // The Progress tab is for sharing: its page header follows the same privacy rule (no account names, and no dates when Show dates is off).
+  const onProgress = view.tab === "progress";
+  const hideDates = onProgress && !progress.switches.showDates;
   const [drill, setDrill] = useState<DrillTarget | null>(null);
   const [guide, setGuide] = useState<FinancialInsightsGuideSection | null>(null);
   // Closing the list returns focus to the figure that opened it, so keyboard users do not lose their place.
@@ -56,8 +59,8 @@ export function FinancialInsightsWorkspace() {
   const guideButton = <Button size="xs" variant="outline" onClick={() => setGuide(guideSectionForTab(view.tab))}><BookOpen className="size-3.5" aria-hidden />Guide</Button>;
   const actions = ready ? (
     <div className="flex shrink-0 items-center gap-2">
-      <span className="text-xs text-muted-foreground" role="status">Read at {readTime(ready.readAt)}{ready.refreshing && " · Refreshing…"}</span>
-      <PeriodControl choice={view.period} period={period} today={view.today} firstMonth={ready.firstMonth} onChange={view.setPeriod} />
+      <span className="text-xs text-muted-foreground" role="status">{!hideDates && <>Read at {readTime(ready.readAt)}</>}{ready.refreshing && `${hideDates ? "" : " · "}Refreshing…`}</span>
+      <PeriodControl choice={view.period} period={period} today={view.today} firstMonth={ready.firstMonth} onChange={view.setPeriod} hideDates={hideDates} />
       <Button size="xs" variant="outline" onClick={view.refresh} disabled={ready.refreshing} aria-label="Refresh Financial Insights">
         <RefreshCw className={ready.refreshing ? "size-3.5 animate-spin" : "size-3.5"} aria-hidden />Refresh
       </Button>
@@ -80,9 +83,9 @@ export function FinancialInsightsWorkspace() {
           <p className="px-4 pb-2.5 text-xs text-muted-foreground">
             <span className="font-medium text-foreground">{gate.accounts.length} {gate.accounts.length === 1 ? "account" : "accounts"} included</span>
             {gate.excluded.length > 0 && (
-              <>{" · "}<Link href="/accounts" className="underline underline-offset-2" title={`Excluded: ${gate.excluded.map((a) => a.name).join(", ")}`}>{gate.excluded.length} excluded</Link></>
+              <>{" · "}<Link href="/accounts" className="underline underline-offset-2" title={onProgress ? undefined : `Excluded: ${gate.excluded.map((a) => a.name).join(", ")}`}>{gate.excluded.length} excluded</Link></>
             )}
-            {" · "}As of {formatDay(ready.summary.period.endDate)}{ready.summary.period.partial && " (partial month)"}
+            {!hideDates && <>{" · "}As of {formatDay(ready.summary.period.endDate)}{ready.summary.period.partial && " (partial month)"}</>}
           </p>
         </div>
       </Tabs>
@@ -119,7 +122,7 @@ export function FinancialInsightsWorkspace() {
           )}
           {view.tab === "money" ? <MoneyTab data={data} onDrill={openDrill} />
             : view.tab === "statements" ? <StatementsTab data={data} onDrill={openDrill} />
-            : view.tab === "progress" ? <ProgressHost data={data} today={view.today} period={view.period} onPeriod={view.setPeriod} switches={progress.switches} onSwitches={progress.change} />
+            : view.tab === "progress" ? <ProgressHost data={data} today={view.today} switches={progress.switches} onSwitches={progress.change} />
             : view.tab === "income" ? <IncomeTab data={data} today={view.today} onDrill={openDrill} />
             : view.tab === "spending" ? <SpendingTab data={data} today={view.today} onDrill={openDrill} />
             : view.tab === "wealth" ? <WealthTab data={data} onDrill={openDrill} />

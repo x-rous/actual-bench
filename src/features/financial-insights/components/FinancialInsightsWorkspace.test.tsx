@@ -7,6 +7,7 @@ jest.mock("./MoneyTab", () => ({ MoneyTab: () => <div>the money tab</div> }));
 jest.mock("./StatementsTab", () => ({ StatementsTab: () => <div>the financial statements</div> }));
 jest.mock("@/components/layout/PageLayout", () => ({ PageLayout: ({ children, header, actions }: { children: React.ReactNode; header?: React.ReactNode; actions?: React.ReactNode }) => <div>{header}{actions}{children}</div> }));
 jest.mock("./PeriodControl", () => ({ PeriodControl: () => null }));
+jest.mock("./ProgressHost", () => ({ ProgressHost: () => <div>the progress tab</div> }));
 const useFinancialInsights = jest.requireMock("../hooks/useFinancialInsights").useFinancialInsights as jest.Mock;
 
 const refresh = jest.fn();
@@ -59,5 +60,40 @@ describe("the guide", () => {
     render(<FinancialInsightsWorkspace />);
     fireEvent.click(screen.getByRole("button", { name: "Guide" }));
     expect(screen.getByRole("heading", { name: "Summary", level: 2 })).toBeInTheDocument();
+  });
+});
+
+describe("the page header on the Progress tab", () => {
+  const onProgress = () => useFinancialInsights.mockReturnValue({
+    ...ready(), tab: "progress", tabs: [{ value: "summary", label: "Summary" }, { value: "progress", label: "Progress" }],
+    gate: { state: "ready", accounts: [{ id: "a", name: "Checking" }], excluded: [{ id: "x", name: "Secret Excluded Account" }] },
+  });
+  beforeEach(() => sessionStorage.clear());
+
+  it("never carries the name of an excluded account, in its text, its tooltip or its markup", () => {
+    onProgress();
+    const { container } = render(<FinancialInsightsWorkspace />);
+    expect(screen.getByText("the progress tab")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "1 excluded" })).not.toHaveAttribute("title");
+    expect(container.innerHTML).not.toContain("Secret Excluded Account");
+  });
+
+  it("keeps the excluded names in the tooltip on the other tabs", () => {
+    useFinancialInsights.mockReturnValue({ ...ready(), gate: { state: "ready", accounts: [], excluded: [{ id: "x", name: "Secret Excluded Account" }] } });
+    render(<FinancialInsightsWorkspace />);
+    expect(screen.getByRole("link", { name: "1 excluded" })).toHaveAttribute("title", "Excluded: Secret Excluded Account");
+  });
+
+  it("shows when the figures are as of and when they were read, until Show dates is turned off", () => {
+    onProgress();
+    const { unmount } = render(<FinancialInsightsWorkspace />);
+    expect(screen.getByText(/As of /)).toBeInTheDocument();
+    expect(screen.getByText(/Read at /)).toBeInTheDocument();
+    unmount();
+    sessionStorage.setItem("filters:financial-insights-progress", JSON.stringify({ showDates: false }));
+    const { container } = render(<FinancialInsightsWorkspace />);
+    expect(screen.queryByText(/As of /)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Read at /)).not.toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/\b(Jan|Oct|Nov) 2026\b/);
   });
 });

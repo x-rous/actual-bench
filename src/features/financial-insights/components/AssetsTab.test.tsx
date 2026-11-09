@@ -32,7 +32,7 @@ const point = (over: Record<string, unknown> = {}) => ({ assetValueMinor: 100_00
 const loan = { debtId: "d1", accountId: "mortgage", name: "Mortgage", startDebtMinor: 50_000, endDebtMinor: 40_000 };
 const home = (over: Record<string, unknown> = {}): AssetValueRow => ({ kind: "registered", assetId: "a1", name: "Family home", accountId: "house", accountClass: "property", state: "ready", bridge, linked: true, loans: [loan], equity: { start: point({ debtMinor: 50_000, equityMinor: 50_000, ltvPercent: 50 }), end: point() }, ...over } as AssetValueRow);
 const series = (over: Partial<AssetSeries> = {}): AssetSeries => ({ months: ["2026-09"], opening: { valueMinor: 0, debtMinor: 50_000, equityMinor: -50_000 }, points: [{ valueMinor: 100_000, debtMinor: 40_000, equityMinor: 60_000 }], assets: 1, linked: 1, ...over });
-const ready = (rows: AssetValueRow[], s: AssetSeries = series()): WealthLoad => ({ state: "ready", rows, series: s, linked: [], refreshing: false, hasFailedBooks: false, retryBooks: jest.fn() });
+const ready = (rows: AssetValueRow[], s: AssetSeries = series()): WealthLoad => ({ state: "ready", rows, series: s, properties: [], refreshing: false, hasFailedBooks: false, retryBooks: jest.fn() });
 const facts = [row("2026-09", "house", 100_000), row("2026-09", "mortgage", -40_000), row("2026-09", "car", 20_000)];
 const all = () => {
   const d = data([chk, house, car, mortgage], facts) as unknown as { ledger: never; period: never };

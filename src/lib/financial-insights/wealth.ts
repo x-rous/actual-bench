@@ -302,22 +302,21 @@ function readableAssets(input: SeriesInput): RegistryAsset[] {
   });
 }
 
-/** One asset with a loan linked, and its equity point (value, debt, equity, loan-to-value) at the end of each month of the period. */
-export type LinkedEquitySeries = { assetId: string; accountId: string; accountClass: AccountClass; points: EquityPoint[] };
+/** One readable fixed asset (a property, a vehicle, another asset) with its value, and its loan-to-value where a loan is linked, at the end of each month of the period. */
+export type PropertySeries = { assetId: string; accountId: string; accountClass: AccountClass; /** A loan is linked to it, so its debt and loan-to-value are known. */ linked: boolean; points: EquityPoint[] };
 
 /**
- * The equity points of each readable asset that has a loan linked, month by month: the same `assetEquity` as the table and the
- * totals above, so the last point equals the table's end figures. Sorted as `assets` are.
+ * The value, and where a loan is linked its debt and loan-to-value, of each readable asset month by month: the same `assetEquity` as the
+ * table and the totals above, so the last point equals the table's end figures. A property with no loan has its value and no loan-to-value.
  */
-export function linkedEquitySeries(input: SeriesInput): LinkedEquitySeries[] {
+export function propertySeries(input: SeriesInput): PropertySeries[] {
   const { ledger, period, links } = input;
   const loans = new Map(input.loans.map((l) => [l.debtId, l]));
   return readableAssets(input)
-    .filter((asset) => links.some((l) => l.assetId === asset.id))
     .map((asset) => {
       const equityOf = assetEquity(asset, input.books.get(asset.actualAccountId)!.rows, links, loans, ledger);
       return {
-        assetId: asset.id, accountId: asset.actualAccountId, accountClass: ledger.account.get(asset.actualAccountId)!.accountClass,
+        assetId: asset.id, accountId: asset.actualAccountId, accountClass: ledger.account.get(asset.actualAccountId)!.accountClass, linked: links.some((l) => l.assetId === asset.id),
         points: period.months.map((month, i) => equityOf(period.partial && i === period.months.length - 1 ? period.endDate : lastDayOf(month), month)),
       };
     });

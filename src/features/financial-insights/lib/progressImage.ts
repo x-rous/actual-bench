@@ -15,8 +15,8 @@ export function serializeSvg(svg: SVGSVGElement): string {
   return text.includes('xmlns="http://www.w3.org/2000/svg"') ? text : text.replace("<svg", '<svg xmlns="http://www.w3.org/2000/svg"');
 }
 
-/** Draws the SVG on a 1200 × 675 canvas and returns it as a PNG. */
-export async function svgToPng(svg: SVGSVGElement): Promise<Blob> {
+/** Loads a drawing as a picture the canvas can use. The caller revokes `url` when it is done. */
+async function loadSvg(svg: SVGSVGElement): Promise<{ image: HTMLImageElement; url: string }> {
   const url = URL.createObjectURL(new Blob([serializeSvg(svg)], { type: "image/svg+xml;charset=utf-8" }));
   try {
     const image = new Image();
@@ -25,15 +25,62 @@ export async function svgToPng(svg: SVGSVGElement): Promise<Blob> {
       image.onerror = () => reject(new Error("The picture could not be drawn"));
       image.src = url;
     });
+    return { image, url };
+  } catch (error) {
+    URL.revokeObjectURL(url);
+    throw error;
+  }
+}
+
+function canvasPng(canvas: HTMLCanvasElement): Promise<Blob> {
+  return new Promise<Blob>((resolve, reject) => canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("The picture could not be saved"))), "image/png"));
+}
+
+function contextOf(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("This browser cannot draw the picture");
+  return context;
+}
+
+/** Draws the SVG on a 1200 × 675 canvas and returns it as a PNG. */
+export async function svgToPng(svg: SVGSVGElement): Promise<Blob> {
+  const { image, url } = await loadSvg(svg);
+  try {
     const canvas = document.createElement("canvas");
     canvas.width = IMAGE_WIDTH;
     canvas.height = IMAGE_HEIGHT;
-    const context = canvas.getContext("2d");
-    if (!context) throw new Error("This browser cannot draw the picture");
-    context.drawImage(image, 0, 0, IMAGE_WIDTH, IMAGE_HEIGHT);
-    return await new Promise<Blob>((resolve, reject) => canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("The picture could not be saved"))), "image/png"));
+    contextOf(canvas).drawImage(image, 0, 0, IMAGE_WIDTH, IMAGE_HEIGHT);
+    return await canvasPng(canvas);
   } finally {
     URL.revokeObjectURL(url);
+  }
+}
+
+/** The sheet of pictures: this many to a row, with this much space around and between them. */
+export const SHEET_COLUMNS = 2;
+export const SHEET_GAP = 24;
+
+/**
+ * Puts several cards' pictures on one sheet, two to a row, as a single PNG. The clipboard holds one image, so this is how a set of cards is
+ * copied at once. `background` fills the space between them.
+ */
+export async function svgsToSheetPng(svgs: readonly SVGSVGElement[], background: string): Promise<Blob> {
+  if (svgs.length === 0) throw new Error("There is no picture to copy");
+  const loaded = await Promise.all(svgs.map(loadSvg));
+  try {
+    const rows = Math.ceil(loaded.length / SHEET_COLUMNS);
+    const canvas = document.createElement("canvas");
+    canvas.width = SHEET_COLUMNS * IMAGE_WIDTH + (SHEET_COLUMNS + 1) * SHEET_GAP;
+    canvas.height = rows * IMAGE_HEIGHT + (rows + 1) * SHEET_GAP;
+    const context = contextOf(canvas);
+    context.fillStyle = background;
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    loaded.forEach(({ image }, i) => {
+      context.drawImage(image, SHEET_GAP + (i % SHEET_COLUMNS) * (IMAGE_WIDTH + SHEET_GAP), SHEET_GAP + Math.floor(i / SHEET_COLUMNS) * (IMAGE_HEIGHT + SHEET_GAP), IMAGE_WIDTH, IMAGE_HEIGHT);
+    });
+    return await canvasPng(canvas);
+  } finally {
+    loaded.forEach(({ url }) => URL.revokeObjectURL(url));
   }
 }
 

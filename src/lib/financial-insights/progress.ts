@@ -1,8 +1,8 @@
-import { cardsOwedAt, savingsRateOf, type CashBuffer, type Ledger, type SeriesPoint, type Status } from "./measures";
-import type { MonthlyPoint, compositionSeries } from "./breakdowns";
+import { cardsOwedAt, cashBuffer, savingsRateOf, type CashBuffer, type Ledger, type LoanScheduleInput, type SeriesPoint, type Status } from "./measures";
+import type { ClassKey, MonthlyPoint, compositionSeries } from "./breakdowns";
 import type { ScheduleInput } from "./debt";
 import { monthLabel, monthOf, type ResolvedPeriod } from "./period";
-import type { LinkedEquitySeries } from "./wealth";
+import type { PropertySeries } from "./wealth";
 
 /**
  * The Progress tab's share-safe data layer. `progressView` is the only thing `ProgressTab` receives: every number in it is a
@@ -47,18 +47,31 @@ export type DebtChoiceId = "cards" | "loans" | "all";
 export type DebtChoice = { id: DebtChoiceId; label: string; chart: ShapeSeries; /** Where the peak is: the month shown as a dot. */ peak: Count; labels: Dated[] };
 export type DebtCard = CardBase & { kind: "debt"; axis: Axis; defaultChoice: DebtChoiceId; choices: DebtChoice[] };
 
-export type SavingsCard = CardBase & { kind: "savings"; bars: (Shape | null)[]; zero: Shape; axis: Axis; labels: Dated[]; /** Months below -100% are drawn at -100%: said so here. */ belowNote: string | null; /** Which months had no income: drawn as a gap with this note. */ gapNote: string | null; empty: string | null };
+export type SavingsCard = CardBase & { kind: "savings"; bars: (Shape | null)[]; zero: Shape; axis: Axis; labels: Dated[]; /** Months below -100% are drawn at -100%: said so here. */ provisionalNote: string | null; /** Months above 100% are drawn at 100%: said so here. */ aboveNote: string | null; belowNote: string | null; /** Which months had no income: drawn as a gap with this note. */ gapNote: string | null; empty: string | null };
 
 export type BufferCard = CardBase & { kind: "buffer"; /** "As of today" under the title. */ asOf: string } & (
   | { state: "ready"; fill: Shape; accessibleFill: Shape | null; marks: { at: Shape; label: string }[]; labels: Dated[] }
   | { state: "unavailable"; reason: string }
 );
 
-export type EquityCard = CardBase & { kind: "equity"; chart: ShapeSeries; axis: Axis; reference: { at: Shape; label: string }; labels: Dated[] };
+/**
+ * A property, vehicle or other asset: its value over time as a shape (scaled to its own highest month, so there is no amount to read), and
+ * where a loan is linked the loan-to-value on a 0 to 100% scale, with a dashed line at 80%.
+ */
+export type PropertyCard = CardBase & { kind: "property"; axis: Axis; valueShape: ShapeSeries | null; ltv: { chart: ShapeSeries; /** The latest loan-to-value, labelled at the end of its line: the month it is for and the figure. */ latest: { index: Count; label: string }; reference: { at: Shape; label: string }; /** Where 100% sits: at the top, or lower when the loan is above the value. */ full: { at: Shape; label: string } } | null; labels: Dated[] };
 
-export type MilestonesCard = CardBase & { kind: "milestones"; note: string; items: Dated[]; empty: string; /** The period is not already all available history. */ canSeeAllTime: boolean };
 
-export type ProgressCard = NetWorthCard | DebtCard | SavingsCard | BufferCard | EquityCard | MilestonesCard;
+/** Which months were saved: one square each, in order. Words, not amounts. */
+export type MonthStatus = "saved" | "short" | "none";
+export type ConsistencyCard = CardBase & { kind: "consistency"; /** "Last 12 complete months". */ note: string; strip: MonthStatus[]; axis: Axis; labels: Dated[] };
+
+/** What you own, by type, at the start and the end of the period: each bar is shares that add up to 1, in the order of `classes`. */
+export type CompositionCard = CardBase & { kind: "composition"; note: string; classes: string[]; startName: string; endName: string; start: Shape[]; end: Shape[]; labels: Dated[] };
+
+/** Months of cover over time, with the goal when one is set. */
+export type JourneyCard = CardBase & { kind: "journey"; note: string; chart: ShapeSeries; axis: Axis; goal: { at: Shape; label: string } | null; labels: Dated[] };
+
+export type ProgressCard = NetWorthCard | CompositionCard | DebtCard | SavingsCard | ConsistencyCard | BufferCard | JourneyCard | PropertyCard;
 
 export type ProgressView = {
   cards: ProgressCard[];
@@ -72,17 +85,19 @@ export type ProgressInput = {
   today: string;
   period: ResolvedPeriod;
   ledger: Ledger;
-  summary: { series: readonly SeriesPoint[]; savingsRate: Status<number> };
+  summary: { series: readonly SeriesPoint[]; savingsRate: Status<number>; /** Net worth at the end of the month before the period and at its end: what Summary reports the change between. */ netWorth: { opening: number; closing: number } };
   monthly: readonly MonthlyPoint[];
   composition: ReturnType<typeof compositionSeries>;
   buffer: Status<CashBuffer>;
   schedules: readonly ScheduleInput[];
   /** The equity points of each asset with a loan linked; null while they are being read or when they could not be. */
-  equity: readonly LinkedEquitySeries[] | null;
+  equity: readonly PropertySeries[] | null;
   /** Property values could not be read, wholly or in part. */
   equityFailed?: boolean;
-  /** The page already shows all available history. */
-  allTime: boolean;
+  /** The cash buffer settings: the goal in months (null when none is set) and how a typical month is taken. */
+  bufferSettings?: { goalMonths: number | null; averageMonths: number; method: "average" | "median" };
+  /** What the tracked loans cost a month, as the cash buffer takes them (the same for every month of the journey). */
+  bufferSchedules?: ReadonlyMap<string, LoanScheduleInput>;
 };
 
 // ─── Scaling ─────────────────────────────────────────────────────────────────
@@ -167,21 +182,26 @@ function zeroCrossing(values: readonly (number | null)[]): { month: number; dire
   return { month: first.i, direction: end > 0 ? "up" : "down" };
 }
 
-function netWorthCard(input: ProgressInput, when: ReturnType<typeof whenOf>): { card: NetWorthCard | null; crossing: { month: number; direction: "up" | "down" } | null } {
+function netWorthCard(input: ProgressInput, when: ReturnType<typeof whenOf>): NetWorthCard | null {
   const { period } = input;
   const values = input.summary.series.map((p) => p.netWorthMinor);
   const known = values.filter((v) => v !== null).length;
-  if (known < 2) return { card: null, crossing: null };
+  if (known < 2) return null;
   const shape = toShape(values);
-  const crossing = zeroCrossing(values);
+  // The change is measured from the balance before the period, as Summary's is, when the budget has history that far back; otherwise from its first month.
+  const hasOpening = input.ledger.firstMonth !== null && input.ledger.firstMonth < period.startMonth;
+  const opening = hasOpening ? input.summary.netWorth.opening : null;
+  const found = zeroCrossing(opening === null ? values : [opening, ...values]);
+  const crossing = found && { ...found, month: found.month - (opening === null ? 0 : 1) };
   const labels: Dated[] = [];
-  const firstValue = values.find((v): v is number => v !== null)!;
+  const firstValue = opening ?? values.find((v): v is number => v !== null)!;
   const lastValue = [...values].reverse().find((v): v is number => v !== null)!;
   if (crossing) {
     const w = when(period.months[crossing.month]);
+    const later = crossing.month === 0 ? "in the first month" : after(crossing.month);
     labels.push(crossing.direction === "up"
-      ? { on: `Crossed zero in ${w.on}`, off: `Crossed zero ${after(crossing.month)}` }
-      : { on: `Fell below zero in ${w.on}`, off: `Fell below zero ${after(crossing.month)}` });
+      ? { on: `Crossed zero in ${w.on}`, off: `Crossed zero ${later}` }
+      : { on: `Fell below zero in ${w.on}`, off: `Fell below zero ${later}` });
   } else {
     const change = changeBetween(firstValue, lastValue);
     if (change?.kind === "tenfold") labels.push(both(tenfoldWording(change.direction)));
@@ -198,11 +218,8 @@ function netWorthCard(input: ProgressInput, when: ReturnType<typeof whenOf>): { 
     }
   }
   return {
-    crossing,
-    card: {
-      kind: "netWorth", id: "net-worth", title: "Net worth journey", axis: axisOf(period), chart: shape, empty: shape ? null : "Nothing to show in this period", labels,
-      info: "Which way your net worth went over the period. Only the zero line is marked: the line shows the shape of the journey, not amounts. Same net worth as Summary.",
-    },
+    kind: "netWorth", id: "net-worth", title: "Net worth journey", axis: axisOf(period), chart: shape, empty: shape ? null : "Nothing to show in this period", labels,
+    info: "Which way your net worth went over the period. Only the zero line is marked: the line shows the shape of the journey, not amounts. Same net worth as Summary.",
   };
 }
 
@@ -229,7 +246,7 @@ function peakOf(owed: readonly (number | null)[], partial: readonly boolean[]): 
   return Math.max(0, best);
 }
 
-type Dropped = { peak: number; latest: number; paidOff: number | null; streak: number; ratios: (number | null)[] };
+type Dropped = { peak: number; latest: number; paidOff: number | null; streak: number };
 
 /** How many months in a row a balance must have fallen before "paid off since the peak" is said: one good month is not progress yet. */
 export const MIN_FALLING_MONTHS = 3;
@@ -253,8 +270,7 @@ function dropOf(owed: readonly (number | null)[], partial: readonly boolean[]): 
   let end = idx.length - 1;
   if (paidOff !== null) end = idx.findIndex((p) => p.i === paidOff);
   for (let k = end; k > 0 && idx[k].v < idx[k - 1].v; k--) streak++;
-  const ratios = owed.map((v, i) => (v === null || partial[i] || i < peak.i || peak.v <= 0 ? null : (peak.v - v) / peak.v));
-  return { peak: peak.i, latest: latest.i, paidOff, streak, ratios };
+  return { peak: peak.i, latest: latest.i, paidOff, streak };
 }
 
 /** The debt-free label for the loans, as of today: only when every loan still owed has a payoff date from Loans. */
@@ -278,7 +294,7 @@ function debtFreeLabel(input: ProgressInput): Dated | null {
   return { on: `${lead} (${monthLabel(monthOf(last))})`, off: lead };
 }
 
-function debtCard(input: ProgressInput, when: ReturnType<typeof whenOf>): { card: DebtCard | null; drops: Partial<Record<DebtChoiceId, Dropped>> } {
+function debtCard(input: ProgressInput, when: ReturnType<typeof whenOf>): DebtCard | null {
   const { period } = input;
   const owed = owedByMonth(input);
   const partial = axisOf(period).partial;
@@ -289,13 +305,11 @@ function debtCard(input: ProgressInput, when: ReturnType<typeof whenOf>): { card
   if (owedIn(owed.loans)) offered.push("loans");
   if (groups >= 2 || owedIn(owed.other)) offered.push("all");
   const choices: DebtChoice[] = [];
-  const drops: Partial<Record<DebtChoiceId, Dropped>> = {};
   for (const id of offered) {
     const series = owed[id];
     const chart = toShape(series);
     const drop = dropOf(series, partial);
     if (!chart) continue;
-    if (drop) drops[id] = drop;
     const labels: Dated[] = [];
     if (drop) {
       const peak = when(period.months[drop.peak]);
@@ -316,13 +330,10 @@ function debtCard(input: ProgressInput, when: ReturnType<typeof whenOf>): { card
     }
     choices.push({ id, label: CHOICE_LABEL[id], chart, peak: asCount(drop?.peak ?? peakOf(series, partial)), labels: labels.slice(0, 3) });
   }
-  if (choices.length < 1 || period.months.filter((_, i) => input.composition.hasData[i]).length < 2) return { card: null, drops: {} };
+  if (choices.length < 1 || period.months.filter((_, i) => input.composition.hasData[i]).length < 2) return null;
   return {
-    drops,
-    card: {
-      kind: "debt", id: "debt-payoff", title: "Debt payoff progress", axis: axisOf(period), choices, defaultChoice: choices.find((c) => c.id === "cards")?.id ?? choices.find((c) => c.id === "loans")?.id ?? choices[0].id,
-      info: "How what you owe changed over the period, as a shape that falls toward the zero line, with the highest month marked. Credit cards, Loans or all debt: never single accounts. A card in credit counts as nothing owed. The debt-free date is shown for loans only, from the payoff dates in Loans, and only when every loan you still owe has one.",
-    },
+    kind: "debt", id: "debt-payoff", title: "Debt payoff progress", axis: axisOf(period), choices, defaultChoice: choices.find((c) => c.id === "cards")?.id ?? choices.find((c) => c.id === "loans")?.id ?? choices[0].id,
+    info: "How what you owe changed over the period, as a shape that falls toward the zero line, with the highest month marked. Credit cards, Loans or all debt: never single accounts. A card in credit counts as nothing owed. The debt-free date is shown for loans only, from the payoff dates in Loans, and only when every loan you still owe has one.",
   };
 }
 
@@ -337,9 +348,9 @@ function monthlyRates(monthly: readonly MonthlyPoint[]): (number | null)[] {
   });
 }
 
-function savingsCard(input: ProgressInput, when: ReturnType<typeof whenOf>): { card: SavingsCard | null; streakReached: Map<number, number> } {
+function savingsCard(input: ProgressInput, when: ReturnType<typeof whenOf>): SavingsCard | null {
   const { period, monthly } = input;
-  if (!monthly.some((m) => m.hasData && m.received > 0)) return { card: null, streakReached: new Map() };
+  if (!monthly.some((m) => m.hasData && m.received > 0)) return null;
   const rates = monthlyRates(monthly);
   const complete = rates.map((r, i) => ({ r, i })).filter((p): p is { r: number; i: number } => p.r !== null && !monthly[p.i].partial);
   const labels: Dated[] = [];
@@ -350,31 +361,129 @@ function savingsCard(input: ProgressInput, when: ReturnType<typeof whenOf>): { c
     const best = complete.reduce((a, b) => (b.r > a.r ? b : a));
     const w = when(period.months[best.i]);
     labels.push({ on: `Best month: ${w.on}, ${pct(best.r)}`, off: `Best month: ${w.off}, ${pct(best.r)}` });
-    const saved = complete.filter((p) => p.r > 0).length;
     // The run of months above 0% counted back from the latest complete month with a rate; a month with no income ends it.
     const lastComplete = monthly.map((m, i) => ({ m, i })).filter((p) => p.m.hasData && !p.m.partial).map((p) => p.i);
     let streak = 0;
     for (let k = lastComplete.length - 1; k >= 0; k--) { const r = rates[lastComplete[k]]; if (r !== null && r > 0) streak++; else break; }
-    labels.push(both(streak >= 2 ? `Saved in ${saved} of ${complete.length} months · ${streak} months in a row` : `Saved in ${saved} of ${complete.length} months`));
-  }
-  // The first month each run of months above 0% reached 6 and 12 (for the milestones).
-  const reached = new Map<number, number>();
-  let run = 0;
-  for (const m of monthly.map((m, i) => ({ m, i })).filter((p) => p.m.hasData && !p.m.partial)) {
-    const r = rates[m.i];
-    run = r !== null && r > 0 ? run + 1 : 0;
-    for (const mark of [6, 12]) if (run === mark && !reached.has(mark)) reached.set(mark, m.i);
+    // How many months were saved has its own card (Savings consistency); this one keeps the current run.
+    if (streak >= 2) labels.push(both(`${streak} months in a row above 0%`));
   }
   const bars = rates.map((r) => (r === null ? null : asShape(r / 100)));
   const noIncome = monthly.some((m, i) => m.hasData && rates[i] === null);
   return {
-    streakReached: reached,
-    card: {
-      kind: "savings", id: "savings-rate", title: "Savings rate", axis: axisOf(period), bars, zero: asShape(0), labels, belowNote: rates.some((r) => r !== null && r < -100) ? "Months below −100% are drawn at −100%" : null,
-      gapNote: noIncome ? "Months with no income are left blank" : null,
-      empty: bars.some((b) => b !== null) ? null : "Nothing to show in this period",
-      info: "How much of what you received you kept, month by month and over the period: the same savings rate as Summary. Bars below the line are months you spent more than you received.",
-    },
+    kind: "savings", id: "savings-rate", title: "Savings rate", axis: axisOf(period), bars, zero: asShape(0), labels, provisionalNote: overall.state === "ready" && overall.warning ? "Some entries may be counted twice; see Summary" : null,
+    aboveNote: rates.some((r) => r !== null && r > 100) ? "Months above 100% are drawn at 100%" : null,
+    belowNote: rates.some((r) => r !== null && r < -100) ? "Months below −100% are drawn at −100%" : null,
+    gapNote: noIncome ? "Months with no income are left blank" : null,
+    empty: bars.some((b) => b !== null) ? null : "Nothing to show in this period",
+    info: "How much of what you received you kept, month by month and over the period: the same savings rate as Summary. Bars below the line are months you spent more than you received.",
+  };
+}
+
+// ─── Savings consistency ─────────────────────────────────────────────────────
+
+/** The most months drawn: ten years, as squares small enough to fit several lines. */
+const CONSISTENCY_MONTHS = 120;
+
+/** In how many of the complete months of the period did you keep more than you received? One square for each month: saved, short, or no income. */
+function consistencyCard(input: ProgressInput, when: ReturnType<typeof whenOf>): ConsistencyCard | null {
+  const { period, monthly } = input;
+  const rates = monthlyRates(monthly);
+  const shown = monthly.map((m, i) => ({ m, i })).filter((p) => p.m.hasData && !p.m.partial).slice(-CONSISTENCY_MONTHS);
+  const strip: MonthStatus[] = shown.map((p) => (rates[p.i] === null ? "none" : rates[p.i]! > 0 ? "saved" : "short"));
+  const rated = strip.filter((x) => x !== "none").length;
+  if (rated < 2) return null;
+  const saved = strip.filter((x) => x === "saved").length;
+  return {
+    kind: "consistency", id: "savings-consistency", title: "Savings consistency", note: shown.length <= 12 || shown.length === CONSISTENCY_MONTHS ? `Last ${shown.length} complete months` : `${shown.length} complete months`, strip,
+    axis: { months: shown.map((p) => when(period.months[p.i])), partial: shown.map(() => false) },
+    labels: [both(`${saved} of ${rated} months saved`), both(`${pct(asPercent((saved / rated) * 100))} positive months`)],
+    info: "In how many of the complete months of the period you kept more money than you spent: the months with a savings rate above 0%. A month with no income is left out of the count. The savings rate is the one on Summary.",
+  };
+}
+
+// ─── Asset composition ───────────────────────────────────────────────────────
+
+const COMPOSITION: { name: string; keys: ClassKey[] }[] = [
+  { name: "Cash", keys: ["cash", "fixed"] },
+  { name: "Investments", keys: ["invest"] },
+  { name: "Property", keys: ["property"] },
+  { name: "Other", keys: ["vehicle", "other"] },
+];
+
+/** The share of what you own in each type, adding up to 1, from the class balances Summary shows; null when there is nothing owned. */
+function sharesOf(balances: Record<ClassKey, number>): number[] | null {
+  const parts = COMPOSITION.map((g) => g.keys.reduce((sum, k) => sum + Math.max(0, balances[k]), 0));
+  const total = parts.reduce((a, b) => a + b, 0);
+  return total > 0 ? parts.map((v) => v / total) : null;
+}
+
+function compositionCard(input: ProgressInput): CompositionCard | null {
+  const { composition, ledger, period } = input;
+  const firstData = composition.hasData.findIndex(Boolean);
+  const lastData = composition.hasData.lastIndexOf(true);
+  if (firstData < 0) return null;
+  // The start is the balance before the period when the budget has history that far back; otherwise its first month.
+  const hasBefore = ledger.firstMonth !== null && ledger.firstMonth < period.startMonth;
+  if (!hasBefore && firstData === lastData) return null;
+  const start = sharesOf(hasBefore ? composition.opening : composition.months[firstData]);
+  const end = sharesOf(composition.months[lastData]);
+  if (!start || !end) return null;
+  const names = COMPOSITION.map((g) => g.name);
+  const labels: Dated[] = [];
+  // Ties (a move between two types shifts both equally) are decided by the order of the types, not by rounding noise.
+  const shift = names.map((name, i) => ({ name, from: start[i] * 100, to: end[i] * 100 })).sort((a, b) => Math.round(Math.abs(b.to - b.from) * 10) - Math.round(Math.abs(a.to - a.from) * 10))[0];
+  if (Math.abs(shift.to - shift.from) >= 1) labels.push(both(`${shift.name} ${shift.to > shift.from ? "up" : "down"} from ${pct(asPercent(shift.from))} to ${pct(asPercent(shift.to))} of what you own`));
+  const biggest = names.map((name, i) => ({ name, share: end[i] * 100 })).sort((a, b) => b.share - a.share)[0];
+  labels.push(both(`Largest now: ${biggest.name}, ${pct(asPercent(biggest.share))}`));
+  return {
+    kind: "composition", id: "asset-composition", title: "Asset composition", note: "Share of what you own", classes: names,
+    startName: "Start", endName: period.partial ? "Today" : "End of period", start: start.map(asShape), end: end.map(asShape), labels,
+    info: "How what you own is split between cash, investments, property and other assets, at the start and at the end of the period. Each bar is 100% of your assets at that point: only shares are shown, never amounts. The classes are the ones on Summary.",
+  };
+}
+
+// ─── Cash buffer journey ─────────────────────────────────────────────────────
+
+const JOURNEY_MONTHS = 24;
+
+/**
+ * Months of cover at the end of each of the last months of the period, with the goal. Every month, the current one included, is the same cash
+ * buffer measure with the same settings and the same loan schedules, as of that month: its balances, over the typical month of the complete
+ * months before it. So the line is one measure, and its last point is the buffer on Summary (for a median typical month, the earlier
+ * points and the last use the average, as Summary's median needs spending groups that are only known for today).
+ */
+function journeyCard(input: ProgressInput, when: ReturnType<typeof whenOf>): JourneyCard | null {
+  const { period, ledger } = input;
+  const settings = input.bufferSettings ?? { goalMonths: null, averageMonths: 12, method: "average" as const };
+  const shown = period.months.map((m, i) => ({ m, i })).filter((p) => ledger.firstMonth !== null && p.m >= ledger.firstMonth).slice(-JOURNEY_MONTHS);
+  const values = shown.map(({ m, i }) => {
+    const current = period.partial && i === period.months.length - 1;
+    const status = cashBuffer(ledger, current ? input.today : `${m}-28`, input.bufferSchedules ?? new Map(), { months: settings.averageMonths, method: settings.method });
+    return status.state === "ready" ? Math.round(status.value.months * 10) / 10 : null;
+  });
+  const known = values.filter((v): v is number => v !== null);
+  if (known.length < 3) return null;
+  const top = Math.max(...known, settings.goalMonths ?? 0);
+  if (top <= 0) return null;
+  const labels: Dated[] = [];
+  const first = known[0], last = known[known.length - 1];
+  if (first !== last) labels.push(both(`Cover ${last > first ? "up" : "down"} from ${asMonths(first).toFixed(1)} to ${asMonths(last).toFixed(1)} months`));
+  else labels.push(both(`Cover steady at ${asMonths(last).toFixed(1)} months`));
+  const goal = settings.goalMonths;
+  if (goal !== null && goal > 0) {
+    // The first month from which the cover stays at or above the goal to the end.
+    let k = values.length;
+    while (k > 0 && (values[k - 1] === null || values[k - 1]! >= goal)) k--;
+    const reachedAt = values.slice(k).findIndex((v) => v !== null);
+    if (k > 0 && reachedAt >= 0 && k < values.length) { const w = when(shown[k + reachedAt].m); labels.push({ on: `Goal of ${goal} months reached in ${w.on}`, off: `Goal of ${goal} months reached (${w.off})` }); }
+  }
+  return {
+    kind: "journey", id: "cash-buffer-journey", title: "Cash buffer journey", note: "Months of cover", labels,
+    axis: { months: shown.map((p) => when(p.m)), partial: shown.map((p) => period.partial && p.i === period.months.length - 1) },
+    chart: { points: values.map((v) => (v === null ? null : asShape(v / top))), zero: asShape(0) },
+    goal: goal !== null && goal > 0 ? { at: asShape(goal / top), label: "Goal" } : null,
+    info: "How many months of spending your cash could have covered at the end of each month, with the goal from your cash buffer settings. It is the cash buffer on Summary worked out as of each month: that month's balances over the typical month before it, with the same loan schedules. A month that cannot be worked out is a gap, never zero.",
   };
 }
 
@@ -402,38 +511,62 @@ function bufferCard(input: ProgressInput): BufferCard {
 
 const LTV_REFERENCE = 80;
 
-function equityCards(input: ProgressInput, when: ReturnType<typeof whenOf>): { cards: EquityCard[]; crossings: { title: string; mark: number; month: number }[] } {
+function propertyCards(input: ProgressInput, when: ReturnType<typeof whenOf>): PropertyCard[] {
   const { period } = input;
-  const cards: EquityCard[] = [];
-  const crossings: { title: string; mark: number; month: number }[] = [];
+  const cards: PropertyCard[] = [];
+  // Vehicles are not drawn: only a property, or another fixed asset.
+  const assets = (input.equity ?? []).filter((e) => e.accountClass !== "vehicle");
+  const base = assets.map((e) => (e.accountClass === "property" ? "Property" : "Asset"));
+  const names = assets.map((e, n) => `${base[n]} value${e.linked ? " & LTV" : ""}`);
   const used = new Map<string, number>();
-  const titles = (input.equity ?? []).map((e) => (e.accountClass === "property" ? "Home" : e.accountClass === "vehicle" ? "Vehicle" : "Asset"));
-  (input.equity ?? []).forEach((asset, n) => {
-    const ltv = asset.points.map((p) => p.ltvPercent);
+  assets.forEach((asset, n) => {
+    // The value is a shape: a month before the asset had a value is a gap, and nothing here is an amount.
+    const values = asset.points.map((p) => (p.assetValueMinor !== null && p.assetValueMinor > 0 ? p.assetValueMinor : null));
+    const valueShape = toShape(values);
+    const ltv = asset.linked ? asset.points.map((p) => p.ltvPercent) : [];
     const known = ltv.map((v, i) => ({ v, i })).filter((p): p is { v: number; i: number } => p.v !== null);
-    if (known.length === 0) return;
-    const base = titles[n];
-    const number = (used.get(base) ?? 0) + 1;
-    used.set(base, number);
-    const title = titles.filter((t) => t === base).length > 1 ? `${base} ${number}` : base;
-    const first = known[0], latest = known[known.length - 1];
+    if (!valueShape && known.length === 0) return;
+    const number = (used.get(names[n]) ?? 0) + 1;
+    used.set(names[n], number);
+    const title = names.filter((t) => t === names[n]).length > 1 ? `${names[n]} ${number}` : names[n];
     const labels: Dated[] = [];
-    labels.push(both(latest.v <= 100 ? `You own ${pct(100 - latest.v)}` : "The loan is above the value"));
-    if (first.i !== latest.i && first.v !== latest.v) labels.push(both(`LTV ${latest.v < first.v ? "down" : "up"} from ${pct(first.v)} to ${pct(latest.v)}`));
-    // Below a mark since the month it got there for good, when it was at or above the mark earlier in the period.
-    for (const mark of [LTV_REFERENCE, 50]) {
-      const crossed = crossedBelow(known, mark);
-      if (crossed === null) continue;
-      crossings.push({ title, mark, month: crossed });
-      if (mark === LTV_REFERENCE) { const w = when(period.months[crossed]); labels.push({ on: `Below ${mark}% since ${w.on}`, off: `Below ${mark}% since ${w.off}` }); }
+    let ltvBlock: PropertyCard["ltv"] = null;
+    const extra: Dated[] = [];
+    if (known.length > 0) {
+      const first = known[0], latest = known[known.length - 1];
+      // The latest month with a figure. When later months have none, it is dated rather than called current, and no claim is made about what held since.
+      const stale = latest.i < period.months.length - 1;
+      const wl = when(period.months[latest.i]);
+      if (latest.v > 100) labels.push(stale ? { on: `The loan was above the value in ${wl.on}`, off: `The loan was above the value (${wl.off})` } : both("The loan is above the value"));
+      else labels.push(stale ? { on: `You owned ${pct(100 - latest.v)} in ${wl.on}`, off: `You owned ${pct(100 - latest.v)} (${wl.off})` } : both(`You own ${pct(100 - latest.v)}`));
+      // Below a mark since the month it got there for good, when it was at or above the mark earlier in the period.
+      const crossed = stale ? null : crossedBelow(known, LTV_REFERENCE);
+      if (crossed !== null) { const w = when(period.months[crossed]); extra.push({ on: `Below ${LTV_REFERENCE}% since ${w.on}`, off: `Below ${LTV_REFERENCE}% since ${w.off}` }); }
+      if (first.i !== latest.i && first.v !== latest.v) extra.push(both(`LTV ${latest.v < first.v ? "down" : "up"} from ${pct(first.v)} to ${pct(latest.v)}`));
+      // The chart runs to 100%, or to the highest loan-to-value when the loan is above the value, so a fall from 150% to 120% still shows.
+      const top = Math.max(100, ...known.map((p) => p.v));
+      ltvBlock = {
+        chart: { points: ltv.map((v) => (v === null ? null : asShape(v / top))), zero: asShape(0) },
+        latest: { index: asCount(latest.i), label: pct(latest.v) },
+        reference: { at: asShape(LTV_REFERENCE / top), label: `${LTV_REFERENCE}%` }, full: { at: asShape(100 / top), label: "100%" },
+      };
     }
+    // How the value moved over the period, with the same guard as net worth: a change past ten times is not given as a number.
+    const knownValues = values.filter((v): v is number => v !== null);
+    if (knownValues.length >= 2) {
+      const change = changeBetween(knownValues[0], knownValues[knownValues.length - 1]);
+      if (change?.kind === "tenfold") labels.push(both(change.direction === "up" ? "Value up by more than 10×" : "Value down by more than 90%"));
+      else if (change && (change.kind === "up" || change.kind === "down")) labels.push(both(`Value ${change.kind} ${pct(change.percent)} over the period`));
+    }
+    labels.push(...extra);
     cards.push({
-      kind: "equity", id: `equity-${n + 1}`, title, axis: axisOf(period), labels: labels.slice(0, 3), reference: { at: asShape(LTV_REFERENCE / 100), label: `${LTV_REFERENCE}%` },
-      chart: { points: ltv.map((v) => (v === null ? null : asShape(v / 100))), zero: asShape(0) },
-      info: "How much of the asset is still financed over the period (loan-to-value, a ratio), with a dashed line at 80%. The same loan-to-value as Property & assets. The asset and its loan are not named, and no loan terms are shown.",
+      kind: "property", id: `property-${n + 1}`, title, axis: axisOf(period), labels: labels.slice(0, 3), valueShape, ltv: ltvBlock,
+      info: ltvBlock
+        ? "How the asset's value moved over the period, as a shape scaled to its own highest month (no amount is shown), and how much of it is still financed (loan-to-value, a ratio), with a dashed line at 80%. The same figures as Property & assets. The asset and its loan are not named, and no loan terms are shown."
+        : "How the asset's value moved over the period, as a shape scaled to its own highest month: no amount is shown. It has no loan linked. The same value as Property & assets, and the asset is not named.",
     });
   });
-  return { cards, crossings };
+  return cards;
 }
 
 /** The month from which the series stays below `mark` to the end, when an earlier month was at or above it. */
@@ -442,47 +575,6 @@ function crossedBelow(known: readonly { v: number; i: number }[], mark: number):
   let k = known.length - 1;
   while (k > 0 && known[k - 1].v < mark) k--;
   return k === 0 ? null : known[k].i;
-}
-
-// ─── Milestones ──────────────────────────────────────────────────────────────
-
-function milestonesCard(input: ProgressInput, when: ReturnType<typeof whenOf>, found: {
-  crossing: { month: number; direction: "up" | "down" } | null; drops: Partial<Record<DebtChoiceId, Dropped>>; streakReached: Map<number, number>; equity: { title: string; mark: number; month: number }[]; bufferMonths: number | null;
-}): MilestonesCard {
-  const { period, ledger } = input;
-  const dated: { month: number; text: Dated }[] = [];
-  const at = (month: number, lead: string): { month: number; text: Dated } => {
-    const w = when(period.months[month]);
-    return { month, text: { on: `${lead}: ${w.on}`, off: `${lead}: ${w.off}` } };
-  };
-  if (found.crossing?.direction === "up") dated.push(at(found.crossing.month, "Net worth above zero"));
-  const cards = found.drops.cards;
-  if (cards?.paidOff != null) dated.push(at(cards.paidOff, "Credit cards paid off"));
-  // A loan paid off: a loan account whose own owed balance reached zero in the period.
-  const flags = axisOf(period).partial;
-  for (const account of ledger.account.values()) {
-    if (account.accountClass !== "loan") continue;
-    const owed = period.months.map((m, i) => (input.composition.hasData[i] && !flags[i] ? Math.max(0, 0 - ledger.balanceAt(account.id, m)) : null));
-    const drop = dropOf(owed, flags);
-    if (drop?.paidOff != null) dated.push(at(drop.paidOff, "A loan paid off"));
-  }
-  const loans = found.drops.loans;
-  // The same rule as the card's label: only a balance that has been falling for a while counts as paid off since its peak.
-  if (loans && loans.streak >= MIN_FALLING_MONTHS) for (const mark of [0.25, 0.5, 0.75]) {
-    const month = loans.ratios.findIndex((r) => r !== null && r >= mark);
-    if (month >= 0) dated.push(at(month, `${mark * 100}% of loans paid off since the peak`));
-  }
-  for (const [mark, month] of found.streakReached) dated.push(at(month, `Saved ${mark} months in a row`));
-  for (const e of found.equity) dated.push(at(e.month, `${e.title} LTV below ${e.mark}%`));
-  dated.sort((a, b) => b.month - a.month);
-  const now: Dated[] = [];
-  const reached = found.bufferMonths === null ? undefined : [6, 3].find((mark) => found.bufferMonths! >= mark);
-  if (reached !== undefined) now.push(both(`Now: ${reached}+ months of cash buffer`));
-  return {
-    kind: "milestones", id: "milestones", title: "Milestones", note: "In this period", canSeeAllTime: !input.allTime,
-    items: [...now, ...dated.map((d) => d.text)].slice(0, 8), empty: "No milestones in this period yet.",
-    info: "What you reached within the selected period, newest first. The cash buffer is as of today, so it carries no date. Select See all time to look across all available history.",
-  };
 }
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
@@ -494,17 +586,20 @@ export function progressView(input: ProgressInput): ProgressView {
   const debt = debtCard(input, when);
   const savings = savingsCard(input, when);
   const buffer = bufferCard(input);
-  const equity = equityCards(input, when);
+  const equity = propertyCards(input, when);
+  const composition = compositionCard(input);
+  const consistency = consistencyCard(input, when);
+  const journey = journeyCard(input, when);
+  // The order of the tab: how net worth moved, what is owed, the homes, what you own, then saving and the cash buffer.
   const cards: ProgressCard[] = [];
-  if (worth.card) cards.push(worth.card);
-  if (debt.card) cards.push(debt.card);
-  if (savings.card) cards.push(savings.card);
+  if (worth) cards.push(worth);
+  if (debt) cards.push(debt);
+  cards.push(...equity);
+  if (composition) cards.push(composition);
+  if (savings) cards.push(savings);
+  if (consistency) cards.push(consistency);
+  if (journey) cards.push(journey);
   cards.push(buffer);
-  cards.push(...equity.cards);
-  cards.push(milestonesCard(input, when, {
-    crossing: worth.crossing, drops: debt.drops, streakReached: savings.streakReached, equity: equity.crossings,
-    bufferMonths: input.buffer.state === "ready" ? input.buffer.value.months : null,
-  }));
   return { cards, equityPending: input.equity === null && !input.equityFailed, equityUnavailable: input.equityFailed === true };
 }
 

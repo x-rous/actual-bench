@@ -231,22 +231,25 @@ The tab is always offered. A card that does not apply is not shown, and one that
 | Card | What it shows |
 | --- | --- |
 | Net worth journey | A line through the period with only the zero line marked, shaded above and below it. It says when you crossed zero, or how far net worth is up or down. A change of more than ten times is written as "more than 10×", so a very small starting point never gives its size away. Needs two months of data. |
+| Asset composition | Two bars, Start and the end of the period, each 100% of what you own split into Cash, Investments, Property and Other. Only shares are shown, never amounts. Needs something owned at both points. |
 | Debt payoff progress | How what you owe fell, for **Credit cards**, **Loans** or **All debt**, with the highest month marked. It says how much was paid off since that peak once the balance has fallen three months in a row, how many months in a row it fell, and when it was paid off. For loans only, it can say when you will be debt-free, but only when every loan you still owe is tracked in Loans and has a payoff date. A card in credit counts as nothing owed. |
 | Savings rate | Bars for each month above and below 0%. The rate for the period is the savings rate on Summary. A month with no income is left blank. It names your best month and your run of months in a row above 0%. |
+| Savings consistency | In how many of the complete months of the period you kept more than you received (a savings rate above 0%), as one square for each month, up to the last 120 months (a long history wraps onto several lines of smaller squares, each labelled with the month it starts at): a tick for a month saved, a dash for a month short, an empty outline for a month with no income. Needs two months with income. |
 | Cash buffer | A bar from 0 to 12 months with marks at 3 and 6 months: how long your cash could cover your spending, as of today. A lighter second fill counts investments you can reach when you have set them. |
-| Home equity | One card for each asset that has a loan linked, named only Home, Vehicle or Asset. Loan-to-value by month with a dashed line at 80%, and how much of it you own. The asset, its loan and the loan's terms are not shown. |
-| Milestones | What you reached within the period, newest first, up to eight: net worth above zero, credit cards paid off, a loan paid off, 25%, 50% and 75% of loans paid off since the peak (once they have fallen three months in a row), the highest of 3+ and 6+ months of cash buffer (as of today, so undated), saving 6 and 12 months in a row, and a home below 80% and 50% loan-to-value. **See all time** switches the page to all available history. |
+| Cash buffer journey | Months of cover at the end of each of the last 24 months, with your goal as a dashed line. Every month is the cash buffer on Summary worked out as of that month (its balances over the typical month before it, with the same loan schedules), so the last point is the figure on Summary. A month that cannot be worked out is a gap. Needs three months of cover. |
+| Property value & LTV | One card for each property or other fixed asset you track (vehicles are not drawn), named only by its kind. The value is a shaded shape scaled to its own highest month, so no amount is shown. Where a loan is linked it adds the loan-to-value by month with a dashed line at 80%, its latest figure written at the end of the line (these marks stay with Show text off), and how much of the asset you own; an asset with no loan shows its value alone. No card appears without such an asset. |
 
-![A Savings rate card exported from the demo budget: twelve green bars above the 0% line, with the rate for the period, the best month and the run of months in a row above it, and the Made with Actual Bench footer.](../../../assets/screenshots/user-guide/financial-insights-progress.png)
+![A Savings rate card exported from the demo budget: twelve green bars above the 0% line, with the rate for the period, the best month and the run of months in a row above it, and the Actual Bench icon at the top left.](../../../assets/screenshots/user-guide/financial-insights-progress.png)
 
 ### Share a card
 
-Select **Share** on a card to open a preview of the picture. It shows exactly what the card shows, with the tab's Show dates setting.
+Each card has **Copy image** and **Download PNG** at its top right. The picture shows exactly what the card shows, with the switches at the top right of the tab, and is drawn in the theme the app is in, light or dark.
 
-- **Show dates** is a switch at the top right of the tab, on by default. Turned off, month names become Month 1, Month 2… counted from the first month of the period, and dated lines become relative, such as "Crossed zero after 14 months". It applies to the whole tab and to every picture, so a screenshot and the picture match.
-- **Theme** is Light or Dark, starting from your current theme.
-- **Footer** adds or removes "Made with Actual Bench".
-- **Copy image** puts a PNG on your clipboard (only where your browser allows it). **Download PNG** saves `financial-insights-progress-<card>.png`.
+- **Show dates** is a switch at the top right of the tab, on by default. Turned off, month names become Month 1, Month 2… counted from the first month of the period, and dated lines become relative, such as "Crossed zero after 14 months". It applies to the whole tab, its page header (the period dates and the as-of and read-at lines) and every picture, so a screenshot and the picture match.
+- **Show text** is a switch beside it, on by default. Turned off, the cards lose their lines of words, such as "Net worth up by more than 10×" or "You own 38.6%", and the percentage marks on the charts, on the tab and in every picture. The loan-to-value of a property is the exception: its marks always stay. Each card is then its title and its picture. A card that cannot be worked out still says why.
+- Every picture carries the Actual Bench icon at its top left, with the card title beside it. It is always there and cannot be turned off.
+- **Copy all images** is a button at the top right of the tab. The clipboard holds a single image, so it copies every card as one sheet, two cards to a row, with the same switches and theme as the cards themselves. It is not shown where the browser cannot copy images.
+- **Copy image** puts a PNG on your clipboard (only where your browser allows it; the button is not shown elsewhere). **Download PNG** saves `financial-insights-progress-<card>.png`.
 
 The picture is 1200 × 675 pixels and is drawn in your browser. It contains only what you see on the card: no metadata and no hidden text. Nothing is uploaded, and nothing is written to Actual or to Bench.
 

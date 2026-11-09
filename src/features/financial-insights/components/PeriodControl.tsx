@@ -12,14 +12,18 @@ const toDate = (month: string) => new Date(Number(month.slice(0, 4)), Number(mon
 const toMonth = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 
 /** One period for every tab: a preset, or a custom range of whole months. */
-export function PeriodControl({ choice, period, today, firstMonth, onChange }: {
+export function PeriodControl({ choice, period, today, firstMonth, onChange, hideDates = false }: {
   choice: PeriodChoice;
   period: ResolvedPeriod;
   today: string;
   firstMonth: string | null;
   onChange: (choice: PeriodChoice) => void;
+  /** Show only the period's name, not its dates (the Progress tab with Show dates off). */
+  hideDates?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  // A custom period is named by its dates, so with dates hidden it is only "Custom range".
+  const name = hideDates ? (choice.kind === "custom" ? "Custom range" : period.label) : period.label;
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
@@ -27,9 +31,9 @@ export function PeriodControl({ choice, period, today, firstMonth, onChange }: {
           <button
             type="button"
             className="inline-flex h-7 min-w-56 items-center justify-between gap-2 rounded-md border border-input bg-background px-2 text-left text-xs"
-            aria-label={`Period: ${period.label}, ${formatDay(period.startDate)} to ${formatDay(period.endDate)}. Change the period`}
+            aria-label={hideDates ? `Period: ${name}. Change the period` : `Period: ${period.label}, ${formatDay(period.startDate)} to ${formatDay(period.endDate)}. Change the period`}
           >
-            <span className="truncate"><span className="font-medium">{period.label}</span><span className="ml-2 tabular-nums text-muted-foreground">{formatDay(period.startDate)} – {formatDay(period.endDate)}</span></span>
+            <span className="truncate"><span className="font-medium">{name}</span>{!hideDates && <span className="ml-2 tabular-nums text-muted-foreground">{formatDay(period.startDate)} – {formatDay(period.endDate)}</span>}</span>
             <CalendarRange className="size-3.5 shrink-0 opacity-60" aria-hidden="true" />
           </button>
         }
