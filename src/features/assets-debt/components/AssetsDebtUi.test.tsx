@@ -773,6 +773,7 @@ describe("O1: features that need day-by-day interest", () => {
     await addExtra("2024-06-15");
     await waitFor(() => expect(states).toHaveLength(2));
     expect(prompt()).toBeNull();
+    expect(states.at(-1)?.profile.accrual).toBe("per-period");
   }, 15_000);
 
   it("a rate change part-way through a period asks; compatible features do not", async () => {

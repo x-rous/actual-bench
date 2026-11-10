@@ -91,6 +91,16 @@ export type Anchor = {
   scheduledPaymentMinor?: number | null;
   /** Progressive principal: the series basis in force at the anchor, when it started after the opening. */
   progressiveBasis?: { startNo: number; firstPrincipalExact: string } | null;
+  /**
+   * Interest already charged (or left unpaid by a short payment) before the anchor that no repayment has paid yet, in
+   * minor units. Not part of `principalMinor`; the next repayment owes it.
+   */
+  unpaidInterestMinor?: number | null;
+  /**
+   * Per-period restarts: tracked balance corrections after the anchor (an accepted balance, an adjustment), signed.
+   * Each changes the balance on its own date, with the interest from the next period, like an extra repayment.
+   */
+  corrections?: readonly { date: IsoDate; deltaMinor: number }[] | null;
   source: string;
 };
 

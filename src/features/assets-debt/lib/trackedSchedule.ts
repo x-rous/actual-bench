@@ -14,7 +14,7 @@ export type TrackedHistory = {
   startDate: string;
   today: string;
   /** Where the projection of the rest of the loan starts. */
-  anchor: { date: string; principalMinor: number; scheduledPaymentMinor: number; restartDate: string; accruedInterestMinor: number; events?: readonly LedgerEvent[]; progressiveBasis?: { startNo: number; firstPrincipalExact: string } };
+  anchor: { date: string; principalMinor: number; scheduledPaymentMinor: number; restartDate: string; accruedInterestMinor: number; events?: readonly LedgerEvent[]; progressiveBasis?: { startNo: number; firstPrincipalExact: string }; unpaidInterestMinor?: number; corrections?: readonly { date: string; deltaMinor: number }[] };
   /** What really happened, as dated engine events (repayments as paid, extra principal, draws, fees). */
   events: DebtProjectionEvent[];
   /** The loan account's own balance (the debt), from the tracking start to today. */

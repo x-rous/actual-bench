@@ -224,7 +224,7 @@ export function EventsSection({ sim, current, baseline, savings, onEdit, onRemov
                     const off = row.assumption.enabled === false;
                     return (
                     <tr key={row.key} className={cn((passed || off) && "text-muted-foreground")}>
-                      {tracked ? <td className="px-4 py-1.5 text-center">{source === "What-if" ? <Switch aria-label={`Include ${KIND_LABEL[row.assumption.kind]} on ${row.date} in the projection`} checked={!off} onCheckedChange={() => tracked.onToggle(row.assumption)} /> : <span className="text-muted-foreground">-</span>}</td> : null}
+                      {tracked ? <td className="px-4 py-1.5 text-center">{source === "What-if" ? <Switch aria-label={`Include ${KIND_LABEL[row.assumption.kind]} on ${row.date} in the projection`} checked={!off} disabled={off && kindUnavailable(row.assumption.kind) !== null} title={off ? kindUnavailable(row.assumption.kind) ?? undefined : undefined} onCheckedChange={() => tracked.onToggle(row.assumption)} /> : <span className="text-muted-foreground">-</span>}</td> : null}
                       <td className="whitespace-nowrap px-4 py-1.5 tabular-nums">{formatChartDate(row.date)}</td>
                       <td className="px-3 py-1.5 font-medium">{KIND_LABEL[row.assumption.kind]}</td>
                       <td className="px-3 py-1.5 text-right font-medium tabular-nums">{formatAmount(row.assumption.amountMinor, sim.minorDigits)}</td>

@@ -188,11 +188,12 @@ export type DebtConfigV3 = z.infer<typeof debtConfigV3>;
 
 /**
  * v4 adds progressive principal (design 06 §1.1): the amortization method and the growth of the principal repaid each
- * instalment, an exact decimal fraction ("0.003459241050" is 0.3459241050%). Null on every other method.
+ * instalment, an exact decimal fraction with at most 10 places, so at most 8 decimals as a percentage, the growth field's
+ * limit ("0.0034592411" is 0.34592411%). Null on every other method.
  */
-export const PROGRESSIVE_GROWTH_PATTERN = /^0(\.\d{1,12})?$/;
+export const PROGRESSIVE_GROWTH_PATTERN = /^0(\.\d{1,10})?$/;
 const progressive = z.strictObject({
-  growthPerRepaymentDecimal: z.string().regex(PROGRESSIVE_GROWTH_PATTERN, "must be a decimal fraction from 0 to 0.05 with at most 12 places")
+  growthPerRepaymentDecimal: z.string().regex(PROGRESSIVE_GROWTH_PATTERN, "must be a decimal fraction from 0 to 0.05 with at most 10 places")
     .refine((v) => Number(v) <= 0.05, "must be at most 0.05 (5% per repayment)"),
 });
 

@@ -35,7 +35,15 @@ covers that installment, so restarting from the payment date would schedule it a
 reports `anchor.restartDate` (the due date of the last covered installment, otherwise the date of the last real
 event) and `anchor.accruedInterestMinor` (interest accrued from the payment to that date, minor units, read at the
 last real event). `inputFor` in `useLiveProjection.ts` starts the projection from `restartDate` with that interest;
-what-ifs dated in the gap move to the following day. "Next payment" is the first installment after today that no
+what-ifs dated in the gap move to the following day.
+
+The anchor also carries what is still owed at the restart. `unpaidInterestMinor` is interest the next repayment
+owes: on a per-period loan, what a short payment left unpaid; on a daily loan whose interest is charged on its own
+day, the part of the interest since the last repayment already charged (the rest stays in
+`accruedInterestMinor`). On per-period loans, `events` replays extra principal and draws after `restartDate`, and
+`corrections` replays an accepted or adjusted balance: the balance changes on its date, with the interest from
+the next period. Per-period installments are allocated in due-date order, so one paid before an earlier one still
+gets its own period's interest. "Next payment" is the first installment after today that no
 payment covers. The engine itself is unchanged.
 
 ## Payment rules

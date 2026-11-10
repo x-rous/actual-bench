@@ -4,11 +4,11 @@ import { useState } from "react";
 import { Calculator } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { projectDebt } from "@/lib/financial-models/loan/projection";
 import { paymentCount } from "@/lib/financial-models/loan/recast";
-import { progressiveFirstPrincipal, progressivePrincipalAt, solveProgressiveGrowth } from "@/lib/financial-models/loan/repayment";
-import { dec, fromMinor } from "@/lib/financial-models/money/kernel";
+import { solveProgressiveGrowth } from "@/lib/financial-models/loan/repayment";
 import { formatAmount } from "../../lib/money";
-import { growthPercent, type SimulationState } from "../../lib/simulatorModel";
+import { growthPercent, projectionWindow, simulationToModel, type SimulationState } from "../../lib/simulatorModel";
 import { IntegerField, MoneyField, PercentField } from "../fields";
 
 /** The growth field's limits (design 06 §1.1): up to 5% per repayment, 8 decimals as a percentage. */
@@ -40,6 +40,22 @@ export function ProgressivePrincipalFields({ sim, change }: { sim: SimulationSta
   );
 }
 
+/**
+ * The scheduled principal of instalment `no` in the loan as set up with `growth`, from the engine's own contract
+ * schedule (interest-only phases and contract recasts included; what-ifs left out). Null when it has none (an
+ * interest-only instalment) or the loan does not calculate.
+ */
+export function contractPrincipalAt(sim: SimulationState, growth: string, no: number): number | null {
+  const built = simulationToModel({ ...sim, assumptions: [], progressiveGrowthDecimal: growth });
+  if (!built.ok) return null;
+  const { model } = built;
+  const window = projectionWindow(sim);
+  const result = projectDebt({ model, anchor: { date: model.terms.openingDate, principalMinor: model.terms.openingPrincipalMinor, accruedInterestMinor: 0, source: "opening" }, events: [], from: window.from, to: window.to });
+  if (!result.ok) return null;
+  const row = result.events.find((e) => e.diagnostics.installmentNo === no);
+  return typeof row?.diagnostics.scheduledPrincipalMinor === "number" ? row.diagnostics.scheduledPrincipalMinor : null;
+}
+
 function WorkItOut({ sim, onUse }: { sim: SimulationState; onUse: (fraction: string) => void }) {
   const total = sim.termMonths ? paymentCount(sim.profile.repaymentFrequency, sim.termMonths) : null;
   const [balance, setBalance] = useState<number | null>(sim.principalMinor);
@@ -47,11 +63,10 @@ function WorkItOut({ sim, onUse }: { sim: SimulationState; onUse: (fraction: str
   const [left, setLeft] = useState<number | null>(total);
   const digits = sim.minorDigits;
   const solved = balance && principal && left ? solveProgressiveGrowth(balance, principal, left, digits) : null;
-  // Check the growth against the loan as set up: Bench's own principal for the same instalment.
-  const check = solved?.ok && total && sim.principalMinor && left && left <= total
-    ? progressivePrincipalAt(progressiveFirstPrincipal(fromMinor(sim.principalMinor, digits), dec(solved.growthDecimal), total), dec(solved.growthDecimal), total - left, { minorDigits: digits, mode: sim.profile.rounding.paymentRounding })
-    : null;
-  const instalment = total && left ? total - left + 1 : null;
+  const instalment = total && left && left <= total ? total - left + 1 : null;
+  // Check the growth against the loan as set up: the engine's own principal for the same instalment.
+  const solvedGrowth = solved?.ok ? solved.growthDecimal : null;
+  const check = solvedGrowth !== null && instalment !== null ? contractPrincipalAt(sim, solvedGrowth, instalment) : null;
   return (
     <Popover>
       <PopoverTrigger render={<Button type="button" variant="link" size="sm" className="h-auto self-start gap-1 px-0 text-xs" />}>

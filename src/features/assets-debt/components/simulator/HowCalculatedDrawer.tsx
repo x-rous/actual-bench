@@ -12,7 +12,7 @@ import { fractionToPercent, formatAmount } from "../../lib/money";
 import { headline, describeOutlook } from "../../lib/results";
 import type { TrackedHistory } from "../../lib/trackedSchedule";
 import { ADJUSTMENT_OPTIONS, ALLOCATION_OPTIONS, WEEKDAY_LABELS } from "./DueDateSettings";
-import { derivedFirstPaymentDate, summarizeProfile, type SimulationState } from "../../lib/simulatorModel";
+import { activeProgressive, derivedFirstPaymentDate, growthPercent, summarizeProfile, type SimulationState } from "../../lib/simulatorModel";
 import {
   ACCRUAL_OPTIONS,
   BALANCE_PRECISION_OPTIONS,
@@ -53,6 +53,7 @@ function Row({ term, children }: { term: string; children: React.ReactNode }) {
 export function HowCalculatedDrawer({ open, onClose, sim, projection, revision, unsaved, tracked = null }: { open: boolean; onClose: () => void; sim: SimulationState; projection: DebtProjection | null; revision: number | null; unsaved: boolean; tracked?: TrackedHistory | null }) {
   const p = sim.profile;
   const daily = p.accrual !== "per-period";
+  const progressive = activeProgressive(sim);
   const versions = engineVersionsOf(projection);
   const engine = versions.engine;
   const money = (minor: number) => formatAmount(minor, sim.minorDigits);
@@ -80,7 +81,7 @@ export function HowCalculatedDrawer({ open, onClose, sim, projection, revision, 
       >
         <SheetHeader>
           <SheetTitle>How this loan is calculated</SheetTitle>
-          <SheetDescription>{summarizeProfile(p)}</SheetDescription>
+          <SheetDescription>{summarizeProfile(p, progressive?.growthPerRepaymentDecimal ?? null)}</SheetDescription>
         </SheetHeader>
         <div className="flex flex-col gap-4 px-4 pb-6 text-sm">
           <section aria-labelledby="engine-heading">
@@ -90,7 +91,7 @@ export function HowCalculatedDrawer({ open, onClose, sim, projection, revision, 
             <p className="text-xs">
               {daily ? "Actual Bench, day by day" : "Actual Bench, period by period"}
               {engine ? ` (${engine})` : ""}.{" "}
-              {daily ? "Interest accrues on each calendar day, which follows offsets, rate changes and transactions on their exact dates." : "Each repayment period earns the periodic rate on the balance, the usual way a level-payment loan is quoted."}
+              {daily ? "Interest accrues on each calendar day, which follows offsets, rate changes and transactions on their exact dates." : "Each repayment period earns the periodic rate on the balance at its start."}
             </p>
             <p className="text-xs text-muted-foreground">{revision === null ? "Not saved yet: a simulation only." : unsaved ? `Based on unsaved changes to revision ${revision}.` : `Saved revision ${revision}.`}</p>
             {Object.keys(versions).length > 1 ? <p className="text-[11px] text-muted-foreground">Versions: {Object.entries(versions).map(([name, version]) => `${name} ${version}`).join(" · ")}</p> : null}
@@ -132,7 +133,9 @@ export function HowCalculatedDrawer({ open, onClose, sim, projection, revision, 
               <Row term="Rate quoted as">{labelOf(RATE_QUOTE_OPTIONS, p.rateQuote)}</Row>
               <Row term="Interest accrues">{labelOf(ACCRUAL_OPTIONS, p.accrual)}{daily ? `, ${labelOf(DAY_COUNT_OPTIONS, p.dayCount)}` : ""}</Row>
               <Row term="Interest is charged">{labelOf(CHARGE_FREQUENCY_OPTIONS, p.chargeFrequency)}{p.chargeDay ? ` on day ${p.chargeDay}` : ""}</Row>
-              <Row term="Repayments">{labelOf(REPAYMENT_FREQUENCY_OPTIONS, p.repaymentFrequency)} from {derivedFirstPaymentDate(sim)}; {labelOf(REPAYMENT_DERIVATION_OPTIONS, p.repaymentDerivation).toLowerCase()}{sim.contractualPaymentMinor !== null ? ` (${formatAmount(sim.contractualPaymentMinor, sim.minorDigits)})` : ""}</Row>
+              <Row term="Repayments">{labelOf(REPAYMENT_FREQUENCY_OPTIONS, p.repaymentFrequency)} from {derivedFirstPaymentDate(sim)}; {progressive
+                ? `principal grows ${growthPercent(progressive.growthPerRepaymentDecimal)}% each repayment, with the period's interest on top`
+                : `${labelOf(REPAYMENT_DERIVATION_OPTIONS, p.repaymentDerivation).toLowerCase()}${sim.contractualPaymentMinor !== null ? ` (${formatAmount(sim.contractualPaymentMinor, sim.minorDigits)})` : ""}`}</Row>
               <Row term="Maturity">{sim.maturityDate ?? "From the term and first repayment date"}</Row>
               <Row term="Recalculated">{labelOf(RECAST_OPTIONS, p.recast)}</Row>
               <Row term="Interest-only">{sim.interestOnly && sim.phases.length ? sim.phases.map((ph) => `${ph.from} to ${ph.to}`).join("; ") : "None"}</Row>

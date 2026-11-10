@@ -56,7 +56,7 @@ describe("rd084.debt-config v4: progressive principal", () => {
     expect(parseDebtConfig(config)).toMatchObject({ ok: false, code: "inconsistent-profile" });
   });
 
-  it.each(["0.051", "1", "-0.001", "0.0000000000001", "abc"])("refuses the growth %j", (growth) => {
+  it.each(["0.051", "1", "-0.001", "0.00345924105", "0.0000000000001", "abc"])("refuses the growth %j", (growth) => {
     expect(parseDebtConfig(v4({ progressive: { growthPerRepaymentDecimal: growth } })).ok).toBe(false);
   });
 

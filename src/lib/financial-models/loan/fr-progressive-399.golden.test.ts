@@ -67,7 +67,8 @@ describe("feedback #399: French progressive principal mortgage", () => {
     expect(solveProgressiveGrowth(203_353_10, 441_38, 276, 2)).toEqual({ ok: true, growthDecimal: GROWTH });
     expect(solveProgressiveGrowth(203_353_10, 736_79, 276, 2)).toEqual({ ok: true, growthDecimal: "0" });
     expect(solveProgressiveGrowth(203_353_10, 800_00, 276, 2)).toEqual({ ok: false, reason: "shrinking" });
-    expect(solveProgressiveGrowth(203_353_10, 1, 276, 2)).toEqual({ ok: false, reason: "too-fast" });
+    // 0.01 over 120 instalments needs more than 5% growth (5% gives a first principal of about 29.23).
+    expect(solveProgressiveGrowth(203_353_10, 1, 120, 2)).toEqual({ ok: false, reason: "too-fast" });
   });
 
   it("reproduces rows 026–028 to the cent", () => {

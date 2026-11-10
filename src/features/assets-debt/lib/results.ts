@@ -54,14 +54,15 @@ export function describeOutlook(outlook: RepaymentOutlook | undefined, format: (
 }
 
 export function repaymentOutlook(events: readonly DebtProjectionEvent[]): RepaymentOutlook {
-  const all = events.filter((e) => e.eventType === "repayment").map((e) => ({ date: e.date, amountMinor: -e.cashMovementMinor, scheduled: e.certainty === "scheduled" }));
-  const future = all.some((r) => r.scheduled) ? all.filter((r) => r.scheduled) : all;
+  // Only scheduled repayments are ahead: with none left (a loan paid off in its history), nothing is "next".
+  const future = events.filter((e) => e.eventType === "repayment" && e.certainty === "scheduled").map((e) => ({ date: e.date, amountMinor: -e.cashMovementMinor }));
   const next = future[0] ? { date: future[0].date, amountMinor: future[0].amountMinor } : null;
   const last = future.at(-1) ? { date: future.at(-1)!.date, amountMinor: future.at(-1)!.amountMinor } : null;
   const counts = new Map<number, number>();
   for (const r of future) counts.set(r.amountMinor, (counts.get(r.amountMinor) ?? 0) + 1);
   const most = Math.max(0, ...counts.values());
-  if (future.length === 0 || counts.size === 1 || most * 2 >= future.length) return { kind: "level", next, last };
+  // Level when one amount is most of them (a strict majority): two amounts left that differ are a change, not a level.
+  if (future.length === 0 || counts.size === 1 || most * 2 > future.length) return { kind: "level", next, last };
   const amounts = future.map((r) => r.amountMinor);
   const rising = amounts.every((a, i) => i === 0 || a >= amounts[i - 1]);
   const falling = amounts.every((a, i) => i === 0 || a <= amounts[i - 1]);

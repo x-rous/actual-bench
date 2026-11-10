@@ -314,8 +314,12 @@ function simulateDailyImpl(req: SimulationRequest, behavior: DailyEngineBehavior
   for (const r of model.paymentRecasts) if (compareDates(r.date, anchor.date) > 0) recasts.set(r.date, "contract-date");
 
   // ── State ─────────────────────────────────────────────────────────────────
-  let debt: Dec = fromMinor(anchor.principalMinor, digits);
-  let accrued: Dec = anchor.accruedInterestExact ? dec(anchor.accruedInterestExact) : fromMinor(anchor.accruedInterestMinor ?? 0, digits);
+  // Interest charged before the anchor and not yet repaid: with separate charges it is part of the charged debt that the
+  // next repayment owes; charged with each repayment, it is still to charge, so it waits with the accrued interest.
+  const unpaidAtAnchor = Math.max(anchor.unpaidInterestMinor ?? 0, 0);
+  const unpaidCharged = chargeSet !== null ? unpaidAtAnchor : 0;
+  let debt: Dec = fromMinor(anchor.principalMinor + unpaidCharged, digits);
+  let accrued: Dec = add(anchor.accruedInterestExact ? dec(anchor.accruedInterestExact) : fromMinor(anchor.accruedInterestMinor ?? 0, digits), fromMinor(unpaidAtAnchor - unpaidCharged, digits));
   let carry: Dec = anchor.carriedRemainder ? dec(anchor.carriedRemainder) : DEC_ZERO;
   let payment: number | null = anchor.scheduledPaymentMinor ?? null;
   let paymentsMade = madeBeforeAnchor;
@@ -323,7 +327,7 @@ function simulateDailyImpl(req: SimulationRequest, behavior: DailyEngineBehavior
   let stopScheduling = false;
   let lastChargeMinor = 0;
   /** Interest charged since the last scheduled repayment (what an interest-only repayment owes). */
-  let chargedSinceRepayment = 0;
+  let chargedSinceRepayment = unpaidCharged;
   let currentStep = "";
   const offsetBalances = new Map<string, { balanceMinor: number; clearedBalanceMinor: number }>();
   const offsetStates = [] as NonNullable<Extract<SimulationResult, { ok: true }>["offsetStates"]>;
@@ -501,6 +505,7 @@ function simulateDailyImpl(req: SimulationRequest, behavior: DailyEngineBehavior
     if (atRepaymentCharge) interestWithPayment = charge(date, "with-repayment", false);
     let level: number;
     let ioCharged = 0;
+    let scheduledPrincipalMinor: number | null = null;
     if (phase) {
       // An interest-only repayment pays interest, sized from the charged state by the profile's
       // `interestOnlyRepayment` convention; the repayment cadence need not match the charges.
@@ -520,7 +525,8 @@ function simulateDailyImpl(req: SimulationRequest, behavior: DailyEngineBehavior
       // Interest charged with (or since) the previous instalment, plus this instalment's scheduled principal.
       const interestDue = atRepaymentCharge ? interestWithPayment : chargedSinceRepayment;
       const principalOwed = Math.max(minor(debt) - interestDue, 0);
-      level = interestDue + Math.min(progressivePrincipalFor(model, growth, basis, allScheduled.indexOf(date) + 1), principalOwed);
+      scheduledPrincipalMinor = Math.min(progressivePrincipalFor(model, growth, basis, allScheduled.indexOf(date) + 1), principalOwed);
+      level = interestDue + scheduledPrincipalMinor;
     } else {
       level = payment!;
     }
@@ -560,6 +566,7 @@ function simulateDailyImpl(req: SimulationRequest, behavior: DailyEngineBehavior
       ],
       diagnostics: {
         decision: decision.kind, interestOnly: phase !== null, levelPaymentMinor: level,
+        ...(scheduledPrincipalMinor !== null && basis ? { installmentNo: allScheduled.indexOf(date) + 1, scheduledPrincipalMinor, progressiveBasis: basis.source } : {}),
         ...(interestWithPayment > 0 ? { interestRatesDecimal: repaymentRates.join(";") } : {}),
         ...(phase ? { interestOnlyBasis: atRepaymentCharge ? "charged-with-repayment" : profile.interestOnlyRepayment, chargedInterestPaidMinor: atRepaymentCharge ? interestWithPayment : ioCharged } : {}),
         negativeAmortizationMinor: interestWithPayment > decision.paymentMinor ? interestWithPayment - decision.paymentMinor : 0,

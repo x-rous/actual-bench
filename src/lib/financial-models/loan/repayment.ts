@@ -81,7 +81,9 @@ export function solveProgressiveGrowth(balanceMinor: number, principalMinor: num
   if (toMinor(even, minorDigits, "half-even") === principalMinor) return { ok: true, growthDecimal: "0" };
   if (cmp(target, even) > 0) return { ok: false, reason: "shrinking" };
   const top = dec(MAX_PROGRESSIVE_GROWTH);
-  if (cmp(target, progressiveFirstPrincipal(balance, top, payments)) < 0) return { ok: false, reason: "too-fast" };
+  // A lender shows the principal rounded, so a row at exactly the limit can show slightly less than the exact amount.
+  const atTop = progressiveFirstPrincipal(balance, top, payments);
+  if (cmp(target, atTop) < 0) return toMinor(atTop, minorDigits, "half-even") === principalMinor ? { ok: true, growthDecimal: MAX_PROGRESSIVE_GROWTH } : { ok: false, reason: "too-fast" };
   let low = DEC_ZERO;
   let high = top;
   const two = decInt(2);

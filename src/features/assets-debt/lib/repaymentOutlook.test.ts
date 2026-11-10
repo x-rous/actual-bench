@@ -1,4 +1,5 @@
-import { describeOutlook, headline } from "./results";
+import type { DebtProjectionEvent } from "@/lib/financial-models/loan/projection";
+import { describeOutlook, headline, repaymentOutlook } from "./results";
 import type { SimulationState } from "./simulatorModel";
 import { project, sim } from "./simulatorTestKit";
 
@@ -38,5 +39,19 @@ describe("repayment headline for repayments that vary", () => {
       profile: { ...perPeriod("progressive-principal").profile, rateEffectiveTiming: "from-next-charge-period" },
     });
     expect(words(s)?.pattern).toBe("Future repayments vary");
+  });
+
+  const repayment = (date: string, amountMinor: number, certainty: string) => ({ date, eventType: "repayment", cashMovementMinor: -amountMinor, certainty }) as DebtProjectionEvent;
+
+  it("never shows a past repayment as the next one when none is scheduled (paid off in its history)", () => {
+    const outlook = repaymentOutlook([repayment("2026-01-30", 100_00, "observed"), repayment("2026-02-28", 120_00, "observed")]);
+    expect(outlook.next).toBeNull();
+    expect(describeOutlook(outlook, String)).toBeNull();
+  });
+
+  it("says rising for the last two repayments of a progressive loan, not level", () => {
+    const outlook = repaymentOutlook([repayment("2049-08-30", 1_143_77, "scheduled"), repayment("2049-09-30", 1_144_30, "scheduled")]);
+    expect(outlook.kind).toBe("rising");
+    expect(describeOutlook(outlook, (m) => (m / 100).toFixed(2))).toEqual({ next: "on 30 Aug 2049", pattern: "Rising to 1144.30 by Sep 2049" });
   });
 });

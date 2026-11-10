@@ -30,6 +30,15 @@ describe("How this loan is calculated", () => {
     expect(within(dialog).getByText("Term").nextSibling).toHaveTextContent("3 years");
   });
 
+  it("names a progressive loan's growth and describes its repayment rule", () => {
+    const progressive = sim({ principalMinor: 203_353_10, termMonths: 276, progressiveGrowthDecimal: "0.0034592411", profile: { ...loan.profile, amortization: "progressive-principal", accrual: "per-period", chargeFrequency: "at-repayment", chargeDay: null, recast: "never", repaymentDerivation: "annuity-at-payment-frequency" } });
+    render(<HowCalculatedDrawer open onClose={jest.fn()} sim={progressive} projection={project(progressive)} revision={1} unsaved={false} />);
+    const dialog = screen.getByRole("dialog", { name: "How this loan is calculated" });
+    expect(dialog).toHaveTextContent("progressive principal +0.34592411% per repayment");
+    expect(within(dialog).getByText("Repayments").nextSibling).toHaveTextContent("principal grows 0.34592411% each repayment, with the period's interest on top");
+    expect(within(dialog).getByText("Repayments").nextSibling).not.toHaveTextContent(/annuity|level/i);
+  });
+
   it("says where a tracked loan's history ends and the projection restarts, and why", () => {
     open({ tracked: trackedEarly });
     const dialog = screen.getByRole("dialog", { name: "How this loan is calculated" });

@@ -28,6 +28,11 @@ describe("a tracked loan's projection after an installment paid before its due d
     expect(projected).toHaveLength(paid.length - 3);
   });
 
+  it("passes the interest still owed and the balance corrections at the restart to the engine", () => {
+    const input = inputFor(s, undefined, { mode: "projection", at: { startDate: "2024-02-01", anchor: { ...anchor, restartDate: "2024-04-01", unpaidInterestMinor: 1_25, corrections: [{ date: "2024-04-10", deltaMinor: -5_00 }] } } });
+    expect(input?.anchor).toMatchObject({ date: "2024-04-01", unpaidInterestMinor: 1_25, corrections: [{ date: "2024-04-10", deltaMinor: -5_00 }] });
+  });
+
   it("without the restart, the engine would schedule the covered due date again (the bug this guards against)", () => {
     expect(run({})[0].date).toBe("2024-04-01");
   });
