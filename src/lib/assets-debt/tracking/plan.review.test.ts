@@ -31,8 +31,8 @@ const level = (over: Partial<LoanModelSnapshot> = {}, profile: Record<string, un
 let seq = 0;
 const tx = (t: Partial<SyncSourceTransaction> & Pick<SyncSourceTransaction, "accountId" | "date" | "amount">): SyncSourceTransaction => ({ id: `r${++seq}`, payeeId: null, payeeName: null, categoryId: null, categoryName: null, notes: null, cleared: true, reconciled: false, importedId: null, importedPayee: null, transferId: null, isParent: false, isChild: false, parentId: null, splitLines: [], ...t });
 function transfer(date: string, amount: number) {
-  const bank = tx({ accountId: "checking", date, amount: -amount });
-  const loanSide = tx({ accountId: "loan", date, amount, transferId: bank.id });
+  const bank = tx({ accountId: "checking", date, amount: -amount, payeeId: "pl", payeeName: "Loan" });
+  const loanSide = tx({ accountId: "loan", date, amount, payeeId: "pc", payeeName: "Checking", transferId: bank.id });
   bank.transferId = loanSide.id;
   return { bank, loan: loanSide };
 }
@@ -158,3 +158,83 @@ describe("tracking daily-interest progressive loans: edge cases", () => {
     expect(-nov.cashMovementMinor).toBe(tracked.anchor.unpaidInterestMinor! + (nov.diagnostics.scheduledPrincipalMinor as number));
   });
 });
+
+describe("tracking daily interest charged on its own dates", () => {
+  // Interest charged on the 1st of each month (the first on 1 Oct, one day after the loan starts), repayments on the 30th.
+  const SEPARATE = { ...DAILY, chargeFrequency: "monthly", chargeDay: 1 };
+  const chargedTerms = { ...TERMS, firstInterestChargeDate: "2026-10-01" };
+  const LENDER_CHARGED = { id: "d1", budgetSyncId: "b1", liabilityAccountId: "loan", trackingStartDueDate: "2026-10-30", representation: "lender-charged" as const, loanPaymentCategoryId: "c", interestCategoryId: "ci", feeCategoryId: null, principalNoteSuffix: "", interestNoteSuffix: "#i", toleranceMinor: 100, missingGraceDays: 5 };
+  /** The lender's own interest row in the loan account. */
+  const lenderCharge = (date: string, amount: number) => ({ bank: tx({ accountId: "elsewhere", date, amount: 0 }), loan: tx({ accountId: "loan", date, amount: -amount, payeeName: "Interest" }) });
+  function contract(m: LoanModelSnapshot) {
+    const r = simulate({ model: m, anchor: { date: m.terms.openingDate, principalMinor: m.terms.openingPrincipalMinor, accruedInterestMinor: 0, source: "opening" }, events: [], to: "2027-04-30" });
+    if (!r.ok) throw new Error(r.blocked[0].message);
+    return { charges: r.events.filter((e) => e.type === "interest-charge"), repayments: r.events.filter((e) => e.type === "repayment") };
+  }
+  const today = "2027-03-05";
+
+  it.each([
+    ["a progressive loan, whose first repayment is small", loan({ terms: chargedTerms }, SEPARATE)],
+    ["a level-payment loan", level({ terms: chargedTerms }, SEPARATE)],
+  ])("with the lender's interest rows, %s: repayments stay whole and pay what the lender charged", (_, m) => {
+    const { charges, repayments } = contract(m);
+    const paid = repayments.filter((e) => e.date <= today);
+    const rows = [...paid.map((e) => transfer(e.date, -e.cashMovementMinor)), ...charges.filter((c) => c.date <= today).map((c) => lenderCharge(c.date, c.interestMinor))];
+    const tracked = plan(m, rows, today, { debt: LENDER_CHARGED });
+    const done = tracked.installments.filter((i) => i.dueDate <= today);
+    expect(done).toHaveLength(5);
+    for (const [i, inst] of done.entries()) {
+      // Nothing to write: the transfer is already right, and the lender's row already holds the interest.
+      expect(inst).toMatchObject({ status: "recorded", proposal: null });
+      // It paid the interest the lender charged since the previous repayment (on the 1st), not the interest since that repayment.
+      expect(inst.interestMinor).toBe(charges[i].interestMinor);
+      expect(inst.balanceAfterMinor).toBe(paid[i].balanceAfterMinor);
+    }
+    // Actual's loan account holds the principal and the 1 Mar charge not yet repaid: Bench agrees with it exactly.
+    expect(tracked.figures.differenceMinor).toBe(0);
+    // The projection continues with that charge owed by the next repayment, as the contract does.
+    expect(tracked.anchor.unpaidInterestMinor).toBe(charges.find((c) => c.date === "2027-03-01")!.interestMinor);
+    const projected = projection(m, tracked, "2027-04-30");
+    for (const date of ["2027-03-30", "2027-04-30"]) expect(at(projected, date).cashMovementMinor).toBe(repayments.find((e) => e.date === date)!.cashMovementMinor);
+    expect(tracked.installments.find((i) => i.dueDate === "2027-03-30")!.scheduledMinor).toBe(-repayments.find((e) => e.date === "2027-03-30")!.cashMovementMinor);
+  });
+
+  it("with the lender's interest rows, flags a payment that doesn't cover the interest charged, without proposing a split", () => {
+    const m = level({ terms: chargedTerms }, SEPARATE);
+    const { charges, repayments } = contract(m);
+    const rows = [transfer("2026-10-30", -repayments[0].cashMovementMinor), transfer("2026-11-30", 500_00), ...charges.filter((c) => c.date <= "2026-12-05").map((c) => lenderCharge(c.date, c.interestMinor))];
+    const nov = plan(m, rows, "2026-12-05", { debt: LENDER_CHARGED }).installments.find((i) => i.dueDate === "2026-11-30")!;
+    expect(nov).toMatchObject({ status: "check", checkKind: "short", proposal: null, interestMinor: 500_00, principalMinor: 0 });
+  });
+
+  it.each([
+    ["a small first progressive repayment", loan({ terms: chargedTerms }, SEPARATE)],
+    ["repayments that cover the interest", level({ terms: chargedTerms }, SEPARATE)],
+  ])("split in Actual without the lender's charges, never proposes a split for %s", (_, m) => {
+    const { repayments } = contract(m);
+    const tracked = plan(m, repayments.filter((e) => e.date <= today).map((e) => transfer(e.date, -e.cashMovementMinor)), today);
+    const done = tracked.installments.filter((i) => i.dueDate <= today);
+    expect(done).toHaveLength(5);
+    for (const inst of done) {
+      expect(inst).toMatchObject({ status: "check", checkKind: "cannot-split", proposal: null });
+      expect(inst.note).toMatch(/can't see those charges/);
+    }
+  });
+
+  it("split in Actual without the lender's charges, keeps a recorded split as it is and offers no adjustment to Bench's figure", () => {
+    const m = level({ terms: chargedTerms }, SEPARATE);
+    const bank = tx({ accountId: "checking", date: "2026-11-30", amount: -1_084_59, isParent: true, payeeId: "pl" });
+    const principalLine = tx({ accountId: "loan", date: "2026-11-30", amount: 462_86, payeeId: "pc", transferId: "line-p" });
+    bank.splitLines = [
+      { id: "line-p", amount: -462_86, payeeId: "pl", payeeName: "Loan", categoryId: null, notes: null, transferId: principalLine.id },
+      { id: "line-i", amount: -621_73, payeeId: null, payeeName: null, categoryId: "ci", notes: null, transferId: null },
+    ] as SyncSourceTransaction["splitLines"];
+    principalLine.transferId = "line-p";
+    const { repayments } = contract(m);
+    const tracked = plan(m, [transfer("2026-10-30", -repayments[0].cashMovementMinor), { bank, loan: principalLine }], "2026-12-05");
+    const nov = tracked.installments.find((i) => i.dueDate === "2026-11-30")!;
+    expect(nov).toMatchObject({ status: "recorded", interestMinor: 621_73, principalMinor: 462_86, proposal: null });
+    expect(nov.checkKind).toBeUndefined();
+  });
+});
+

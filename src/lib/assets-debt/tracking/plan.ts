@@ -515,7 +515,10 @@ export function planTracking(input: TrackingInput): TrackingResult {
   // What a row that adds to the debt is, when the user hasn't said: the loan arriving (a transfer near the loan's start),
   // an opening balance, or a later draw or charge. The Loan Ledger shows the same suggestions.
   const loanStart = model.terms.openingDate;
-  const firstNonTransferDebt = loanRows.find((r) => r.amount < 0 && !r.transferId && !isPostingMarker(r.importedId));
+  // With the lender's interest rows in the account, a row after the loan arrived by transfer is the lender's charge, not
+  // an opening balance.
+  const arrivedBy = debt.representation === "lender-charged" ? loanRows.find((r) => r.amount < 0 && r.transferId && Math.abs(daysBetween(loanStart, r.date)) <= 31) ?? null : null;
+  const firstNonTransferDebt = loanRows.find((r) => r.amount < 0 && !r.transferId && !isPostingMarker(r.importedId) && !(arrivedBy && r.date >= arrivedBy.date));
   const isStartingBalance = (r: SyncSourceTransaction) => !r.transferId && (r.payeeName ?? "").trim().toLowerCase() === "starting balance";
   const suggestedDebtType = (r: SyncSourceTransaction): EntryType => r.transferId
     ? (Math.abs(daysBetween(loanStart, r.date)) <= 31 ? "loan-received" : "draw")
@@ -581,6 +584,18 @@ export function planTracking(input: TrackingInput): TrackingResult {
   // Actual's own principal for recorded installments, to tell where Actual and the calculation part ways.
   let actualPrincipal = opening.principalMinor;
   let driftFlagged = false;
+  /**
+   * The lender charges interest into the loan account (its own rows there): repayments stay whole transfers, and each
+   * one pays the interest the lender charged since the previous repayment (`lenderUnpaidMinor`), the rest principal.
+   */
+  const lenderCharged = debt.representation === "lender-charged";
+  let lenderUnpaidMinor = 0;
+  /**
+   * Repayments split in Actual while daily interest is charged on its own dates: what the lender charged isn't in Actual,
+   * and interest accrued since the previous payment is not it, so Bench proposes no split and offers no adjustment.
+   */
+  const chargesUnknown = !lenderCharged && model.profile.accrual !== "per-period" && model.profile.chargeFrequency !== "at-repayment";
+  const CHARGES_UNKNOWN_NOTE = "Your lender charges interest on its own dates, and Bench can't see those charges, so it can't tell how much of this payment is interest. Record the split from your lender's statement in Actual. If the lender's interest rows are in the loan account, choose “Lender charges interest into the loan account” in Link to Actual.";
   /** `sortDate` (default `date`) places the step; per-period installments never run before an earlier installment. */
   type Step = { date: string; sortDate?: string; order: number; run: () => void };
   const steps: Step[] = [];
@@ -593,6 +608,7 @@ export function planTracking(input: TrackingInput): TrackingResult {
   for (const b of balanceEvents) {
     steps.push({ date: b.date, order: 0, run: () => {
       const increase = b.kind === "interest-charged" ? 0 : b.amountMinor; // charged interest is paid by the repayments, not principal
+      if (b.kind === "interest-charged") lenderUnpaidMinor += b.amountMinor;
       const kind = b.kind === "adjustment" ? "correction" : "reset";
       calc = calc.reset(b.date, calc.balanceMinor + increase, kind); actualPrincipal += increase;
       comparison = comparison.reset(b.date, comparison.balanceMinor + increase, kind);
@@ -655,7 +671,9 @@ export function planTracking(input: TrackingInput): TrackingResult {
       const missing = !upcoming && addDays(due.date, debt.missingGraceDays) < today;
       if (upcoming) {
         // Planned as paid on its due date for the scheduled amount, after everything that really happened.
-        const planned = calc.repayment(due, due.date, base.scheduledMinor);
+        const plannedInterest = lenderCharged ? Math.min(lenderUnpaidMinor, Math.max(base.scheduledMinor - due.feesMinor, 0)) : undefined;
+        const planned = calc.repayment(due, due.date, base.scheduledMinor, plannedInterest);
+        if (plannedInterest !== undefined && planned) lenderUnpaidMinor -= plannedInterest;
         return { ...base, status: "upcoming", principalMinor: planned?.principalMinor ?? due.principalMinor, interestMinor: planned?.interestMinor ?? due.interestMinor, calculatedInterestMinor: planned?.interestMinor ?? due.interestMinor, balanceAfterMinor: calc.balanceMinor, note: null };
       }
       const peek = calc.daily ? calc.accruedTo(due.date) : due.interestMinor;
@@ -671,7 +689,8 @@ export function planTracking(input: TrackingInput): TrackingResult {
       const accepted = anchorOn.get(payment.date);
       if (accepted !== undefined) { calc = calc.reset(payment.date, accepted, "correction"); comparison = comparison.reset(payment.date, accepted, "correction"); actualPrincipal = accepted; driftFlagged = false; }
       const drift = actualPrincipal - comparison.balanceMinor;
-      const drifting = !driftFlagged && Math.abs(drift) > debt.toleranceMinor;
+      // Without the lender's charges, Bench's own interest is no basis for adjusting a split.
+      const drifting = !chargesUnknown && !driftFlagged && Math.abs(drift) > debt.toleranceMinor;
       if (drifting) driftFlagged = true;
       return {
         ...base, status: drifting ? "check" : "recorded", principalMinor: payment.split.principalMinor, interestMinor: payment.split.interestMinor, feesMinor: payment.split.feesMinor,
@@ -679,7 +698,11 @@ export function planTracking(input: TrackingInput): TrackingResult {
         ...(drifting ? { checkKind: "drift" as const, note: `From here Actual's loan balance differs from the calculation by ${money(Math.abs(drift))}. If your lender works out interest another way (monthly rather than daily, say), set the calculation method in Terms & Schedule. Otherwise accept Actual's balance from here, or adjust this split to the calculation.` } : {}),
       };
     }
-    const allocated = calc.repayment(due, payment.date, payment.amountMinor);
+    // With the lender's own interest rows, the payment pays what was charged since the previous repayment.
+    const lenderInterest = lenderCharged ? Math.min(lenderUnpaidMinor, Math.max(payment.amountMinor - due.feesMinor, 0)) : undefined;
+    const lenderShortMinor = lenderCharged ? lenderUnpaidMinor - lenderInterest! : 0;
+    const allocated = calc.repayment(due, payment.date, payment.amountMinor, lenderInterest);
+    if (allocated && lenderInterest !== undefined) lenderUnpaidMinor -= lenderInterest;
     if (!allocated) return { ...base, status: "check", checkKind: "cannot-split", principalMinor: 0, interestMinor: 0, calculatedInterestMinor: 0, balanceAfterMinor: calc.balanceMinor, note: "Bench could not work out this payment's interest. Check the loan's terms." };
     comparison.repayment(due, payment.date, payment.amountMinor, allocated.interestMinor);
     // For drift, an installment still to record counts as its planned principal: its own write will set Actual right,
@@ -693,6 +716,14 @@ export function planTracking(input: TrackingInput): TrackingResult {
       if (alternatives.length) return { ...check("competing", `${alternatives.length + 1} payments could be this installment. Choose the one that pays it.`), alternatives };
     }
     if (payment.sideUnknown) return check("side-unknown", "Bench can't see where this transfer was paid from. Refresh, or check the transfer in Actual.");
+    if (lenderCharged) {
+      // The lender's rows already hold the interest: the whole payment belongs in the loan account, never split.
+      if (lenderShortMinor > 0) return check("short", `This payment doesn't cover the interest your lender charged (${money(lenderInterest! + lenderShortMinor)}); the rest is carried to the next installment.`);
+      if (payment.kind === "transfer") return { ...base, ...figures, status: "recorded" };
+      const converted = convertProposal(ctx, payment.row, due.date);
+      return "ok" in converted ? check("cannot-split", converted.reason) : { ...base, ...figures, status: "unrecorded", proposal: converted };
+    }
+    if (chargesUnknown) return check("cannot-split", CHARGES_UNKNOWN_NOTE);
     if (allocated.unpaidInterestMinor > 0) return check("short", `This payment doesn't cover the interest owed (${money(allocated.interestMinor + allocated.unpaidInterestMinor)}). In Actual, give it the interest category; the rest is carried to the next installment.`);
     // Interest-free (or nothing accrued): a whole transfer is already right.
     if (allocated.interestMinor === 0 && due.feesMinor === 0) {
@@ -725,18 +756,22 @@ export function planTracking(input: TrackingInput): TrackingResult {
   let restartDate = anchorDate;
   let restartAccruedMinor = 0;
   let restartUnpaidMinor = 0;
+  let lenderUnpaidToday = 0;
   for (const step of steps) {
     step.run();
     if (step.date <= today) {
       calculatedToday = calc.balanceMinor;
+      lenderUnpaidToday = lenderUnpaidMinor;
       if (step.date > anchorDate) anchorDate = step.date;
       restartDate = coveredThrough !== null && coveredThrough > anchorDate ? coveredThrough : anchorDate;
       if (calc.daily) {
         // Everything owed since the last repayment carries over: with interest charged on its own day, the part already
         // charged is owed by the next repayment, the rest is still accruing.
         const owed = calc.accruedTo(restartDate);
-        restartUnpaidMinor = Math.min(calc.chargedBy(restartDate), owed);
-        restartAccruedMinor = owed - restartUnpaidMinor;
+        const charged = Math.min(calc.chargedBy(restartDate), owed);
+        // The lender's own rows say what it charged and no repayment has paid yet; Bench's figure otherwise.
+        restartUnpaidMinor = lenderCharged ? lenderUnpaidMinor : charged;
+        restartAccruedMinor = owed - charged;
       }
     }
   }
@@ -820,8 +855,9 @@ export function planTracking(input: TrackingInput): TrackingResult {
     events,
     figures: {
       owedInActualMinor: owed,
-      calculatedMinor: calculatedToday,
-      differenceMinor: owed - calculatedToday,
+      // With the lender's interest rows, the loan account also holds the interest charged and not yet repaid.
+      calculatedMinor: calculatedToday + lenderUnpaidToday,
+      differenceMinor: owed - calculatedToday - lenderUnpaidToday,
       nextPayment: next ? { dueDate: next.date, no: next.no, amountMinor: installments.find((i) => i.no === next.no)?.scheduledMinor ?? next.scheduledMinor } : null,
       counts,
       interestPaidMinor: installments.filter((i) => i.status === "recorded" || i.status === "unrecorded").reduce((sum, i) => sum + i.interestMinor, 0),

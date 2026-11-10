@@ -203,7 +203,9 @@ Create the loan's account in Actual first: it must be **off budget** and hold on
    bank account instead, add a **payment rule** that finds them (up to 10 rules).
 3. **Interest:** **Split each repayment** (the usual choice) or **Lender charges interest** when the lender's own
    interest rows arrive in the loan account. Choose the interest category, the loan payment category, and what to
-   add to each line's Notes (`#interest` on the interest line by default).
+   add to each line's Notes (`#interest` on the interest line by default). If your lender charges daily interest on
+   its own dates (monthly on the 1st, say), Bench can only split repayments from the lender's interest rows: with
+   **Split each repayment** it proposes no split and shows a Check, so record the split from the lender's statement.
 4. **Tracking start:** the first installment Bench tracks, by installment number or due date. Earlier installments
    count as paid as contracted and are never matched or reported missing.
 5. **Starting balance:** the balance owed at the tracking start, from the calculation or from a lender statement.
