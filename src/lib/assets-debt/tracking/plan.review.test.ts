@@ -238,3 +238,86 @@ describe("tracking daily interest charged on its own dates", () => {
   });
 });
 
+describe("tracking: review follow-ups", () => {
+  const SEPARATE = { ...DAILY, chargeFrequency: "monthly", chargeDay: 1 };
+  const chargedTerms = { ...TERMS, firstInterestChargeDate: "2026-10-01" };
+  const run = (m: LoanModelSnapshot, events: LedgerEvent[], to = "2027-06-30") => {
+    const r = simulate({ model: m, anchor: { date: m.terms.openingDate, principalMinor: m.terms.openingPrincipalMinor, accruedInterestMinor: 0, source: "opening" }, events, to });
+    if (!r.ok) throw new Error(r.blocked[0].message);
+    return r.events;
+  };
+
+  it("expects the next repayment from the lender's posted charge when it differs from the contract's", () => {
+    const m = loan({ terms: chargedTerms }, SEPARATE);
+    // An extra 20,000 on 10 Jan lowers the 1 Feb charge below the contract's.
+    const events = run(m, [extra("2027-01-10", 20_000_00)]);
+    const charges = events.filter((e) => e.type === "interest-charge" && e.date <= "2027-02-05");
+    const repayments = events.filter((e) => e.type === "repayment");
+    const lenderCharge = (date: string, amount: number) => ({ bank: tx({ accountId: "elsewhere", date, amount: 0 }), loan: tx({ accountId: "loan", date, amount: -amount, payeeName: "Interest" }) });
+    const rows = [...repayments.filter((e) => e.date <= "2027-02-05").map((e) => transfer(e.date, -e.cashMovementMinor)), transfer("2027-01-10", 20_000_00), ...charges.map((c) => lenderCharge(c.date, c.interestMinor))];
+    const debt = { id: "d1", budgetSyncId: "b1", liabilityAccountId: "loan", trackingStartDueDate: "2026-10-30", representation: "lender-charged" as const, loanPaymentCategoryId: "c", interestCategoryId: "ci", feeCategoryId: null, principalNoteSuffix: "", interestNoteSuffix: "#i", toleranceMinor: 100, missingGraceDays: 5 };
+    const tracked = plan(m, rows, "2027-02-05", { debt });
+    const feb = tracked.installments.find((i) => i.dueDate === "2027-02-28")!;
+    const engineFeb = repayments.find((e) => e.date === "2027-02-28")!;
+    expect(feb.scheduledMinor).toBe(-engineFeb.cashMovementMinor);
+    expect(feb.interestMinor).toBe(charges.at(-1)!.interestMinor);
+    expect(feb.principalMinor).toBe(engineFeb.diagnostics.scheduledPrincipalMinor);
+    expect(tracked.figures.nextPayment?.amountMinor).toBe(-engineFeb.cashMovementMinor);
+  });
+
+  it("plans an upcoming split repayment with the contract's charged interest, not interest accrued to the due date", () => {
+    const m = loan({ terms: chargedTerms }, SEPARATE);
+    const nov = run(m, []).find((e) => e.type === "repayment" && e.date === "2026-11-30")!;
+    const oct = run(m, []).find((e) => e.type === "repayment" && e.date === "2026-10-30")!;
+    const upcoming = plan(m, [transfer("2026-10-30", -oct.cashMovementMinor)], "2026-11-05").installments.find((i) => i.dueDate === "2026-11-30")!;
+    expect(upcoming.scheduledMinor).toBe(-nov.cashMovementMinor);
+    expect(upcoming.principalMinor).toBe(nov.diagnostics.scheduledPrincipalMinor);
+    expect(upcoming.interestMinor).toBe(-nov.cashMovementMinor - (nov.diagnostics.scheduledPrincipalMinor as number));
+  });
+
+  it("keeps the new series for a daily loan restarted between a recast date and the next installment", () => {
+    const m = loan({ paymentRecasts: [{ date: "2027-01-31" }] }, { ...DAILY, recast: "on-contract-date" });
+    // Recast on 31 Jan; an extra 10,000 on 10 Feb, after the start of that day, restarts the projection on 10 Feb.
+    const events = [extra("2027-02-10", 10_000_00)];
+    const contract = engine(m, events);
+    const paid = contract.filter((e) => e.date <= "2027-01-30").map((e) => transfer(e.date, -e.cashMovementMinor));
+    const tracked = plan(m, [...paid, transfer("2027-02-10", 10_000_00)], "2027-02-12");
+    expect(tracked.anchor.restartDate).toBe("2027-02-10");
+    expect(tracked.anchor.progressiveBasis).toBeDefined();
+    const projected = projection(m, tracked);
+    for (const date of ["2027-02-28", "2027-03-30"]) expect(at(projected, date).principalMovementMinor).toBe(at(contract, date).principalMovementMinor);
+  });
+
+  it("keeps the new series for a daily loan restarted between the end of an interest-only phase and the next installment", () => {
+    const m = loan({ phases: [{ kind: "interest-only", from: "2026-09-30", to: "2026-11-30", recastAtEnd: "never" }] }, DAILY);
+    const events = [extra("2026-12-10", 10_000_00)];
+    const contract = engine(m, events);
+    const paid = contract.filter((e) => e.date <= "2026-11-30").map((e) => transfer(e.date, -e.cashMovementMinor));
+    const tracked = plan(m, [...paid, transfer("2026-12-10", 10_000_00)], "2026-12-12");
+    expect(tracked.anchor.restartDate).toBe("2026-12-10");
+    expect(at(projection(m, tracked), "2026-12-30").principalMovementMinor).toBe(at(contract, "2026-12-30").principalMovementMinor);
+  });
+
+  it("keeps the contract's remainder under carry-full-precision when tracking starts mid-loan", () => {
+    const m = level({ rates: [{ accrualEffectiveFrom: "2026-09-30", annualRateDecimal: "0.0357" }] }, { rounding: { ...PROFILE.rounding, balancePrecision: "carry-full-precision" } });
+    const contract = contractSchedule(m, "2028-12-31");
+    if (!contract.ok) throw new Error(contract.message);
+    const start = contract.dues[6];
+    const tracked = plan(m, contract.dues.slice(6, 24).map((x) => transfer(x.date, x.scheduledMinor)), "2028-10-30", { debt: { id: "d1", budgetSyncId: "b1", liabilityAccountId: "loan", trackingStartDueDate: start.date, representation: "split", loanPaymentCategoryId: "c", interestCategoryId: "ci", feeCategoryId: null, principalNoteSuffix: "", interestNoteSuffix: "#i", toleranceMinor: 100, missingGraceDays: 5 } });
+    const shown = tracked.installments.filter((i) => i.no <= 24);
+    expect(shown).toHaveLength(18);
+    expect(shown.map((i) => i.interestMinor)).toEqual(shown.map((i) => contract.dues[i.no - 1].interestMinor));
+  });
+
+  it("expects the remaining principal on a final payment inside an interest-only phase", () => {
+    const m = loan({ terms: { ...TERMS, contractualTermMonths: 12, amortizationTermMonths: 12 }, phases: [{ kind: "interest-only", from: "2027-07-01", to: "2027-10-31", recastAtEnd: "never" }] });
+    const contract = engine(m, [], "2027-12-31");
+    const last = contract.at(-1)!;
+    expect(last).toMatchObject({ date: "2027-09-30", balanceAfterMinor: 0 });
+    const paid = contract.filter((e) => e.date <= "2027-08-30").map((e) => transfer(e.date, -e.cashMovementMinor));
+    const final = plan(m, paid, "2027-09-05").installments.find((i) => i.dueDate === "2027-09-30")!;
+    expect(final.scheduledMinor).toBe(-last.cashMovementMinor);
+    expect(final.balanceAfterMinor).toBe(0);
+  });
+});
+
