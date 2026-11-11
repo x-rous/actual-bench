@@ -348,3 +348,52 @@ describe("tracking: second review follow-ups", () => {
     expect(tracked("2027-03-05").installments.find((i) => i.dueDate === "2027-03-30")!.scheduledMinor).toBe(-mar.cashMovementMinor);
   });
 });
+
+describe("tracking: lender charges on a repayment day, and charge rows not in Actual yet", () => {
+  // Repaid quarterly on the 1st (from 1 Jan), interest charged monthly on the 1st: every repayment day is a charge day.
+  const quarterlyOnThe1st = (timing: "start-of-day" | "end-of-day") => loan(
+    { terms: { ...TERMS, firstPaymentDate: "2027-01-01", firstInterestChargeDate: "2026-10-01" } },
+    { ...DAILY, eventOrder: { timing }, repaymentFrequency: "quarterly", chargeFrequency: "monthly", chargeDay: 1 },
+  );
+  const LENDER = { id: "d1", budgetSyncId: "b1", liabilityAccountId: "loan", trackingStartDueDate: "2027-01-01", representation: "lender-charged" as const, loanPaymentCategoryId: "c", interestCategoryId: "ci", feeCategoryId: null, principalNoteSuffix: "", interestNoteSuffix: "#i", toleranceMinor: 100, missingGraceDays: 5 };
+  const lenderCharge = (date: string, amount: number) => ({ bank: tx({ accountId: "elsewhere", date, amount: 0 }), loan: tx({ accountId: "loan", date, amount: -amount, payeeName: "Interest" }) });
+  function setup(m: LoanModelSnapshot, events: LedgerEvent[]) {
+    const r = simulate({ model: m, anchor: { date: m.terms.openingDate, principalMinor: m.terms.openingPrincipalMinor, accruedInterestMinor: 0, source: "opening" }, events, to: "2027-06-30" });
+    if (!r.ok) throw new Error(r.blocked[0].message);
+    const repayment = (date: string) => r.events.find((e) => e.type === "repayment" && e.date === date)!;
+    return { charges: r.events.filter((e) => e.type === "interest-charge"), repayment };
+  }
+  /** Interest a repayment of the engine pays: the payment less its scheduled principal. */
+  const interestOf = (e: { cashMovementMinor: number; diagnostics: Record<string, unknown> }) => -e.cashMovementMinor - (e.diagnostics.scheduledPrincipalMinor as number);
+
+  it.each(["start-of-day", "end-of-day"] as const)("pays a repayment-day charge with the repayment the engine pays it with (%s)", (timing) => {
+    const m = quarterlyOnThe1st(timing);
+    // An extra 20,000 on 10 Jan makes the lender's later charges differ from the contract's.
+    const { charges, repayment } = setup(m, [extra("2027-01-10", 20_000_00)]);
+    const jan = repayment("2027-01-01");
+    const apr = repayment("2027-04-01");
+    const rows = (today: string) => [transfer("2027-01-01", -jan.cashMovementMinor), transfer("2027-01-10", 20_000_00), ...charges.filter((c) => c.date <= today).map((c) => lenderCharge(c.date, c.interestMinor))];
+    const tracked = (today: string) => plan(m, rows(today), today, { debt: LENDER });
+    expect(tracked("2027-03-05").installments.find((i) => i.dueDate === "2027-01-01")!.interestMinor).toBe(interestOf(jan));
+    // Start of day: the 1 Jan charge is April's, and every charge April pays is posted by 5 Mar. End of day: April
+    // also pays the 1 Apr charge, still to come, so Bench expects the contract's figure, as the engine has it here.
+    const upcoming = tracked("2027-03-05").installments.find((i) => i.dueDate === "2027-04-01")!;
+    if (timing === "start-of-day") {
+      expect(upcoming.scheduledMinor).toBe(-apr.cashMovementMinor);
+      expect(upcoming.interestMinor).toBe(interestOf(apr));
+    } else {
+      expect(upcoming.interestMinor).toBe(interestOf(setup(m, []).repayment("2027-04-01")));
+    }
+  });
+
+  it("expects the contract's interest while one of the lender's charge rows is not in Actual yet", () => {
+    const m = loan({ terms: { ...TERMS, firstPaymentDate: "2026-12-30", firstInterestChargeDate: "2026-10-01" } }, { ...DAILY, repaymentFrequency: "quarterly", chargeFrequency: "monthly", chargeDay: 1 });
+    const { charges, repayment } = setup(m, []);
+    const dec = repayment("2026-12-30");
+    const mar = repayment("2027-03-30");
+    // On 5 Mar the 1 Mar charge is due but its row hasn't reached Actual.
+    const posted = charges.filter((c) => c.date <= "2027-03-05" && c.date !== "2027-03-01");
+    const tracked = plan(m, [transfer("2026-12-30", -dec.cashMovementMinor), ...posted.map((c) => lenderCharge(c.date, c.interestMinor))], "2027-03-05", { debt: { ...LENDER, trackingStartDueDate: "2026-12-30" } });
+    expect(tracked.installments.find((i) => i.dueDate === "2027-03-30")!.scheduledMinor).toBe(-mar.cashMovementMinor);
+  });
+});
