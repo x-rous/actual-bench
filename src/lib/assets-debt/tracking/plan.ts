@@ -419,6 +419,14 @@ class Allocator {
       this.settledThrough = c;
     }
   }
+  /**
+   * Whether every charge for the installment in (`from`, `due`] is dated by `today`, so the lender's rows already hold
+   * all the interest it pays (quarterly repayments with monthly charges, say).
+   */
+  chargesPostedFor(from: string, due: string, today: string): boolean {
+    const last = this.charges?.filter((c) => c > from && c <= due).at(-1);
+    return last === undefined || last <= today;
+  }
   /** Of the interest owed since the last repayment, the part charged by the end of `date` (0 unless charged on its own day). */
   chargedBy(date: string): number {
     if (!this.charges) return 0;
@@ -652,6 +660,7 @@ export function planTracking(input: TrackingInput): TrackingResult {
    * payment in force; a principal-based method pays its scheduled principal plus interest on the tracked balance.
    */
   const principalBased = model.profile.amortization === "constant-principal" || model.profile.amortization === "progressive-principal";
+  const previousDueDate = (due: Due) => dues[due.no - 2]?.date ?? model.terms.openingDate;
   function expectedFor(due: Due): number {
     return expectedParts(due).amountMinor;
   }
@@ -663,7 +672,7 @@ export function planTracking(input: TrackingInput): TrackingResult {
   function expectedParts(due: Due): { amountMinor: number; chargedInterestMinor: number | null } {
     if (!principalBased) return { amountMinor: due.scheduledMinor, chargedInterestMinor: null };
     const charged = calc.separateCharges
-      ? lenderCharged && lenderUnpaidMinor > 0 ? lenderUnpaidMinor : Math.max(due.scheduledMinor - due.feesMinor - (due.scheduledPrincipalMinor ?? due.principalMinor), 0)
+      ? lenderCharged && lenderUnpaidMinor > 0 && calc.chargesPostedFor(previousDueDate(due), due.date, today) ? lenderUnpaidMinor : Math.max(due.scheduledMinor - due.feesMinor - (due.scheduledPrincipalMinor ?? due.principalMinor), 0)
       : null;
     const interest = charged ?? calc.preview(due, due.date, due.scheduledMinor, due.feesMinor) ?? due.interestMinor;
     return { amountMinor: Math.min(scheduledPrincipal(due), calc.balanceMinor) + interest + due.feesMinor, chargedInterestMinor: charged };
@@ -900,6 +909,7 @@ function trackedProgressiveBasis(model: LoanModelSnapshot, dues: readonly Due[],
     ...model.paymentRecasts.map((r) => ({ startNo: dues.find((d) => d.date >= r.date)?.no ?? null, balance: () => balanceAt(addDays(r.date, -1)), reason: "contract-date" as const, on: r.date })),
     ...model.phases.map((p) => ({ startNo: dues.find((d) => d.date > p.to)?.no ?? null, balance: () => balanceAt(p.to), reason: "interest-only-phase-end" as const, on: addDays(p.to, 1) })),
   ].filter((b) => b.startNo !== null && b.on > model.terms.openingDate && b.on <= restartDate);
-  const latest = starts.sort((a, b) => a.startNo! - b.startNo!).at(-1);
+  // For the same installment, the later day wins, as both engines apply them.
+  const latest = starts.sort((a, b) => a.startNo! - b.startNo! || a.on.localeCompare(b.on)).at(-1);
   return latest ? anchorBasis(progressiveBasis(model, growth, latest.startNo!, latest.balance(), total, latest.reason)) : null;
 }

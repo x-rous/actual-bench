@@ -175,7 +175,9 @@ export function simulatePeriodic(req: SimulationRequest): SimulationResult {
     // recast level payment) starts from the balance at the start of that day, before anything paid on or after it.
     const contractDate = model.paymentRecasts.map((r) => r.date).filter((d) => compareDates(d, periodStart) > 0 && compareDates(d, date) <= 0).sort().at(-1) ?? null;
     const phaseEnd = model.phases.map((p) => p.to).filter((d) => compareDates(d, periodStart) >= 0 && compareDates(d, date) < 0).sort().at(-1) ?? null;
-    const basisDay = contractDate ?? (phaseEnd ? addDays(phaseEnd, 1) : null);
+    // Both in one period: the later day wins, as the daily engine applies them in date order.
+    const phaseDay = phaseEnd ? addDays(phaseEnd, 1) : null;
+    const basisDay = contractDate && phaseDay ? (compareDates(contractDate, phaseDay) >= 0 ? contractDate : phaseDay) : contractDate ?? phaseDay;
     if (basisDay) {
       const early = applyBetween(basisDay, false);
       if (early) return early;
@@ -209,7 +211,7 @@ export function simulatePeriodic(req: SimulationRequest): SimulationResult {
     const inPhase = interestOnlyPhaseOn(model.phases, date) !== null;
     if (growth && basis && !inPhase && (recastReasons.includes("contract-date") || recastReasons.includes("interest-only-phase-end"))) {
       // A new basis from the balance at the start of the day, over the instalments left; a rate change never starts one.
-      const reason = recastReasons.includes("contract-date") ? "contract-date" : "interest-only-phase-end";
+      const reason = basisDay === contractDate ? "contract-date" : "interest-only-phase-end";
       const previous = basis;
       basis = progressiveBasis(model, growth, all.indexOf(date) + 1, balanceAtBasisDay, totalPayments!, reason);
       emit({

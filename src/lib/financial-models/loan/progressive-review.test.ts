@@ -124,3 +124,33 @@ describe("solving the growth from a lender's row", () => {
     expect(solveProgressiveGrowth(100_00, 48_77, 2, 2)).toEqual({ ok: false, reason: "too-fast" });
   });
 });
+
+describe("progressive principal basis: a recast date and an interest-only phase end before the same instalment", () => {
+  // No instalment falls inside the phase (1–15 Feb); it only marks a basis change, as the recast date does.
+  const phase = { kind: "interest-only" as const, from: "2027-02-01", to: "2027-02-15", recastAtEnd: "never" as const };
+  const feb = (rows: ReturnType<typeof repayments>) => principalOf(rows.find((e) => e.date === "2027-02-28")!);
+  const daily = { accrual: "daily-simple", rateEffectiveTiming: "on-accrual-effective-date" };
+
+  it.each([["per-period", {}], ["daily", daily]] as const)("lets the later day win (%s)", (_, profile) => {
+    const both = (recast: string) => loan({ phases: [phase], paymentRecasts: [{ date: recast }] }, { recast: "on-contract-date", ...profile });
+    // Recast on 28 Feb, after the phase: its balance includes the extra on 20 Feb.
+    const recastLater = repayments(run(both("2027-02-28"), [extra("2027-02-20", 10_000_00)]));
+    const recastOnly = repayments(run(loan({ paymentRecasts: [{ date: "2027-02-28" }] }, { recast: "on-contract-date", ...profile }), [extra("2027-02-20", 10_000_00)]));
+    expect(feb(recastLater)).toBe(feb(recastOnly));
+    // Recast on 5 Feb, before the phase ends: the day after the phase (16 Feb) wins, and includes the extra on 10 Feb.
+    const phaseLater = repayments(run(both("2027-02-05"), [extra("2027-02-10", 10_000_00)]));
+    const phaseOnly = repayments(run(loan({ phases: [phase] }, profile), [extra("2027-02-10", 10_000_00)]));
+    expect(feb(phaseLater)).toBe(feb(phaseOnly));
+  });
+});
+
+describe("progressive principal basis: an interest-only phase that ended before the opening", () => {
+  it("is not a basis change, so a later anchor keeps the opening series", () => {
+    const m = loan({ phases: [{ kind: "interest-only", from: "2026-08-01", to: "2026-09-15", recastAtEnd: "never" }] });
+    const events = [extra("2026-11-10", 10_000_00)];
+    const whole = repayments(run(m, events));
+    const nov = whole.find((e) => e.date === "2026-11-30")!;
+    const resumed = repayments(run(m, [], "2027-06-30", { date: "2026-11-30", principalMinor: nov.balanceAfterMinor, source: "anchor" }));
+    expect(principalOf(resumed[0])).toBe(principalOf(whole.find((e) => e.date === "2026-12-30")!));
+  });
+});

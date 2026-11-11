@@ -46,7 +46,7 @@ export function initialProgressiveBasis(model: LoanModelSnapshot, growth: Dec, a
   // run cannot change it itself.
   const changedBefore =
     model.paymentRecasts.some((r) => compareDates(r.date, model.terms.openingDate) > 0 && compareDates(r.date, anchor.date) <= 0) ||
-    model.phases.some((p) => compareDates(p.to, anchor.date) < 0 && schedule.some((d) => compareDates(d, p.to) > 0));
+    model.phases.some((p) => compareDates(p.to, model.terms.openingDate) >= 0 && compareDates(p.to, anchor.date) < 0 && schedule.some((d) => compareDates(d, p.to) > 0));
   if (!changedBefore) return progressiveBasis(model, growth, 1, model.terms.openingPrincipalMinor, totalPayments, "opening");
   const nextNo = schedule.filter((d) => compareDates(d, anchor.date) <= 0).length + 1;
   return progressiveBasis(model, growth, nextNo, anchor.principalMinor, totalPayments, "anchor-balance");
