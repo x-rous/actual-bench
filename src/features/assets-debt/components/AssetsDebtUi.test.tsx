@@ -745,7 +745,7 @@ describe("O1: features that need day-by-day interest", () => {
     expect(screen.getByLabelText("Scheduled repayment funding account")).toBeInTheDocument();
   });
 
-  it("an extra repayment between repayment dates asks; one on a repayment date does not", async () => {
+  it("an extra repayment on or between repayment dates never asks on a per-period loan", async () => {
     const states: SimulationState[] = [];
     wrap(<Harness initial={periodicShortLoan()} onState={(s) => states.push(s)} />);
     const addExtra = async (date: string) => {
@@ -771,10 +771,9 @@ describe("O1: features that need day-by-day interest", () => {
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Extra repayment" })).toBeNull());
 
     await addExtra("2024-06-15");
-    expect(await screen.findByRole("dialog", { name: "This feature needs day-by-day interest calculation" })).toHaveTextContent(/between repayment dates/);
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    await waitFor(() => expect(prompt()).toBeNull());
-    expect(states).toHaveLength(1);
+    await waitFor(() => expect(states).toHaveLength(2));
+    expect(prompt()).toBeNull();
+    expect(states.at(-1)?.profile.accrual).toBe("per-period");
   }, 15_000);
 
   it("a rate change part-way through a period asks; compatible features do not", async () => {

@@ -136,7 +136,7 @@ describe("bench-periodic blocks what it cannot represent", () => {
   it.each([
     ["an irregular first period", std(), "2024-01-15", [], "irregular-first-period"],
     ["a rate change inside a period", std({ rates: [{ accrualEffectiveFrom: OPEN, annualRateDecimal: "0.06" }, { accrualEffectiveFrom: "2024-03-10", annualRateDecimal: "0.07" }] }), OPEN, [], "mid-period-rate-change"],
-    ["an event between payment dates", std(), OPEN, [ledger("extra-repayment", "2024-03-10", 100000)], "irregular-event"],
+    ["a draw between payment dates", std(), OPEN, [ledger("draw", "2024-03-10", 100000)], "irregular-event"],
     ["offsets", std({ offsets: [{ id: "o", accountId: "a", effectiveFrom: OPEN, effectiveTo: null, percentageBps: 10000, basis: "total", capMinor: null }] }), OPEN, [], "offsets-need-daily-engine"],
   ] as const)("refuses %s rather than approximating", (_n, o, anchorDate, events, code) => {
     const r = simulatePeriodic({ model: model(o), anchor: { date: anchorDate, principalMinor: 20000000, accruedInterestMinor: 0, source: "x" }, events: [...events], to: "2025-01-01" });

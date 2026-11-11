@@ -11,8 +11,15 @@ posts, and it never reads Actual during a run.
 
 `projection.ts#simulate` picks the engine from the profile:
 
-- `accrual: per-period` → **bench-periodic** (`periodic-engine.ts`, `loan-periodic@2`);
-- `daily-simple` or `daily-compounded` → **bench-daily** (`daily-engine.ts`, `loan-daily@8`).
+- `accrual: per-period` → **bench-periodic** (`periodic-engine.ts`, `loan-periodic@3`). A period's
+  interest is the balance at the start of the period × the periodic rate. From `loan-periodic@3`, an extra
+  repayment dated between payment dates lowers the balance on its date and the interest from the next period
+  (one that clears the principal still leaves that period's interest due on the next payment date); draws and
+  fees between payment dates are still refused. A progressive series (or a recast level payment) that starts at
+  a contract recast date or after an interest-only phase uses the balance at the start of that day;
+- `daily-simple` or `daily-compounded` → **bench-daily** (`daily-engine.ts`, `loan-daily@9`). From
+  `loan-daily@9`, "A repayment counts: From the next day" runs repayments (scheduled, observed and extra)
+  after that day's accrual and charge, the same economics as the observed-repayment allocator.
 
 `eligibility.ts#evaluateStrategyEligibility` gives the recommended strategy (FR-026). It walks the
 ladder Actual formula rule → bench-periodic → bench-daily, and gives a reason for every strategy
@@ -161,7 +168,7 @@ Every event carries deterministic diagnostics for preview and audit, for example
 - negative amortization.
 
 Two diagnostic groups feed the simulator's schedule, so the UI never recomputes them
-(`loan-daily@8`, `loan-periodic@2`):
+(`loan-daily@8` and later, `loan-periodic@2` and later):
 
 - **Rate:** `effectiveAnnualRateDecimal` is the exact annual rate the engine accrued with on that
   event's day (so `from-next-charge-period` timing shows the old rate until the rate takes effect).

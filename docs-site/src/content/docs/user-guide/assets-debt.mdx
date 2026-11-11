@@ -152,9 +152,32 @@ If your lender's figures differ, compare the interest on one recent statement ag
 day counts, check the first repayment date and business-day due dates, and, if they still part, record a lender
 statement (**⋯** menu → **Check against lender statement**) so Bench continues from the lender's balance.
 
+### Progressive principal
+
+Some mortgages, common in France, repay a principal that grows by a set percentage each instalment, with that period's
+interest on top, so the repayment rises a little every month. Choose **Set calculation method → Amortization →
+Progressive principal plus interest** and enter the **Principal growth per repayment**. If you don't know it, press
+**Work it out…** and type one instalment from your lender's table: the balance before it, the principal it repays and
+the instalments left, including it. Bench works out the growth and checks it against the loan as you set it up.
+
+- An extra repayment keeps the principal series, so the loan ends sooner.
+- A rate change changes only the interest.
+- If your lender recalculates the series (after an extra repayment, say), add a contract recast date under **Recalculate
+  the repayment**: a new series starts from the first instalment due on or after it, from the balance at the start of
+  that day.
+- The headline shows the next repayment and, when the repayments only rise (or only fall), what they rise to.
+- Bench rounds each principal from the exact series. A lender's own rounding can differ by a cent or two on some rows.
+
+### Interest worked out per repayment period
+
+With **Interest accrues: Per payment period**, the interest for a period is the balance at the start of the period
+times the periodic rate. An extra repayment can be dated on any day: it keeps its date and lowers the balance then, and
+the interest it saves starts with the next period. A draw or fee between due dates, a rate change inside a period that
+applies from its own date, and offsets need daily interest.
+
 ### When a loan cannot be calculated
 
-A loan whose interest is worked out **once per repayment period** cannot follow a transaction between repayment
+A loan whose interest is worked out **once per repayment period** cannot follow a draw or fee between repayment
 dates, a rate change inside a period, or an offset. Bench explains the reason in plain words wherever it appears:
 Terms & Schedule, the loans list and Needs attention, and the Repayments tab. Each reason is one of three kinds:
 
@@ -164,9 +187,11 @@ Terms & Schedule, the loans list and Needs attention, and the Repayments tab. Ea
 | Something in the loan needs changing | Change the date, rate or repayment the message names, for example a repayment that does not cover the interest, or a date with no interest rate. |
 | Not supported yet | The kind of schedule cannot be calculated yet, for example repayments that are not on a regular schedule. |
 
-A loan linked to Actual with once-per-period interest shows the same offer on **Link to Actual**, because payments between
-repayment dates are normal when tracking real transactions. Saving a loan, or its assumptions, is refused with the same
-explanation when once-per-period interest cannot follow them.
+A loan linked to Actual with once-per-period interest follows extra repayments and late repayments on their own dates:
+each instalment's interest is worked out on the tracked balance at the start of its period, interest a payment did not
+cover is carried to the next instalment, and the projection continues from the due date of the last instalment paid.
+A draw between repayment dates shows the day-by-day offer on **Link to Actual**. Saving a loan, or its assumptions, is
+refused with the same explanation when once-per-period interest cannot follow them.
 
 ## Link to Actual
 
@@ -178,7 +203,9 @@ Create the loan's account in Actual first: it must be **off budget** and hold on
    bank account instead, add a **payment rule** that finds them (up to 10 rules).
 3. **Interest:** **Split each repayment** (the usual choice) or **Lender charges interest** when the lender's own
    interest rows arrive in the loan account. Choose the interest category, the loan payment category, and what to
-   add to each line's Notes (`#interest` on the interest line by default).
+   add to each line's Notes (`#interest` on the interest line by default). If your lender charges daily interest on
+   its own dates (monthly on the 1st, say), Bench can only split repayments from the lender's interest rows: with
+   **Split each repayment** it proposes no split and shows a Check, so record the split from the lender's statement.
 4. **Tracking start:** the first installment Bench tracks, by installment number or due date. Earlier installments
    count as paid as contracted and are never matched or reported missing.
 5. **Starting balance:** the balance owed at the tracking start, from the calculation or from a lender statement.

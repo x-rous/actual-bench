@@ -22,7 +22,52 @@ export type Headline = {
   /** The date the balance reaches zero, or null when it does not within the projection. */
   payoffDate: string | null;
   closingBalanceMinor: number;
+  /** How the scheduled repayments run (design 06 §3): see `repaymentOutlook`. Absent: level. */
+  outlook?: RepaymentOutlook;
 };
+
+/**
+ * How the scheduled repayments run. `level`: one amount covers most of them (a level payment, perhaps changing after a
+ * rate reset), shown as today. Otherwise they genuinely vary (constant or progressive principal, several resets): the
+ * headline shows the next repayment, and says rising or falling only when the series is monotonic.
+ */
+export type RepaymentOutlook = {
+  kind: "level" | "rising" | "falling" | "varies";
+  next: { date: string; amountMinor: number } | null;
+  /** The last regular repayment (the final true-up, balloon or residual is left out). */
+  last: { date: string; amountMinor: number } | null;
+};
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const monthYear = (iso: string) => `${MONTHS[Number(iso.slice(5, 7)) - 1]} ${iso.slice(0, 4)}`;
+const dayMonthYear = (iso: string) => `${Number(iso.slice(8, 10))} ${monthYear(iso)}`;
+
+/**
+ * The words for repayments that genuinely vary: "on 30 Oct 2026" and "Rising to 1,144.30 by Sep 2049" (or "Falling
+ * to …", or "Future repayments vary"). Null for a level payment, which keeps its usual presentation.
+ */
+export function describeOutlook(outlook: RepaymentOutlook | undefined, format: (minor: number) => string): { next: string; pattern: string } | null {
+  if (!outlook || outlook.kind === "level" || !outlook.next) return null;
+  const next = `on ${dayMonthYear(outlook.next.date)}`;
+  if (outlook.kind === "varies" || !outlook.last) return { next, pattern: "Future repayments vary" };
+  return { next, pattern: `${outlook.kind === "rising" ? "Rising" : "Falling"} to ${format(outlook.last.amountMinor)} by ${monthYear(outlook.last.date)}` };
+}
+
+export function repaymentOutlook(events: readonly DebtProjectionEvent[]): RepaymentOutlook {
+  // Only scheduled repayments are ahead: with none left (a loan paid off in its history), nothing is "next".
+  const future = events.filter((e) => e.eventType === "repayment" && e.certainty === "scheduled").map((e) => ({ date: e.date, amountMinor: -e.cashMovementMinor }));
+  const next = future[0] ? { date: future[0].date, amountMinor: future[0].amountMinor } : null;
+  const last = future.at(-1) ? { date: future.at(-1)!.date, amountMinor: future.at(-1)!.amountMinor } : null;
+  const counts = new Map<number, number>();
+  for (const r of future) counts.set(r.amountMinor, (counts.get(r.amountMinor) ?? 0) + 1);
+  const most = Math.max(0, ...counts.values());
+  // Level when one amount is most of them (a strict majority): two amounts left that differ are a change, not a level.
+  if (future.length === 0 || counts.size === 1 || most * 2 > future.length) return { kind: "level", next, last };
+  const amounts = future.map((r) => r.amountMinor);
+  const rising = amounts.every((a, i) => i === 0 || a >= amounts[i - 1]);
+  const falling = amounts.every((a, i) => i === 0 || a <= amounts[i - 1]);
+  return { kind: rising ? "rising" : falling ? "falling" : "varies", next, last };
+}
 
 const CASH_OUT = new Set(["repayment", "final-payment", "extra-repayment", "balloon"]);
 
@@ -33,9 +78,12 @@ export function headline(events: readonly DebtProjectionEvent[]): Headline {
   let regular: number | null = null;
   for (const [amount, n] of counts) if (regular === null || n > counts.get(regular)!) regular = amount;
   const payoff = events.find((e) => e.balanceBeforeMinor > 0 && e.balanceAfterMinor === 0 && e.eventType !== "interest-charge");
+  const outlook = repaymentOutlook(events);
   return {
-    regularRepaymentMinor: regular,
+    // A level payment keeps the most common amount; repayments that genuinely vary show the next one.
+    regularRepaymentMinor: outlook.kind === "level" ? regular : outlook.next?.amountMinor ?? regular,
     repaymentChanges: counts.size > 1,
+    outlook,
     totalRepaidMinor: events.filter((e) => CASH_OUT.has(e.eventType)).reduce((s, e) => s - e.cashMovementMinor, 0),
     totalInterestMinor: events.reduce((s, e) => s + e.interestMinor, 0),
     payoffDate: payoff?.date ?? null,

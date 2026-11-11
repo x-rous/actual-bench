@@ -1,5 +1,5 @@
 import type { SyncSourceTransaction } from "@/lib/actual/transport";
-import type { LoanModelSnapshot } from "@/lib/financial-models/loan/model";
+import type { LedgerEvent, LoanModelSnapshot } from "@/lib/financial-models/loan/model";
 import { createObservedRepaymentAllocator, type AllocatedRepayment, type ObservedRepaymentAllocator } from "@/lib/financial-models/loan/statementAllocation";
 import { alignPayments, type AlignPin } from "@/lib/financial-models/matching";
 import { ruleMatches, type ConditionSet } from "@/lib/transactions/conditions";
@@ -7,6 +7,13 @@ import type { DebtLedgerEntry } from "@/lib/app-db/debtTrackingRepository";
 import { isPostingMarker } from "../markers";
 import { untouchedCounterpartProblems } from "@/lib/actual/transactionStructure";
 import { calculatePeriod } from "../services/snapshot";
+import { rateTable } from "@/lib/financial-models/loan/engineCommon";
+import { periodInterestAt } from "@/lib/financial-models/loan/rates";
+import { paymentCount, paymentsPerYear } from "@/lib/financial-models/loan/recast";
+import { anchorBasis, progressiveBasis, progressiveGrowth, progressivePrincipalFor } from "@/lib/financial-models/loan/progressive";
+import { chargeDates } from "@/lib/financial-models/loan/charge";
+import { dayStepOrder } from "@/lib/financial-models/loan/events";
+import { add, dec, fromMinor, round, sub, toMinor, DEC_ZERO, WORKING_SCALE, type Dec } from "@/lib/financial-models/money/kernel";
 import { adjustmentMarker, adjustmentProposal, convertProposal, splitProposal, type Proposal, type ProposalContext } from "./proposals";
 
 /**
@@ -130,7 +137,17 @@ export type TrackingResult =
        * (`restartDate`) with the interest accrued since the payment (`accruedInterestMinor`, minor units); otherwise
        * `restartDate` is `date` and nothing is carried.
        */
-      anchor: { date: string; principalMinor: number; scheduledPaymentMinor: number; restartDate: string; accruedInterestMinor: number };
+      anchor: {
+        date: string; principalMinor: number; scheduledPaymentMinor: number; restartDate: string; accruedInterestMinor: number;
+        /** Per-period loans: what really happened after `restartDate`, replayed on its own dates by the projection. */
+        events: LedgerEvent[];
+        /** Progressive principal: the series basis in force at the restart, when it began after the opening. */
+        progressiveBasis?: { startNo: number; firstPrincipalExact: string };
+        /** Interest charged, or left unpaid by a short payment, before the restart that the next repayment owes. */
+        unpaidInterestMinor?: number;
+        /** Per-period loans: balance corrections after `restartDate` (an accepted balance, an adjustment), signed. */
+        corrections?: { date: string; deltaMinor: number }[];
+      };
       installments: Installment[];
       ledger: LedgerRow[];
       /** Extra principal, draws, fees and adjustments from the tracking start on: the Loan Ledger's events for the calculation. */
@@ -163,7 +180,15 @@ function ruleRow(row: SyncSourceTransaction) {
   return { accountId: row.accountId, payeeId: row.payeeId, payeeName: row.payeeName, categoryId: row.categoryId, categoryName: row.categoryName, notes: row.notes, amountMinor: row.amount };
 }
 
-export type Due = { no: number; date: string; scheduledMinor: number; interestMinor: number; principalMinor: number; feesMinor: number; balanceBeforeMinor: number; balanceAfterMinor: number };
+export type Due = {
+  no: number; date: string; scheduledMinor: number; interestMinor: number; principalMinor: number; feesMinor: number; balanceBeforeMinor: number; balanceAfterMinor: number;
+  /** Progressive principal: the contract's scheduled principal (with daily interest charged on its own day, the payment also clears charged interest). */
+  scheduledPrincipalMinor?: number;
+  /** Inside an interest-only phase. */
+  interestOnly?: boolean;
+  /** Per-period loans under `carry-full-precision`: the sub-minor remainder the contract carries after this installment. */
+  carriedRemainder?: string;
+};
 
 /** The contract schedule: every installment, numbered from 1. */
 export function contractSchedule(model: LoanModelSnapshot, until: string): { ok: true; dues: Due[] } | { ok: false; message: string } {
@@ -181,6 +206,9 @@ export function contractSchedule(model: LoanModelSnapshot, until: string): { ok:
     .map((e, i): Due => ({
       no: i + 1, date: e.date, scheduledMinor: Math.abs(e.cashMovementMinor), interestMinor: Math.abs(e.interestMinor), feesMinor: Math.abs(e.feesMinor),
       principalMinor: Math.abs(e.principalMovementMinor), balanceBeforeMinor: e.balanceBeforeMinor, balanceAfterMinor: e.balanceAfterMinor,
+      ...(typeof e.diagnostics.scheduledPrincipalMinor === "number" ? { scheduledPrincipalMinor: e.diagnostics.scheduledPrincipalMinor } : {}),
+      ...(e.diagnostics.interestOnly === true ? { interestOnly: true } : {}),
+      ...(typeof e.diagnostics.carriedRemainder === "string" ? { carriedRemainder: e.diagnostics.carriedRemainder } : {}),
     }));
   return { ok: true, dues };
 }
@@ -269,47 +297,186 @@ function findPayments(input: TrackingInput, from: string): Payment[] {
 
 type Allocation = { interestMinor: number; principalMinor: number; balanceAfterMinor: number; unpaidInterestMinor: number };
 
-/** Interest from what really happened. Falls back to the contract's figures for a loan without daily interest. */
+/**
+ * Per-period interest along what really happened (design 06 §1.3): an installment's interest is the rate times the
+ * tracked balance at the start of its contractual period. Its principal counts on its contractual due date, extra
+ * principal and other balance changes on their own dates, so the order payments arrive in never changes a period's
+ * interest. Interest a payment didn't cover is carried to the next installment, as the daily allocator does.
+ */
+type ChangeKind = "installment" | "extra" | "reset" | "correction";
+
+class PeriodicTracker {
+  private changes: { date: string; deltaMinor: number; kind: ChangeKind }[] = [];
+  private carriedInterestMinor = 0;
+  /** The sub-minor remainder kept under `carry-full-precision`, as the engine keeps it. */
+  private remainder: Dec = DEC_ZERO;
+  /** Interest left unpaid after each installment, by due date. */
+  private readonly unpaidAfter = new Map<string, number>();
+  private readonly rates;
+  private readonly ppy: number;
+  private readonly periodStart: Map<string, string>;
+  constructor(private readonly model: LoanModelSnapshot, private readonly opening: { date: string; principalMinor: number }, dues: readonly Due[], remainder: string | null = null) {
+    if (remainder && model.profile.rounding.balancePrecision === "carry-full-precision") this.remainder = dec(remainder);
+    this.rates = rateTable(model.rates);
+    this.ppy = paymentsPerYear(model.profile.repaymentFrequency) ?? 12;
+    this.periodStart = new Map(dues.map((d, i) => [d.date, i === 0 ? model.terms.openingDate : dues[i - 1].date]));
+  }
+  /** The tracked principal at the end of `date` (minor units). */
+  balanceAt(date: string): number {
+    return this.changes.reduce((sum, c) => (c.date <= date ? sum + c.deltaMinor : sum), this.opening.principalMinor);
+  }
+  get balanceMinor(): number {
+    return this.changes.reduce((sum, c) => sum + c.deltaMinor, this.opening.principalMinor);
+  }
+  /** Balance changes after `date` that are not installments: what a projection restarting then must replay. */
+  changesAfter(date: string): { date: string; deltaMinor: number; kind: ChangeKind }[] {
+    return this.changes.filter((c) => c.kind !== "installment" && c.date > date).map(({ date: d, deltaMinor, kind }) => ({ date: d, deltaMinor, kind }));
+  }
+  /** Interest left unpaid by the installment due on `date` (0 when none was paid then). */
+  unpaidAfterDue(date: string): number {
+    return this.unpaidAfter.get(date) ?? 0;
+  }
+  /** The period's interest exactly (with the kept remainder) and as posted. */
+  private periodInterest(due: Due): { exact: Dec; posted: number } | null {
+    const start = this.periodStart.get(due.date) ?? due.date;
+    const rate = this.rates.rateOn(start);
+    if (!rate) return null;
+    const digits = this.model.currency.minorDigits;
+    const exact = add(periodInterestAt(this.model.profile.rateQuote, rate, this.ppy, fromMinor(Math.max(0, this.balanceAt(start)), digits), WORKING_SCALE, "half-even"), this.remainder);
+    return { exact, posted: toMinor(round(exact, digits, this.model.profile.rounding.interestPostingRounding), digits, "down") };
+  }
+  /** The installment's interest on the tracked balance at the start of its period, plus interest carried in. */
+  interestFor(due: Due): number {
+    const interest = this.periodInterest(due);
+    return (interest ? interest.posted : due.interestMinor) + this.carriedInterestMinor;
+  }
+  repayment(due: Due, amountMinor: number, appliedInterestMinor: number | undefined, feesMinor: number): Allocation {
+    const period = this.periodInterest(due);
+    const owedInterest = appliedInterestMinor ?? this.interestFor(due);
+    const available = Math.max(0, amountMinor - feesMinor);
+    const interest = Math.min(owedInterest, available);
+    const unpaid = owedInterest - interest;
+    const principal = Math.max(0, Math.min(this.balanceMinor, available - interest));
+    this.carriedInterestMinor = appliedInterestMinor === undefined ? unpaid : 0;
+    this.unpaidAfter.set(due.date, this.carriedInterestMinor);
+    if (period && this.model.profile.rounding.balancePrecision === "carry-full-precision") this.remainder = sub(period.exact, fromMinor(period.posted, this.model.currency.minorDigits));
+    this.changes.push({ date: due.date, deltaMinor: -principal, kind: "installment" });
+    return { interestMinor: interest, principalMinor: principal, balanceAfterMinor: this.balanceMinor, unpaidInterestMinor: unpaid };
+  }
+  extra(date: string, amountMinor: number): void {
+    this.changes.push({ date, deltaMinor: -Math.min(amountMinor, this.balanceMinor), kind: "extra" });
+  }
+  reset(date: string, principalMinor: number, kind: "reset" | "correction"): void {
+    this.changes.push({ date, deltaMinor: principalMinor - this.balanceMinor, kind });
+  }
+}
+
+/** Interest from what really happened: daily loans on actual dates, per-period loans on their contractual periods. */
 class Allocator {
   private allocator: ObservedRepaymentAllocator | null;
-  balanceMinor: number;
-  constructor(model: LoanModelSnapshot, opening: { date: string; principalMinor: number; accruedInterestMinor?: number }) {
-    this.balanceMinor = opening.principalMinor;
+  private periodic: PeriodicTracker | null;
+  private dailyBalanceMinor: number;
+  /** Daily loans: the principal after each event, by date, for a progressive basis set at a past date. */
+  private readonly dailyHistory: { date: string; balanceMinor: number }[] = [];
+  private readonly openingMinor: number;
+  /**
+   * Daily loans with interest charged on its own day: the charge dates, and how much of the interest accrued since the
+   * last repayment was charged by the last charge date settled. The engine has the next repayment pay what was charged.
+   */
+  private readonly charges: string[] | null;
+  private chargedMinor = 0;
+  private settledThrough = "";
+  private lastRepaymentDate: string;
+  /**
+   * Whether a charge on a repayment day comes before the repayment, so that repayment pays it (repayments at the end of
+   * the day, or counting from the next day), as the engine orders the day. Otherwise the next repayment pays it.
+   */
+  readonly chargeFirst: boolean;
+  /** Whether the charge on `c` is paid by a repayment on `date` rather than by one on `previous`. */
+  private paidBy(c: string, previous: string, date: string): boolean {
+    return this.chargeFirst ? c > previous && c <= date : c >= previous && c < date;
+  }
+  /** `remainder`: per-period loans, the contract's sub-minor remainder at a calculated opening. */
+  constructor(model: LoanModelSnapshot, opening: { date: string; principalMinor: number; accruedInterestMinor?: number }, dues: readonly Due[], remainder: string | null = null) {
+    this.dailyBalanceMinor = opening.principalMinor;
+    this.openingMinor = opening.principalMinor;
+    this.lastRepaymentDate = opening.date;
     const created = createObservedRepaymentAllocator({ model, opening });
     this.allocator = created.ok ? created.allocator : null;
+    this.periodic = this.allocator ? null : new PeriodicTracker(model, opening, dues, remainder);
+    this.charges = this.allocator && dues.length ? chargeDates(model, addDays(opening.date, 1), dues.at(-1)!.date) : null;
+    const order = dayStepOrder(model.profile.eventOrder);
+    this.chargeFirst = model.profile.repaymentEffectiveTiming === "next-calendar-day" || order.indexOf("scheduled-repayment") > order.indexOf("charge");
   }
   get daily() { return this.allocator !== null; }
+  /** Daily interest charged on its own day: the engine's repayment pays the interest charged since the last one. */
+  get separateCharges() { return this.charges !== null; }
+  get balanceMinor(): number { return this.periodic ? this.periodic.balanceMinor : this.dailyBalanceMinor; }
+  /** The calculated principal at the end of `date`. */
+  balanceAt(date: string): number {
+    if (this.periodic) return this.periodic.balanceAt(date);
+    return this.dailyHistory.filter((h) => h.date <= date).at(-1)?.balanceMinor ?? this.openingMinor;
+  }
+  changesAfter(date: string): { date: string; deltaMinor: number; kind: ChangeKind }[] { return this.periodic ? this.periodic.changesAfter(date) : []; }
+  /** Per-period loans: interest the installment due on `date` left unpaid. */
+  unpaidAfterDue(date: string): number { return this.periodic ? this.periodic.unpaidAfterDue(date) : 0; }
+  private record(date: string) { this.dailyHistory.push({ date, balanceMinor: this.dailyBalanceMinor }); }
+  /** Note the charges a repayment on `date` would pay, before anything happens on that day. */
+  private settle(date: string) {
+    if (!this.charges) return;
+    for (const c of this.charges) {
+      if (c <= this.settledThrough) continue;
+      if (this.chargeFirst ? c > date : c >= date) break;
+      if (!this.paidBy(c, this.lastRepaymentDate, date)) continue;
+      this.chargedMinor = this.accruedTo(c);
+      this.settledThrough = c;
+    }
+  }
+  /**
+   * Whether the lender's rows already hold all the interest the installment due on `due` pays: every charge for it
+   * (after the one on `from`) is dated by `today` and Actual holds as many of the lender's interest rows since the last
+   * repayment (`postedRows`). Quarterly repayments with monthly charges, say, or a charge row not imported yet.
+   */
+  chargesPostedFor(from: string, due: string, today: string, postedRows: number): boolean {
+    const scheduled = this.charges?.filter((c) => this.paidBy(c, from, due)) ?? [];
+    return scheduled.every((c) => c <= today) && postedRows >= scheduled.length;
+  }
+  /** Of the interest owed since the last repayment, the part charged by the end of `date` (0 unless charged on its own day). */
+  chargedBy(date: string): number {
+    if (!this.charges) return 0;
+    const last = this.charges.filter((c) => c <= date && (this.chargeFirst ? c > this.lastRepaymentDate : c >= this.lastRepaymentDate)).at(-1);
+    return last === undefined ? 0 : last > this.settledThrough ? this.accruedTo(last) : this.chargedMinor;
+  }
   private take(row: AllocatedRepayment): Allocation {
-    this.balanceMinor = row.balanceAfterMinor;
+    this.dailyBalanceMinor = row.balanceAfterMinor;
     return { interestMinor: row.interestMinor, principalMinor: row.principalMinor, balanceAfterMinor: row.balanceAfterMinor, unpaidInterestMinor: row.unpaidInterestMinor ?? 0 };
   }
   preview(due: Due, paidDate: string, amountMinor: number, feesMinor: number): number | null {
-    if (!this.allocator) return due.interestMinor;
-    const result = this.allocator.preview({ dueDate: due.date, paidDate, amountMinor, feesMinor });
+    if (this.periodic) return this.periodic.interestFor(due);
+    const result = this.allocator!.preview({ dueDate: due.date, paidDate, amountMinor, feesMinor });
     return result.ok ? result.row.interestMinor : null;
   }
   repayment(due: Due, paidDate: string, amountMinor: number, appliedInterestMinor?: number, appliedFeesMinor?: number): Allocation | null {
     const fees = appliedFeesMinor ?? due.feesMinor;
-    if (!this.allocator) {
-      // Per-period interest: the schedule's interest, the rest is principal.
-      const interest = appliedInterestMinor ?? due.interestMinor;
-      const principal = Math.max(0, Math.min(this.balanceMinor, amountMinor - interest - fees));
-      this.balanceMinor -= principal;
-      return { interestMinor: interest, principalMinor: principal, balanceAfterMinor: this.balanceMinor, unpaidInterestMinor: Math.max(0, interest - amountMinor) };
-    }
-    const pushed = this.allocator.push({ dueDate: due.date, paidDate, amountMinor, feesMinor: fees <= amountMinor ? fees : 0, ...(appliedInterestMinor !== undefined ? { appliedInterestMinor } : {}) });
+    if (this.periodic) return this.periodic.repayment(due, amountMinor, appliedInterestMinor, fees);
+    this.settle(paidDate);
+    const pushed = this.allocator!.push({ dueDate: due.date, paidDate, amountMinor, feesMinor: fees <= amountMinor ? fees : 0, ...(appliedInterestMinor !== undefined ? { appliedInterestMinor } : {}) });
     if (!pushed.ok) return null;
+    this.chargedMinor = 0;
+    this.lastRepaymentDate = paidDate;
     // A payment beyond what is owed pays the loan off: its principal stops at the balance and the rest is interest.
-    if (pushed.row.balanceAfterMinor < 0) {
-      const over = -pushed.row.balanceAfterMinor;
-      return this.take({ ...pushed.row, principalMinor: pushed.row.principalMinor - over, interestMinor: pushed.row.interestMinor + over, balanceAfterMinor: 0 });
-    }
-    return this.take(pushed.row);
+    const taken = pushed.row.balanceAfterMinor < 0
+      ? this.take({ ...pushed.row, principalMinor: pushed.row.principalMinor + pushed.row.balanceAfterMinor, interestMinor: pushed.row.interestMinor - pushed.row.balanceAfterMinor, balanceAfterMinor: 0 })
+      : this.take(pushed.row);
+    this.record(paidDate);
+    return taken;
   }
   extra(date: string, amountMinor: number): void {
-    if (!this.allocator) { this.balanceMinor = Math.max(0, this.balanceMinor - amountMinor); return; }
-    const pushed = this.allocator.push({ dueDate: date, paidDate: date, amountMinor: Math.min(amountMinor, this.balanceMinor), extra: true });
-    if (pushed.ok) this.balanceMinor = pushed.row.balanceAfterMinor;
+    if (this.periodic) { this.periodic.extra(date, amountMinor); return; }
+    this.settle(date);
+    const pushed = this.allocator!.push({ dueDate: date, paidDate: date, amountMinor: Math.min(amountMinor, this.dailyBalanceMinor), extra: true });
+    if (pushed.ok) this.dailyBalanceMinor = pushed.row.balanceAfterMinor;
+    this.record(date);
   }
   /** Interest accrued since the last payment up to `date` (as a payment on that day would carry). */
   accruedTo(date: string): number {
@@ -317,9 +484,15 @@ class Allocator {
     const peek = this.allocator.preview({ dueDate: date, paidDate: date, amountMinor: Math.floor(Number.MAX_SAFE_INTEGER / 4) });
     return peek.ok ? peek.row.interestMinor : 0;
   }
-  /** Something that changes the balance without being a repayment (a draw, a capitalized fee, a restart): carry on from there. */
-  reset(date: string, principalMinor: number): Allocator {
-    if (!this.allocator || this.allocator.setBalance(date, principalMinor).ok) this.balanceMinor = principalMinor;
+  /**
+   * Something that changes the balance without being a repayment: a draw or a capitalized fee (`reset`), or Actual's
+   * balance accepted or adjusted (`correction`). Carry on from there.
+   */
+  reset(date: string, principalMinor: number, kind: "reset" | "correction" = "reset"): Allocator {
+    if (this.periodic) { this.periodic.reset(date, principalMinor, kind); return this; }
+    this.settle(date);
+    if (this.allocator!.setBalance(date, principalMinor).ok) this.dailyBalanceMinor = principalMinor;
+    this.record(date);
     return this;
   }
 }
@@ -369,7 +542,10 @@ export function planTracking(input: TrackingInput): TrackingResult {
   // What a row that adds to the debt is, when the user hasn't said: the loan arriving (a transfer near the loan's start),
   // an opening balance, or a later draw or charge. The Loan Ledger shows the same suggestions.
   const loanStart = model.terms.openingDate;
-  const firstNonTransferDebt = loanRows.find((r) => r.amount < 0 && !r.transferId && !isPostingMarker(r.importedId));
+  // With the lender's interest rows in the account, a row after the loan arrived by transfer is the lender's charge, not
+  // an opening balance.
+  const arrivedBy = debt.representation === "lender-charged" ? loanRows.find((r) => r.amount < 0 && r.transferId && Math.abs(daysBetween(loanStart, r.date)) <= 31) ?? null : null;
+  const firstNonTransferDebt = loanRows.find((r) => r.amount < 0 && !r.transferId && !isPostingMarker(r.importedId) && !(arrivedBy && r.date >= arrivedBy.date));
   const isStartingBalance = (r: SyncSourceTransaction) => !r.transferId && (r.payeeName ?? "").trim().toLowerCase() === "starting balance";
   const suggestedDebtType = (r: SyncSourceTransaction): EntryType => r.transferId
     ? (Math.abs(daysBetween(loanStart, r.date)) <= 31 ? "loan-received" : "draw")
@@ -427,15 +603,32 @@ export function planTracking(input: TrackingInput): TrackingResult {
 
   // ── Walk the tracked window in date order ──
   const ctx = proposalContext(debt, input.accounts, input.transferPayeeByAccount);
-  let calc = new Allocator(model, opening);
+  // Tracking that starts mid-loan from the calculated position also carries the contract's remainder from there.
+  const openingRemainder = !statement ? previous?.carriedRemainder ?? null : null;
+  let calc = new Allocator(model, opening, dues, openingRemainder);
   // Keep an independent calculation for cumulative drift checks. The working calculation follows recorded splits.
-  let comparison = new Allocator(model, opening);
+  let comparison = new Allocator(model, opening, dues, openingRemainder);
   // The calculated balance today: upcoming installments are planned after it, without changing it.
   let calculatedToday = opening.principalMinor;
   // Actual's own principal for recorded installments, to tell where Actual and the calculation part ways.
   let actualPrincipal = opening.principalMinor;
   let driftFlagged = false;
-  type Step = { date: string; order: number; run: () => void };
+  /**
+   * The lender charges interest into the loan account (its own rows there): repayments stay whole transfers, and each
+   * one pays the interest the lender charged since the previous repayment (`lenderUnpaidMinor`), the rest principal.
+   */
+  const lenderCharged = debt.representation === "lender-charged";
+  let lenderUnpaidMinor = 0;
+  /** The lender's interest rows since the last repayment. */
+  let lenderRows = 0;
+  /**
+   * Repayments split in Actual while daily interest is charged on its own dates: what the lender charged isn't in Actual,
+   * and interest accrued since the previous payment is not it, so Bench proposes no split and offers no adjustment.
+   */
+  const chargesUnknown = !lenderCharged && model.profile.accrual !== "per-period" && model.profile.chargeFrequency !== "at-repayment";
+  const CHARGES_UNKNOWN_NOTE = "Your lender charges interest on its own dates, and Bench can't see those charges, so it can't tell how much of this payment is interest. Record the split from your lender's statement in Actual. If the lender's interest rows are in the loan account, choose “Lender charges interest into the loan account” in Link to Actual.";
+  /** `sortDate` (default `date`) places the step; per-period installments never run before an earlier installment. */
+  type Step = { date: string; sortDate?: string; order: number; run: () => void };
   const steps: Step[] = [];
   const installments: Installment[] = [];
   const events: Extract<TrackingResult, { ok: true }>["events"] = [];
@@ -444,40 +637,90 @@ export function planTracking(input: TrackingInput): TrackingResult {
     steps.push({ date: e.date, order: 1, run: () => { calc.extra(e.date, e.amountMinor); comparison.extra(e.date, e.amountMinor); actualPrincipal -= e.amountMinor; events.push({ date: e.date, kind: "extra-principal", amountMinor: e.amountMinor, rowId: e.loanRows[0]?.id ?? e.id }); } });
   }
   for (const b of balanceEvents) {
-    steps.push({ date: b.date, order: 0, run: () => {
+    // A lender's charge on a repayment day is paid by that repayment only when the day charges first (as the engine).
+    const order = b.kind === "interest-charged" && !calc.chargeFirst ? 2.5 : 0;
+    steps.push({ date: b.date, order, run: () => {
       const increase = b.kind === "interest-charged" ? 0 : b.amountMinor; // charged interest is paid by the repayments, not principal
-      calc = calc.reset(b.date, calc.balanceMinor + increase); actualPrincipal += increase;
-      comparison = comparison.reset(b.date, comparison.balanceMinor + increase);
+      if (b.kind === "interest-charged") { lenderUnpaidMinor += b.amountMinor; lenderRows++; }
+      const kind = b.kind === "adjustment" ? "correction" : "reset";
+      calc = calc.reset(b.date, calc.balanceMinor + increase, kind); actualPrincipal += increase;
+      comparison = comparison.reset(b.date, comparison.balanceMinor + increase, kind);
       events.push({ date: b.date, kind: b.kind === "loan-received" ? "draw" : b.kind, amountMinor: b.amountMinor, rowId: b.row.id });
     } });
   }
   for (const a of positiveAdjustments) {
-    steps.push({ date: a.date, order: 0, run: () => { calc = calc.reset(a.date, Math.max(0, calc.balanceMinor - a.amount)); comparison = comparison.reset(a.date, Math.max(0, comparison.balanceMinor - a.amount)); actualPrincipal -= a.amount; events.push({ date: a.date, kind: "adjustment", amountMinor: -a.amount, rowId: a.id }); } });
+    steps.push({ date: a.date, order: 0, run: () => { calc = calc.reset(a.date, Math.max(0, calc.balanceMinor - a.amount), "correction"); comparison = comparison.reset(a.date, Math.max(0, comparison.balanceMinor - a.amount), "correction"); actualPrincipal -= a.amount; events.push({ date: a.date, kind: "adjustment", amountMinor: -a.amount, rowId: a.id }); } });
   }
   // A restart on the day of a recorded installment settles that installment (Actual accepted from there).
   const anchorOn = new Map<string, number>();
   for (const anchor of input.anchors ?? []) {
     if (anchor.date <= windowFrom || anchor.date > today) continue;
     anchorOn.set(anchor.date, anchor.principalMinor);
-    steps.push({ date: anchor.date, order: 3, run: () => { calc = calc.reset(anchor.date, anchor.principalMinor); comparison = comparison.reset(anchor.date, anchor.principalMinor); actualPrincipal = anchor.principalMinor; driftFlagged = false; } });
+    steps.push({ date: anchor.date, order: 3, run: () => { calc = calc.reset(anchor.date, anchor.principalMinor, "correction"); comparison = comparison.reset(anchor.date, anchor.principalMinor, "correction"); actualPrincipal = anchor.principalMinor; driftFlagged = false; } });
   }
+  // Recorded and planned splits run in the order the money moved. Per-period interest belongs to contractual periods, so
+  // there an installment paid before an earlier one waits for it: each period's interest sees the principal before it.
+  let installmentAfter = "";
   for (const due of tracked) {
     if (due.date > today && !shownUpcoming.has(due.date)) break;
     const pair = pairOf.get(due.date);
     const payment = pair?.payment ? byId.get(pair.payment.id) ?? null : null;
-    // Recorded and planned splits run in the order the money moved.
-    steps.push({ date: payment?.date ?? due.date, order: 2, run: () => installments.push(planInstallment(due, payment, pair?.reasons.some((r) => r.code === "another-candidate") ?? false)) });
+    const date = payment?.date ?? due.date;
+    const sortDate = calc.daily || date >= installmentAfter ? date : installmentAfter;
+    installmentAfter = sortDate;
+    steps.push({ date, sortDate, order: 2, run: () => installments.push(planInstallment(due, payment, pair?.reasons.some((r) => r.code === "another-candidate") ?? false)) });
   }
-  steps.sort((a, b) => a.date.localeCompare(b.date) || a.order - b.order);
+  // Stable: installments placed on the same day keep their contractual order.
+  steps.sort((a, b) => (a.sortDate ?? a.date).localeCompare(b.sortDate ?? b.date) || a.order - b.order);
+
+  /**
+   * What an installment is expected to cost after what really happened (design 06 §1.3). A level payment stays the
+   * payment in force; a principal-based method pays its scheduled principal plus interest on the tracked balance.
+   */
+  const principalBased = model.profile.amortization === "constant-principal" || model.profile.amortization === "progressive-principal";
+  const previousDueDate = (due: Due) => dues[due.no - 2]?.date ?? model.terms.openingDate;
+  function expectedFor(due: Due): number {
+    return expectedParts(due).amountMinor;
+  }
+  /**
+   * The expected amount, and the interest in it when it is known as a charge: daily interest charged on its own day is
+   * paid by the next repayment, from the lender's own interest row once it is in Actual, else as the contract charges it.
+   * Otherwise (`chargedInterestMinor` null) the interest on the tracked balance.
+   */
+  function expectedParts(due: Due): { amountMinor: number; chargedInterestMinor: number | null } {
+    if (!principalBased) return { amountMinor: due.scheduledMinor, chargedInterestMinor: null };
+    const charged = calc.separateCharges
+      ? lenderCharged && lenderUnpaidMinor > 0 && calc.chargesPostedFor(previousDueDate(due), due.date, today, lenderRows) ? lenderUnpaidMinor : Math.max(due.scheduledMinor - due.feesMinor - (due.scheduledPrincipalMinor ?? due.principalMinor), 0)
+      : null;
+    const interest = charged ?? calc.preview(due, due.date, due.scheduledMinor, due.feesMinor) ?? due.interestMinor;
+    return { amountMinor: Math.min(scheduledPrincipal(due), calc.balanceMinor) + interest + due.feesMinor, chargedInterestMinor: charged };
+  }
+  /**
+   * The contract's principal for an installment; after a progressive basis change, the tracked series'. None while
+   * interest-only, except the final payment, which clears what is left.
+   */
+  function scheduledPrincipal(due: Due): number {
+    if (due.interestOnly) return due.balanceAfterMinor === 0 ? calc.balanceMinor : 0;
+    const contract = due.scheduledPrincipalMinor ?? due.principalMinor;
+    const growth = progressiveGrowth(model);
+    if (!growth) return contract;
+    const basis = trackedProgressiveBasis(model, dues, due.date, (date) => calc.balanceAt(date));
+    return basis ? progressivePrincipalFor(model, growth, { startNo: basis.startNo, first: dec(basis.firstPrincipalExact), source: "anchor" }, due.no) : contract;
+  }
 
   function planInstallment(due: Due, payment: Payment | null, competing: boolean): Installment {
-    const base = { no: due.no, dueDate: due.date, scheduledMinor: due.scheduledMinor, payment, feesMinor: 0, proposal: null, note: null } as const;
+    const base = { no: due.no, dueDate: due.date, scheduledMinor: expectedFor(due), payment, feesMinor: 0, proposal: null, note: null } as const;
     if (!payment) {
       const upcoming = due.date > today;
       const missing = !upcoming && addDays(due.date, debt.missingGraceDays) < today;
       if (upcoming) {
         // Planned as paid on its due date for the scheduled amount, after everything that really happened.
-        const planned = calc.repayment(due, due.date, due.scheduledMinor);
+        // The planned split pays the same interest the expected amount holds.
+        const charged = expectedParts(due).chargedInterestMinor;
+        const plannedInterest = charged !== null ? Math.min(charged, Math.max(base.scheduledMinor - due.feesMinor, 0))
+          : lenderCharged ? Math.min(lenderUnpaidMinor, Math.max(base.scheduledMinor - due.feesMinor, 0)) : undefined;
+        const planned = calc.repayment(due, due.date, base.scheduledMinor, plannedInterest);
+        if (plannedInterest !== undefined && planned && lenderCharged) { lenderUnpaidMinor = Math.max(lenderUnpaidMinor - plannedInterest, 0); lenderRows = 0; }
         return { ...base, status: "upcoming", principalMinor: planned?.principalMinor ?? due.principalMinor, interestMinor: planned?.interestMinor ?? due.interestMinor, calculatedInterestMinor: planned?.interestMinor ?? due.interestMinor, balanceAfterMinor: calc.balanceMinor, note: null };
       }
       const peek = calc.daily ? calc.accruedTo(due.date) : due.interestMinor;
@@ -491,9 +734,10 @@ export function planTracking(input: TrackingInput): TrackingResult {
       comparison.repayment(due, payment.date, payment.amountMinor);
       actualPrincipal -= payment.split.principalMinor;
       const accepted = anchorOn.get(payment.date);
-      if (accepted !== undefined) { calc = calc.reset(payment.date, accepted); comparison = comparison.reset(payment.date, accepted); actualPrincipal = accepted; driftFlagged = false; }
+      if (accepted !== undefined) { calc = calc.reset(payment.date, accepted, "correction"); comparison = comparison.reset(payment.date, accepted, "correction"); actualPrincipal = accepted; driftFlagged = false; }
       const drift = actualPrincipal - comparison.balanceMinor;
-      const drifting = !driftFlagged && Math.abs(drift) > debt.toleranceMinor;
+      // Without the lender's charges, Bench's own interest is no basis for adjusting a split.
+      const drifting = !chargesUnknown && !driftFlagged && Math.abs(drift) > debt.toleranceMinor;
       if (drifting) driftFlagged = true;
       return {
         ...base, status: drifting ? "check" : "recorded", principalMinor: payment.split.principalMinor, interestMinor: payment.split.interestMinor, feesMinor: payment.split.feesMinor,
@@ -501,7 +745,11 @@ export function planTracking(input: TrackingInput): TrackingResult {
         ...(drifting ? { checkKind: "drift" as const, note: `From here Actual's loan balance differs from the calculation by ${money(Math.abs(drift))}. If your lender works out interest another way (monthly rather than daily, say), set the calculation method in Terms & Schedule. Otherwise accept Actual's balance from here, or adjust this split to the calculation.` } : {}),
       };
     }
-    const allocated = calc.repayment(due, payment.date, payment.amountMinor);
+    // With the lender's own interest rows, the payment pays what was charged since the previous repayment.
+    const lenderInterest = lenderCharged ? Math.min(lenderUnpaidMinor, Math.max(payment.amountMinor - due.feesMinor, 0)) : undefined;
+    const lenderShortMinor = lenderCharged ? lenderUnpaidMinor - lenderInterest! : 0;
+    const allocated = calc.repayment(due, payment.date, payment.amountMinor, lenderInterest);
+    if (allocated && lenderInterest !== undefined) { lenderUnpaidMinor -= lenderInterest; lenderRows = 0; }
     if (!allocated) return { ...base, status: "check", checkKind: "cannot-split", principalMinor: 0, interestMinor: 0, calculatedInterestMinor: 0, balanceAfterMinor: calc.balanceMinor, note: "Bench could not work out this payment's interest. Check the loan's terms." };
     comparison.repayment(due, payment.date, payment.amountMinor, allocated.interestMinor);
     // For drift, an installment still to record counts as its planned principal: its own write will set Actual right,
@@ -515,6 +763,14 @@ export function planTracking(input: TrackingInput): TrackingResult {
       if (alternatives.length) return { ...check("competing", `${alternatives.length + 1} payments could be this installment. Choose the one that pays it.`), alternatives };
     }
     if (payment.sideUnknown) return check("side-unknown", "Bench can't see where this transfer was paid from. Refresh, or check the transfer in Actual.");
+    if (lenderCharged) {
+      // The lender's rows already hold the interest: the whole payment belongs in the loan account, never split.
+      if (lenderShortMinor > 0) return check("short", `This payment doesn't cover the interest your lender charged (${money(lenderInterest! + lenderShortMinor)}); the rest is carried to the next installment.`);
+      if (payment.kind === "transfer") return { ...base, ...figures, status: "recorded" };
+      const converted = convertProposal(ctx, payment.row, due.date);
+      return "ok" in converted ? check("cannot-split", converted.reason) : { ...base, ...figures, status: "unrecorded", proposal: converted };
+    }
+    if (chargesUnknown) return check("cannot-split", CHARGES_UNKNOWN_NOTE);
     if (allocated.unpaidInterestMinor > 0) return check("short", `This payment doesn't cover the interest owed (${money(allocated.interestMinor + allocated.unpaidInterestMinor)}). In Actual, give it the interest category; the rest is carried to the next installment.`);
     // Interest-free (or nothing accrued): a whole transfer is already right.
     if (allocated.interestMinor === 0 && due.feesMinor === 0) {
@@ -546,15 +802,49 @@ export function planTracking(input: TrackingInput): TrackingResult {
   const coveredThrough = alignment.dues.filter((d) => d.payment).map((d) => d.key).sort().at(-1) ?? null;
   let restartDate = anchorDate;
   let restartAccruedMinor = 0;
+  let restartUnpaidMinor = 0;
+  let lenderUnpaidToday = 0;
   for (const step of steps) {
     step.run();
     if (step.date <= today) {
-      calculatedToday = calc.balanceMinor; anchorDate = step.date;
-      restartDate = coveredThrough !== null && coveredThrough > step.date ? coveredThrough : step.date;
-      restartAccruedMinor = restartDate > step.date && calc.daily ? calc.accruedTo(restartDate) : 0;
+      calculatedToday = calc.balanceMinor;
+      lenderUnpaidToday = lenderUnpaidMinor;
+      if (step.date > anchorDate) anchorDate = step.date;
+      restartDate = coveredThrough !== null && coveredThrough > anchorDate ? coveredThrough : anchorDate;
+      if (calc.daily) {
+        // Everything owed since the last repayment carries over: with interest charged on its own day, the part already
+        // charged is owed by the next repayment, the rest is still accruing.
+        const owed = calc.accruedTo(restartDate);
+        const charged = Math.min(calc.chargedBy(restartDate), owed);
+        // The lender's own rows say what it charged and no repayment has paid yet; Bench's figure otherwise.
+        restartUnpaidMinor = lenderCharged ? lenderUnpaidMinor : charged;
+        restartAccruedMinor = owed - charged;
+      }
     }
   }
   installments.sort((a, b) => a.no - b.no);
+
+  // Per-period interest belongs to contractual periods, so a per-period projection restarts at the due date of the last
+  // settled installment, with the balance then, and replays what really happened after it on its own dates (an extra
+  // payment, a draw). The settled payment itself is inside that balance and is never replayed. Transaction dates stay
+  // as they are; only the calculation's starting point moves.
+  let restartPrincipal = calculatedToday;
+  let replay: LedgerEvent[] = [];
+  let corrections: { date: string; deltaMinor: number }[] = [];
+  if (!calc.daily) {
+    restartDate = coveredThrough ?? opening.date;
+    restartAccruedMinor = 0;
+    restartUnpaidMinor = calc.unpaidAfterDue(restartDate);
+    restartPrincipal = calc.balanceAt(restartDate);
+    const later = calc.changesAfter(restartDate).filter((c) => c.date <= today && c.deltaMinor !== 0);
+    // Extra principal and draws are replayed as what they are; an accepted or adjusted balance as a correction, which
+    // counts from the next period like an extra repayment (a draw between due dates stays refused).
+    corrections = later.filter((c) => c.kind === "correction" || (c.kind === "reset" && c.deltaMinor < 0)).map(({ date, deltaMinor }) => ({ date, deltaMinor }));
+    replay = later.filter((c) => c.kind === "extra" || (c.kind === "reset" && c.deltaMinor > 0)).map((c, i) => c.deltaMinor < 0
+      ? { kind: "extra-repayment" as const, date: c.date, amountMinor: -c.deltaMinor, ref: { source: "actual" as const, id: `tracked-${c.date}-${i}` } }
+      : { kind: "draw" as const, date: c.date, amountMinor: c.deltaMinor, ref: { source: "actual" as const, id: `tracked-${c.date}-${i}` } });
+  }
+  const restartBasis = trackedProgressiveBasis(model, dues, restartDate, (date) => calc.balanceAt(date));
 
   // A missed installment paid together with the next one is covered.
   for (let i = 0; i < installments.length - 1; i++) {
@@ -606,18 +896,38 @@ export function planTracking(input: TrackingInput): TrackingResult {
     opening: { ...opening, source: statement ? "statement" : "calculated", actualMinor: actualAtStart, differenceMinor: openingDifference },
     before: { count: start.no - 1, firstDueDate: dues[0]?.date ?? null, lastDueDate: previous?.date ?? null },
     openingAdjustment,
-    anchor: { date: anchorDate, principalMinor: calculatedToday, scheduledPaymentMinor: (next ?? tracked.at(-1) ?? start).scheduledMinor, restartDate, accruedInterestMinor: restartAccruedMinor },
+    anchor: { date: anchorDate, principalMinor: restartPrincipal, scheduledPaymentMinor: (next ?? tracked.at(-1) ?? start).scheduledMinor, restartDate, accruedInterestMinor: restartAccruedMinor, events: replay, ...(restartBasis ? { progressiveBasis: restartBasis } : {}), ...(restartUnpaidMinor > 0 ? { unpaidInterestMinor: restartUnpaidMinor } : {}), ...(corrections.length ? { corrections } : {}) },
     installments,
     ledger,
     events,
     figures: {
       owedInActualMinor: owed,
-      calculatedMinor: calculatedToday,
-      differenceMinor: owed - calculatedToday,
-      nextPayment: next ? { dueDate: next.date, no: next.no, amountMinor: next.scheduledMinor } : null,
+      // With the lender's interest rows, the loan account also holds the interest charged and not yet repaid.
+      calculatedMinor: calculatedToday + lenderUnpaidToday,
+      differenceMinor: owed - calculatedToday - lenderUnpaidToday,
+      nextPayment: next ? { dueDate: next.date, no: next.no, amountMinor: installments.find((i) => i.no === next.no)?.scheduledMinor ?? next.scheduledMinor } : null,
       counts,
       interestPaidMinor: installments.filter((i) => i.status === "recorded" || i.status === "unrecorded").reduce((sum, i) => sum + i.interestMinor, 0),
       interestThisYearMinor: installments.filter((i) => (i.status === "recorded" || i.status === "unrecorded") && (i.payment?.date ?? i.dueDate).startsWith(year)).reduce((sum, i) => sum + i.interestMinor, 0),
     },
   };
+}
+
+/**
+ * The progressive principal basis in force at a restart, when a basis change (a contract recast date or the end of an
+ * interest-only phase) came before it: the series then started from the tracked balance at the start of that day, which
+ * only tracking knows. Null when the contract's own opening basis still applies.
+ */
+function trackedProgressiveBasis(model: LoanModelSnapshot, dues: readonly Due[], restartDate: string, balanceAt: (date: string) => number): { startNo: number; firstPrincipalExact: string } | null {
+  const growth = progressiveGrowth(model);
+  const months = model.terms.amortizationTermMonths ?? model.terms.contractualTermMonths;
+  const total = months ? paymentCount(model.profile.repaymentFrequency, months) : null;
+  if (!growth || !total) return null;
+  const starts = [
+    ...model.paymentRecasts.map((r) => ({ startNo: dues.find((d) => d.date >= r.date)?.no ?? null, balance: () => balanceAt(addDays(r.date, -1)), reason: "contract-date" as const, on: r.date })),
+    ...model.phases.map((p) => ({ startNo: dues.find((d) => d.date > p.to)?.no ?? null, balance: () => balanceAt(p.to), reason: "interest-only-phase-end" as const, on: addDays(p.to, 1) })),
+  ].filter((b) => b.startNo !== null && b.on > model.terms.openingDate && b.on <= restartDate);
+  // For the same installment, the later day wins, as both engines apply them.
+  const latest = starts.sort((a, b) => a.startNo! - b.startNo! || a.on.localeCompare(b.on)).at(-1);
+  return latest ? anchorBasis(progressiveBasis(model, growth, latest.startNo!, latest.balance(), total, latest.reason)) : null;
 }

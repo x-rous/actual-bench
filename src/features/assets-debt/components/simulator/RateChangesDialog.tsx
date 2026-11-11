@@ -76,7 +76,8 @@ function RateEditor({ row, sim, onCancel, onSave }: { row: SimRate; sim: Simulat
   const [factorText, setFactorText] = useState(row.paymentCap?.kind === "previous-payment-factor" ? row.paymentCap.factor : "");
   const [limits, setLimits] = useState(!!(row.rateCapDecimal || row.rateFloorDecimal));
   const set = (patch: Partial<SimRate>) => setDraft((d) => ({ ...d, ...patch }));
-  const recalculates = (draft.paymentRecalcPolicy ?? sim.profile.recast) === "on-rate-change";
+  const progressive = sim.profile.amortization === "progressive-principal";
+  const recalculates = !progressive && (draft.paymentRecalcPolicy ?? sim.profile.recast) === "on-rate-change";
   const collision = sim.rates.some((r) => r.key !== draft.key && r.accrualEffectiveFrom === draft.accrualEffectiveFrom);
   const factor = parseFactor(factorText);
   const problems = [
@@ -98,7 +99,9 @@ function RateEditor({ row, sim, onCancel, onSave }: { row: SimRate; sim: Simulat
         <DateField label="Starts accruing" value={draft.accrualEffectiveFrom} onChange={(d) => set({ accrualEffectiveFrom: d })} issue={collision ? "Another rate already starts on this date." : undefined} />
         <PercentField label="New rate (per year)" valueFraction={draft.annualRateDecimal} onChange={(v) => set({ annualRateDecimal: v })} />
       </div>
-      <SelectField label="Repayment on this change" value={draft.paymentRecalcPolicy ?? ""} options={PER_RATE_RECAST_OPTIONS} onChange={(v) => set({ paymentRecalcPolicy: (v || null) as SimRate["paymentRecalcPolicy"] })} />
+      {progressive
+        ? <p className="text-[11px] text-muted-foreground">With progressive principal a rate change changes the interest only; the principal series carries on.</p>
+        : <SelectField label="Repayment on this change" value={draft.paymentRecalcPolicy ?? ""} options={PER_RATE_RECAST_OPTIONS} onChange={(v) => set({ paymentRecalcPolicy: (v || null) as SimRate["paymentRecalcPolicy"] })} />}
       {recalculates ? (
         <>
           <FeatureSwitch label="The repayment changes on a different date" checked={draft.paymentEffectiveFrom !== null} onChange={(on) => set({ paymentEffectiveFrom: on ? draft.accrualEffectiveFrom : null })} />

@@ -229,7 +229,7 @@ describe("same-day order (event-order@3): before-accrual → accrue → charge �
     };
     const result = ok(simulateDaily(request));
     expect(dayOf(result)).toEqual([["interest-charge", "charge"], ["repayment", "scheduled-repayment"]]);
-    expect(result.versions.engine).toBe("loan-daily@8");
+    expect(result.versions.engine).toBe("loan-daily@9");
     const historical = simulateDailyAtVersion("loan-daily@7", request);
     expect(historical.ok && historical.events.find((event) => event.type === "repayment")?.diagnostics.sameDayStep).toBe("payment");
   });

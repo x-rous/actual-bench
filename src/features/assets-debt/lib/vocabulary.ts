@@ -71,6 +71,7 @@ export const RATE_QUOTE_OPTIONS: SelectOption[] = toSelect([
 export const AMORTIZATION_OPTIONS: SelectOption[] = toSelect([
   { value: "level-payment", label: "Level payment" },
   { value: "constant-principal", label: "Constant principal plus interest" },
+  { value: "progressive-principal", label: "Progressive principal plus interest" },
   { value: "custom-payment", label: "Custom payment" },
   { value: "revolving", label: "Revolving (no amortization)" },
 ]);

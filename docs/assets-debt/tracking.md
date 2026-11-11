@@ -26,17 +26,32 @@ Installments before the tracking start count as paid as contracted. A payment is
 an existing split with one principal transfer line, or a payment-rule match; `alignPayments`
 (`lib/financial-models/matching/align.ts`, the only part of the old matching code that remains) pairs payments
 with due dates by date and amount, and pins from saved classifications win. Interest is allocated from what
-really happened, with the same day count and charging as the engine.
+really happened, with the same day count as the engine.
+
+When the lender charges interest into the loan account (its own interest rows there), repayments stay whole
+transfers and Bench writes nothing for them: each repayment pays the interest those rows charged since the previous
+repayment, and the rest is principal. When daily interest is charged on its own dates but repayments are split in
+Actual, the lender's charges aren't in Actual and interest accrued since the previous payment is not what the lender
+charged, so Bench proposes no split: such an installment is a Check, and a recorded split is kept as it is, with
+no adjustment to Bench's figure.
 
 ### The anchor and early payments
 
 The engine schedules every contract date strictly after its anchor. A payment made before its installment's due date
 covers that installment, so restarting from the payment date would schedule it a second time. The plan therefore
 reports `anchor.restartDate` (the due date of the last covered installment, otherwise the date of the last real
-event) and `anchor.accruedInterestMinor` (interest accrued from the payment to that date, minor units, read at the
-last real event). `inputFor` in `useLiveProjection.ts` starts the projection from `restartDate` with that interest;
-what-ifs dated in the gap move to the following day. "Next payment" is the first installment after today that no
-payment covers. The engine itself is unchanged.
+event) and `anchor.accruedInterestMinor` (on a daily loan, interest accrued since the last repayment up to that
+date, minor units). `inputFor` in `useLiveProjection.ts` starts the projection from `restartDate` with that interest;
+what-ifs dated in the gap move to the following day.
+
+The anchor also carries what is still owed at the restart. `unpaidInterestMinor` is interest the next repayment
+owes: on a per-period loan, what a short payment left unpaid; on a daily loan whose interest is charged on its own
+day, the part of the interest since the last repayment already charged, from the lender's interest rows when they
+are in the loan account (the rest stays in `accruedInterestMinor`). On per-period loans, `events` replays extra principal and draws after `restartDate`, and
+`corrections` replays an accepted or adjusted balance: the balance changes on its date, with the interest from
+the next period. Per-period installments are allocated in due-date order, so one paid before an earlier one still
+gets its own period's interest. "Next payment" is the first installment after today that no
+payment covers.
 
 ## Payment rules
 

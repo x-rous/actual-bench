@@ -124,6 +124,11 @@ function rateDetails(rate: SimRate): string {
 }
 
 export function EventsSection({ sim, current, baseline, savings, onEdit, onRemove, onEditRate, onRemoveRate, tracked }: { sim: SimulationState; current: Headline | null; baseline: Headline | null; /** What each event saves (date order). */ savings?: EventSavings; onEdit: (editor: ExtraEditor) => void; onRemove: (assumption: SimAssumption) => void; onEditRate: (editor: "new" | SimRate) => void; onRemoveRate: (rate: SimRate) => void; /** A loan tracked in Actual. */ tracked?: TrackedEvents }) {
+  /** Why an event kind can't be added to this loan, or null. */
+  const kindUnavailable = (kind: SimAssumptionKind): string | null =>
+    kind === "payment-change" && sim.profile.amortization === "progressive-principal"
+      ? "A progressive loan's repayment comes from its principal growth. Add a contract recast date when your lender changes it."
+      : null;
   const transactions = listedExtraTransactions(sim);
   const rows = eventRows(sim, tracked);
   const hasImpactEvents = transactions.length > 0 || !!tracked?.ledgerEvents.some((l) => l.kind !== "adjustment");
@@ -154,12 +159,12 @@ export function EventsSection({ sim, current, baseline, savings, onEdit, onRemov
             <Button type="button" variant="outline" size="sm" onClick={() => onEdit("extra-repayment")}><Plus aria-hidden="true" />Extra payment</Button>
             <Button type="button" variant="outline" size="sm" onClick={() => onEdit("draw")}>Redraw / Withdraw</Button>
             <Button type="button" variant="outline" size="sm" onClick={() => onEditRate("new")}>Rate change</Button>
-            {MORE_KINDS.map((kind) => <Button key={kind} type="button" variant="outline" size="sm" onClick={() => onEdit(kind)}>{KIND_LABEL[kind]}</Button>)}
+            {MORE_KINDS.map((kind) => <Button key={kind} type="button" variant="outline" size="sm" disabled={kindUnavailable(kind) !== null} title={kindUnavailable(kind) ?? undefined} onClick={() => onEdit(kind)}>{KIND_LABEL[kind]}</Button>)}
           </div>
           <DropdownMenu>
             <DropdownMenuTrigger className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-1 md:hidden")}><Plus aria-hidden="true" />Add event <ChevronDown aria-hidden="true" /></DropdownMenuTrigger>
             <LoanMenuContent>
-              {ALL_KINDS.map((kind) => <DropdownMenuItem key={kind} onClick={() => onEdit(kind)}>{KIND_LABEL[kind]}</DropdownMenuItem>)}
+              {ALL_KINDS.map((kind) => <DropdownMenuItem key={kind} disabled={kindUnavailable(kind) !== null} title={kindUnavailable(kind) ?? undefined} onClick={() => onEdit(kind)}>{KIND_LABEL[kind]}</DropdownMenuItem>)}
               <DropdownMenuItem onClick={() => onEditRate("new")}>Rate change</DropdownMenuItem>
             </LoanMenuContent>
           </DropdownMenu>
@@ -219,7 +224,7 @@ export function EventsSection({ sim, current, baseline, savings, onEdit, onRemov
                     const off = row.assumption.enabled === false;
                     return (
                     <tr key={row.key} className={cn((passed || off) && "text-muted-foreground")}>
-                      {tracked ? <td className="px-4 py-1.5 text-center">{source === "What-if" ? <Switch aria-label={`Include ${KIND_LABEL[row.assumption.kind]} on ${row.date} in the projection`} checked={!off} onCheckedChange={() => tracked.onToggle(row.assumption)} /> : <span className="text-muted-foreground">-</span>}</td> : null}
+                      {tracked ? <td className="px-4 py-1.5 text-center">{source === "What-if" ? <Switch aria-label={`Include ${KIND_LABEL[row.assumption.kind]} on ${row.date} in the projection`} checked={!off} disabled={off && kindUnavailable(row.assumption.kind) !== null} title={off ? kindUnavailable(row.assumption.kind) ?? undefined : undefined} onCheckedChange={() => tracked.onToggle(row.assumption)} /> : <span className="text-muted-foreground">-</span>}</td> : null}
                       <td className="whitespace-nowrap px-4 py-1.5 tabular-nums">{formatChartDate(row.date)}</td>
                       <td className="px-3 py-1.5 font-medium">{KIND_LABEL[row.assumption.kind]}</td>
                       <td className="px-3 py-1.5 text-right font-medium tabular-nums">{formatAmount(row.assumption.amountMinor, sim.minorDigits)}</td>

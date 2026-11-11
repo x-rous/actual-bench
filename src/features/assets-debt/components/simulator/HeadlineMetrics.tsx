@@ -1,7 +1,7 @@
 "use client";
 
 import { formatAmount } from "../../lib/money";
-import type { Deltas, Headline } from "../../lib/results";
+import { describeOutlook, type Deltas, type Headline } from "../../lib/results";
 import { formatChartDate } from "../chart/chartMeta";
 
 /**
@@ -21,7 +21,10 @@ function payoffDelta(days: number): string {
 }
 
 export function headlineSentence(h: Headline, digits: number, frequencyLabel: string): string {
-  const repayment = h.regularRepaymentMinor === null ? "no scheduled repayment" : `repayment ${formatAmount(h.regularRepaymentMinor, digits)} ${frequencyLabel}${h.repaymentChanges ? ", changing over the loan" : ""}`;
+  const varying = describeOutlook(h.outlook, (m) => formatAmount(m, digits));
+  const repayment = h.regularRepaymentMinor === null ? "no scheduled repayment"
+    : varying ? `next repayment ${formatAmount(h.regularRepaymentMinor, digits)} ${varying.next}, ${varying.pattern.charAt(0).toLowerCase()}${varying.pattern.slice(1)}`
+      : `repayment ${formatAmount(h.regularRepaymentMinor, digits)} ${frequencyLabel}${h.repaymentChanges ? ", changing over the loan" : ""}`;
   return `${repayment}; total repayments ${formatAmount(h.totalRepaidMinor, digits)}; total interest ${formatAmount(h.totalInterestMinor, digits)}; ${h.payoffDate ? `paid off ${formatChartDate(h.payoffDate)}` : "not paid off within the loan term"}.`;
 }
 
@@ -64,6 +67,7 @@ export function HeadlineMetrics({
   details?: { interest?: string | null; payoff?: string | null; repayment?: string | null; repaid?: string | null };
 }) {
   const money = (m: number | null) => (m === null ? "None" : formatAmount(m, digits));
+  const varying = headline ? describeOutlook(headline.outlook, (m) => formatAmount(m, digits)) : null;
   return (
     <section aria-labelledby="headline-heading">
       <h2 id="headline-heading" className="sr-only">
@@ -71,10 +75,10 @@ export function HeadlineMetrics({
       </h2>
       <div className="grid grid-cols-2 divide-x divide-border xl:grid-cols-4" aria-busy={calculating || undefined}>
         <Tile
-          label={/^[a-z]+ly$/.test(frequencyLabel) ? `${frequencyLabel.charAt(0).toUpperCase()}${frequencyLabel.slice(1)} repayment` : "Repayment"}
-          labelDetail={/^[a-z]+ly$/.test(frequencyLabel) ? undefined : frequencyLabel}
+          label={varying ? "Next repayment" : /^[a-z]+ly$/.test(frequencyLabel) ? `${frequencyLabel.charAt(0).toUpperCase()}${frequencyLabel.slice(1)} repayment` : "Repayment"}
+          labelDetail={varying || /^[a-z]+ly$/.test(frequencyLabel) ? undefined : frequencyLabel}
           value={headline ? `${money(headline.regularRepaymentMinor)}` : "–"}
-          delta={headline ? [details?.repayment ?? null, headline.repaymentChanges ? "Changes over the loan" : null, deltas?.repaymentMinor ? `${deltas.repaymentMinor > 0 ? "+" : "−"}${formatAmount(Math.abs(deltas.repaymentMinor), digits)} vs saved` : null].filter(Boolean).join(" · ") : null}
+          delta={headline ? [details?.repayment ?? null, varying ? `${varying.next} · ${varying.pattern}` : headline.repaymentChanges ? "Changes over the loan" : null, deltas?.repaymentMinor ? `${deltas.repaymentMinor > 0 ? "+" : "−"}${formatAmount(Math.abs(deltas.repaymentMinor), digits)} vs saved` : null].filter(Boolean).join(" · ") : null}
           amount
         />
         <Tile label="Total repayments" value={headline ? money(headline.totalRepaidMinor) : "–"} delta={details?.repaid ?? null} amount />

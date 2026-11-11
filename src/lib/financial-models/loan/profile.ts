@@ -31,13 +31,22 @@ export const PROFILE_VERSION = "profile@1";
  * Interest-only is not a method: it is a phase (config `phases`), including a
  * whole-term interest-only loan (one phase plus `contractual-balloon`).
  */
-export type AmortizationMethod = "level-payment" | "constant-principal" | "custom-payment" | "revolving";
-export const AMORTIZATION_METHODS: readonly AmortizationMethod[] = [
+export type AmortizationMethod = "level-payment" | "constant-principal" | "progressive-principal" | "custom-payment" | "revolving";
+/** Frozen config v1–v3 vocabulary. */
+export const AMORTIZATION_METHODS_V1: readonly AmortizationMethod[] = [
   "level-payment",
   "constant-principal",
   "custom-payment",
   "revolving",
 ];
+/**
+ * Config v4 adds progressive principal: each instalment repays a principal that grows by a fixed share over the last,
+ * plus that period's interest (design 06 §1.1).
+ */
+export const AMORTIZATION_METHODS: readonly AmortizationMethod[] = [...AMORTIZATION_METHODS_V1, "progressive-principal"];
+
+/** Recast policies a progressive principal series accepts: its principal never follows the rate or the year. */
+export const PROGRESSIVE_RECASTS: readonly RecastPolicy[] = ["never", "on-contract-date"];
 
 /** FR-039: accrual, charging and capitalization are distinct; "daily" alone is never a value. */
 export type AccrualMethod = "per-period" | "daily-simple" | "daily-compounded";
@@ -175,6 +184,20 @@ export function validateProfile(profile: CalculationProfile): ProfileCheck {
   // FR-036: constant principal pays principal ÷ periods plus interest, which is not a level annuity.
   if (p.amortization === "constant-principal" && p.repaymentDerivation === "annuity-at-payment-frequency") {
     conflict(["amortization", "repaymentDerivation"], "Constant principal pays principal ÷ periods plus interest, not a level annuity.");
+  }
+
+  // Progressive principal works its repayment out itself: the derivation stays at its default, the payment is never
+  // recalculated from the rate or the year, and a repayment always covers its interest.
+  if (p.amortization === "progressive-principal") {
+    if (p.repaymentDerivation !== "annuity-at-payment-frequency") {
+      conflict(["amortization", "repaymentDerivation"], "Progressive principal works each repayment out from its principal growth; it takes no repayment amount rule.");
+    }
+    if (!PROGRESSIVE_RECASTS.includes(p.recast)) {
+      conflict(["amortization", "recast"], "A progressive principal series is recalculated only on the contract's recast dates.");
+    }
+    if (p.negativeAmortizationAllowed) {
+      conflict(["amortization", "negativeAmortizationAllowed"], "A progressive repayment always covers its interest, so it cannot amortize negatively.");
+    }
   }
 
   // FR-039: simple accrual bears no interest until charged; compounding capitalizes daily.

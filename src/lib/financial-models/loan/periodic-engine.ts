@@ -6,8 +6,9 @@ import { engineVersions, monthlySummaries, rateTable, repaymentScheduleSpec, val
 import { isOffsetStateEventKind, normalizeEvents, type EngineEvent } from "./events";
 import { capitalizedComponents, cashComponents } from "./fees";
 import { amortizationMonths, contractualEnd, finalDecision } from "./finalPayment";
-import type { BlockReason, ModelEvent, SimulationRequest, SimulationResult } from "./model";
+import type { BlockReason, LoanModelSnapshot, ModelEvent, SimulationRequest, SimulationResult } from "./model";
 import { interestOnlyPhaseOn } from "./phases";
+import { initialProgressiveBasis, progressiveBasis, progressiveGrowth, progressivePrincipalFor } from "./progressive";
 import { periodicRate, periodInterestAt } from "./rates";
 import { annualRecastDates, applyPaymentCap, derivePaymentV1, paymentCount, paymentEffectiveDate, paymentsPerYear, recastPolicyFor } from "./recast";
 
@@ -15,21 +16,23 @@ import { annualRecastDates, applyPaymentCap, derivePaymentV1, paymentCount, paym
  * `bench-periodic`: deterministic period-by-period amortization (FR-028).
  *
  * A period runs from one scheduled payment date to the next. Its interest is
- * the balance times the periodic rate of the quote (`nominal-simple-periodic`
- * at 12 a year is r/12 whatever the month's length); the day count is not
- * used. Loans whose interest depends on days (daily accrual, Actual/360
- * months, offsets, events between payment dates) belong to `bench-daily`.
- * Rather than approximate them, this engine refuses with a reason:
+ * the balance at the start of the period times the periodic rate of the quote
+ * (`nominal-simple-periodic` at 12 a year is r/12 whatever the month's
+ * length); the day count is not used. An extra repayment dated between payment
+ * dates lowers the balance on its own date; the interest it saves starts with
+ * the next period (`loan-periodic@3`). Loans whose interest depends on days
+ * (daily accrual, Actual/360 months, offsets) belong to `bench-daily`. Rather
+ * than approximate them, this engine refuses with a reason:
  *
  * - a first period that is not one full period (irregular first period);
  * - a rate change inside a period when rates take effect on their accrual date;
- * - offsets; events dated between payment dates.
+ * - offsets; draws, fees and observed repayments dated between payment dates.
  *
  * Each payment's interest is charged with the payment (embedded interest), and
  * the payment is allocated with principal as the residual.
  */
 
-export const PERIODIC_ENGINE_VERSION = "loan-periodic@2";
+export const PERIODIC_ENGINE_VERSION = "loan-periodic@3";
 
 function periodBefore(date: IsoDate, frequency: string): IsoDate {
   switch (frequency) {
@@ -80,11 +83,19 @@ export function simulatePeriodic(req: SimulationRequest): SimulationResult {
   if (!normalized.ok) return block("negative-repayment", normalized.message, normalized.date);
   const dateSet = new Set(dates);
   const byDate = new Map<IsoDate, EngineEvent[]>();
+  /** Extra repayments between payment dates, in date order: the balance falls on their date, interest from the next period. */
+  const between: EngineEvent[] = [];
+  // Balance corrections a tracked restart replays (an accepted balance, an adjustment): like an extra repayment, they
+  // change the balance on their own date and the interest from the next period.
+  const corrections = (anchor.corrections ?? []).filter((c) => compareDates(c.date, anchor.date) > 0 && compareDates(c.date, req.to) <= 0 && c.deltaMinor !== 0).sort((a, b) => compareDates(a.date, b.date));
   for (const e of normalized.events) {
     if (compareDates(e.date, anchor.date) <= 0) continue;
     if (e.kind === "lender-interest-charge") continue; // evidence for reconciliation, not an input
     if (isOffsetStateEventKind(e.kind)) return block("offsets-need-daily-engine", "Offset balances change interest day by day; use bench-daily.", e.date);
-    if (!dateSet.has(e.date)) return block("irregular-event", `A ${e.kind} on ${e.date} falls between payment dates; use bench-daily.`, e.date);
+    if (!dateSet.has(e.date)) {
+      if (e.kind === "extra-repayment") { between.push(e); continue; }
+      return block("irregular-event", `A ${e.kind} on ${e.date} falls between payment dates; use bench-daily.`, e.date);
+    }
     byDate.set(e.date, [...(byDate.get(e.date) ?? []), e]);
   }
 
@@ -115,11 +126,65 @@ export function simulatePeriodic(req: SimulationRequest): SimulationResult {
     profile.amortization === "constant-principal" && totalPayments
       ? toMinor(div(decInt(terms.openingPrincipalMinor), decInt(totalPayments), WORKING_SCALE, "half-even"), 0, profile.rounding.paymentRounding)
       : null;
+  // Progressive principal: a contractual principal series by instalment number (design 06 §1.1).
+  const growth = progressiveGrowth(model);
+  if (profile.amortization === "progressive-principal" && (!growth || !totalPayments)) {
+    return block("missing-payment", "Progressive principal needs its principal growth per repayment and a term.");
+  }
+  let basis = growth && totalPayments ? initialProgressiveBasis(model, growth, anchor, all, totalPayments) : null;
 
   let periodStart = anchor.date;
+  /**
+   * Per-period interest is the balance at the start of the period times the periodic rate. An extra repayment between
+   * payment dates lowers the balance on its own date but not the interest of the period it falls in.
+   */
+  let periodOpening = balance;
+  let nextBetween = 0;
+  let nextCorrection = 0;
+  /**
+   * Apply the extra repayments and corrections dated before `limit` (or up to and including it when `inclusive`). One
+   * that clears the principal never ends the loan by itself: the period it falls in still owes its interest, paid on
+   * the next due date.
+   */
+  const applyBetween = (limit: IsoDate, inclusive: boolean): SimulationResult | null => {
+    const due = (date: IsoDate) => { const order = compareDates(date, limit); return order < 0 || (order === 0 && inclusive); };
+    while (!stopped) {
+      const e = nextBetween < between.length && due(between[nextBetween].date) ? between[nextBetween] : null;
+      const c = nextCorrection < corrections.length && due(corrections[nextCorrection].date) ? corrections[nextCorrection] : null;
+      if (!e && !c) break;
+      const b = balance;
+      if (e && (!c || compareDates(e.date, c.date) <= 0)) {
+        nextBetween++;
+        if (e.amountMinor > balance) return fail({ code: "credit-balance", classification: "review", date: e.date, message: `An extra repayment of ${e.amountMinor} exceeds the ${balance} owed.` });
+        balance -= e.amountMinor;
+        emit({ date: e.date, type: "extra-repayment", certainty: e.certainty, ref: e.ref, cashMovementMinor: -e.amountMinor, principalMovementMinor: -e.amountMinor, interestMinor: 0, feesMinor: 0, balanceBeforeMinor: b, balanceAfterMinor: balance, lines: [{ kind: "principal", amountMinor: e.amountMinor }], diagnostics: { betweenPaymentDates: !dateSet.has(e.date) } });
+      } else if (c) {
+        nextCorrection++;
+        if (-c.deltaMinor > balance) return fail({ code: "credit-balance", classification: "review", date: c.date, message: `A balance correction of ${c.deltaMinor} exceeds the ${balance} owed.` });
+        balance += c.deltaMinor;
+        emit({ date: c.date, type: c.deltaMinor < 0 ? "extra-repayment" : "draw", certainty: "observed", ref: null, cashMovementMinor: 0, principalMovementMinor: c.deltaMinor, interestMinor: 0, feesMinor: 0, balanceBeforeMinor: b, balanceAfterMinor: balance, lines: [], diagnostics: { balanceCorrection: true } });
+      }
+    }
+    return null;
+  };
   const firedRateRecasts = new Set<(typeof rates.changes)[number]>();
+  let unpaidInterest = Math.max(anchor.unpaidInterestMinor ?? 0, 0);
   for (const date of dates) {
     if (stopped) break;
+    // A contract recast date, or the day after an interest-only phase ends, in this period: the new series (and a
+    // recast level payment) starts from the balance at the start of that day, before anything paid on or after it.
+    const contractDate = model.paymentRecasts.map((r) => r.date).filter((d) => compareDates(d, periodStart) > 0 && compareDates(d, date) <= 0).sort().at(-1) ?? null;
+    const phaseEnd = model.phases.map((p) => p.to).filter((d) => compareDates(d, periodStart) >= 0 && compareDates(d, date) < 0).sort().at(-1) ?? null;
+    // Both in one period: the later day wins, as the daily engine applies them in date order.
+    const phaseDay = phaseEnd ? addDays(phaseEnd, 1) : null;
+    const basisDay = contractDate && phaseDay ? (compareDates(contractDate, phaseDay) >= 0 ? contractDate : phaseDay) : contractDate ?? phaseDay;
+    if (basisDay) {
+      const early = applyBetween(basisDay, false);
+      if (early) return early;
+    }
+    const balanceAtBasisDay = balance;
+    const betweenProblem = applyBetween(date, false);
+    if (betweenProblem) return betweenProblem;
     const rate = rates.rateOn(periodStart);
     if (!rate) return fail({ code: "rate-gap", classification: "blocked", date: periodStart, message: `No rate applies on ${periodStart}.` });
     const r = periodicRate(profile.rateQuote, rate, ppy);
@@ -144,10 +209,24 @@ export function simulatePeriodic(req: SimulationRequest): SimulationResult {
     if (model.paymentRecasts.some((r) => compareDates(r.date, periodStart) > 0 && compareDates(r.date, date) <= 0)) recastReasons.push("contract-date");
 
     const inPhase = interestOnlyPhaseOn(model.phases, date) !== null;
-    if (!inPhase && (payment === null || recastReasons.length > 0) && profile.amortization !== "constant-principal") {
+    if (growth && basis && !inPhase && (recastReasons.includes("contract-date") || recastReasons.includes("interest-only-phase-end"))) {
+      // A new basis from the balance at the start of the day, over the instalments left; a rate change never starts one.
+      const reason = basisDay === contractDate ? "contract-date" : "interest-only-phase-end";
+      const previous = basis;
+      basis = progressiveBasis(model, growth, all.indexOf(date) + 1, balanceAtBasisDay, totalPayments!, reason);
+      emit({
+        date, type: "recast", certainty: "contractual", ref: null, cashMovementMinor: 0, principalMovementMinor: 0, interestMinor: 0, feesMinor: 0,
+        balanceBeforeMinor: balanceAtBasisDay, balanceAfterMinor: balanceAtBasisDay, lines: [],
+        diagnostics: { reasons: reason, progressiveBasisStartNo: basis.startNo, previousFirstPrincipal: toDecString(previous.first), firstPrincipal: toDecString(basis.first) },
+      });
+    }
+    if (!inPhase && (payment === null || recastReasons.length > 0) && profile.amortization !== "constant-principal" && !growth) {
       const previous = payment;
+      // The first level payment comes from the period's opening balance (an extra repayment before the first due date
+      // never resizes it); a dated recast from the balance at the start of its day; any other recast from the balance now.
+      const recastBalance = recastReasons.length === 0 ? periodOpening : basisDay && (recastReasons.includes("contract-date") || recastReasons.includes("interest-only-phase-end")) ? balanceAtBasisDay : balance;
       const derived = derivePaymentV1({
-        model, balanceMinor: balance, annualRate: rate,
+        model, balanceMinor: recastBalance, annualRate: rate,
         remainingPayments: totalPayments === null ? 0 : Math.max(totalPayments - paymentsMade, 1),
         remainingMonths: amortMonths === null ? 0 : Math.max(amortMonths - wholeMonthsBetween(terms.openingDate, periodStart), 1),
         currentPaymentMinor: payment,
@@ -167,12 +246,21 @@ export function simulatePeriodic(req: SimulationRequest): SimulationResult {
 
     // Interest for the period, rounded at posting; carried remainder only under carry-full-precision.
     // Formed exactly where the quote allows (periodInterestAt), so no pre-rounded rate leaks in.
-    const exact = add(periodInterestAt(profile.rateQuote, rate, ppy, fromMinor(balance, digits), WORKING_SCALE, "half-even"), carry);
+    const exact = add(periodInterestAt(profile.rateQuote, rate, ppy, fromMinor(periodOpening, digits), WORKING_SCALE, "half-even"), carry);
     const posted = round(exact, digits, profile.rounding.interestPostingRounding);
-    const interest = toMinor(posted, digits, "down");
+    // Interest a short payment left unpaid before the anchor (a tracked restart) is owed with the first instalment.
+    const interest = toMinor(posted, digits, "down") + unpaidInterest;
+    unpaidInterest = 0;
     carry = profile.rounding.balancePrecision === "carry-full-precision" ? sub(exact, posted) : DEC_ZERO;
 
-    const level = inPhase ? interest : profile.amortization === "constant-principal" ? (constantInstallment ?? 0) + interest : payment!;
+    if (balance === 0 && interest === 0) {
+      // Cleared between due dates with nothing left to pay for the period.
+      paidOff = true;
+      stopped = true;
+      break;
+    }
+    const scheduledPrincipal = growth && basis && !inPhase ? Math.min(progressivePrincipalFor(model, growth, basis, all.indexOf(date) + 1), balance) : null;
+    const level = inPhase ? interest : scheduledPrincipal !== null ? scheduledPrincipal + interest : profile.amortization === "constant-principal" ? (constantInstallment ?? 0) + interest : payment!;
     const contractualFinal = date === lastContractual;
     const owed = balance + interest;
     const decision = finalDecision({ policy: profile.finalPayment, owedMinor: owed, levelMinor: level, contractualFinal });
@@ -207,6 +295,7 @@ export function simulatePeriodic(req: SimulationRequest): SimulationResult {
         interestRatesDecimal: toPlainString(rate),
         carriedRemainder: toDecString(carry), decision: decision.kind, interestOnly: inPhase,
         negativeAmortizationMinor: alloc.capitalizedInterestMinor,
+        ...(scheduledPrincipal !== null && basis ? { installmentNo: all.indexOf(date) + 1, scheduledPrincipalMinor: scheduledPrincipal, progressiveBasis: basis.source } : {}),
       },
     });
     if (alloc.capitalizedInterestMinor > 0) {
@@ -250,7 +339,17 @@ export function simulatePeriodic(req: SimulationRequest): SimulationResult {
         emit({ date, type: "fee", certainty: e.certainty, ref: e.ref, cashMovementMinor: e.capitalized ? 0 : -e.amountMinor, principalMovementMinor: e.capitalized ? e.amountMinor : 0, interestMinor: 0, feesMinor: e.amountMinor, balanceBeforeMinor: b, balanceAfterMinor: balance, lines: [{ kind: "fee", amountMinor: e.amountMinor }], diagnostics: { treatment: e.capitalized ? "capitalized" : "cash-paid", sameDayStep: "external-cash" } });
       }
     }
+    // Corrections dated on the due date itself, after its payment: they count from the next period.
+    if (!stopped) {
+      const onDue = applyBetween(date, true);
+      if (onDue) return onDue;
+    }
     periodStart = date;
+    periodOpening = balance;
+  }
+  if (!stopped) {
+    const trailing = applyBetween(req.to, true);
+    if (trailing) return trailing;
   }
 
   return {
@@ -261,4 +360,23 @@ export function simulatePeriodic(req: SimulationRequest): SimulationResult {
     closing: { date: req.to, principalMinor: balance, accruedInterestMinor: 0, accruedInterestExact: "0", carriedRemainder: toDecString(carry), scheduledPaymentMinor: payment, paidOff },
     versions,
   };
+}
+
+/**
+ * Why the per-period engine would refuse this loan's what-if draws or fees, or null (eligibility shares it, so the two
+ * never disagree). Extra repayments may fall on any date; a draw or fee between repayment dates would bear interest for
+ * part of a period, which per-period interest cannot charge.
+ */
+export function periodicAssumptionProblem(model: LoanModelSnapshot): string | null {
+  const { terms, profile } = model;
+  const candidates = model.assumptions.filter((a) => a.kind === "draw" || a.kind === "fee");
+  if (candidates.length === 0 || !terms.firstPaymentDate) return null;
+  const spec = repaymentScheduleSpec(profile.repaymentFrequency, terms.firstPaymentDate, profile.shortMonth);
+  if (!spec) return null;
+  const to = addMonths(terms.firstPaymentDate, (amortizationMonths(model) ?? 600) + 12);
+  const normalized = normalizeEvents([], candidates, { after: terms.openingDate, to }, profile.eventOrder);
+  if (!normalized.ok) return null;
+  const dates = new Set(generateSchedule(spec, { from: terms.firstPaymentDate, to }));
+  const between = normalized.events.find((e) => !dates.has(e.date));
+  return between ? `A ${between.kind} on ${between.date} falls between repayment dates; interest worked out per repayment period can't charge it for part of a period.` : null;
 }

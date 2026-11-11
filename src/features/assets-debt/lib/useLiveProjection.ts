@@ -3,7 +3,7 @@
 import { addDays } from "@/lib/financial-models/calendar/dates";
 import { explainBlocks } from "@/lib/financial-models/loan/blockMessages";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
-import type { BlockReason } from "@/lib/financial-models/loan/model";
+import type { BlockReason, LedgerEvent } from "@/lib/financial-models/loan/model";
 import type { DebtProjection, DebtProjectionInput } from "@/lib/financial-models/loan/projection";
 import { createDefaultRunner, SupersededError, type ProjectionRunner } from "./projectionRunner";
 import { missingInputs, projectionWindow, simulationToModel, type SimulationState } from "./simulatorModel";
@@ -41,7 +41,7 @@ export type LiveProjection = {
 export type TrackedProjection = {
   startDate: string;
   /** `restartDate` (default `date`) is where the engine restarts when an early payment already covers the next due date; `accruedInterestMinor` is the interest accrued up to it. */
-  anchor: { date: string; principalMinor: number; scheduledPaymentMinor: number; restartDate?: string; accruedInterestMinor?: number };
+  anchor: { date: string; principalMinor: number; scheduledPaymentMinor: number; restartDate?: string; accruedInterestMinor?: number; events?: readonly LedgerEvent[]; progressiveBasis?: { startNo: number; firstPrincipalExact: string }; unpaidInterestMinor?: number; corrections?: readonly { date: string; deltaMinor: number }[] };
 };
 
 /**
@@ -62,7 +62,7 @@ export function inputFor(sim: SimulationState, histories?: readonly OffsetHistor
   if (tracked?.mode === "projection") {
     const { anchor } = tracked.at;
     const restart = anchor.restartDate ?? anchor.date;
-    return { model, anchor: { date: restart, principalMinor: anchor.principalMinor, accruedInterestMinor: anchor.accruedInterestMinor ?? 0, scheduledPaymentMinor: anchor.scheduledPaymentMinor, source: "tracked" }, events: merged.events.filter((e) => e.date > restart), from: restart, to: window.to };
+    return { model, anchor: { date: restart, principalMinor: anchor.principalMinor, accruedInterestMinor: anchor.accruedInterestMinor ?? 0, scheduledPaymentMinor: anchor.scheduledPaymentMinor, progressiveBasis: anchor.progressiveBasis ?? null, unpaidInterestMinor: anchor.unpaidInterestMinor ?? null, corrections: anchor.corrections ?? null, source: "tracked" }, events: [...merged.events.filter((e) => e.date > restart), ...(anchor.events ?? []).filter((e) => e.date > restart)], from: restart, to: window.to };
   }
   return { model, anchor: { date: model.terms.openingDate, principalMinor: model.terms.openingPrincipalMinor, accruedInterestMinor: 0, source: "opening" }, events: merged.events, from: window.from, to: window.to };
 }

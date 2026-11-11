@@ -204,11 +204,16 @@ describe("O1: features that need day-by-day interest", () => {
     expect(dailyEngineReason({ ...periodic, ...offsetOf(5_000_000) })).toMatch(/offset/i);
   });
 
-  it("an extra repayment between repayment dates asks; one on a repayment date does not", () => {
-    const mid: SimulationState = { ...periodic, assumptions: [{ key: "x", kind: "extra-repayment", effectiveFrom: "2024-03-10", recurrence: null, amountMinor: 100_000, feeTreatment: null, offsetAccountId: null, note: null }] };
+  it("a draw between repayment dates asks; one on a repayment date does not", () => {
+    const mid: SimulationState = { ...periodic, assumptions: [{ key: "x", kind: "draw", effectiveFrom: "2024-03-10", recurrence: null, amountMinor: 100_000, feeTreatment: null, offsetAccountId: null, note: null }] };
     expect(dailyEngineReason(mid)).toMatch(/between repayment dates/);
     const onDate = { ...mid, assumptions: [{ ...mid.assumptions[0], effectiveFrom: "2024-03-01" }] };
     expect(dailyEngineReason(onDate)).toBeNull();
+  });
+
+  it("an extra repayment between repayment dates never asks: per-period interest counts it from the next period", () => {
+    const mid: SimulationState = { ...periodic, assumptions: [{ key: "x", kind: "extra-repayment", effectiveFrom: "2024-03-10", recurrence: null, amountMinor: 100_000, feeTreatment: null, offsetAccountId: null, note: null }] };
+    expect(dailyEngineReason(mid)).toBeNull();
   });
 
   it("a rate change inside a payment period asks; one at a period boundary does not", () => {

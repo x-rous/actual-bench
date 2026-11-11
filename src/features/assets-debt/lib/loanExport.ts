@@ -1,7 +1,7 @@
 import type { DebtProjectionEvent } from "@/lib/financial-models/loan/projection";
 import { aggregateSchedule, paymentNumberCell, scheduleEventLabel, schedulePeriodLabel, type ScheduleView } from "./schedule";
-import { headline } from "./results";
-import { derivedFirstPaymentDate, type SimulationState } from "./simulatorModel";
+import { describeOutlook, headline } from "./results";
+import { derivedFirstPaymentDate, growthPercent, type SimulationState } from "./simulatorModel";
 import type { TrackedHistory } from "./trackedSchedule";
 import { fractionToPercent } from "./money";
 
@@ -28,9 +28,11 @@ export function loanExportRows({ sim, events, name, today, generatedAt, revision
   section("Loan report");
   rows.push(["Loan", name || "New loan"], ["Exported on", today], ["Currency", sim.currency], ["Saved revision", revision ?? "Not saved"], ["Unsaved changes", unsaved ? "Yes" : "No"], ["Tracking", tracked ? "Tracked in Actual" : "Simulation"]);
   section("Headline results");
-  rows.push(["Repayment frequency", label(sim.profile.repaymentFrequency)], ["Regular repayment", amount(metric.regularRepaymentMinor)], ["Total repayments", amount(metric.totalRepaidMinor)], ["Total interest", amount(metric.totalInterestMinor)], ["Payoff date", metric.payoffDate ?? "Not within the term"]);
+  const varying = describeOutlook(metric.outlook, (m) => amount(m));
+  rows.push(["Repayment frequency", label(sim.profile.repaymentFrequency)], ...(varying && metric.outlook?.next ? [["Next repayment", amount(metric.regularRepaymentMinor)], ["Next repayment date", metric.outlook.next.date], ["Repayment pattern", varying.pattern]] : [["Regular repayment", amount(metric.regularRepaymentMinor)]]), ["Total repayments", amount(metric.totalRepaidMinor)], ["Total interest", amount(metric.totalInterestMinor)], ["Payoff date", metric.payoffDate ?? "Not within the term"]);
   section("Loan inputs and terms");
   rows.push(["Loan type", label(sim.shape)], ["Loan amount", amount(sim.principalMinor)], ["Start date", sim.startDate], ["Amortization term (months)", sim.termMonths], ["Contract term (months)", sim.contractTermMonths], ["Contract maturity date", sim.maturityDate], ["First repayment date (entered)", sim.firstPaymentDate], ["First repayment date (effective)", derivedFirstPaymentDate(sim)], ["First interest charge", sim.firstInterestChargeDate], ["Contract repayment amount", amount(sim.contractualPaymentMinor)], ["Credit limit", amount(sim.creditLimitMinor)], ["Interest-only enabled", value(sim.interestOnly)]);
+  if (sim.profile.amortization === "progressive-principal") rows.push(["Principal growth per repayment (%)", sim.progressiveGrowthDecimal ? growthPercent(sim.progressiveGrowthDecimal) : ""]);
   if (sim.shape === "revolving-credit" && sim.revolving) rows.push(["Minimum payment model", label(sim.revolving.paymentModel)], ["Share of balance (%)", sim.revolving.percentOfBalanceBps == null ? "" : sim.revolving.percentOfBalanceBps / 100], ["Minimum amount", amount(sim.revolving.minimumFloorMinor)]);
   section("Calculation settings", ["Setting", "Value"]);
   for (const [key, item] of Object.entries(sim.profile)) {

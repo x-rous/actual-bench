@@ -122,7 +122,7 @@ export function FeatureControls({ sim, change, propose }: Props) {
         ] }]}
       >
         <SelectField label="Frequency" value={sim.profile.repaymentFrequency} options={REPAYMENT_FREQUENCY_OPTIONS} onChange={(repaymentFrequency) => change({ ...sim, profile: { ...sim.profile, repaymentFrequency: repaymentFrequency as SimulationState["profile"]["repaymentFrequency"] } })} />
-        {sim.shape === "term-loan" ? <MoneyField label="Contract repayment amount (optional)" valueMinor={sim.contractualPaymentMinor} minorDigits={sim.minorDigits} onChange={setContractualPayment} /> : null}
+        {sim.shape === "term-loan" && sim.profile.amortization !== "progressive-principal" ? <MoneyField label="Contract repayment amount (optional)" valueMinor={sim.contractualPaymentMinor} minorDigits={sim.minorDigits} onChange={setContractualPayment} /> : null}
         <DateField label="First repayment date (optional)" value={sim.firstPaymentDate ?? ""} onChange={(firstPaymentDate) => propose({ ...sim, firstPaymentDate: firstPaymentDate || null })} />
         {sim.shape === "term-loan" ? <DateField label="Contract maturity date (optional)" value={sim.maturityDate ?? ""} onChange={(maturityDate) => change({ ...sim, maturityDate: maturityDate || null })} /> : null}
         {sim.shape === "revolving-credit" ? (

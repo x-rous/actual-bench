@@ -32,6 +32,7 @@ export function engineVersions(
     allocation: CURRENT_COMPONENT_VERSIONS.allocation,
     "final-payment": CURRENT_COMPONENT_VERSIONS["final-payment"],
     ...(isActiveConvention(model.businessDays) ? { "business-days": CURRENT_COMPONENT_VERSIONS["business-days"] } : {}),
+    ...(model.profile.amortization === "progressive-principal" ? { "progressive-principal": CURRENT_COMPONENT_VERSIONS["progressive-principal"] } : {}),
   };
 }
 
@@ -48,6 +49,12 @@ export function validateModel(model: LoanModelSnapshot): BlockReason | null {
   if (phaseProblem) return { code: "inconsistent-profile", classification: "blocked", date: null, message: phaseProblem };
   const recast = recastScheduleConflict(model.profile.recast, model.paymentRecasts.length);
   if (recast) return { code: "inconsistent-profile", classification: "blocked", date: null, message: recast.message };
+  if (model.profile.amortization === "progressive-principal") {
+    const recalculating = model.rates.find((r) => (r.paymentRecalcPolicy && r.paymentRecalcPolicy !== "never") || r.paymentCap);
+    if (recalculating) return { code: "inconsistent-profile", classification: "blocked", date: recalculating.accrualEffectiveFrom, message: "With progressive principal a rate change changes the interest only; it cannot recalculate or cap the repayment." };
+    const change = model.assumptions.find((a) => a.kind === "payment-change");
+    if (change) return { code: "inconsistent-profile", classification: "blocked", date: change.date, message: "A progressive loan's repayment comes from its principal growth; add a contract recast date instead of a repayment change." };
+  }
   if (isActiveConvention(model.businessDays)) {
     const problem = businessDayProblem(model.businessDays);
     if (problem) return { code: "inconsistent-profile", classification: "blocked", date: null, message: problem.message };
