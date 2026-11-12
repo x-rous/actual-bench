@@ -3,7 +3,7 @@ import { useState } from "react";
 import { progressiveFirstPrincipal } from "@/lib/financial-models/loan/repayment";
 import { dec, fromMinor, toMinor } from "@/lib/financial-models/money/kernel";
 import type { SimulationState } from "../../lib/simulatorModel";
-import { sim } from "../../lib/simulatorTestKit";
+import { offsetOf, sim } from "../../lib/simulatorTestKit";
 import { CalculationMethodDrawer, CalculationMethodSummary } from "./CalculationMethodDrawer";
 import { EventsSection } from "./ExtraTransactionsSection";
 import { FeatureControls } from "./FeatureControls";
@@ -119,6 +119,22 @@ describe("progressive principal in Set calculation method", () => {
     const dialog = await screen.findByRole("dialog", { name: "Switch to progressive principal?" });
     expect(dialog).not.toHaveTextContent("so these settings change");
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["an offset", () => sim(offsetOf(10_000_00)), "An offset changes the interest day by day"],
+    ["business-day due dates", () => sim({ businessDays: { adjustment: "following", nonBusinessWeekdays: [6, 7], holidays: [] } }), "Business-day due dates need daily interest"],
+  ])("keeps daily interest, and says why, on a loan with %s", async (_, make, reason) => {
+    const onChange = jest.fn();
+    render(<Harness initial={make()} onChange={onChange} />);
+    await choose("Amortization", "Progressive principal plus interest");
+    const dialog = await screen.findByRole("dialog", { name: "Switch to progressive principal?" });
+    const box = within(dialog).getByRole("checkbox", { name: "Also charge interest per payment period" });
+    expect(box).not.toBeChecked();
+    expect(box).toBeDisabled();
+    expect(dialog).toHaveTextContent(`Not available for this loan: ${reason}`);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Switch" }));
+    await waitFor(() => expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ profile: expect.objectContaining({ amortization: "progressive-principal", accrual: "daily-simple" }) })));
   });
 
   it("never offers per-period interest on a loan that already has it", async () => {
