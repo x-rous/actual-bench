@@ -2,10 +2,12 @@
 
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { InfoHint } from "@/components/ui/info-hint";
 import { SlidersHorizontal } from "lucide-react";
 import { validateProfile, type CalculationProfile } from "@/lib/financial-models/loan/profile";
-import { activeBusinessDays, activeLenderStatement, summarizeProfile, type SimulationState } from "../../lib/simulatorModel";
+import { activeBusinessDays, activeLenderStatement, dailyEngineReason, summarizeProfile, type SimulationState } from "../../lib/simulatorModel";
 import { strategyAdvice } from "../../lib/strategyAdvice";
 import {
   ACCRUAL_OPTIONS,
@@ -99,7 +101,9 @@ export function CalculationMethodDrawer({ open, onClose, sim, change }: { open: 
   const fixedPeriodic = progressive && !daily;
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   /** What switching to progressive principal changed, restored if the user switches back in this session (never saved). */
-  const beforeProgressive = useRef<Pick<Profile, "repaymentDerivation" | "recast" | "negativeAmortizationAllowed"> | null>(null);
+  const beforeProgressive = useRef<Partial<Profile> | null>(null);
+  /** The confirmation's "charge interest per period" box, read when the switch is confirmed. */
+  const perPeriodBox = useRef<HTMLInputElement | null>(null);
   const setAmortization = (amortization: Profile["amortization"]) => {
     if (amortization !== "progressive-principal") {
       const restore = p.amortization === "progressive-principal" ? beforeProgressive.current : null;
@@ -120,22 +124,36 @@ export function CalculationMethodDrawer({ open, onClose, sim, change }: { open: 
       rates: sim.rates.map((r) => (capped.includes(r) ? { ...r, paymentRecalcPolicy: null, paymentCap: null, paymentEffectiveFrom: null } : r)),
       assumptions: sim.assumptions.map((a) => (changes.includes(a) ? { ...a, enabled: false } : a)),
     };
-    const apply = () => {
-      beforeProgressive.current = { repaymentDerivation: p.repaymentDerivation, recast: p.recast, negativeAmortizationAllowed: p.negativeAmortizationAllowed };
-      change(next);
+    // Offered only when the loan can still be calculated per period: the periodic engine's own refusal (offsets,
+    // a rate change or transaction between due dates, an irregular first period), or business-day due dates it would drop.
+    const perPeriodBlocked = !daily ? null : activeBusinessDays(sim) ? "Business-day due dates need daily interest." : dailyEngineReason({ ...next, profile: { ...next.profile, accrual: "per-period", capitalization: "at-charge" } });
+    const apply = (perPeriod: boolean) => {
+      beforeProgressive.current = { repaymentDerivation: p.repaymentDerivation, recast: p.recast, negativeAmortizationAllowed: p.negativeAmortizationAllowed, ...(perPeriod ? { accrual: p.accrual, capitalization: p.capitalization } : {}) };
+      // Per-period interest, as most progressive mortgages charge it; the same change as choosing it in "Interest accrues".
+      change(perPeriod ? { ...next, profile: { ...next.profile, accrual: "per-period", capitalization: "at-charge" } } : next);
     };
-    if (cleared.length === 0) { apply(); return; }
+    if (cleared.length === 0 && !daily) { apply(false); return; }
     setConfirm({
       title: "Switch to progressive principal?",
       message: (
         <span className="flex flex-col gap-2">
-          <span>Progressive principal works each repayment out from its principal growth, so these settings change. Nothing is saved until you save the loan.</span>
-          <span className="flex flex-col">{cleared.map((line) => <span key={line}>· {line}</span>)}</span>
+          <span>Progressive principal works each repayment out from its principal growth{cleared.length ? ", so these settings change" : ""}. Nothing is saved until you save the loan.</span>
+          {cleared.length ? <span className="flex flex-col">{cleared.map((line) => <span key={line}>· {line}</span>)}</span> : null}
+          {daily ? (
+            <span className="flex flex-col gap-1">
+              <Label className="text-sm font-normal leading-snug text-foreground">
+                <Checkbox ref={perPeriodBox} defaultChecked={!perPeriodBlocked} disabled={perPeriodBlocked !== null} />
+                Also charge interest per payment period
+              </Label>
+              <span>Most progressive mortgages charge a fixed share of the yearly rate each period. With daily interest each repayment&apos;s interest follows the number of days in the period, so repayments go up and down.</span>
+              {perPeriodBlocked ? <span>Not available for this loan: {perPeriodBlocked}</span> : null}
+            </span>
+          ) : null}
         </span>
       ),
       destructive: false,
       destructiveLabel: "Switch",
-      onConfirm: apply,
+      onConfirm: () => apply(daily && perPeriodBlocked === null && (perPeriodBox.current?.checked ?? true)),
     });
   };
   const recastOptions = progressive
