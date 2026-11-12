@@ -86,6 +86,48 @@ describe("progressive principal in Set calculation method", () => {
     await waitFor(() => expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ profile: expect.objectContaining({ amortization: "level-payment", recast: "on-rate-change" }) })));
   });
 
+  it("offers per-period interest on a daily-interest loan, ticked by default, and restores daily interest when switching back", async () => {
+    const onChange = jest.fn();
+    render(<Harness initial={sim()} onChange={onChange} />);
+    await choose("Amortization", "Progressive principal plus interest");
+    const dialog = await screen.findByRole("dialog", { name: "Switch to progressive principal?" });
+    const box = within(dialog).getByRole("checkbox", { name: "Also charge interest per payment period" });
+    expect(box).toBeChecked();
+    expect(dialog).toHaveTextContent("so repayments go up and down");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Switch" }));
+    await waitFor(() => expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ profile: expect.objectContaining({ amortization: "progressive-principal", accrual: "per-period", capitalization: "at-charge" }) })));
+
+    await choose("Amortization", "Level payment");
+    await waitFor(() => expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ profile: expect.objectContaining({ amortization: "level-payment", accrual: "daily-simple", recast: "on-rate-change" }) })));
+  });
+
+  it("keeps daily interest when the per-period box is unticked", async () => {
+    const onChange = jest.fn();
+    render(<Harness initial={sim()} onChange={onChange} />);
+    await choose("Amortization", "Progressive principal plus interest");
+    const dialog = await screen.findByRole("dialog", { name: "Switch to progressive principal?" });
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Also charge interest per payment period" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Switch" }));
+    await waitFor(() => expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ profile: expect.objectContaining({ amortization: "progressive-principal", accrual: "daily-simple" }) })));
+  });
+
+  it("asks on a daily-interest loan even when no other setting changes", async () => {
+    const onChange = jest.fn();
+    const s = sim();
+    render(<Harness initial={{ ...s, profile: { ...s.profile, recast: "never" } }} onChange={onChange} />);
+    await choose("Amortization", "Progressive principal plus interest");
+    const dialog = await screen.findByRole("dialog", { name: "Switch to progressive principal?" });
+    expect(dialog).not.toHaveTextContent("so these settings change");
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("never offers per-period interest on a loan that already has it", async () => {
+    render(<Harness initial={perPeriod()} onChange={() => {}} />);
+    await choose("Amortization", "Progressive principal plus interest");
+    const dialog = await screen.findByRole("dialog", { name: "Switch to progressive principal?" });
+    expect(within(dialog).queryByRole("checkbox")).toBeNull();
+  });
+
   it("works the growth out from one row of the lender's table and stages it", async () => {
     const onChange = jest.fn();
     render(<Harness initial={perPeriod({ profile: { ...perPeriod().profile, amortization: "progressive-principal", recast: "never" }, principalMinor: 203_353_10, termMonths: 276 })} onChange={onChange} />);
