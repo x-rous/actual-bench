@@ -12,7 +12,7 @@ const GROUPS: { title: string; keys: [string, string][] }[] = [
     [`${MOD} + arrows`, "Jump to the first or last month, or line"],
     ["Home / End", `First or last month of the line (${MOD} for the whole grid)`],
     ["Page Up / Page Down", "Move twelve lines"],
-    ["Space, or Left / Right on a label", "Collapse or expand a section or group"],
+    ["Space or Enter on a label", "Collapse or expand a section or group"],
     ["Esc", "Clear the selection and show the plan overview"],
   ] },
   { title: "Amounts", keys: [

@@ -1,16 +1,17 @@
 "use client";
 
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, ArrowLeftRight, ChevronDown, ChevronRight, Link2Off, Plus, TrendingDown } from "lucide-react";
+import { AlertTriangle, ArrowLeftRight, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Link2Off, Plus, TrendingDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { InfoHint } from "@/components/ui/info-hint";
 import { Input } from "@/components/ui/input";
 import { SearchInput } from "@/components/ui/search-input";
-import { NAME_MAX, parseAmount } from "@/lib/cashflow-planning/document";
+import { NAME_MAX, formatAmountInput, parseAmount } from "@/lib/cashflow-planning/document";
 import type { Computed, MonthKind } from "@/lib/cashflow-planning/engine";
 import { monthShort } from "@/lib/cashflow-planning/months";
-import type { Month, PlanDocument, SectionId } from "@/lib/cashflow-planning/types";
-import { aggregate, formatCell, isPinned, lineKey, type Column, type Line } from "../lib/view";
+import { type Month, type PlanDocument, type SectionId } from "@/lib/cashflow-planning/types";
+import { LABEL_WIDTH, aggregate, formatCell, isPinned, lineKey, type Column, type Line } from "../lib/view";
 
 export type PastMode = "actual" | "plan" | "diff";
 
@@ -25,9 +26,11 @@ export type GridCommand =
   | { type: "rename"; line: string; name: string }
   | { type: "move"; line: string; direction: -1 | 1 }
   | { type: "deleteRow"; rowId: string }
-  | { type: "dropRow"; rowId: string; beforeRowId: string }
-  /** A row dropped on a section or group heading joins it. */
-  | { type: "dropInto"; rowId: string; section: SectionId; groupId: string | null }
+  | { type: "addGroup"; section: SectionId; afterGroupId?: string }
+  /** A row dropped on the upper or lower half of another row goes above or below it, in its group. */
+  | { type: "dropRow"; rowId: string; refRowId: string; placement: "before" | "after" }
+  /** A row dropped on a section or group heading joins it: first in an open group, last in a closed group or the section. */
+  | { type: "dropInto"; rowId: string; section: SectionId; groupId: string | null; at: "start" | "end" }
   | { type: "fill"; rowId: string; month: Month; to: "year" | "plan" }
   | { type: "clearFrom"; rowId: string; month: Month }
   | { type: "transactions"; line: string; col: string }
@@ -49,7 +52,14 @@ type Props = {
   onFind: (text: string) => void;
   /** Changes whenever the grid should bring the current month into view. */
   scrollToken: number;
+  /** When the scroll token changes: the month to bring to the left edge, or null for the current month. */
+  scrollMonth?: Month | null;
   onSelect: (selection: GridSelection | null) => void;
+  /** The column picked in the header, and the call that picks one. */
+  pickedColumn?: string | null;
+  onPickColumn?: (key: string) => void;
+  /** Collapses every section and group, or opens them all. */
+  onCollapseAll: (collapse: boolean) => void;
   onToggle: (key: string) => void;
   onEdit: (edits: CellEdit[]) => void;
   onCommand: (command: GridCommand) => void;
@@ -57,7 +67,6 @@ type Props = {
   onNotice: (message: string) => void;
 };
 
-const LABEL_WIDTH = 288;
 const PAGE = 12;
 const KIND_LABEL: Record<MonthKind, string> = { actual: "Actual", current: "This month", forecast: "Forecast" };
 
@@ -100,14 +109,14 @@ function buildPlanTotals(doc: PlanDocument, computed: Computed): Map<string, (nu
 
 type Menu = { x: number; y: number; line: string; col: string | null };
 
-export function PlanGrid({ doc, computed, lines, columns, cents, pastMode, selection, problems, shiftedCells, find, onFind, scrollToken, onSelect, onToggle, onEdit, onCommand, onNotice }: Props) {
+export function PlanGrid({ doc, computed, lines, columns, cents, pastMode, selection, problems, shiftedCells, find, onFind, scrollToken, scrollMonth, pickedColumn, onPickColumn, onSelect, onCollapseAll, onToggle, onEdit, onCommand, onNotice }: Props) {
   const scroller = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState<{ line: string; col: string; text: string } | null>(null);
   const [renaming, setRenaming] = useState<{ line: string; text: string } | null>(null);
   const [menu, setMenu] = useState<Menu | null>(null);
   /** While the fill handle is dragged: the column the fill reaches. */
   const [fillTo, setFillTo] = useState<number | null>(null);
-  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ line: string; pos: DropPos } | null>(null);
   const planTotals = useMemo(() => (pastMode === "actual" ? null : buildPlanTotals(doc, computed)), [pastMode, doc, computed]);
   const { kinds } = computed;
 
@@ -132,8 +141,8 @@ export function PlanGrid({ doc, computed, lines, columns, cents, pastMode, selec
   const monthWidth = cents ? 104 : 88;
   useEffect(() => {
     const el = scroller.current;
-    const th = el?.querySelector<HTMLElement>('th[data-now="true"]');
-    if (el && th) el.scrollLeft = Math.max(0, th.offsetLeft - LABEL_WIDTH - monthWidth);
+    const th = scrollMonth ? el?.querySelector<HTMLElement>(`th[data-month="${scrollMonth}"]`) : el?.querySelector<HTMLElement>('th[data-now="true"]');
+    if (el && th) el.scrollLeft = Math.max(0, th.offsetLeft - LABEL_WIDTH - (scrollMonth ? 0 : monthWidth));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only when asked: not on every change of width or columns
   }, [scrollToken]);
 
@@ -282,7 +291,7 @@ export function PlanGrid({ doc, computed, lines, columns, cents, pastMode, selec
     const startEdit = (text: string | null) => {
       if (!line || !column || line.kind !== "row" || column.kind !== "month" || !isEditable(line, column, kinds)) return false;
       const typed = line.row.cells[column.month];
-      setEditing({ line: line.key, col: column.key, text: text ?? (typed !== undefined ? (typed / 100).toFixed(2) : "") });
+      setEditing({ line: line.key, col: column.key, text: text ?? (typed !== undefined ? formatAmountInput(typed) : "") });
       return true;
     };
     const collapsible = line && (line.kind === "section" || line.kind === "group") ? line : null;
@@ -301,9 +310,7 @@ export function PlanGrid({ doc, computed, lines, columns, cents, pastMode, selec
       case "ArrowLeft": {
         event.preventDefault();
         const d = event.key === "ArrowRight" ? 1 : -1;
-        // On a section or group label, Right opens it and Left closes it, as in a tree.
-        if (at?.col === null && collapsible && collapsible.collapsed === (d > 0)) onToggle(collapsible.key);
-        else if (mod && at) go(at.row, d > 0 ? last : 0, event.shiftKey);
+        if (mod && at) go(at.row, d > 0 ? last : 0, event.shiftKey);
         else step(0, d, event.shiftKey);
         return;
       }
@@ -395,7 +402,7 @@ export function PlanGrid({ doc, computed, lines, columns, cents, pastMode, selec
       if (!inside && (!current || current.line !== line || current.col !== col)) latest.current.onSelect({ line, col });
       setMenu({ x: event.clientX, y: event.clientY, line, col });
     },
-    dropOver: (line) => setDropTarget(line),
+    dropOver: (line, pos) => setDropTarget((cur) => (line === null ? null : cur?.line === line && cur.pos === pos ? cur : { line, pos })),
   }), []);
 
   const body = lines.filter((l) => !isPinned(l)), pinned = lines.filter(isPinned);
@@ -414,7 +421,7 @@ export function PlanGrid({ doc, computed, lines, columns, cents, pastMode, selec
         renaming={renaming?.line === line.key ? renaming.text : null}
         problem={line.kind === "row" ? problems.get(line.row.id) ?? null : null}
         unlinked={line.kind === "row" && doc.useActuals && line.row.links.categories.length + line.row.links.categoryGroups.length + line.row.links.accounts.length === 0}
-        shiftedCells={shiftedCells} dropTarget={dropTarget === line.key}
+        shiftedCells={shiftedCells} dropTarget={dropTarget?.line === line.key ? dropTarget.pos : null} tone={toneOf(doc, line)}
         handlers={handlers}
       />
     );
@@ -424,27 +431,33 @@ export function PlanGrid({ doc, computed, lines, columns, cents, pastMode, selec
     <div
       ref={scroller} tabIndex={0} role="grid" aria-label="Cash plan" aria-rowcount={lines.length} onKeyDown={onKeyDown}
       onPaste={(event) => { if (!editing && !renaming && event.target === event.currentTarget) { event.preventDefault(); paste(event.clipboardData.getData("text/plain")); } }}
+      // A click on the empty space around the table clears the selection, which shows the plan overview again.
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onSelect(null); }}
       className="relative min-h-0 flex-1 overflow-auto outline-none focus-visible:ring-1 focus-visible:ring-ring/60"
       style={{ scrollPaddingLeft: LABEL_WIDTH, scrollPaddingTop: 56, scrollPaddingBottom: 58 }}
     >
-      <table className="border-separate border-spacing-0 text-xs select-none">
+      <table className="border-separate border-spacing-0 text-xs select-none" style={{ tableLayout: "fixed", width: LABEL_WIDTH + columns.reduce((sum, c) => sum + (c.kind === "year" ? yearWidth : monthWidth), 0) }}>
         <colgroup>
           <col style={{ width: LABEL_WIDTH, minWidth: LABEL_WIDTH }} />
           {columns.map((c) => <col key={c.key} style={{ width: c.kind === "year" ? yearWidth : monthWidth, minWidth: c.kind === "year" ? yearWidth : monthWidth }} />)}
         </colgroup>
         <thead className="sticky top-0 z-30">
           <tr>
-            <th scope="col" rowSpan={2} className="sticky left-0 z-40 border-b border-r border-border bg-background px-2 text-left align-bottom font-normal">
-              <div className="pb-1"><SearchInput value={find} onValueChange={onFind} placeholder="Find a row" aria-label="Find a row by name" className="h-7 w-full text-xs" /></div>
+            <th scope="col" rowSpan={2} className="sticky left-0 z-40 border-b border-r border-border bg-background px-2 text-left align-middle font-normal">
+              <div className="flex items-center gap-1">
+                <SearchInput value={find} onValueChange={onFind} placeholder="Find a row" aria-label="Find a row by name" className="h-7 min-w-0 flex-1 text-xs" />
+                <button type="button" tabIndex={-1} onClick={() => onCollapseAll(false)} aria-label="Expand all sections and groups" title="Expand all" className="flex size-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"><ChevronsUpDown className="size-4" aria-hidden /></button>
+                <button type="button" tabIndex={-1} onClick={() => onCollapseAll(true)} aria-label="Collapse all sections and groups" title="Collapse all" className="flex size-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"><ChevronsDownUp className="size-4" aria-hidden /></button>
+              </div>
             </th>
             {years.map((band) => <th key={band.year} scope="colgroup" colSpan={band.span} className="h-6 border-b border-l border-border bg-muted px-2 text-left text-[11px] font-semibold"><span className="sticky inline-block" style={{ left: LABEL_WIDTH + 8 }}>{band.year}</span></th>)}
           </tr>
           <tr>
             {columns.map((c) => {
-              if (c.kind === "year") return <th key={c.key} scope="col" className="h-8 border-b border-l border-border bg-muted px-2 text-right text-[11px] font-semibold">{c.partial ? "Total*" : "Total"}{c.partial && <span className="sr-only"> (not a full year in this plan)</span>}</th>;
+              if (c.kind === "year") return <th key={c.key} scope="col" onClick={() => onPickColumn?.(c.key)} title="Show a summary of this year" className={cn("h-8 cursor-pointer border-b border-l border-border bg-muted px-2 text-right text-[11px] font-semibold hover:bg-accent", pickedColumn === c.key && "bg-accent shadow-[inset_0_-2px_0_var(--primary)]")}>{c.partial ? "Total*" : "Total"}{c.partial && <span className="sr-only"> (not a full year in this plan)</span>}</th>;
               const kind = kinds[c.index];
               return (
-                <th key={c.key} scope="col" data-now={kind === "current" || undefined} className={cn("h-8 border-b border-border bg-background px-2 text-right align-middle font-medium", kind === "current" && "bg-[color-mix(in_oklab,var(--primary)_10%,var(--background))]", c.index === computed.currentIndex + 1 && computed.currentIndex >= 0 && "border-l")}>
+                <th key={c.key} scope="col" data-month={c.month} data-now={kind === "current" || undefined} onClick={() => onPickColumn?.(c.key)} title="Show a summary of this month" className={cn("h-8 cursor-pointer border-b border-border bg-background px-2 text-right align-middle font-medium hover:bg-accent", pickedColumn === c.key && "bg-accent shadow-[inset_0_-2px_0_var(--primary)]", kind === "current" && "bg-[color-mix(in_oklab,var(--primary)_10%,var(--background))]", c.index === computed.currentIndex + 1 && computed.currentIndex >= 0 && "border-l")}>
                   <span className="block leading-tight">{monthShort(c.month)}</span>
                   <span className={cn("block text-[10px] font-normal leading-tight text-muted-foreground", kind === "current" && "font-medium text-foreground")}>{doc.useActuals ? KIND_LABEL[kind] : "Plan"}</span>
                 </th>
@@ -491,7 +504,7 @@ function ContextMenu({ menu, lines, columns, kinds, onClose, onCommand, onRename
     items.push("separator");
   }
   if (column) items.push({ label: "Copy", run: onCopy });
-  if ((line.kind === "row" || line.kind === "unplanned") && column && past) items.push({ label: "Show the transactions", run: () => onCommand({ type: "transactions", line: line.key, col: column.key }) });
+  if ((line.kind === "row" || line.kind === "unplanned" || line.kind === "group" || line.kind === "section" || (line.kind === "memo" && (line.key === "inTransit" || line.key === "moved"))) && column && past) items.push({ label: "Show the transactions", run: () => onCommand({ type: "transactions", line: line.key, col: column.key }) });
   if (line.kind === "row" || line.kind === "group" || line.kind === "section") {
     if (items.length) items.push("separator");
     items.push({ label: line.kind === "row" ? "Add a row below" : "Add a row here", run: () => onAddBelow(line) });
@@ -540,7 +553,7 @@ type LineHandlers = {
   renameText: (text: string) => void;
   renameDone: (save: boolean, line: string, text: string) => void;
   menu: (line: string, col: string | null, event: React.MouseEvent) => void;
-  dropOver: (line: string | null) => void;
+  dropOver: (line: string | null, pos: DropPos) => void;
 };
 
 type LineProps = {
@@ -559,13 +572,28 @@ type LineProps = {
   problem: string | null;
   unlinked: boolean;
   shiftedCells: ReadonlySet<string>;
-  dropTarget: boolean;
+  dropTarget: DropPos | null;
+  /** The group colour this line is tinted with (a group heading more strongly than its rows), or null. */
+  tone: { fill: string; stripe: string } | null;
   handlers: LineHandlers;
 };
 
 const ROW_MIME = "application/x-cashflow-row";
 
-const GridLine = memo(function GridLine({ line, rowNumber, columns, kinds, cents, pastMode, planTotals, belowMinimum, activeCol, rangeLeft, rangeRight, fillRight, handleAt, editing, renaming, problem, unlinked, shiftedCells, dropTarget, handlers }: LineProps) {
+/** Where a dragged row would land relative to the line it is over. */
+type DropPos = "before" | "after" | "into";
+
+/** A group's colour as a background: the heading at full strength, its rows at 60% of it. */
+function toneOf(doc: PlanDocument, line: Line): { fill: string; stripe: string } | null {
+  const group = line.kind === "group" ? line.group : line.kind === "row" && line.row.groupId ? doc.groups.find((g) => g.id === line.row.groupId) : undefined;
+  if (!group?.color) return null;
+  const color = group.color;
+  const strength = line.kind === "group" ? 100 : 60;
+  const mix = (pct: number) => `color-mix(in oklab, ${color} ${pct}%, var(--background))`;
+  return { fill: mix(Math.round(strength * 0.24)), stripe: mix(strength) };
+}
+
+const GridLine = memo(function GridLine({ line, rowNumber, columns, kinds, cents, pastMode, planTotals, belowMinimum, activeCol, rangeLeft, rangeRight, fillRight, handleAt, editing, renaming, problem, unlinked, shiftedCells, dropTarget, tone, handlers }: LineProps) {
   const strong = line.kind === "section" || line.kind === "balance" || (line.kind === "memo" && (line.key === "net" || line.key === "total"));
   const band = line.kind === "section";
   const pinned = isPinned(line);
@@ -574,26 +602,38 @@ const GridLine = memo(function GridLine({ line, rowNumber, columns, kinds, cents
   const section = sectionOfLine(line);
   // Pinned lines sit over the scrolling ones, so their background must be opaque.
   const droppable = line.kind === "row" || line.kind === "group" || line.kind === "section";
-  const rowTone = cn(band && "bg-muted", line.kind === "balance" && (pinned ? "bg-[color-mix(in_oklab,var(--muted)_60%,var(--background))]" : "bg-muted/60"));
+  const rowTone = cn(band && "bg-muted", line.kind === "balance" && "bg-[color-mix(in_oklab,var(--muted)_60%,var(--background))]");
 
   return (
-    <tr aria-rowindex={rowNumber} className="group/line">
+    <tr
+      aria-rowindex={rowNumber} className={cn("group/line", dropTarget === "before" && "[&>*]:shadow-[inset_0_2px_0_var(--primary)]", dropTarget === "after" && "[&>*]:shadow-[inset_0_-2px_0_var(--primary)]")}
+      // A row dropped on the upper half of a row goes above it, on the lower half below it, in the same group; on a group or
+      // section heading it joins it. The whole line is the target, not only its name.
+      onDragOver={droppable ? (e) => {
+        if (!e.dataTransfer.types.includes(ROW_MIME)) return;
+        e.preventDefault();
+        const box = e.currentTarget.getBoundingClientRect();
+        handlers.dropOver(line.key, line.kind === "row" ? (e.clientY < box.top + box.height / 2 ? "before" : "after") : "into");
+      } : undefined}
+      onDragLeave={droppable ? (e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) handlers.dropOver(null, "into"); } : undefined}
+      onDrop={droppable ? (e) => {
+        e.preventDefault();
+        const rowId = e.dataTransfer.getData(ROW_MIME);
+        const pos = dropTarget;
+        handlers.dropOver(null, "into");
+        if (!rowId) return;
+        if (line.kind === "row") { if (rowId !== line.row.id) handlers.command({ type: "dropRow", rowId, refRowId: line.row.id, placement: pos === "after" ? "after" : "before" }); }
+        else if (line.kind === "group") handlers.command({ type: "dropInto", rowId, section: line.group.section, groupId: line.group.id, at: line.collapsed ? "end" : "start" });
+        else if (line.kind === "section") handlers.command({ type: "dropInto", rowId, section: line.section, groupId: null, at: "end" });
+      } : undefined}
+    >
       <th
         scope="row"
         onContextMenu={(e) => handlers.menu(line.key, null, e)}
-        onDragOver={droppable ? (e) => { if (e.dataTransfer.types.includes(ROW_MIME)) { e.preventDefault(); handlers.dropOver(line.key); } } : undefined}
-        onDragLeave={droppable ? () => handlers.dropOver(null) : undefined}
-        onDrop={droppable ? (e) => {
-          e.preventDefault(); handlers.dropOver(null);
-          const rowId = e.dataTransfer.getData(ROW_MIME);
-          if (!rowId) return;
-          if (line.kind === "row") { if (rowId !== line.row.id) handlers.command({ type: "dropRow", rowId, beforeRowId: line.row.id }); }
-          else if (line.kind === "group") handlers.command({ type: "dropInto", rowId, section: line.group.section, groupId: line.group.id });
-          else if (line.kind === "section") handlers.command({ type: "dropInto", rowId, section: line.section, groupId: null });
-        } : undefined}
-        className={cn("sticky left-0 z-20 h-7 border-b border-r border-border/60 bg-background p-0 text-left font-normal", rowTone, activeCol !== null && "bg-accent", activeCol === "" && "shadow-[inset_2px_0_0_var(--primary)]", dropTarget && "shadow-[inset_0_2px_0_var(--primary)]")}
+        style={tone && activeCol === null ? { backgroundColor: tone.fill } : undefined}
+        className={cn("sticky left-0 z-20 h-7 border-b border-r border-border/60 bg-background p-0 text-left font-normal", rowTone, activeCol !== null && "bg-accent", activeCol === "" && "outline outline-2 -outline-offset-2 outline-primary", dropTarget === "into" && "bg-accent shadow-[inset_0_0_0_2px_var(--primary)]")}
       >
-        <div className={cn("flex h-7 items-center gap-1 pr-1", line.kind === "row" ? (line.depth === 2 ? "pl-9" : "pl-6") : line.kind === "group" ? "pl-3" : line.kind === "unplanned" ? "pl-6" : "pl-1.5")}>
+        <div style={tone ? { borderLeft: `3px solid ${tone.stripe}` } : undefined} className={cn("flex h-7 items-center gap-1 pr-1", line.kind === "row" ? (line.depth === 2 ? "pl-8" : "pl-6") : line.kind === "group" ? "pl-2" : line.kind === "unplanned" ? "pl-6" : "pl-1.5")}>
           {(line.kind === "section" || line.kind === "group") && (
             <button type="button" tabIndex={-1} onClick={() => handlers.toggle(line.key)} aria-expanded={!line.collapsed} aria-label={`${line.collapsed ? "Expand" : "Collapse"} ${label}`} className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground">
               {line.collapsed ? <ChevronRight className="size-3.5" aria-hidden /> : <ChevronDown className="size-3.5" aria-hidden />}
@@ -619,9 +659,15 @@ const GridLine = memo(function GridLine({ line, rowNumber, columns, kinds, cents
           {problem && <span title={problem} className="shrink-0 text-amber-600 dark:text-amber-400"><AlertTriangle className="size-3.5" aria-hidden /><span className="sr-only">Needs attention: {problem}</span></span>}
           {unlinked && !problem && <span title="Not linked to Actual: past months show nothing for this row" className="shrink-0 text-muted-foreground/70"><Link2Off className="size-3.5" aria-hidden /><span className="sr-only">Not linked to Actual</span></span>}
           {(line.kind === "section" || line.kind === "group") && (
-            <button type="button" tabIndex={-1} onClick={() => handlers.command({ type: "addRow", section: line.kind === "section" ? line.section : line.group.section, groupId: line.kind === "group" ? line.group.id : null })} aria-label={`Add a row to ${label}`} title={`Add a row to ${label}`} className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover/line:opacity-100">
-              <Plus className="size-3.5" aria-hidden />
-            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger render={<button type="button" tabIndex={-1} aria-label={`Add to ${label}`} title={`Add to ${label}`} className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 hover:bg-accent hover:text-foreground focus-visible:opacity-100 aria-expanded:opacity-100 group-hover/line:opacity-100" />}>
+                <Plus className="size-3.5" aria-hidden />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-40">
+                <DropdownMenuItem onClick={() => handlers.command({ type: "addRow", section: line.kind === "section" ? line.section : line.group.section, groupId: line.kind === "group" ? line.group.id : null })}>Add a row</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handlers.command({ type: "addGroup", section: line.kind === "section" ? line.section : line.group.section, afterGroupId: line.kind === "group" ? line.group.id : undefined })}>Add a group</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
       </th>
@@ -635,7 +681,8 @@ const GridLine = memo(function GridLine({ line, rowNumber, columns, kinds, cents
           const total = aggregate(values, column.indexes, line.aggregate);
           return (
             <td key={column.key} data-cell={cellKey} role="gridcell" aria-selected={active} {...mouse}
-              className={cn("h-7 cursor-default border-b border-l border-border/60 px-2 text-right font-medium tabular-nums whitespace-nowrap", pinned ? "bg-muted" : "bg-muted/50", band && "bg-muted", strong && "font-semibold", inRange && "bg-accent", active && "outline outline-2 -outline-offset-2 outline-primary")}>
+              style={tone && !inRange ? { backgroundColor: tone.fill } : undefined}
+              className={cn("relative z-0 h-7 cursor-default border-b border-l border-border/60 px-2 text-right font-medium tabular-nums whitespace-nowrap", pinned ? "bg-muted" : "bg-muted/50", band && "bg-muted", strong && "font-semibold", inRange && "bg-accent", active && "outline outline-2 -outline-offset-2 outline-primary")}>
               {total === 0 && (line.kind === "row" || line.kind === "unplanned") ? "" : formatCell(total, cents)}
             </td>
           );
@@ -670,10 +717,11 @@ const GridLine = memo(function GridLine({ line, rowNumber, columns, kinds, cents
         return (
           <td
             key={column.key} data-cell={cellKey} role="gridcell" aria-selected={active} aria-readonly={!editable} {...mouse}
-            onDoubleClick={() => { if (editable && line.kind === "row") { const cell = line.row.cells[column.month]; handlers.startEdit(line.key, column.key, cell !== undefined ? (cell / 100).toFixed(2) : ""); } }}
+            style={tone && !inRange ? { backgroundColor: tone.fill } : undefined}
+            onDoubleClick={() => { if (editable && line.kind === "row") { const cell = line.row.cells[column.month]; handlers.startEdit(line.key, column.key, cell !== undefined ? formatAmountInput(cell) : ""); } }}
             title={typed ? "Typed amount (overrides the forecast)" : shifted ? "Includes or leaves out a transaction counted in another month" : undefined}
             className={cn(
-              "relative h-7 cursor-default border-b border-border/40 px-2 text-right tabular-nums whitespace-nowrap",
+              "relative z-0 h-7 cursor-default border-b border-border/40 px-2 text-right tabular-nums whitespace-nowrap",
               pinned ? (kind === "current" ? "bg-[color-mix(in_oklab,var(--primary)_6%,var(--background))]" : kind === "actual" ? "bg-[color-mix(in_oklab,var(--muted)_30%,var(--background))]" : "bg-background") : cn(kind === "actual" && "bg-muted/30", kind === "current" && "bg-primary/[0.06]"),
               rowTone, strong && "font-semibold", line.kind === "group" && "font-medium", (line.kind === "unplanned" || (line.kind === "memo" && !strong)) && "text-muted-foreground",
               typed && "font-semibold", below && "text-destructive",

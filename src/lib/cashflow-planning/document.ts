@@ -1,7 +1,7 @@
 import { generateId } from "@/lib/uuid";
 import {
   AVERAGE_WINDOWS, MAX_YEARS, MIN_YEARS, SCHEMA_VERSION, SECTIONS,
-  type AccountLink, type Basis, type Goal, type Month, type PlanAccountRole, type PlanDocument, type PlanGroup, type PlanRow, type RepeatRule, type RowLinks, type SectionId,
+  type AccountLink, type GroupColor, isGroupColor, type Basis, type Goal, type Month, type PlanAccountRole, type PlanDocument, type PlanGroup, type PlanRow, type RepeatRule, type RowLinks, type SectionId,
 } from "./types";
 import { addMonths, isMonth, monthsBetween } from "./months";
 
@@ -129,7 +129,7 @@ export function parsePlanDocument(value: unknown): PlanDocument {
   const groups = list(value.groups, "Groups", MAX_GROUPS).map((entry): PlanGroup => {
     if (!isRecord(entry)) return fail("A group is not valid");
     const section = (SECTIONS as readonly unknown[]).includes(entry.section) ? (entry.section as SectionId) : fail("A group has no section");
-    return { id: id(entry.id, "A group"), name: text(entry.name, "A group name", NAME_MAX).trim() || "Group", section };
+    return { id: id(entry.id, "A group"), name: text(entry.name, "A group name", NAME_MAX).trim() || "Group", section, ...(isGroupColor(entry.color) ? { color: entry.color } : {}) };
   });
   const groupSection = new Map(groups.map((g) => [g.id, g.section]));
   if (groupSection.size !== groups.length) fail("Two groups share an id");
@@ -260,15 +260,28 @@ export function moveRow(doc: PlanDocument, rowId: string, direction: -1 | 1): Pl
 }
 
 /** Puts a row in another section or group. Its links, amounts and forecast are kept: amounts are natural, so they read the same. */
-export function placeRow(doc: PlanDocument, rowId: string, section: SectionId, groupId: string | null): PlanDocument {
+export function placeRow(doc: PlanDocument, rowId: string, section: SectionId, groupId: string | null, at: "start" | "end" = "end"): PlanDocument {
+  const row = doc.rows.find((r) => r.id === rowId);
+  if (!row) return doc;
   const group = groupId ? doc.groups.find((g) => g.id === groupId) : null;
-  return updateRow(doc, rowId, (row) => ({ ...row, section: group?.section ?? section, groupId: group ? group.id : null }));
+  const moved: PlanRow = { ...row, section: group?.section ?? section, groupId: group ? group.id : null };
+  const rest = doc.rows.filter((r) => r !== row);
+  // "start" goes before the first row already there; with none there, or at the end, it goes last.
+  const first = at === "start" ? rest.findIndex((r) => r.section === moved.section && r.groupId === moved.groupId) : -1;
+  return { ...doc, rows: first < 0 ? [...rest, moved] : [...rest.slice(0, first), moved, ...rest.slice(first)] };
 }
 
-export function addGroup(doc: PlanDocument, section: SectionId, name: string): { doc: PlanDocument; groupId: string } {
+export function addGroup(doc: PlanDocument, section: SectionId, name: string, afterGroupId?: string): { doc: PlanDocument; groupId: string } {
   if (doc.groups.length >= MAX_GROUPS) throw new PlanDocumentError(`A plan can hold ${MAX_GROUPS} groups`);
   const group: PlanGroup = { id: generateId(), name: name.trim().slice(0, NAME_MAX) || "New group", section };
-  return { doc: { ...doc, groups: [...doc.groups, group] }, groupId: group.id };
+  const at = afterGroupId ? doc.groups.findIndex((g) => g.id === afterGroupId) : -1;
+  const groups = at < 0 ? [...doc.groups, group] : [...doc.groups.slice(0, at + 1), group, ...doc.groups.slice(at + 1)];
+  return { doc: { ...doc, groups }, groupId: group.id };
+}
+
+/** Gives a group a colour (its rows follow it), or none. */
+export function setGroupColor(doc: PlanDocument, groupId: string, color: GroupColor | null): PlanDocument {
+  return { ...doc, groups: doc.groups.map((g) => { if (g.id !== groupId) return g; const next = { ...g }; delete next.color; return color ? { ...next, color } : next; }) };
 }
 
 export function renameGroup(doc: PlanDocument, groupId: string, name: string): PlanDocument {
@@ -334,6 +347,9 @@ export function ruleAmount(rule: RepeatRule, month: Month): number | null {
 }
 
 /** "1,250.50", "-300", "(300)" → minor units; null when it is not an amount. Empty text is not an amount. */
+/** An amount as it is shown in an input: thousands separated, two decimals (12,000.00). `parseAmount` reads it back. */
+export const formatAmountInput = (minor: number): string => (minor / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 export function parseAmount(source: string): number | null {
   let clean = source.trim().replace(/[\s,_']/g, "");
   if (clean === "") return null;
@@ -365,10 +381,10 @@ export function setMove(doc: PlanDocument, transactionId: string, month: Month |
 }
 
 /** Puts a row just before another one, in that row's section and group. */
-export function moveRowBefore(doc: PlanDocument, rowId: string, beforeRowId: string): PlanDocument {
-  const row = doc.rows.find((r) => r.id === rowId), before = doc.rows.find((r) => r.id === beforeRowId);
-  if (!row || !before || row === before) return doc;
+export function moveRowBefore(doc: PlanDocument, rowId: string, beforeRowId: string, placement: "before" | "after" = "before"): PlanDocument {
+  const row = doc.rows.find((r) => r.id === rowId), ref = doc.rows.find((r) => r.id === beforeRowId);
+  if (!row || !ref || row === ref) return doc;
   const rest = doc.rows.filter((r) => r !== row);
-  const at = rest.indexOf(before);
-  return { ...doc, rows: [...rest.slice(0, at), { ...row, section: before.section, groupId: before.groupId }, ...rest.slice(at)] };
+  const at = rest.indexOf(ref) + (placement === "after" ? 1 : 0);
+  return { ...doc, rows: [...rest.slice(0, at), { ...row, section: ref.section, groupId: ref.groupId }, ...rest.slice(at)] };
 }

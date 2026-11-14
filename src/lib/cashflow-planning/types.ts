@@ -73,7 +73,11 @@ export type PlanRow = {
   cells: Record<Month, number>;
 };
 
-export type PlanGroup = { id: string; name: string; section: SectionId };
+/** A group's colour as `#rrggbb`; its rows follow it, fainter. */
+export type GroupColor = string;
+export const isGroupColor = (value: unknown): value is GroupColor => typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value);
+
+export type PlanGroup = { id: string; name: string; section: SectionId; color?: GroupColor };
 
 /** A balance to reach by a month: of the plan's cash, or of cash and savings together. */
 export type Goal = { id: string; name: string; month: Month; /** Minor units. */ amount: number; basis: "cash" | "total" };

@@ -2,42 +2,50 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, Check, ChevronLeft, ChevronRight, CircleAlert, CircleHelp, Loader2, MoreHorizontal, PanelRight, Pencil, Plus, Redo2, RefreshCw, Settings2, SlidersHorizontal, Undo2 } from "lucide-react";
+import { AlertTriangle, CalendarDays, Check, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, CircleAlert, CircleHelp, Loader2, MoreHorizontal, PanelRight, Plus, Redo2, RefreshCw, Settings2, SlidersHorizontal, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog";
-import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { PillGroup } from "@/components/ui/pill-group";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Switch } from "@/components/ui/switch";
 import { Select } from "@/components/ui/select";
 import { downloadCsv } from "@/lib/csv";
 import { usePersistedFilters } from "@/hooks/usePersistedFilters";
 import { useLocalToday } from "@/features/assets-debt/lib/useLocalToday";
 import { TipProvider } from "@/features/financial-insights/components/charts/Tip";
 import { money } from "@/features/financial-insights/format";
-import { contributionsOf, placeActualsCached, unplannedTarget, type Placed } from "@/lib/cashflow-planning/actuals";
-import { NAME_MAX, PlanDocumentError, addRow, duplicateDocument, exportPlanJson, importPlanJson, moveGroup, moveRow, moveRowBefore, placeRow, removeRow, renameGroup, setCells, updateRow } from "@/lib/cashflow-planning/document";
+import { placeActualsCached, unplannedTarget, type Placed } from "@/lib/cashflow-planning/actuals";
+import { NAME_MAX, PlanDocumentError, addGroup, addRow, duplicateDocument, exportPlanJson, importPlanJson, moveGroup, moveRow, moveRowBefore, placeRow, removeRow, renameGroup, setCells, updateRow } from "@/lib/cashflow-planning/document";
 import { computePlan, type Computed } from "@/lib/cashflow-planning/engine";
 import { monthLabel, yearOf } from "@/lib/cashflow-planning/months";
 import { SECTIONS, SECTION_LABEL, type Month, type PlanDocument, type PlanRow, type SectionId } from "@/lib/cashflow-planning/types";
 import { FEATURES } from "@/lib/features/catalogue";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { requestFor } from "../lib/transactions";
+import { MonthJumpPopover } from "@/features/budget-management/components/MonthJumpPopover";
+import { cn } from "@/lib/utils";
 import { useCashflowData } from "../hooks/useCashflowData";
 import { usePlanActions, usePlanAutosave, usePlans } from "../hooks/usePlans";
 import { buildColumns, buildLines, planYears, type Column, type Line } from "../lib/view";
 import { useCashflowStore, type PlanSession } from "../store";
 import { AddRowDialog } from "./AddRowDialog";
-import { TextField } from "./fields";
 import { HelpDialog } from "./HelpDialog";
 import { INSPECTOR_MAX, INSPECTOR_MIN, Inspector, type TransactionsRequest } from "./Inspector";
 import { NewPlanDialog } from "./NewPlanDialog";
 import { PlanGrid, type CellEdit, type GridCommand, type GridSelection, type PastMode } from "./PlanGrid";
 import { PlanSettingsDialog } from "./PlanSettingsDialog";
+import { GoalCard } from "./GoalCard";
+import { MonthSummary } from "./MonthSummary";
 import { BalanceChart, SummaryStrip } from "./Summary";
 import { TransactionsDialog } from "./TransactionsDialog";
 
-type ViewPrefs = { mode: "months" | "years"; span: number; cents: boolean; chart: boolean; pastMode: PastMode; details: boolean; collapsed: string[]; panelWidth: number };
-const DEFAULT_VIEW: ViewPrefs = { mode: "months", span: 2, cents: false, chart: true, pastMode: "actual", details: true, collapsed: [], panelWidth: 400 };
+type ViewPrefs = { mode: "months" | "years"; cents: boolean; chart: boolean; pastMode: PastMode; details: boolean; collapsed: string[]; panelWidth: number };
+const navButton = "flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-40";
+/** How many years the grid draws at once; the navigator and the month picker move through the rest of the plan. */
+const YEARS_ON_SCREEN = 2;
+const DEFAULT_VIEW: ViewPrefs = { mode: "months", cents: false, chart: true, pastMode: "actual", details: true, collapsed: [], panelWidth: 400 };
 const DOCS_URL = FEATURES.find((f) => f.id === "cashflow-planning")?.docsUrl;
 
 /**
@@ -144,6 +152,9 @@ function PlanView({ session, doc, data, today, planOptions, onNewPlan, onRetrySa
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [find, setFind] = useState("");
   const [scrollToken, setScrollToken] = useState(0);
+  const [scrollMonth, setScrollMonth] = useState<Month | null>(null);
+  /** The month or year picked in the grid's header: its summary replaces the plan overview. */
+  const [pickedColumn, setPickedColumn] = useState<string | null>(null);
   const [adding, setAdding] = useState<{ section: SectionId; groupId: string | null; afterRowId?: string } | null>(null);
   const [help, setHelp] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -159,7 +170,7 @@ function PlanView({ session, doc, data, today, planOptions, onNewPlan, onRetrySa
   const [fromYearState, setFromYear] = useState<number | null>(null);
   const defaultYear = computed ? (computed.currentIndex >= 0 ? yearOf(computed.months[computed.currentIndex]) : years[0]) : Number(today.slice(0, 4));
   const fromYear = Math.min(Math.max(fromYearState ?? defaultYear, years[0] ?? defaultYear), years[years.length - 1] ?? defaultYear);
-  const span = Math.min(view.span, Math.max(1, years.length));
+  const span = Math.min(YEARS_ON_SCREEN, Math.max(1, years.length));
 
   const collapsed = useMemo(() => new Set(view.collapsed), [view.collapsed]);
   const lines = useMemo(() => (computed ? buildLines(doc, computed, collapsed, find) : []), [doc, computed, collapsed, find]);
@@ -198,8 +209,23 @@ function PlanView({ session, doc, data, today, planOptions, onNewPlan, onRetrySa
   }, [session.id, store]);
 
   const selectedLine: Line | null = selection ? lines.find((l) => l.key === selection.line) ?? null : null;
+  const pickedColumnValue = pickedColumn ? columns.find((c) => c.key === pickedColumn) ?? null : null;
   const selectedColumn = selection?.col ? columns.find((c) => c.key === selection.col) ?? null : null;
-  const selectLine = (lineKeyValue: string | null) => { setSelection(lineKeyValue ? { line: lineKeyValue, col: null } : null); if (lineKeyValue) setView((v) => ({ ...v, details: true })); };
+  const selectLine = (lineKeyValue: string | null) => { setPickedColumn(null); setSelection(lineKeyValue ? { line: lineKeyValue, col: null } : null); if (lineKeyValue) setView((v) => ({ ...v, details: true })); };
+
+  // A click on empty space outside the grid and the details panel clears the selection, which shows the plan overview again.
+  useEffect(() => {
+    if (!selection && !pickedColumn) return;
+    const away = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target?.isConnected) return;
+      if (target.closest('[role="grid"], aside[aria-label="Details"], [role="dialog"], [role="menu"], [role="listbox"], [role="option"], [role="tab"], [data-slot="popover-content"], button, a, input, select, textarea, label, [role="combobox"]')) return;
+      setSelection(null);
+      setPickedColumn(null);
+    };
+    document.addEventListener("mousedown", away);
+    return () => document.removeEventListener("mousedown", away);
+  }, [selection, pickedColumn]);
 
   const addRowTo = (section: SectionId, groupId: string | null, afterRowId?: string) => setAdding({ section, groupId, afterRowId });
   const added = (row: PlanRow) => {
@@ -218,15 +244,21 @@ function PlanView({ session, doc, data, today, planOptions, onNewPlan, onRetrySa
     toast(`Deleted “${name}”`, { action: { label: "Undo", onClick: undo } });
   };
   const showTransactions = (line: Line, column: Column) => {
-    if (!placed || !snapshot || !computed || (line.kind !== "row" && line.kind !== "unplanned")) return;
+    if (!computed) return;
     const months = column.kind === "month" ? [column.month] : column.indexes.map((i) => computed.months[i]);
-    const target = line.kind === "row" ? line.row.id : unplannedTarget(line.section);
-    const section = line.kind === "row" ? line.row.section : line.section;
-    const items = contributionsOf(placed, snapshot, target, new Set(months));
-    const label = column.kind === "month" ? monthLabel(column.month) : String(column.year);
-    setTransactions({ target, title: `${line.kind === "row" ? line.row.name : `Not in plan (${SECTION_LABEL[section]})`}, ${label}`, months, items, sign: section === "income" ? 1 : -1 });
+    const request = requestFor(doc, snapshot, placed, line, months, column.kind === "month" ? monthLabel(column.month) : String(column.year));
+    if (request) setTransactions(request); else toast.message("No transactions are behind this figure");
   };
-  const goToToday = () => { setFromYear(null); setView((v) => ({ ...v, mode: "months" })); setScrollToken((n) => n + 1); };
+  /** The "Not in plan" figure of the last 12 months, as the transactions behind it. */
+  const showUnplanned = (section: SectionId) => {
+    if (!computed || computed.currentIndex < 0) return;
+    const months = computed.months.slice(Math.max(0, computed.currentIndex - 12), computed.currentIndex);
+    const request = requestFor(doc, snapshot, placed, { kind: "unplanned", key: `unplanned:${section}`, section, label: SECTION_LABEL[section], values: [], aggregate: "sum" }, months, "last 12 months");
+    if (request) setTransactions(request);
+  };
+  const goToToday = () => { setFromYear(null); setScrollMonth(null); setView((v) => ({ ...v, mode: "months" })); setScrollToken((n) => n + 1); };
+  /** Brings a month to the left edge of the grid. */
+  const goToWindow = (month: Month) => { setFromYear(yearOf(month)); setScrollMonth(month); setView((v) => ({ ...v, mode: "months" })); setScrollToken((n) => n + 1); };
   /** Shows a month's closing balance in the grid: where the top figures point. */
   const goToMonth = (month: Month) => { setFromYear(yearOf(month)); setView((v) => ({ ...v, mode: "months" })); setSelection({ line: "closing", col: month }); };
 
@@ -236,8 +268,18 @@ function PlanView({ session, doc, data, today, planOptions, onNewPlan, onRetrySa
       case "rename": edit((d) => (command.line.startsWith("row:") ? updateRow(d, command.line.slice(4), (r) => ({ ...r, name: command.name.slice(0, NAME_MAX) })) : command.line.startsWith("group:") ? renameGroup(d, command.line.slice(6), command.name) : d)); return;
       case "move": edit((d) => (command.line.startsWith("row:") ? moveRow(d, command.line.slice(4), command.direction) : command.line.startsWith("group:") ? moveGroup(d, command.line.slice(6), command.direction) : d)); return;
       case "deleteRow": deleteRow(command.rowId); return;
-      case "dropRow": edit((d) => moveRowBefore(d, command.rowId, command.beforeRowId)); return;
-      case "dropInto": edit((d) => placeRow(d, command.rowId, command.section, command.groupId)); return;
+      case "addGroup": {
+        let created = "";
+        edit((d) => { const next = addGroup(d, command.section, "New group", command.afterGroupId); created = next.groupId; return next.doc; });
+        if (created) { setFind(""); selectLine(`group:${created}`); }
+        return;
+      }
+      case "dropRow": edit((d) => moveRowBefore(d, command.rowId, command.refRowId, command.placement)); return;
+      case "dropInto":
+        edit((d) => placeRow(d, command.rowId, command.section, command.groupId, command.at));
+        // A row dropped into a closed group would vanish from view.
+        if (command.groupId) setView((v) => ({ ...v, collapsed: v.collapsed.filter((k) => k !== `group:${command.groupId}`) }));
+        return;
       case "fill": {
         if (!computed) return;
         const end = computed.months[computed.months.length - 1];
@@ -283,55 +325,37 @@ function PlanView({ session, doc, data, today, planOptions, onNewPlan, onRetrySa
     <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-border px-4 py-2">
       <h1 className="text-sm font-semibold">Cashflow Planning</h1>
       <Select size="sm" className="w-56" value={session.id} title="Open another plan" onValueChange={(id) => store.getState().select(id)} options={planOptions} />
-      <Popover>
-        <PopoverTrigger render={<Button size="icon-sm" variant="ghost" aria-label="Rename this plan" title="Rename this plan" />}><Pencil className="size-3.5" aria-hidden /></PopoverTrigger>
-        <PopoverContent align="start" className="w-72 space-y-1.5 p-3">
-          <label htmlFor="cf-rename-plan" className="text-xs font-medium">Plan name</label>
-          <TextField id="cf-rename-plan" value={doc.name} maxLength={NAME_MAX} onCommit={(name) => edit((d) => ({ ...d, name }))} />
-          <p className="text-[11px] text-muted-foreground">Press Enter to rename.</p>
-        </PopoverContent>
-      </Popover>
       <SaveStatusBadge session={session} onRetry={onRetrySave} />
+      {view.mode === "months" && years.length > 0 && computed && (
+        <div className="flex items-center gap-0.5" role="group" aria-label="Year navigation">
+          <button type="button" onClick={() => goToWindow(`${years[0]}-01`)} disabled={fromYear <= years[0]} aria-label="First year" title="First year" className={navButton}><ChevronsLeft className="size-3.5" aria-hidden /></button>
+          <button type="button" onClick={() => setFromYear(fromYear - 1)} disabled={fromYear <= years[0]} aria-label="Back 1 year" title="Back 1 year" className={navButton}><ChevronLeft className="size-3.5" aria-hidden /></button>
+          <MonthJumpPopover windowStart={`${fromYear}-01`} rangeLabel={`Jan ${String(fromYear).slice(2)} – Dec ${String(Math.min(fromYear + span - 1, years[years.length - 1])).slice(2)}`} availableMonths={computed.months} onWindowChange={goToWindow} />
+          <button type="button" onClick={() => setFromYear(fromYear + 1)} disabled={fromYear + span > years[years.length - 1]} aria-label="Forward 1 year" title="Forward 1 year" className={navButton}><ChevronRight className="size-3.5" aria-hidden /></button>
+          <button type="button" onClick={() => goToWindow(`${Math.max(years[0], years[years.length - 1] - span + 1)}-01`)} disabled={fromYear + span > years[years.length - 1]} aria-label="Last year" title="Last year" className={navButton}><ChevronsRight className="size-3.5" aria-hidden /></button>
+          {doc.useActuals && computed.currentIndex >= 0 && <button type="button" onClick={goToToday} aria-label="Go to the current month" title="Go to the current month" className={cn(navButton, "ml-0.5")}><CalendarDays className="size-3.5" aria-hidden /></button>}
+        </div>
+      )}
+      <PillGroup<ViewPrefs["mode"]> options={[{ value: "months", label: "Months" }, { value: "years", label: "Years" }]} value={view.mode} onChange={(mode) => setView((v) => ({ ...v, mode }))} />
       <div className="ml-auto flex flex-wrap items-center gap-1.5">
         <Button size="icon-sm" variant="ghost" onClick={undo} disabled={session.past.length === 0} aria-label="Undo" title="Undo (Ctrl+Z)"><Undo2 className="size-3.5" aria-hidden /></Button>
         <Button size="icon-sm" variant="ghost" onClick={redo} disabled={session.future.length === 0} aria-label="Redo" title="Redo (Ctrl+Y)"><Redo2 className="size-3.5" aria-hidden /></Button>
-        <span className="mx-1 h-4 w-px bg-border" aria-hidden />
-        <PillGroup<ViewPrefs["mode"]> options={[{ value: "months", label: "Months" }, { value: "years", label: "Years" }]} value={view.mode} onChange={(mode) => setView((v) => ({ ...v, mode }))} />
-        {doc.useActuals && computed && computed.currentIndex >= 0 && <Button size="sm" variant="outline" onClick={goToToday} title="Show the current month">Today</Button>}
-        {view.mode === "months" && years.length > 0 && (
-          <div className="flex items-center gap-0.5">
-            <Button size="icon-sm" variant="ghost" aria-label="Earlier years" disabled={fromYear <= years[0]} onClick={() => setFromYear(fromYear - 1)}><ChevronLeft className="size-3.5" aria-hidden /></Button>
-            <span className="min-w-[84px] text-center text-xs font-medium tabular-nums">{span > 1 ? `${fromYear} – ${Math.min(fromYear + span - 1, years[years.length - 1])}` : fromYear}</span>
-            <Button size="icon-sm" variant="ghost" aria-label="Later years" disabled={fromYear + span > years[years.length - 1]} onClick={() => setFromYear(fromYear + 1)}><ChevronRight className="size-3.5" aria-hidden /></Button>
-          </div>
-        )}
-        <DropdownMenu>
-          <DropdownMenuTrigger render={<Button size="sm" variant="outline" />}><SlidersHorizontal className="size-3.5" aria-hidden />View</DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-64">
-            <DropdownMenuGroup>
-              <DropdownMenuLabel>Years on screen</DropdownMenuLabel>
-              <DropdownMenuRadioGroup value={String(view.span)} onValueChange={(v) => setView((p) => ({ ...p, span: Number(v) }))}>
-                {[1, 2, 3, 5].map((n) => <DropdownMenuRadioItem key={n} value={String(n)}>{n} {n === 1 ? "year" : "years"}</DropdownMenuRadioItem>)}
-              </DropdownMenuRadioGroup>
-            </DropdownMenuGroup>
+        <Popover>
+          <PopoverTrigger render={<Button size="sm" variant="outline" />}><SlidersHorizontal className="size-3.5" aria-hidden />View</PopoverTrigger>
+          <PopoverContent align="end" className="w-80 divide-y divide-border p-0 text-xs">
             {doc.useActuals && (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuGroup>
-                  <DropdownMenuLabel>Past months show</DropdownMenuLabel>
-                  <DropdownMenuRadioGroup value={view.pastMode} onValueChange={(v) => setView((p) => ({ ...p, pastMode: v as PastMode }))}>
-                    <DropdownMenuRadioItem value="actual">What Actual recorded</DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="plan">What was planned</DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="diff">Actual minus planned</DropdownMenuRadioItem>
-                  </DropdownMenuRadioGroup>
-                </DropdownMenuGroup>
-              </>
+              <section className="space-y-2 p-3">
+                <h3 className="font-medium">Past months show</h3>
+                <PillGroup<PastMode> options={[{ value: "actual", label: "Actual" }, { value: "plan", label: "Planned" }, { value: "diff", label: "Difference" }]} value={view.pastMode} onChange={(pastMode) => setView((p) => ({ ...p, pastMode }))} />
+                <p className="text-muted-foreground">{view.pastMode === "actual" ? "What Actual recorded." : view.pastMode === "plan" ? "What the plan said for those months." : "Actual minus planned: green is better than planned, amber is worse."}</p>
+              </section>
             )}
-            <DropdownMenuSeparator />
-            <DropdownMenuCheckboxItem checked={view.chart} onCheckedChange={(chart) => setView((p) => ({ ...p, chart }))}>Balance chart</DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem checked={view.cents} onCheckedChange={(cents) => setView((p) => ({ ...p, cents }))}>Show cents</DropdownMenuCheckboxItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+            <section className="space-y-3 p-3">
+              <label className="flex cursor-pointer items-center justify-between gap-3"><span><span className="block font-medium">Balance chart</span><span className="text-muted-foreground">The closing balance above the grid.</span></span><Switch checked={view.chart} onCheckedChange={(chart) => setView((p) => ({ ...p, chart }))} /></label>
+              <label className="flex cursor-pointer items-center justify-between gap-3"><span><span className="block font-medium">Show decimals</span><span className="text-muted-foreground">Amounts as 12,000.00 instead of 12,000.</span></span><Switch checked={view.cents} onCheckedChange={(cents) => setView((p) => ({ ...p, cents }))} /></label>
+            </section>
+          </PopoverContent>
+        </Popover>
         {doc.useActuals && data.state === "ready" && (
           <Button size="sm" variant="outline" onClick={data.refresh} disabled={data.refreshing} title={`Read from Actual at ${new Date(data.readAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}>
             <RefreshCw className={data.refreshing ? "size-3.5 animate-spin" : "size-3.5"} aria-hidden />Refresh
@@ -383,8 +407,10 @@ function PlanView({ session, doc, data, today, planOptions, onNewPlan, onRetrySa
               )}
               <PlanGrid
                 doc={doc} computed={computed} lines={lines} columns={columns} cents={view.cents} pastMode={view.pastMode} selection={selection} problems={problems}
-                shiftedCells={shiftedCells} find={find} onFind={setFind} scrollToken={scrollToken}
-                onSelect={setSelection}
+                shiftedCells={shiftedCells} find={find} onFind={setFind} scrollToken={scrollToken} scrollMonth={scrollMonth}
+                onSelect={(next) => { setSelection(next); setPickedColumn(null); }}
+                pickedColumn={pickedColumn} onPickColumn={(key) => { setSelection(null); setPickedColumn(key); setView((v) => ({ ...v, details: true })); }}
+                onCollapseAll={(collapse) => setView((v) => ({ ...v, collapsed: collapse ? [...SECTIONS.map((x) => `section:${x}`), ...doc.groups.map((g) => `group:${g.id}`)] : [] }))}
                 onToggle={(k) => setView((v) => ({ ...v, collapsed: v.collapsed.includes(k) ? v.collapsed.filter((x) => x !== k) : [...v.collapsed, k] }))}
                 onEdit={editCells} onCommand={onCommand} onNotice={(message) => toast.message(message)}
               />
@@ -395,7 +421,9 @@ function PlanView({ session, doc, data, today, planOptions, onNewPlan, onRetrySa
                 width={Math.min(INSPECTOR_MAX, Math.max(INSPECTOR_MIN, view.panelWidth))} onResize={(panelWidth) => setView((v) => ({ ...v, panelWidth }))}
                 onEdit={edit} onSelectLine={selectLine} onAddRow={addRowTo} onDeleteRow={deleteRow} onShowTransactions={setTransactions}
                 onClose={() => setView((v) => ({ ...v, details: false }))}
-                overview={<Overview doc={doc} computed={computed} data={data} problems={problems} placed={placed} onSelectLine={selectLine} onOpenSettings={() => setSettings(true)} onHelp={() => setHelp(true)} />}
+                overviewSubtitle={pickedColumnValue ? (pickedColumnValue.kind === "year" ? (pickedColumnValue.partial ? "Year total (part of the year)" : "Year total") : !doc.useActuals ? "Plan" : computed.kinds[pickedColumnValue.index] === "actual" ? "Actual" : computed.kinds[pickedColumnValue.index] === "current" ? "This month, recorded so far and expected" : "Forecast") : undefined}
+                overviewTitle={pickedColumn && pickedColumnValue ? (pickedColumnValue.kind === "month" ? monthLabel(pickedColumnValue.month) : String(pickedColumnValue.year)) : undefined}
+                overview={pickedColumnValue ? <MonthSummary doc={doc} computed={computed} snapshot={snapshot} placed={placed} column={pickedColumnValue} onShowTransactions={setTransactions} onSelectLine={selectLine} /> : <Overview doc={doc} computed={computed} data={data} problems={problems} placed={placed} onShowUnplanned={showUnplanned} onSelectLine={selectLine} onOpenSettings={() => setSettings(true)} onHelp={() => setHelp(true)} />}
               />
             )}
           </div>
@@ -411,7 +439,7 @@ function PlanView({ session, doc, data, today, planOptions, onNewPlan, onRetrySa
 }
 
 /** What the details panel shows when nothing is selected: goals, what needs a look, and how the grid works. */
-function Overview({ doc, computed, data, problems, placed, onSelectLine, onOpenSettings, onHelp }: { onHelp: () => void; doc: PlanDocument; computed: Computed; data: ReturnType<typeof useCashflowData>; problems: ReadonlyMap<string, string>; placed: Placed | null; onSelectLine: (key: string | null) => void; onOpenSettings: () => void }) {
+function Overview({ doc, computed, data, problems, placed, onShowUnplanned, onSelectLine, onOpenSettings, onHelp }: { onHelp: () => void; /** Lists the transactions behind a "Not in plan" figure of the last 12 months. */ onShowUnplanned: (section: SectionId) => void; doc: PlanDocument; computed: Computed; data: ReturnType<typeof useCashflowData>; problems: ReadonlyMap<string, string>; placed: Placed | null; onSelectLine: (key: string | null) => void; onOpenSettings: () => void }) {
   const rowName = new Map(doc.rows.map((r) => [r.id, r.name]));
   // What Actual recorded in the last twelve months that no row follows, per section.
   const unplanned = useMemo(() => {
@@ -430,14 +458,7 @@ function Overview({ doc, computed, data, problems, placed, onSelectLine, onOpenS
         <h3 className={heading}>Goals</h3>
         {computed.goals.length === 0 ? <p className="text-muted-foreground">No goals yet. <button type="button" className="underline underline-offset-2" onClick={onOpenSettings}>Add one in Plan settings</button> to see whether the forecast gets there.</p> : (
           <ul className="space-y-1.5">
-            {computed.goals.map(({ goal, projected, shortfall, perMonth }) => (
-              <li key={goal.id} className="rounded-md border border-border p-2">
-                <div className="flex items-baseline justify-between gap-2"><span className="min-w-0 truncate font-medium" title={goal.name}>{goal.name}</span><span className="shrink-0 tabular-nums">{money(goal.amount)} by {monthLabel(goal.month)}</span></div>
-                {projected === null ? <p className="text-muted-foreground">Outside the plan&apos;s months.</p>
-                  : shortfall ? <p className="text-destructive">Forecast {money(projected)}: short by {money(shortfall)}{perMonth ? `, about ${money(perMonth)} more a month` : ""}.</p>
-                  : <p className="text-emerald-700 dark:text-emerald-400">Forecast {money(projected)}: reached, with {money(projected - goal.amount)} to spare.</p>}
-              </li>
-            ))}
+            {computed.goals.map((result) => <GoalCard key={result.goal.id} result={result} computed={computed} />)}
           </ul>
         )}
       </section>
@@ -458,7 +479,12 @@ function Overview({ doc, computed, data, problems, placed, onSelectLine, onOpenS
           <h3 className={heading}>Not in plan, last 12 months</h3>
           <p className="text-muted-foreground">Recorded in Actual but followed by no row, so it is not forecast. Select one to add rows for it.</p>
           <ul className="divide-y divide-border/50 rounded-md border border-border">
-            {unplanned.map(({ section, amount }) => <li key={section}><button type="button" className="flex h-7 w-full items-center justify-between gap-2 px-2 text-left hover:bg-accent" onClick={() => onSelectLine(`unplanned:${section}`)}><span>{SECTION_LABEL[section]}</span><span className="tabular-nums">{money(amount)}</span></button></li>)}
+            {unplanned.map(({ section, amount }) => (
+              <li key={section} className="flex h-7 items-center hover:bg-accent/40">
+                <button type="button" className="h-full min-w-0 flex-1 truncate px-2 text-left hover:bg-accent" title="Select this line" onClick={() => onSelectLine(`unplanned:${section}`)}>{SECTION_LABEL[section]}</button>
+                <button type="button" className="h-full shrink-0 px-2 tabular-nums underline decoration-dotted underline-offset-2 hover:bg-accent" title="Show the transactions" aria-label={`Show the transactions behind ${SECTION_LABEL[section]}`} onClick={() => onShowUnplanned(section)}>{money(amount)}</button>
+              </li>
+            ))}
           </ul>
         </section>
       )}

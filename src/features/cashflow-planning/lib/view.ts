@@ -46,6 +46,9 @@ export const lineKey = {
 };
 
 /** The lines pinned under the grid: they are what the rest adds up to. */
+/** The width of the name column in the grid, and of the first key figure above it. */
+export const LABEL_WIDTH = 259;
+
 export const isPinned = (line: Line): boolean => (line.kind === "memo" && line.key === "net") || (line.kind === "balance" && line.key === "closing");
 
 /** `find` keeps only the rows whose name contains it (with their groups and sections), whatever is collapsed. */

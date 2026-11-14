@@ -2,8 +2,10 @@
 
 import { useMemo, type ReactNode } from "react";
 import Link from "next/link";
-import { AlertTriangle, ArrowDown, ArrowLeftRight, ArrowUp, ListTree, MoreHorizontal, Plus, Trash2, X } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowLeftRight, ArrowUp, MoreHorizontal, Plus, Trash2, X } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { ColorPicker } from "@/components/ui/color-picker";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { MultiSearchableCombobox, type ComboboxOption } from "@/components/ui/combobox";
 import { Label } from "@/components/ui/label";
@@ -11,16 +13,17 @@ import { PillGroup } from "@/components/ui/pill-group";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { generateId } from "@/lib/uuid";
-import { accountBalances, accountRole, contributionsOf, isBorrowing, unplannedTarget, type Contribution, type Placed, type Snapshot } from "@/lib/cashflow-planning/actuals";
-import { NAME_MAX, NOTES_MAX, addGroup, addRow, createRow, moveGroup, moveRow, planEndMonth, removeGroup, renameGroup, setCells, updateRow } from "@/lib/cashflow-planning/document";
+import { accountBalances, accountRole, contributionsOf, isBorrowing, unplannedTarget, type Placed, type Snapshot } from "@/lib/cashflow-planning/actuals";
+import { NAME_MAX, NOTES_MAX, addGroup, addRow, createRow, moveGroup, moveRow, planEndMonth, removeGroup, renameGroup, setCells, setGroupColor, updateRow } from "@/lib/cashflow-planning/document";
 import type { CellSource, Computed } from "@/lib/cashflow-planning/engine";
 import { addMonths, monthLabel, monthRange } from "@/lib/cashflow-planning/months";
 import { AVERAGE_WINDOWS, SECTION_LABEL, type AverageWindow, type Basis, type BasisKind, type Month, type PlanDocument, type PlanRow, type RepeatRule, type SectionId } from "@/lib/cashflow-planning/types";
 import { money } from "@/features/financial-insights/format";
 import { aggregate, type Column, type Line } from "../lib/view";
+import { requestFor, piecesOf, type TransactionsRequest } from "../lib/transactions";
 import { AmountField, MonthField, PercentField, TextField } from "./fields";
 
-export type TransactionsRequest = { title: string; /** The row id, or the "Not in plan" target, whose figure is listed. */ target: string; months: Month[]; items: Pick<Contribution, "kind" | "id">[]; /** Natural-sign multiplier for display. */ sign: 1 | -1 };
+export type { TransactionsRequest };
 
 type Props = {
   doc: PlanDocument;
@@ -41,6 +44,10 @@ type Props = {
   onShowTransactions: (request: TransactionsRequest) => void;
   onClose: () => void;
   overview: ReactNode;
+  /** The title over the overview, when something else stands in for it (a picked month). */
+  overviewTitle?: string;
+  /** The line under that title. */
+  overviewSubtitle?: string;
 };
 
 export const INSPECTOR_MIN = 340, INSPECTOR_MAX = 640;
@@ -55,9 +62,20 @@ const BASIS_LABEL: Record<BasisKind, string> = {
 
 const EVERY_OPTIONS = [{ value: "1", label: "Every month" }, { value: "2", label: "Every 2 months" }, { value: "3", label: "Every 3 months" }, { value: "6", label: "Every 6 months" }, { value: "12", label: "Every year" }, { value: "24", label: "Every 2 years" }];
 
+/** The period a panel is about, for its header: a month with what it is (Actual, This month, Forecast), or a year. */
+function periodOf(column: Column | null, computed: Computed, doc: PlanDocument): string | null {
+  if (!column) return null;
+  if (column.kind === "year") return `${column.year}${column.partial ? " · part of the year" : ""}`;
+  const kind = computed.kinds[column.index];
+  return `${monthLabel(column.month)} · ${doc.useActuals ? (kind === "actual" ? "Actual" : kind === "current" ? "This month" : "Forecast") : "Plan"}`;
+}
+
 export function Inspector(props: Props) {
   const { line, column, onClose, width, onResize } = props;
-  const title = !line ? "Plan overview" : line.kind === "row" ? line.row.name : line.kind === "group" ? line.group.name : line.label;
+  const title = !line ? props.overviewTitle ?? "Plan overview" : line.kind === "row" ? line.row.name : line.kind === "group" ? line.group.name : line.label;
+  const period = line ? periodOf(column, props.computed, props.doc) : null;
+  // Only a picked month has a line under its title; for everything else the grid already shows what was selected.
+  const subtitle = !line ? props.overviewSubtitle : period;
   // Dragging the left edge resizes the panel; the arrow keys do the same for keyboard users.
   const startResize = (event: React.PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -77,17 +95,20 @@ export function Inspector(props: Props) {
       />
       {line?.kind === "row" ? <RowPanel {...props} row={line.row} column={column} /> : (
         <>
-          <header className="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
-            <h2 className="min-w-0 truncate text-sm font-semibold" title={title}>{title}</h2>
-            <Button size="icon-xs" variant="ghost" onClick={onClose} aria-label="Close details"><X className="size-3.5" aria-hidden /></Button>
+          <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border bg-muted px-3">
+            <div className="min-w-0">
+              <h2 className="truncate text-sm font-semibold leading-tight" title={title}>{title}</h2>
+              {subtitle && <p className="mt-1 truncate text-xs leading-tight tabular-nums text-muted-foreground">{subtitle}</p>}
+            </div>
+            <Button size="icon-xs" variant="ghost" className="ml-auto" onClick={onClose} aria-label="Close details"><X className="size-3.5" aria-hidden /></Button>
           </header>
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3 text-xs">
             {!line ? props.overview
               : line.kind === "unplanned" ? <UnplannedPanel {...props} section={line.section} column={column} />
-              : line.kind === "group" ? <GroupPanel {...props} groupId={line.group.id} />
-              : line.kind === "section" ? <SectionPanel {...props} section={line.section} />
+              : line.kind === "group" ? <GroupPanel {...props} line={line} column={column} groupId={line.group.id} />
+              : line.kind === "section" ? <SectionPanel {...props} line={line} column={column} section={line.section} />
               : line.kind === "balance" ? <BalancePanel {...props} which={line.key} column={column} />
-              : line.kind === "memo" ? <MemoPanel line={line} column={column} /> : null}
+              : line.kind === "memo" ? <MemoPanel {...props} line={line} column={column} /> : null}
           </div>
         </>
       )}
@@ -95,17 +116,22 @@ export function Inspector(props: Props) {
   );
 }
 
-function Block({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) {
+function Block({ title, children, action }: { title?: string; children: ReactNode; action?: ReactNode }) {
   return (
     <section className="space-y-2">
-      <div className="flex items-center justify-between gap-2"><h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{title}</h3>{action}</div>
+      {(title || action) && <div className="flex items-center justify-between gap-2"><h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{title}</h3>{action}</div>}
       {children}
     </section>
   );
 }
 
-const Fact = ({ label, children, strong }: { label: string; children: ReactNode; strong?: boolean }) => (
-  <div className="flex items-baseline justify-between gap-3"><span className="text-muted-foreground">{label}</span><span className={strong ? "font-semibold tabular-nums" : "tabular-nums"}>{children}</span></div>
+/** An amount that lists the transactions behind it when clicked. */
+const AmountLink = ({ onClick, strong, children }: { onClick: () => void; strong?: boolean; children: ReactNode }) => (
+  <button type="button" onClick={onClick} title="Show the transactions" className={cn("tabular-nums underline decoration-dotted decoration-muted-foreground/60 underline-offset-2 hover:decoration-foreground", strong && "font-semibold")}>{children}</button>
+);
+
+const Fact = ({ label, children, strong, onClick }: { label: string; children: ReactNode; strong?: boolean; /** Makes the amount open the transactions behind it. */ onClick?: () => void }) => (
+  <div className="flex items-baseline justify-between gap-3"><span className="text-muted-foreground">{label}</span>{onClick ? <AmountLink onClick={onClick} strong={strong}>{children}</AmountLink> : <span className={strong ? "font-semibold tabular-nums" : "tabular-nums"}>{children}</span>}</div>
 );
 
 /** The months a column stands for. */
@@ -121,14 +147,13 @@ const columnLabel = (column: Column) => (column.kind === "month" ? monthLabel(co
 function RowPanel({ doc, computed, snapshot, placed, row, column, problems, onEdit, onDeleteRow, onShowTransactions, onClose }: Props & { row: PlanRow }) {
   const result = computed.rows.get(row.id)!;
   const edit = (change: (row: PlanRow) => PlanRow) => onEdit((d) => updateRow(d, row.id, change));
-  const group = doc.groups.find((g) => g.id === row.groupId);
   const problem = problems.get(row.id);
   return (
     <>
-      <header className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-3">
+      <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border bg-muted px-3">
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-sm font-semibold leading-tight" title={row.name}>{row.name}</h2>
-          <p className="truncate text-[11px] leading-tight text-muted-foreground">{SECTION_LABEL[row.section]}{group ? ` · ${group.name}` : ""}</p>
+          {column && <p className="mt-1 truncate text-xs leading-tight tabular-nums text-muted-foreground">{periodOf(column, computed, doc)}</p>}
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger render={<Button size="icon-xs" variant="ghost" aria-label={`More for ${row.name}`} />}><MoreHorizontal className="size-3.5" aria-hidden /></DropdownMenuTrigger>
@@ -141,7 +166,7 @@ function RowPanel({ doc, computed, snapshot, placed, row, column, problems, onEd
         </DropdownMenu>
         <Button size="icon-xs" variant="ghost" onClick={onClose} aria-label="Close details"><X className="size-3.5" aria-hidden /></Button>
       </header>
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3 text-xs">
+      <div className="min-h-0 flex-1 divide-y divide-border overflow-y-auto p-3 text-xs [&>section]:py-4 [&>section:first-child]:pt-0 [&>section:last-child]:pb-0">
         {problem && <p role="status" className="flex gap-2 rounded-md border border-amber-500/40 bg-amber-50 p-2 text-amber-900 dark:bg-amber-950/30 dark:text-amber-200"><AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />{problem}</p>}
         {column && <CellBlock doc={doc} computed={computed} snapshot={snapshot} placed={placed} row={row} column={column} onEdit={onEdit} onShowTransactions={onShowTransactions} />}
         <BasisBlock doc={doc} snapshot={snapshot} row={row} typical={result.typical} problem={result.problem} edit={edit} />
@@ -161,10 +186,10 @@ function CellBlock({ doc, computed, snapshot, placed, row, column, onEdit, onSho
   if (column.kind === "year") {
     const total = aggregate(result.values, column.indexes, "sum");
     return (
-      <Block title={`${column.year}${column.partial ? " (part of the year)" : ""}`}>
-        <Fact label="Total" strong>{money(total)}</Fact>
+      <Block>
+        <Fact label="Total" strong onClick={pieces.length ? () => onShowTransactions({ targets: [row.id], title: `${row.name}, ${column.year}`, months, items: pieces, sign: row.section === "income" ? 1 : -1 }) : undefined}>{money(total)}</Fact>
         <Fact label="Monthly average">{money(Math.round(total / column.indexes.length))}</Fact>
-        <Pieces pieces={pieces} onShow={pieces.length ? () => onShowTransactions({ target: row.id, title: `${row.name}, ${column.year}`, months, items: pieces, sign: row.section === "income" ? 1 : -1 }) : undefined} />
+        <Pieces pieces={pieces} onShow={pieces.length ? (items) => onShowTransactions({ targets: [row.id], title: `${row.name}, ${column.year}`, months, items, sign: row.section === "income" ? 1 : -1 }) : undefined} />
       </Block>
     );
   }
@@ -179,8 +204,8 @@ function CellBlock({ doc, computed, snapshot, placed, row, column, onEdit, onSho
   };
   const clearAfter = () => onEdit((d) => setCells(d, Object.keys(row.cells).filter((m) => m >= month).map((m) => ({ rowId: row.id, month: m, amount: null }))));
   return (
-    <Block title={`${monthLabel(month)} · ${doc.useActuals ? (kind === "actual" ? "Actual" : kind === "current" ? "This month" : "Forecast") : "Plan"}`}>
-      {actual !== null && <Fact label={kind === "current" ? "Recorded so far" : "Recorded in Actual"} strong={kind === "actual"}>{money(actual)}</Fact>}
+    <Block>
+      {actual !== null && <Fact label={kind === "current" ? "Recorded so far" : "Recorded in Actual"} strong={kind === "actual"} onClick={pieces.length ? () => onShowTransactions({ targets: [row.id], title: `${row.name}, ${monthLabel(month)}`, months, items: pieces, sign: row.section === "income" ? 1 : -1 }) : undefined}>{money(actual)}</Fact>}
       {kind === "actual"
         ? <><Fact label="Planned">{plan === null ? "-" : money(plan)}</Fact>{plan !== null && <Fact label="Difference">{money((actual ?? 0) - plan)}</Fact>}</>
         : <><Fact label={kind === "current" ? "Planned for the month" : "Forecast"} strong={kind === "forecast"}>{money(plan ?? 0)}</Fact>{kind === "current" && <Fact label="Expected by month end" strong>{money(result.values[i])}</Fact>}<Fact label="From">{SOURCE_LABEL[result.source[i]]}</Fact></>}
@@ -206,12 +231,12 @@ function CellBlock({ doc, computed, snapshot, placed, row, column, onEdit, onSho
           <p className="text-muted-foreground">Change this in the transaction list, or with a #YYYY-MM tag in the transaction&apos;s note in Actual.</p>
         </div>
       )}
-      {kind !== "forecast" && <Pieces pieces={pieces} onShow={pieces.length ? () => onShowTransactions({ target: row.id, title: `${row.name}, ${monthLabel(month)}`, months, items: pieces, sign: row.section === "income" ? 1 : -1 }) : undefined} />}
+      {kind !== "forecast" && <Pieces pieces={pieces} onShow={pieces.length ? (items) => onShowTransactions({ targets: [row.id], title: `${row.name}, ${monthLabel(month)}`, months, items, sign: row.section === "income" ? 1 : -1 }) : undefined} />}
     </Block>
   );
 }
 
-function Pieces({ pieces, onShow, renderAction }: { pieces: ReturnType<typeof contributionsOf>; onShow?: () => void; renderAction?: (piece: ReturnType<typeof contributionsOf>[number]) => ReactNode }) {
+function Pieces({ pieces, onShow, renderAction }: { pieces: ReturnType<typeof contributionsOf>; /** Lists the transactions of the given pieces. */ onShow?: (items: ReturnType<typeof contributionsOf>) => void; renderAction?: (piece: ReturnType<typeof contributionsOf>[number]) => ReactNode }) {
   if (pieces.length === 0) return null;
   return (
     <div className="space-y-1">
@@ -220,13 +245,12 @@ function Pieces({ pieces, onShow, renderAction }: { pieces: ReturnType<typeof co
         {pieces.slice(0, 40).map((piece) => (
           <li key={`${piece.kind}:${piece.id}`} className="flex h-7 items-center gap-2 px-2">
             <span className="min-w-0 flex-1 truncate" title={piece.label}>{piece.label}</span>
-            <span className="shrink-0 tabular-nums">{money(piece.amount)}</span>
+            {onShow ? <AmountLink onClick={() => onShow([piece])}>{money(piece.amount)}</AmountLink> : <span className="shrink-0 tabular-nums">{money(piece.amount)}</span>}
             {renderAction?.(piece)}
           </li>
         ))}
       </ul>
       {pieces.length > 40 && <p className="text-muted-foreground">And {pieces.length - 40} smaller ones.</p>}
-      {onShow && <Button size="xs" variant="outline" onClick={onShow}><ListTree className="size-3" aria-hidden />Show the transactions</Button>}
     </div>
   );
 }
@@ -240,7 +264,7 @@ function Chip({ label, onRemove }: { label: string; onRemove: () => void }) {
   );
 }
 
-function LinksBlock({ doc, snapshot, row, edit }: { doc: PlanDocument; snapshot: Snapshot; row: PlanRow; edit: (change: (row: PlanRow) => PlanRow) => void }) {
+export function LinksBlock({ doc, snapshot, row, edit }: { doc: PlanDocument; snapshot: Snapshot; row: PlanRow; edit: (change: (row: PlanRow) => PlanRow) => void }) {
   const categoryOptions = useMemo((): ComboboxOption[] => {
     const options: ComboboxOption[] = [];
     let group = "";
@@ -311,7 +335,7 @@ function LinksBlock({ doc, snapshot, row, edit }: { doc: PlanDocument; snapshot:
   );
 }
 
-function BasisBlock({ doc, snapshot, row, typical, problem, edit }: { doc: PlanDocument; snapshot: Snapshot | null; row: PlanRow; typical: number | null; problem?: string; edit: (change: (row: PlanRow) => PlanRow) => void }) {
+export function BasisBlock({ doc, snapshot, row, typical, problem, edit }: { doc: PlanDocument; snapshot: Snapshot | null; row: PlanRow; typical: number | null; problem?: string; edit: (change: (row: PlanRow) => PlanRow) => void }) {
   const kinds: BasisKind[] = doc.useActuals ? ["manual", "average", "budget", "schedule", "loan"] : ["manual"];
   const setBasis = (kind: BasisKind) => {
     const basis: Basis = kind === "average" ? { kind, months: 12 } : kind === "schedule" ? { kind, scheduleIds: [] } : { kind };
@@ -411,11 +435,11 @@ function UnplannedPanel({ computed, snapshot, placed, section, column, onEdit, o
   return (
     <>
       <p className="text-muted-foreground">What Actual recorded in the plan&apos;s cash accounts that no row follows. It still counts, so every month adds up to the real change in cash; it is just not forecast. Add a row for anything you want to plan.</p>
-      <Block title={column ? columnLabel(column) : "Last 12 months"}>
+      <Block title={column ? undefined : "Last 12 months"}>
         {pieces.length === 0 ? <p className="text-muted-foreground">Nothing here in these months.</p> : (
           <Pieces
             pieces={pieces}
-            onShow={() => onShowTransactions({ target: unplannedTarget(section), title: `Not in plan (${SECTION_LABEL[section]}), ${column ? columnLabel(column) : "last 12 months"}`, months, items: pieces, sign: section === "income" ? 1 : -1 })}
+            onShow={(items) => onShowTransactions({ targets: [unplannedTarget(section)], title: `Not in plan (${SECTION_LABEL[section]}), ${column ? columnLabel(column) : "last 12 months"}`, months, items, sign: section === "income" ? 1 : -1 })}
             renderAction={(piece) => <Button size="xs" variant="outline" onClick={() => addFor(piece)} aria-label={`Add a row for ${piece.label}`}><Plus className="size-3" aria-hidden />Row</Button>}
           />
         )}
@@ -426,12 +450,14 @@ function UnplannedPanel({ computed, snapshot, placed, section, column, onEdit, o
 
 // ─── Groups, sections, balances ──────────────────────────────────────────────
 
-function GroupPanel({ doc, groupId, onEdit, onSelectLine, onAddRow }: Props & { groupId: string }) {
+function GroupPanel({ doc, computed, snapshot, placed, line, column, groupId, onEdit, onSelectLine, onAddRow, onShowTransactions }: Props & { line: Line; column: Column | null; groupId: string }) {
   const group = doc.groups.find((g) => g.id === groupId);
   if (!group) return null;
   const add = () => onAddRow(group.section, groupId);
   return (
-    <Block title="Group">
+    <>
+    <FigureBlock doc={doc} computed={computed} snapshot={snapshot} placed={placed} line={line} column={column} onShowTransactions={onShowTransactions} />
+    <Block>
       <div className="space-y-1"><Label htmlFor="cf-group-name" className="text-xs">Name</Label><TextField id="cf-group-name" value={group.name} maxLength={NAME_MAX} onCommit={(name) => onEdit((d) => renameGroup(d, groupId, name))} /></div>
       <div className="flex flex-wrap items-center gap-1">
         <Button size="xs" variant="outline" onClick={add}><Plus className="size-3" aria-hidden />Add a row</Button>
@@ -439,12 +465,21 @@ function GroupPanel({ doc, groupId, onEdit, onSelectLine, onAddRow }: Props & { 
         <Button size="xs" variant="outline" onClick={() => onEdit((d) => moveGroup(d, groupId, 1))}><ArrowDown className="size-3" aria-hidden />Down</Button>
         <Button size="xs" variant="ghost" className="ml-auto text-destructive hover:text-destructive" title="Its rows stay, directly under the section" onClick={() => { onEdit((d) => removeGroup(d, groupId)); onSelectLine(null); }}><Trash2 className="size-3" aria-hidden />Remove group</Button>
       </div>
-      <p className="text-muted-foreground">A group is a subtotal. To put a row in it, select the row and choose this group.</p>
+      <div className="space-y-1">
+        <span className="text-xs font-medium">Colour</span>
+        <div className="flex items-center gap-2">
+          <ColorPicker ariaLabel="Group colour" value={group.color} fallback="#3b82f6" onChange={(hex) => onEdit((d) => setGroupColor(d, groupId, hex))} onClear={() => onEdit((d) => setGroupColor(d, groupId, null))} />
+          <span className="tabular-nums text-muted-foreground">{group.color ?? "No colour"}</span>
+        </div>
+        <p className="text-muted-foreground">The rows in the group follow it at 60% of its strength.</p>
+      </div>
+      <p className="text-muted-foreground">A group is a subtotal. To put a row in it, drag the row onto the group or under one of its rows.</p>
     </Block>
+    </>
   );
 }
 
-function SectionPanel({ section, onEdit, onSelectLine, onAddRow }: Props & { section: SectionId }) {
+function SectionPanel({ doc, computed, snapshot, placed, line, column, section, onEdit, onSelectLine, onAddRow, onShowTransactions }: Props & { line: Line; column: Column | null; section: SectionId }) {
   const add = () => onAddRow(section, null);
   const addNewGroup = () => {
     let created = "";
@@ -458,13 +493,16 @@ function SectionPanel({ section, onEdit, onSelectLine, onAddRow }: Props & { sec
     debt: "Repayments of loans and other debts. A negative amount is new borrowing that arrives in cash.",
   };
   return (
-    <Block title={SECTION_LABEL[section]}>
+    <>
+    <FigureBlock doc={doc} computed={computed} snapshot={snapshot} placed={placed} line={line} column={column} onShowTransactions={onShowTransactions} />
+    <Block>
       <p className="text-muted-foreground">{about[section]}</p>
       <div className="flex gap-1">
         <Button size="xs" variant="outline" onClick={add}><Plus className="size-3" aria-hidden />Add a row</Button>
         <Button size="xs" variant="outline" onClick={addNewGroup}><Plus className="size-3" aria-hidden />Add a group</Button>
       </div>
     </Block>
+    </>
   );
 }
 
@@ -483,7 +521,7 @@ function BalancePanel({ doc, computed, snapshot, placed, which, column }: Props 
     <>
       <p className="text-muted-foreground">{which === "opening" ? "The cash the month starts with: the closing balance of the month before." : "Opening balance plus the month's net cashflow. Past months are the real balances of the plan's cash accounts; later months are the forecast."}</p>
       {index !== null && month && (
-        <Block title={`${monthLabel(month)} ${which === "opening" ? "opening" : "closing"}`}>
+        <Block>
           <Fact label={kind === "forecast" ? "Forecast" : kind === "current" && which === "closing" ? "Expected by month end" : "Balance"} strong>{money(which === "opening" ? computed.opening[index] : computed.closing[index])}</Fact>
           {which === "closing" && doc.minimumCash !== null && <Fact label="Above the minimum by">{money(computed.closing[index] - doc.minimumCash)}</Fact>}
           {which === "closing" && kind === "current" && <Fact label="In the accounts today">{money(computed.kpis.cashNow)}</Fact>}
@@ -502,13 +540,31 @@ function BalancePanel({ doc, computed, snapshot, placed, which, column }: Props 
   );
 }
 
-function MemoPanel({ line, column }: { line: Extract<Line, { kind: "memo" }>; column: Column | null }) {
+/** A line's figure for the selected month or year, what it is made of, and a way to list the transactions behind it. */
+function FigureBlock({ doc, computed, snapshot, placed, line, column, onShowTransactions }: Pick<Props, "doc" | "computed" | "snapshot" | "placed" | "onShowTransactions"> & { line: Line; column: Column | null }) {
+  const months = monthsOf(column, computed);
+  const request = column ? requestFor(doc, snapshot, placed, line, months, columnLabel(column)) : null;
+  const pieces = useMemo(() => (request && placed && snapshot && request.targets.length ? piecesOf(placed, snapshot, request.targets, new Set(months)) : []), [request, placed, snapshot, months]);
+  if (!column || line.kind === "row" || line.kind === "balance") return null;
+  const values = line.values;
+  const total = column.kind === "month" ? values[column.index] : aggregate(values, column.indexes, line.aggregate);
+  return (
+    <Block>
+      <Fact label={line.kind === "group" ? line.group.name : line.kind === "section" ? SECTION_LABEL[line.section] : line.label} strong onClick={request ? () => onShowTransactions(request) : undefined}>{money(total)}</Fact>
+      {pieces.length > 0
+        ? <Pieces pieces={pieces} onShow={request ? (items) => onShowTransactions({ ...request, items }) : undefined} />
+        : null}
+    </Block>
+  );
+}
+
+function MemoPanel({ doc, computed, snapshot, placed, line, column, onShowTransactions }: Props & { line: Extract<Line, { kind: "memo" }>; column: Column | null }) {
   return (
     <>
       {line.hint && <p className="text-muted-foreground">{line.hint}</p>}
       {line.key === "net" && <p className="text-muted-foreground">Income, less expenses, less what goes to savings and to debts. A month with a negative net lowers the cash balance.</p>}
       {line.key === "total" && <p className="text-muted-foreground">The closing cash balance and the savings estimate together.</p>}
-      {column && <Block title={columnLabel(column)}><Fact label={line.label} strong>{money(column.kind === "month" ? line.values[column.index] : aggregate(line.values, column.indexes, line.aggregate))}</Fact></Block>}
+      <FigureBlock doc={doc} computed={computed} snapshot={snapshot} placed={placed} line={line} column={column} onShowTransactions={onShowTransactions} />
     </>
   );
 }

@@ -3,13 +3,13 @@
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { parseAmount } from "@/lib/cashflow-planning/document";
+import { formatAmountInput, parseAmount } from "@/lib/cashflow-planning/document";
 import { isMonth } from "@/lib/cashflow-planning/months";
 import type { Month } from "@/lib/cashflow-planning/types";
 
 /** Small inputs that hold what is typed until it is left or Enter is pressed, and only then hand over a checked value. */
 
-const plain = (minor: number | null) => (minor === null ? "" : (minor / 100).toFixed(2));
+const plain = (minor: number | null) => (minor === null ? "" : formatAmountInput(minor));
 
 /** An amount in whole units with up to two decimals. Empty text is `null` when `allowEmpty`, otherwise the value is put back. */
 export function AmountField({ value, onCommit, allowEmpty = false, className, placeholder, id, ...aria }: { value: number | null; onCommit: (minor: number | null) => void; allowEmpty?: boolean; className?: string; placeholder?: string; id?: string; "aria-label"?: string }) {

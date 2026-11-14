@@ -1,5 +1,6 @@
 "use client";
 
+import { ColorPicker } from "@/components/ui/color-picker";
 import { useState, useMemo } from "react";
 import { Plus, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
@@ -218,13 +219,7 @@ function QuickCreateForm({
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-foreground">Color (optional)</label>
           <div className="flex items-center gap-2">
-            <input
-              type="color"
-              value={color ?? DEFAULT_TAG_COLOR}
-              onChange={(e) => setColor(e.target.value)}
-              aria-label="Tag color"
-              className="h-7 w-10 cursor-pointer rounded border border-border bg-transparent p-0.5"
-            />
+            <ColorPicker ariaLabel="Tag color" value={color} fallback={DEFAULT_TAG_COLOR} onChange={setColor} className="size-6" />
             {color && (
               <button
                 type="button"

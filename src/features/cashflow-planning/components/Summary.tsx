@@ -7,9 +7,10 @@ import { useTip, useWidth } from "@/features/financial-insights/components/chart
 import { cn } from "@/lib/utils";
 import type { Computed } from "@/lib/cashflow-planning/engine";
 import { monthLabel, yearOf } from "@/lib/cashflow-planning/months";
+import { LABEL_WIDTH } from "../lib/view";
 import type { Month, PlanDocument } from "@/lib/cashflow-planning/types";
 
-function Stat({ label, value, detail, tone, onClick }: { label: string; value: string; detail?: string; tone?: "bad" | "good"; /** Shows the month the figure is about in the grid. */ onClick?: () => void }) {
+function Stat({ label, value, detail, tone, onClick, first }: { first?: boolean; label: string; value: string; detail?: string; tone?: "bad" | "good"; /** Shows the month the figure is about in the grid. */ onClick?: () => void }) {
   const content = (
     <>
       <p className="truncate text-[11px] text-muted-foreground">{label}</p>
@@ -17,10 +18,10 @@ function Stat({ label, value, detail, tone, onClick }: { label: string; value: s
       <p className="truncate text-[11px] text-muted-foreground">{detail ?? "\u00a0"}</p>
     </>
   );
-  const box = "min-w-0 flex-1 border-r border-border px-4 py-2 text-left last:border-r-0";
+  const box = cn(first ? "shrink-0" : "flex-1", "min-w-0 border-r border-border px-4 py-2 text-left last:border-r-0");
   return onClick
-    ? <button type="button" onClick={onClick} title="Show this month in the grid" className={cn(box, "outline-none hover:bg-accent/60 focus-visible:bg-accent")}>{content}</button>
-    : <div className={box}>{content}</div>;
+    ? <button type="button" onClick={onClick} title="Show this month in the grid" style={first ? { width: LABEL_WIDTH } : undefined} className={cn(box, "outline-none hover:bg-accent/60 focus-visible:bg-accent")}>{content}</button>
+    : <div className={box} style={first ? { width: LABEL_WIDTH } : undefined}>{content}</div>;
 }
 
 /** The answers the plan exists for, in one row: where cash stands, how low it gets, and when. */
@@ -31,7 +32,7 @@ export function SummaryStrip({ doc, computed, onGo }: { doc: PlanDocument; compu
   const average = kpis.next12.months ? Math.round(kpis.next12.net / kpis.next12.months) : 0;
   return (
     <div className="flex shrink-0 border-b border-border bg-background" role="group" aria-label="Key figures">
-      <Stat label={doc.useActuals ? "Cash today" : "Opening cash"} value={money(kpis.cashNow)} detail={doc.useActuals ? "In the plan's cash accounts" : "Typed in Plan settings"} />
+      <Stat first label={doc.useActuals ? "Cash today" : "Opening cash"} value={money(kpis.cashNow)} detail={doc.useActuals ? "In the plan's cash accounts" : "Typed in Plan settings"} />
       <Stat label="Lowest point, next 12 months" value={lowest ? money(lowest.amount) : "-"} detail={lowest ? `End of ${monthLabel(lowest.month)}` : undefined} tone={lowest && lowest.amount < (minimum ?? 0) ? "bad" : undefined} onClick={lowest ? () => onGo(lowest.month) : undefined} />
       {minimum === null
         ? <Stat label="Minimum cash" value="Not set" detail="Set one in Plan settings" />

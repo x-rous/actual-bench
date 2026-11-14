@@ -1,5 +1,6 @@
 "use client";
 
+import { ColorPicker } from "@/components/ui/color-picker";
 import { memo } from "react";
 import { Info, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
 import type { DoneAction } from "@/components/ui/editable-cell";
@@ -120,22 +121,11 @@ function TagsTableRowComponent({
       <td className="w-10 px-2 py-0.5">
         {!isDeleted && (
           <div className="flex items-center gap-1">
-            <label className="relative flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center">
-              <input
-                type="color"
-                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-                value={effectiveColor}
-                aria-label={`Tag color for ${entity.name || entity.id}`}
-                onChange={(e) => onChangeColor(entity.id, e.target.value)}
-              />
-              <span
-                className={cn(
-                  "h-4 w-4 rounded-full transition-transform hover:scale-110",
-                  entity.color ? "border border-border/50" : "border border-dashed border-border/60",
-                )}
-                style={{ backgroundColor: effectiveColor }}
-              />
-            </label>
+            <ColorPicker
+              ariaLabel={`Tag color for ${entity.name || entity.id}`} value={effectiveColor} fallback={DEFAULT_TAG_COLOR}
+              onChange={(hex) => onChangeColor(entity.id, hex)}
+              className={cn("size-4 rounded-full", entity.color ? "border border-border/50" : "border border-dashed border-border/60")}
+            />
             {entity.color && (
               <button
                 className="text-muted-foreground opacity-0 transition-opacity group-hover/row:opacity-60 group-focus-within/row:opacity-60 focus-visible:opacity-100 hover:!opacity-100"
