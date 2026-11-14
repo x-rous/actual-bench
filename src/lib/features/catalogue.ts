@@ -1,6 +1,6 @@
 import type { ComponentType } from "react";
 import {
-  ArrowLeftRight, Banknote, Calendar, ChartNoAxesCombined, ClipboardCheck, CreditCard, Database,
+  ArrowLeftRight, Banknote, Calendar, CalendarRange, ChartNoAxesCombined, ClipboardCheck, CreditCard, Database,
   DatabaseBackup, HandCoins, Landmark, LayoutList, ScrollText, ShieldCheck,
   Sparkles, Stethoscope, Tag, Terminal, Timer, Users, Wallet,
 } from "lucide-react";
@@ -146,6 +146,20 @@ export const FEATURES: readonly FeatureDefinition[] = [
     requiresSavedData: true,
   },
 
+  {
+    id: "cashflow-planning",
+    label: "Cashflow Planning",
+    href: "/cashflow-planning",
+    groupId: "financial-management",
+    icon: CalendarRange,
+    description: "Plan your cash month by month, years ahead, on top of what Actual recorded.",
+    accessSummary: "Read-only accounts, transactions, budget, schedules and loans.",
+    maturity: "experimental",
+    docsUrl: `${DOCS_BASE_URL}user-guide/cashflow-planning/`,
+    usesStagedActions: false,
+    pendingChangesPanel: "none",
+    requiresSavedData: true,
+  },
   {
     id: "budget-management",
     label: "Budget Cockpit",

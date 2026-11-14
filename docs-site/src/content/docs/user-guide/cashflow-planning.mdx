@@ -1,0 +1,106 @@
+---
+title: Cashflow Planning
+description: Plan your cash month by month, years ahead, on top of what Actual recorded, and see how low it gets and when.
+---
+
+Open **Financial Management → Cashflow Planning** after connecting your Actual budget. It is experimental. Bench reads your accounts, transactions, budget, schedules and tracked loans through Direct or HTTP API and never writes to Actual. Plans are saved in the Actual Bench app database.
+
+A cash plan answers the questions a budget does not: where will my cash stand at the end of each month for the next few years, how low will it get and when, and will I reach what I am saving for. It is the long-range spreadsheet many people keep next to their budget, with the past filled in for you.
+
+## Create a plan
+
+Choose **Create your first plan** (or **New plan** in the **⋯** menu), name it, and choose its first month and length (1 to 50 years). Starting in January of this year shows how the year really went next to the forecast.
+
+| Start from | What you get |
+| --- | --- |
+| My Actual data, by category group | A row for each income category, expense group, savings account and loan that moved your cash in the last 12 months, each forecast from its own history. The quickest start. |
+| My Actual data, by category | The same, with a row for every expense category, grouped as in Actual. |
+| Empty plan | No rows. Past months and balances still come from Actual. |
+| Plain worksheet | Not connected to Actual: every month is typed, from an opening balance you enter. |
+
+You can keep several plans per budget (a careful one and an optimistic one, for example) and duplicate a plan to try a change.
+
+## Read the grid
+
+Each column is a month, followed by a total for each calendar year. **Years** shows one column per year. The header of a month says what it holds:
+
+- **Actual:** what Actual recorded. These cells cannot be typed in.
+- **This month:** what was recorded so far, plus what the plan still expects before the month ends.
+- **Forecast:** the plan.
+
+The opening balance of a month is the closing balance of the one before. Past closing balances are the real balances of the plan's cash accounts, so the forecast always starts from today's real balance.
+
+Rows sit in four sections: **Income**, **Expenses**, **Savings & investments** and **Loans & debt**. Amounts are positive in their section's direction. A negative expense is a refund, a negative saving is a withdrawal back into cash, and a negative debt amount is new borrowing.
+
+The figures at the top give the answers: cash today, the lowest point of the next 12 months, the first month below your minimum cash, the balance at the end of the year and of the plan, and the net of the next 12 months. The chart shows the balance over the whole plan; select a year in it to show that year in the grid.
+
+## What counts as cash
+
+A plan balances and forecasts its **cash** accounts. Unless you choose otherwise:
+
+| Account | Counts as |
+| --- | --- |
+| Cash, Bank, Credit Card | Cash |
+| Bank marked fixed / restricted deposit, Investment, Retirement | Savings |
+| Loan, Property, Vehicle, other assets and liabilities, accounts left out of Financial Insights | Outside the plan |
+| No class | Cash when on budget, outside when off budget |
+
+Credit cards are cash by default, so a card purchase lowers the balance when it is made and paying the card moves nothing. If you would rather follow the bank balance only, set the card to **Outside the plan** in **Plan settings → Accounts**: card purchases then leave the plan, and each card payment shows as money leaving cash.
+
+Classes are set on the **Accounts** page. Cashflow Planning does not require every account to have one.
+
+## Rows follow Actual
+
+Select a row to open its details. Under **Follows in Actual**, choose what the row follows:
+
+- **Categories**, or a whole **category group** (every category currently in it).
+- **Accounts**: for an account outside cash, the transfers between cash and it (a savings account, a loan); for a cash account, its uncategorized entries (interest, for example). You can count money in only or money out only.
+
+Every recorded movement is placed once. A transfer follows the row of its account first, then the row of its category. A category or account can be followed by one row; a second row that follows it is marked.
+
+What no row follows is shown as **Not in plan** in its section. It still counts, so each past month adds up to the real change in cash, but it is not forecast. Select it to see what it is made of and add a row for any part.
+
+## Forecast
+
+Each row chooses where its coming months come from:
+
+| Source | Use it for |
+| --- | --- |
+| Repeating amounts and typed cells | Amounts you know: a salary each month, rent each quarter, a fee each year. Each repeating amount has a start, an optional end and an optional yearly change. |
+| Average of recent months | Day-to-day spending. The average of the row's last 3, 6, 12 or 24 complete months, with an optional yearly change. |
+| Actual's budget | What you budgeted for the followed categories. Months after the last budgeted one repeat it. |
+| Actual schedules | The upcoming dates and amounts of the schedules you choose. |
+| Loan schedule | The repayments the Loans page projects for a tracked loan, until it is paid off. When repayments are recorded as splits, this is the principal part and the interest stays with its category's row. |
+
+A typed amount in a coming month always wins over the row's source and is marked in the corner of the cell. Delete it to follow the source again.
+
+:::note
+If a row uses Actual's budget and one of its categories pays into an account that another row follows (a mortgage category and a row for the mortgage account), that money is forecast in both rows. Use the loan schedule or the average for one of them.
+:::
+
+## Type and edit
+
+- Arrow keys move, Shift extends the selection, Enter or typing starts editing, Delete clears typed amounts.
+- Copy and paste work with spreadsheets, so you can bring in figures from an existing sheet.
+- Ctrl+R fills the selection to the right. The details panel can fill a month's amount to the end of the year or of the plan.
+- Ctrl+Z and Ctrl+Y undo and redo changes to the open plan.
+- **View** chooses how many years are on screen, whether past months show actual, planned or the difference, the chart, and cents.
+
+## Minimum cash, goals and savings
+
+In **Plan settings**:
+
+- **Minimum cash to keep** marks every month whose closing balance falls below it and names the first one at the top.
+- **Goals** are an amount of cash, or cash plus savings, to reach by a month. The plan shows whether the forecast gets there and how much more a month it would take.
+- **Expected yearly growth of savings** is used for the savings estimate under the grid: the balance of your savings accounts, then what the plan puts aside each month. Market changes are not forecast.
+
+## Saving
+
+Every edit is saved a moment later; the header shows **Saved**, **Saving…** or **Not saved** with a Retry. If the same plan was changed in another tab or on another device, Bench asks which version to keep instead of overwriting it. Use **Export plan (JSON)** for a copy you keep yourself, and **Export figures (CSV)** to take the numbers elsewhere.
+
+## Limits
+
+- Calendar months only, in the budget's single currency.
+- Actual does not expose skipped future occurrences of a schedule, so a skip shows only once the schedule's next date moves.
+- A loan has a schedule only when it is tracked in Loans and agrees with its Actual account; otherwise its row can follow its own history.
+- Savings are an estimate from contributions and the growth you set, not a market forecast.

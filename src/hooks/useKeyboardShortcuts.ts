@@ -24,7 +24,7 @@ import { useQuickCreateStore } from "@/features/quick-create/store/useQuickCreat
  * broken. Ctrl/Cmd+K and Ctrl/Cmd+Shift+N intentionally fire from anywhere,
  * including text inputs, consistent with standard modal-trigger conventions.
  */
-export function useKeyboardShortcuts() {
+export function useKeyboardShortcuts({ manageStagedHistory = true }: { manageStagedHistory?: boolean } = {}) {
   const pathname = usePathname();
   const openSearch = useGlobalSearchStore((s) => s.open);
   const openQuickCreate = useQuickCreateStore((s) => s.open);
@@ -74,6 +74,9 @@ export function useKeyboardShortcuts() {
         target.isContentEditable
       ) return;
 
+      // Cashflow Planning keeps its own per-plan undo and never touches staged drafts.
+      if (!manageStagedHistory) return;
+
       // Resolve at keypress time: drafts can change before React re-renders.
       const entities = useStagedStore.getState();
       const budget = useBudgetEditsStore.getState();
@@ -92,5 +95,5 @@ export function useKeyboardShortcuts() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [pathname, openSearch, openQuickCreate]);
+  }, [pathname, openSearch, openQuickCreate, manageStagedHistory]);
 }

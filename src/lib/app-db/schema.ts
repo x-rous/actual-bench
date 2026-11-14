@@ -1198,6 +1198,25 @@ CREATE TABLE IF NOT EXISTS cash_buffer_scenarios (
 `;
 
 /*
+ * Cashflow Planning (migration v66). One row per plan, scoped to one budget because a plan refers to that budget's
+ * accounts, categories and schedules by id. The plan is one versioned JSON document (its own \`schemaVersion\`), so the plan
+ * model can grow without a table change. \`revision\` rises with every save and guards against two tabs overwriting each other.
+ * Bench-owned planning figures only: never Actual transactions or balances.
+ */
+export const CASHFLOW_PLANS_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS cashflow_plans (
+  budget_sync_id text NOT NULL CHECK (length(budget_sync_id) BETWEEN 1 AND 200),
+  id text NOT NULL CHECK (length(id) BETWEEN 1 AND 100),
+  name text NOT NULL,
+  revision integer NOT NULL DEFAULT 1,
+  document text NOT NULL,
+  created_at text NOT NULL,
+  updated_at text NOT NULL,
+  PRIMARY KEY (budget_sync_id, id)
+);
+`;
+
+/*
  * Credit cards (RD-098 / PR-127c, migration v48). Bench-owned metadata only: Actual ids, opaque
  * evidence hashes and the user's own statement figures and decisions. Never Actual transactions,
  * balances or credentials. Enumerations are validated in code (readers skip unknown values), so a
