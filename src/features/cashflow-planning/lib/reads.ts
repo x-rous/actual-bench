@@ -1,7 +1,8 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { getTransport } from "@/lib/actual";
 import { isAccountGroupsUnsupported } from "@/lib/api/accountGroups";
-import { readMovement, readStartingBalances, readTransfersIn, readUncategorizedIn } from "@/lib/financial-insights/reads";
+import { runQuery } from "@/lib/api/query";
+import { readLoanCostRows, readMovement, readStartingBalances, readTransfersIn, readUncategorizedIn } from "@/lib/financial-insights/reads";
 import type { DatedAmount, MovementRow } from "@/lib/financial-insights/measures";
 import { getDebt, listDebts } from "@/features/assets-debt/lib/debtsApi";
 import { projectAfterAnchor, readTrackedLoan } from "@/features/assets-debt/lib/trackedLoan";
@@ -10,7 +11,7 @@ import { budgetMonthDataQueryOptions } from "@/features/budget-management/lib/mo
 import type { ConnectionInstance } from "@/store/connection";
 import type { Account, AccountGroup } from "@/types/entities";
 import { MAX_YEARS, type Month } from "@/lib/cashflow-planning/types";
-import type { BudgetSnapshot, LoanForecast, SnapCategory, SnapSchedule } from "@/lib/cashflow-planning/actuals";
+import type { BudgetSnapshot, LoanCostLine, LoanForecast, ShiftedTransaction, SnapCategory, SnapSchedule } from "@/lib/cashflow-planning/actuals";
 import { addMonths } from "@/lib/cashflow-planning/months";
 import { scheduleDates } from "@/lib/cashflow-planning/scheduleDates";
 
@@ -74,41 +75,84 @@ export async function readLedger(connection: ConnectionInstance, today: string, 
   return { accounts, accountGroups, categories, movement, startingBalances, uncategorizedIn, transfersIn, schedules, readAt: new Date().toISOString() };
 }
 
+export type LoanRead = { forecasts: Record<string, LoanForecast>; costs: LoanCostLine[] };
+
 /**
- * What each tracked loan will cost in cash, month by month, from the projection the Loans page itself shows. Only a loan
- * that is tracked against its Actual account and agrees with it has a forecast; an untracked loan has none (its row can
- * follow its own history instead).
+ * What each tracked loan will cost, month by month, from the projection the Loans page itself shows: the whole instalment and
+ * the part that reaches the loan account. Also the interest and fee lines of the repayments already recorded as splits, so a
+ * row can count whole repayments in the past as well. Only a loan that is tracked against its Actual account and agrees with it
+ * has a forecast; an untracked loan has none (its row can follow its own history instead).
  */
-export async function readLoanForecasts(connection: ConnectionInstance, input: { budgetSyncId: string; today: string; loanAccountIds: ReadonlySet<string> }): Promise<Record<string, LoanForecast>> {
-  const result: Record<string, LoanForecast> = {};
-  if (input.loanAccountIds.size === 0) return result;
+export async function readLoanForecasts(connection: ConnectionInstance, input: { budgetSyncId: string; today: string; loanAccountIds: ReadonlySet<string> }): Promise<LoanRead> {
+  const forecasts: Record<string, LoanForecast> = {};
+  if (input.loanAccountIds.size === 0) return { forecasts, costs: [] };
   const debts = (await listDebts(input.budgetSyncId)).filter((d) => d.status === "active" && d.liabilityAccountId && input.loanAccountIds.has(d.liabilityAccountId));
+  const tags: ReturnType<typeof recordedCostRows> = [];
   for (const summary of debts) {
     const accountId = summary.liabilityAccountId!;
     try {
       const read = await readTrackedLoan(connection, await getDebt(summary.id), input.today);
       if (read.state === "untracked") continue;
-      if (read.state === "unavailable") { result[accountId] = { state: "unavailable", reason: read.reason }; continue; }
-      if (!read.loan.agrees) { result[accountId] = { state: "unavailable", reason: `${summary.name}: its schedule does not agree with the loan account in Actual; review it in Loans` }; continue; }
+      if (read.state === "unavailable") { forecasts[accountId] = { state: "unavailable", reason: read.reason }; continue; }
+      // The split lines of recorded repayments: categorized entries in a cash account. A charge the lender added inside the loan account is no cash movement.
+      const splitLines = recordedCostRows(read.loan.plan, accountId).filter((tag) => !tag.charged);
+      tags.push(...splitLines);
+      if (!read.loan.agrees) { forecasts[accountId] = { state: "unavailable", reason: `${summary.name}: its schedule does not agree with the loan account in Actual; review it in Loans` }; continue; }
       const projected = projectAfterAnchor(read.loan);
-      if (!projected.ok) { result[accountId] = { state: "unavailable", reason: `${summary.name}: ${projected.reason}` }; continue; }
-      // What reaches the loan account is what a row that follows it records. When repayments are recorded as splits (interest and
-      // fees on their own categorized lines), only the principal is transferred, and the interest belongs to its category's row:
-      // forecasting the whole installment here would count it twice.
-      const principalOnly = recordedCostRows(read.loan.plan, accountId).some((tag) => !tag.charged);
-      const byMonth: Record<Month, number> = {};
+      if (!projected.ok) { forecasts[accountId] = { state: "unavailable", reason: `${summary.name}: ${projected.reason}` }; continue; }
+      const split = splitLines.length > 0;
+      const payment: Record<Month, number> = {}, principal: Record<Month, number> = {};
       for (const event of projected.projection.events) {
-        const amount = principalOnly ? (event.cashMovementMinor < 0 ? Math.max(0, -event.principalMovementMinor) : -event.cashMovementMinor) : -event.cashMovementMinor;
-        if (event.cashMovementMinor === 0 || amount === 0) continue;
+        // Repayments only: money still to be drawn from the loan is borrowing, which a repayment row never counts.
+        if (event.cashMovementMinor >= 0) continue;
         const month = event.date.slice(0, 7);
-        byMonth[month] = (byMonth[month] ?? 0) + amount;
+        payment[month] = (payment[month] ?? 0) - event.cashMovementMinor;
+        // What reaches the loan account: with split repayments only the principal is transferred.
+        const reaches = split ? Math.max(0, -event.principalMovementMinor) : -event.cashMovementMinor;
+        if (reaches !== 0) principal[month] = (principal[month] ?? 0) + reaches;
       }
-      result[accountId] = { state: "ready", byMonth, name: summary.name, principalOnly };
+      forecasts[accountId] = { state: "ready", payment, principal, split, name: summary.name };
     } catch (error) {
-      result[accountId] = { state: "unavailable", reason: error instanceof Error ? error.message : "The loan could not be read" };
+      forecasts[accountId] = { state: "unavailable", reason: error instanceof Error ? error.message : "The loan could not be read" };
     }
   }
-  return result;
+  let costs: LoanCostLine[] = [];
+  try {
+    const rows = await readLoanCostRows(connection, tags, input.today);
+    costs = rows.flatMap((r) => (r.id && r.loanAccountId ? [{ id: r.id, month: r.month, accountId: r.accountId, categoryId: r.categoryId, amountMinor: r.amountMinor, loanAccountId: r.loanAccountId }] : []));
+  } catch {
+    // Without them a whole-repayment row shows the principal for past months; the forecast is unaffected.
+  }
+  return { forecasts, costs };
+}
+
+const TAG = /#(\d{4}-(?:0[1-9]|1[0-2]))(?![\d-])/;
+
+/** The month a `#YYYY-MM` tag in a transaction's note names, if it has one. */
+export function tagMonthOf(notes: string | null | undefined): Month | null {
+  return notes ? TAG.exec(notes)?.[1] ?? null : null;
+}
+
+type ShiftRow = { id: string; date: string; amount: number; account: string; category: string | null; notes: string | null; "payee.transfer_acct": string | null };
+
+/**
+ * The transactions that may count in another month than their date: those whose note carries a `#YYYY-MM` tag, and those the
+ * plan itself moves. A handful at most, read one by one because the monthly read cannot tell them apart.
+ */
+export async function readShifts(connection: ConnectionInstance, today: string, movedIds: readonly string[]): Promise<ShiftedTransaction[]> {
+  const select = ["id", "date", "amount", "account", "category", "notes", "payee.transfer_acct"];
+  const tagged = await runQuery<{ data: ShiftRow[] }>(connection, {
+    ActualQLquery: { table: "transactions", filter: { $and: [{ date: { $lte: today } }, { notes: { $like: "%#2%" } }] }, select },
+  });
+  const rows = new Map(tagged.data.filter((r) => tagMonthOf(r.notes)).map((r) => [r.id, r]));
+  const missing = movedIds.filter((id) => !rows.has(id));
+  for (let i = 0; i < missing.length; i += 400) {
+    const more = await runQuery<{ data: ShiftRow[] }>(connection, {
+      ActualQLquery: { table: "transactions", filter: { $and: [{ date: { $lte: today } }, { id: { $oneof: missing.slice(i, i + 400) } }] }, select },
+    });
+    for (const r of more.data) rows.set(r.id, r);
+  }
+  return [...rows.values()].map((r) => ({ id: r.id, date: r.date, accountId: r.account, categoryId: r.category, transferAccountId: r["payee.transfer_acct"], amountMinor: r.amount, tagMonth: tagMonthOf(r.notes) }));
 }
 
 /** How many budget months ahead are read: enough for a year's plan in Actual, few enough to stay quick. */

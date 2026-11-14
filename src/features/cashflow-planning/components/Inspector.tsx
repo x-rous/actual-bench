@@ -2,7 +2,8 @@
 
 import { useMemo, type ReactNode } from "react";
 import Link from "next/link";
-import { AlertTriangle, ArrowDown, ArrowUp, ListTree, Plus, Trash2, X } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowLeftRight, ArrowUp, ListTree, MoreHorizontal, Plus, Trash2, X } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { MultiSearchableCombobox, type ComboboxOption } from "@/components/ui/combobox";
 import { Label } from "@/components/ui/label";
@@ -10,16 +11,16 @@ import { PillGroup } from "@/components/ui/pill-group";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { generateId } from "@/lib/uuid";
-import { accountBalances, accountRole, contributionsOf, unplannedTarget, type Contribution, type Placed, type Snapshot } from "@/lib/cashflow-planning/actuals";
-import { NAME_MAX, NOTES_MAX, addGroup, addRow, createRow, moveGroup, moveRow, placeRow, planEndMonth, removeGroup, removeRow, renameGroup, setCells, updateRow } from "@/lib/cashflow-planning/document";
+import { accountBalances, accountRole, contributionsOf, isBorrowing, unplannedTarget, type Contribution, type Placed, type Snapshot } from "@/lib/cashflow-planning/actuals";
+import { NAME_MAX, NOTES_MAX, addGroup, addRow, createRow, moveGroup, moveRow, planEndMonth, removeGroup, renameGroup, setCells, updateRow } from "@/lib/cashflow-planning/document";
 import type { CellSource, Computed } from "@/lib/cashflow-planning/engine";
 import { addMonths, monthLabel, monthRange } from "@/lib/cashflow-planning/months";
-import { AVERAGE_WINDOWS, SECTIONS, SECTION_LABEL, type AverageWindow, type Basis, type BasisKind, type Month, type PlanDocument, type PlanRow, type RepeatRule, type SectionId } from "@/lib/cashflow-planning/types";
+import { AVERAGE_WINDOWS, SECTION_LABEL, type AverageWindow, type Basis, type BasisKind, type Month, type PlanDocument, type PlanRow, type RepeatRule, type SectionId } from "@/lib/cashflow-planning/types";
 import { money } from "@/features/financial-insights/format";
 import { aggregate, type Column, type Line } from "../lib/view";
 import { AmountField, MonthField, PercentField, TextField } from "./fields";
 
-export type TransactionsRequest = { title: string; months: Month[]; items: Pick<Contribution, "kind" | "id">[]; /** Natural-sign multiplier for display. */ sign: 1 | -1 };
+export type TransactionsRequest = { title: string; /** The row id, or the "Not in plan" target, whose figure is listed. */ target: string; months: Month[]; items: Pick<Contribution, "kind" | "id">[]; /** Natural-sign multiplier for display. */ sign: 1 | -1 };
 
 type Props = {
   doc: PlanDocument;
@@ -29,13 +30,20 @@ type Props = {
   line: Line | null;
   column: Column | null;
   problems: ReadonlyMap<string, string>;
+  width: number;
+  onResize: (width: number) => void;
   onEdit: (change: (doc: PlanDocument) => PlanDocument) => void;
   /** Selects a line of the grid by key (after creating a row, for example). */
   onSelectLine: (key: string | null) => void;
+  /** Opens the dialog that adds a row to a section or group. */
+  onAddRow: (section: SectionId, groupId: string | null) => void;
+  onDeleteRow: (rowId: string) => void;
   onShowTransactions: (request: TransactionsRequest) => void;
   onClose: () => void;
   overview: ReactNode;
 };
+
+export const INSPECTOR_MIN = 340, INSPECTOR_MAX = 640;
 
 const SOURCE_LABEL: Record<CellSource, string> = {
   actual: "Recorded in Actual", cell: "Typed amount", rule: "Repeating amount", average: "Average of recent months", budget: "Actual's budget", schedule: "Actual schedules", loan: "Loan schedule", none: "Nothing planned",
@@ -48,23 +56,41 @@ const BASIS_LABEL: Record<BasisKind, string> = {
 const EVERY_OPTIONS = [{ value: "1", label: "Every month" }, { value: "2", label: "Every 2 months" }, { value: "3", label: "Every 3 months" }, { value: "6", label: "Every 6 months" }, { value: "12", label: "Every year" }, { value: "24", label: "Every 2 years" }];
 
 export function Inspector(props: Props) {
-  const { line, column, onClose } = props;
+  const { line, column, onClose, width, onResize } = props;
   const title = !line ? "Plan overview" : line.kind === "row" ? line.row.name : line.kind === "group" ? line.group.name : line.label;
+  // Dragging the left edge resizes the panel; the arrow keys do the same for keyboard users.
+  const startResize = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const startX = event.clientX, startWidth = width;
+    const move = (e: PointerEvent) => onResize(Math.min(INSPECTOR_MAX, Math.max(INSPECTOR_MIN, startWidth + startX - e.clientX)));
+    const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
   return (
-    <aside aria-label="Details" className="flex w-[400px] shrink-0 flex-col border-l border-border bg-background">
-      <header className="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
-        <h2 className="min-w-0 truncate text-sm font-semibold" title={title}>{title}</h2>
-        <Button size="icon-xs" variant="ghost" onClick={onClose} aria-label="Close details"><X className="size-3.5" aria-hidden /></Button>
-      </header>
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3 text-xs">
-        {!line ? props.overview
-          : line.kind === "row" ? <RowPanel {...props} row={line.row} column={column} />
-          : line.kind === "unplanned" ? <UnplannedPanel {...props} section={line.section} column={column} />
-          : line.kind === "group" ? <GroupPanel {...props} groupId={line.group.id} />
-          : line.kind === "section" ? <SectionPanel {...props} section={line.section} />
-          : line.kind === "balance" ? <BalancePanel {...props} which={line.key} column={column} />
-          : <MemoPanel line={line} column={column} />}
-      </div>
+    <aside aria-label="Details" className="relative flex shrink-0 flex-col border-l border-border bg-background" style={{ width }}>
+      <div
+        role="separator" aria-orientation="vertical" aria-label="Resize the details panel" aria-valuemin={INSPECTOR_MIN} aria-valuemax={INSPECTOR_MAX} aria-valuenow={width} tabIndex={0}
+        onPointerDown={startResize}
+        onKeyDown={(e) => { if (e.key === "ArrowLeft") { e.preventDefault(); onResize(Math.min(INSPECTOR_MAX, width + 20)); } else if (e.key === "ArrowRight") { e.preventDefault(); onResize(Math.max(INSPECTOR_MIN, width - 20)); } }}
+        className="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize outline-none hover:bg-primary/20 focus-visible:bg-primary/30"
+      />
+      {line?.kind === "row" ? <RowPanel {...props} row={line.row} column={column} /> : (
+        <>
+          <header className="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
+            <h2 className="min-w-0 truncate text-sm font-semibold" title={title}>{title}</h2>
+            <Button size="icon-xs" variant="ghost" onClick={onClose} aria-label="Close details"><X className="size-3.5" aria-hidden /></Button>
+          </header>
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3 text-xs">
+            {!line ? props.overview
+              : line.kind === "unplanned" ? <UnplannedPanel {...props} section={line.section} column={column} />
+              : line.kind === "group" ? <GroupPanel {...props} groupId={line.group.id} />
+              : line.kind === "section" ? <SectionPanel {...props} section={line.section} />
+              : line.kind === "balance" ? <BalancePanel {...props} which={line.key} column={column} />
+              : line.kind === "memo" ? <MemoPanel line={line} column={column} /> : null}
+          </div>
+        </>
+      )}
     </aside>
   );
 }
@@ -88,35 +114,42 @@ const columnLabel = (column: Column) => (column.kind === "month" ? monthLabel(co
 
 // ─── A row ───────────────────────────────────────────────────────────────────
 
-function RowPanel({ doc, computed, snapshot, placed, row, column, problems, onEdit, onSelectLine, onShowTransactions }: Props & { row: PlanRow }) {
+/**
+ * Everything about a row in one scroll, in the order it is used: the selected month, where coming months come from, what the
+ * row follows in Actual, and notes. Its name, section and group are changed in the grid (rename in place, drag to move).
+ */
+function RowPanel({ doc, computed, snapshot, placed, row, column, problems, onEdit, onDeleteRow, onShowTransactions, onClose }: Props & { row: PlanRow }) {
   const result = computed.rows.get(row.id)!;
   const edit = (change: (row: PlanRow) => PlanRow) => onEdit((d) => updateRow(d, row.id, change));
-  const groups = doc.groups.filter((g) => g.section === row.section);
+  const group = doc.groups.find((g) => g.id === row.groupId);
   const problem = problems.get(row.id);
   return (
     <>
-      {problem && <p role="status" className="flex gap-2 rounded-md border border-amber-500/40 bg-amber-50 p-2 text-amber-900 dark:bg-amber-950/30 dark:text-amber-200"><AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />{problem}</p>}
-      {column && <CellBlock doc={doc} computed={computed} snapshot={snapshot} placed={placed} row={row} column={column} onEdit={onEdit} onShowTransactions={onShowTransactions} />}
-
-      <Block title="Row">
-        <div className="space-y-1"><Label htmlFor="cf-row-name" className="text-xs">Name</Label><TextField id="cf-row-name" value={row.name} maxLength={NAME_MAX} onCommit={(name) => edit((r) => ({ ...r, name }))} /></div>
-        <div className="grid grid-cols-2 gap-2">
-          <div className="space-y-1"><Label htmlFor="cf-row-section" className="text-xs">Section</Label><Select id="cf-row-section" size="sm" className="w-full" value={row.section} onValueChange={(v) => onEdit((d) => placeRow(d, row.id, v as SectionId, null))} options={SECTIONS.map((s) => ({ value: s, label: SECTION_LABEL[s] }))} /></div>
-          <div className="space-y-1"><Label htmlFor="cf-row-group" className="text-xs">Group</Label><Select id="cf-row-group" size="sm" className="w-full" value={row.groupId ?? "none"} onValueChange={(v) => onEdit((d) => placeRow(d, row.id, row.section, v === "none" ? null : v))} options={[{ value: "none", label: "No group" }, ...groups.map((g) => ({ value: g.id, label: g.name }))]} /></div>
+      <header className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-3">
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-sm font-semibold leading-tight" title={row.name}>{row.name}</h2>
+          <p className="truncate text-[11px] leading-tight text-muted-foreground">{SECTION_LABEL[row.section]}{group ? ` · ${group.name}` : ""}</p>
         </div>
-        <div className="flex items-center gap-1">
-          <Button size="xs" variant="outline" onClick={() => onEdit((d) => moveRow(d, row.id, -1))}><ArrowUp className="size-3" aria-hidden />Up</Button>
-          <Button size="xs" variant="outline" onClick={() => onEdit((d) => moveRow(d, row.id, 1))}><ArrowDown className="size-3" aria-hidden />Down</Button>
-          <Button size="xs" variant="ghost" className="ml-auto text-destructive hover:text-destructive" onClick={() => { onEdit((d) => removeRow(d, row.id)); onSelectLine(null); }}><Trash2 className="size-3" aria-hidden />Delete row</Button>
-        </div>
-      </Block>
-
-      {doc.useActuals && snapshot && <LinksBlock doc={doc} snapshot={snapshot} row={row} edit={edit} />}
-      <BasisBlock doc={doc} snapshot={snapshot} row={row} typical={result.typical} problem={result.problem} edit={edit} />
-
-      <Block title="Notes">
-        <Textarea aria-label="Notes" key={row.id} defaultValue={row.notes ?? ""} maxLength={NOTES_MAX} rows={3} className="text-xs" onBlur={(e) => { const notes = e.target.value.trim(); if (notes !== (row.notes ?? "")) edit((r) => { const next = { ...r }; if (notes) next.notes = notes; else delete next.notes; return next; }); }} />
-      </Block>
+        <DropdownMenu>
+          <DropdownMenuTrigger render={<Button size="icon-xs" variant="ghost" aria-label={`More for ${row.name}`} />}><MoreHorizontal className="size-3.5" aria-hidden /></DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuItem onClick={() => onEdit((d) => moveRow(d, row.id, -1))}><ArrowUp className="size-3.5" aria-hidden />Move up</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onEdit((d) => moveRow(d, row.id, 1))}><ArrowDown className="size-3.5" aria-hidden />Move down</DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" onClick={() => onDeleteRow(row.id)}><Trash2 className="size-3.5" aria-hidden />Delete row</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <Button size="icon-xs" variant="ghost" onClick={onClose} aria-label="Close details"><X className="size-3.5" aria-hidden /></Button>
+      </header>
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3 text-xs">
+        {problem && <p role="status" className="flex gap-2 rounded-md border border-amber-500/40 bg-amber-50 p-2 text-amber-900 dark:bg-amber-950/30 dark:text-amber-200"><AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />{problem}</p>}
+        {column && <CellBlock doc={doc} computed={computed} snapshot={snapshot} placed={placed} row={row} column={column} onEdit={onEdit} onShowTransactions={onShowTransactions} />}
+        <BasisBlock doc={doc} snapshot={snapshot} row={row} typical={result.typical} problem={result.problem} edit={edit} />
+        {doc.useActuals && snapshot && <LinksBlock doc={doc} snapshot={snapshot} row={row} edit={edit} />}
+        <Block title="Notes">
+          <Textarea aria-label="Notes" key={row.id} defaultValue={row.notes ?? ""} maxLength={NOTES_MAX} rows={2} className="text-xs" onBlur={(e) => { const notes = e.target.value.trim(); if (notes !== (row.notes ?? "")) edit((r) => { const next = { ...r }; if (notes) next.notes = notes; else delete next.notes; return next; }); }} />
+        </Block>
+      </div>
     </>
   );
 }
@@ -131,11 +164,12 @@ function CellBlock({ doc, computed, snapshot, placed, row, column, onEdit, onSho
       <Block title={`${column.year}${column.partial ? " (part of the year)" : ""}`}>
         <Fact label="Total" strong>{money(total)}</Fact>
         <Fact label="Monthly average">{money(Math.round(total / column.indexes.length))}</Fact>
-        <Pieces pieces={pieces} onShow={pieces.length ? () => onShowTransactions({ title: `${row.name}, ${column.year}`, months, items: pieces, sign: row.section === "income" ? 1 : -1 }) : undefined} />
+        <Pieces pieces={pieces} onShow={pieces.length ? () => onShowTransactions({ target: row.id, title: `${row.name}, ${column.year}`, months, items: pieces, sign: row.section === "income" ? 1 : -1 }) : undefined} />
       </Block>
     );
   }
   const i = column.index, kind = computed.kinds[i], month = column.month;
+  const moved = placed?.shiftNotes.get(`${row.id}|${month}`) ?? [];
   const actual = result.actual[i], plan = result.plan[i], typed = row.cells[month];
   const end = planEndMonth(doc);
   const fill = (to: Month) => {
@@ -163,7 +197,16 @@ function CellBlock({ doc, computed, snapshot, placed, row, column, onEdit, onSho
           </div>
         </div>
       )}
-      {kind !== "forecast" && <Pieces pieces={pieces} onShow={pieces.length ? () => onShowTransactions({ title: `${row.name}, ${monthLabel(month)}`, months, items: pieces, sign: row.section === "income" ? 1 : -1 }) : undefined} />}
+      {moved.length > 0 && (
+        <div className="space-y-1">
+          <p className="flex items-center gap-1 text-muted-foreground"><ArrowLeftRight className="size-3" aria-hidden />Counted in another month than their date</p>
+          <ul className="divide-y divide-border/50 rounded-md border border-border">
+            {moved.map((m) => <li key={m.id} className="flex h-7 items-center justify-between gap-2 px-2"><span>{m.to === month ? `Moved here from ${monthLabel(m.from)}` : `Moved to ${monthLabel(m.to)}`}</span><span className="tabular-nums">{money(m.amount)}</span></li>)}
+          </ul>
+          <p className="text-muted-foreground">Change this in the transaction list, or with a #YYYY-MM tag in the transaction&apos;s note in Actual.</p>
+        </div>
+      )}
+      {kind !== "forecast" && <Pieces pieces={pieces} onShow={pieces.length ? () => onShowTransactions({ target: row.id, title: `${row.name}, ${monthLabel(month)}`, months, items: pieces, sign: row.section === "income" ? 1 : -1 }) : undefined} />}
     </Block>
   );
 }
@@ -188,6 +231,15 @@ function Pieces({ pieces, onShow, renderAction }: { pieces: ReturnType<typeof co
   );
 }
 
+function Chip({ label, onRemove }: { label: string; onRemove: () => void }) {
+  return (
+    <li className="flex max-w-full items-center gap-0.5 rounded-md border border-border bg-muted/50 py-0.5 pl-1.5 pr-0.5">
+      <span className="min-w-0 truncate" title={label}>{label}</span>
+      <button type="button" onClick={onRemove} aria-label={`Stop following ${label}`} className="flex size-4 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"><X className="size-3" aria-hidden /></button>
+    </li>
+  );
+}
+
 function LinksBlock({ doc, snapshot, row, edit }: { doc: PlanDocument; snapshot: Snapshot; row: PlanRow; edit: (change: (row: PlanRow) => PlanRow) => void }) {
   const categoryOptions = useMemo((): ComboboxOption[] => {
     const options: ComboboxOption[] = [];
@@ -208,6 +260,9 @@ function LinksBlock({ doc, snapshot, row, edit }: { doc: PlanDocument; snapshot:
     ];
   }, [snapshot.accounts, doc]);
   const accountName = new Map(snapshot.accounts.map((a) => [a.id, a.name]));
+  const loans = new Set(snapshot.accounts.filter((a) => isBorrowing(a, accountRole(doc, a))).map((a) => a.id));
+  const categoryName = new Map(snapshot.categories.map((c) => [c.id, c.name]));
+  const groupName = new Map(snapshot.categories.map((c) => [c.groupId, c.groupName]));
   const categoryCount = row.links.categories.length + row.links.categoryGroups.length;
   return (
     <Block title="Follows in Actual">
@@ -220,6 +275,12 @@ function LinksBlock({ doc, snapshot, row, edit }: { doc: PlanDocument; snapshot:
           values={[...row.links.categoryGroups.map((id) => `group:${id}`), ...row.links.categories]}
           onChange={(values) => edit((r) => ({ ...r, links: { ...r.links, categoryGroups: values.filter((v) => v.startsWith("group:")).map((v) => v.slice(6)), categories: values.filter((v) => !v.startsWith("group:")) } }))}
         />
+        {categoryCount > 0 && (
+          <ul className="flex flex-wrap gap-1" aria-label="Followed categories">
+            {row.links.categoryGroups.map((id) => <Chip key={`g${id}`} label={`${groupName.get(id) ?? "Deleted group"} (group)`} onRemove={() => edit((r) => ({ ...r, links: { ...r.links, categoryGroups: r.links.categoryGroups.filter((x) => x !== id) } }))} />)}
+            {row.links.categories.map((id) => <Chip key={id} label={categoryName.get(id) ?? "Deleted category"} onRemove={() => edit((r) => ({ ...r, links: { ...r.links, categories: r.links.categories.filter((x) => x !== id) } }))} />)}
+          </ul>
+        )}
       </div>
       <div className="space-y-1">
         <span className="text-xs font-medium">Accounts</span>
@@ -234,10 +295,11 @@ function LinksBlock({ doc, snapshot, row, edit }: { doc: PlanDocument; snapshot:
             {row.links.accounts.map((link) => (
               <li key={link.id} className="flex h-8 items-center gap-2 px-2">
                 <span className="min-w-0 flex-1 truncate" title={accountName.get(link.id)}>{accountName.get(link.id) ?? "Deleted account"}</span>
-                <Select
-                  size="sm" className="w-32" value={link.flow ?? "all"} title="Which direction this row counts"
+<Select
+                  size="sm" className="w-36" value={link.flow ?? (loans.has(link.id) ? "out" : "all")} title="Which direction this row counts"
                   onValueChange={(v) => edit((r) => ({ ...r, links: { ...r.links, accounts: r.links.accounts.map((a) => (a.id === link.id ? (v === "all" ? { id: a.id } : { id: a.id, flow: v as "in" | "out" }) : a)) } }))}
-                  options={[{ value: "all", label: "In and out" }, { value: "in", label: "Money in only" }, { value: "out", label: "Money out only" }]}
+                  // Money from a loan is borrowing and money to it a repayment: the two are never netted in one row.
+                  options={loans.has(link.id) ? [{ value: "out", label: "Repayments" }, { value: "in", label: "Money borrowed" }] : [{ value: "all", label: "In and out" }, { value: "in", label: "Money in only" }, { value: "out", label: "Money out only" }]}
                 />
                 <Button size="icon-xs" variant="ghost" aria-label={`Stop following ${accountName.get(link.id) ?? "the account"}`} onClick={() => edit((r) => ({ ...r, links: { ...r.links, accounts: r.links.accounts.filter((a) => a.id !== link.id) } }))}><X className="size-3" aria-hidden /></Button>
               </li>
@@ -281,7 +343,19 @@ function BasisBlock({ doc, snapshot, row, typical, problem, edit }: { doc: PlanD
       {row.basis.kind === "schedule" && (() => { const basis = row.basis; return (
         <MultiSearchableCombobox ariaLabel="Schedules this row follows" options={scheduleOptions} placeholder="Choose schedules" triggerClassName="w-full" values={basis.scheduleIds} summary={basis.scheduleIds.length ? `${basis.scheduleIds.length} ${basis.scheduleIds.length === 1 ? "schedule" : "schedules"}` : undefined} onChange={(scheduleIds) => edit((r) => ({ ...r, basis: { kind: "schedule", scheduleIds } }))} />
       ); })()}
-      {row.basis.kind === "loan" && <p className="text-muted-foreground">Uses the repayments the Loans page projects for the loan accounts this row follows, until each loan is paid off.{row.links.accounts.some((a) => { const loan = snapshot?.loans[a.id]; return loan?.state === "ready" && loan.principalOnly; }) && " Where repayments are recorded as splits, this is the principal part: the interest is forecast by the row that follows its category."}</p>}
+      {row.basis.kind === "loan" && (() => { const basis = row.basis; const split = row.links.accounts.some((a) => { const loan = snapshot?.loans[a.id]; return loan?.state === "ready" && loan.split; }); return (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <span>Count</span>
+            <PillGroup<string> options={[{ value: "whole", label: "Whole repayment" }, { value: "principal", label: "Principal only" }]} value={basis.count ?? "whole"} onChange={(v) => edit((r) => ({ ...r, basis: v === "principal" ? { kind: "loan", count: "principal" } : { kind: "loan" } }))} />
+          </div>
+          <p className="text-muted-foreground">
+            {basis.count === "principal"
+              ? "The part of each repayment that lowers the loan, from the Loans page's schedule. The interest stays with the row that follows its category."
+              : `Each whole repayment from the Loans page's schedule, until the loan is paid off.${split ? " The interest and fee lines of repayments already recorded count here too, and no longer in their category's row." : ""}`}
+          </p>
+        </div>
+      ); })()}
       {problem && <p className="text-amber-700 dark:text-amber-400">{problem}</p>}
       {row.basis.kind === "manual" && (
         <div className="space-y-2">
@@ -341,7 +415,7 @@ function UnplannedPanel({ computed, snapshot, placed, section, column, onEdit, o
         {pieces.length === 0 ? <p className="text-muted-foreground">Nothing here in these months.</p> : (
           <Pieces
             pieces={pieces}
-            onShow={() => onShowTransactions({ title: `Not in plan (${SECTION_LABEL[section]}), ${column ? columnLabel(column) : "last 12 months"}`, months, items: pieces, sign: section === "income" ? 1 : -1 })}
+            onShow={() => onShowTransactions({ target: unplannedTarget(section), title: `Not in plan (${SECTION_LABEL[section]}), ${column ? columnLabel(column) : "last 12 months"}`, months, items: pieces, sign: section === "income" ? 1 : -1 })}
             renderAction={(piece) => <Button size="xs" variant="outline" onClick={() => addFor(piece)} aria-label={`Add a row for ${piece.label}`}><Plus className="size-3" aria-hidden />Row</Button>}
           />
         )}
@@ -352,10 +426,10 @@ function UnplannedPanel({ computed, snapshot, placed, section, column, onEdit, o
 
 // ─── Groups, sections, balances ──────────────────────────────────────────────
 
-function GroupPanel({ doc, groupId, onEdit, onSelectLine }: Props & { groupId: string }) {
+function GroupPanel({ doc, groupId, onEdit, onSelectLine, onAddRow }: Props & { groupId: string }) {
   const group = doc.groups.find((g) => g.id === groupId);
   if (!group) return null;
-  const add = () => { const row = createRow({ name: "New row", section: group.section, groupId }); onEdit((d) => addRow(d, row)); onSelectLine(`row:${row.id}`); };
+  const add = () => onAddRow(group.section, groupId);
   return (
     <Block title="Group">
       <div className="space-y-1"><Label htmlFor="cf-group-name" className="text-xs">Name</Label><TextField id="cf-group-name" value={group.name} maxLength={NAME_MAX} onCommit={(name) => onEdit((d) => renameGroup(d, groupId, name))} /></div>
@@ -370,8 +444,8 @@ function GroupPanel({ doc, groupId, onEdit, onSelectLine }: Props & { groupId: s
   );
 }
 
-function SectionPanel({ section, onEdit, onSelectLine }: Props & { section: SectionId }) {
-  const add = () => { const row = createRow({ name: "New row", section }); onEdit((d) => addRow(d, row)); onSelectLine(`row:${row.id}`); };
+function SectionPanel({ section, onEdit, onSelectLine, onAddRow }: Props & { section: SectionId }) {
+  const add = () => onAddRow(section, null);
   const addNewGroup = () => {
     let created = "";
     onEdit((d) => { const next = addGroup(d, section, "New group"); created = next.groupId; return next.doc; });

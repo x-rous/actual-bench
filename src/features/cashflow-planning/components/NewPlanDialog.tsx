@@ -21,19 +21,24 @@ export function NewPlanDialog({ snapshot, today, existingNames, busy, loansPendi
   const [start, setStart] = useState<Month>(`${year}-01`);
   const [years, setYears] = useState("5");
   const [template, setTemplate] = useState<Template>(snapshot ? "groups" : "blank");
+  const [cards, setCards] = useState<"cash" | "outside">("cash");
+  const cardAccounts = (snapshot?.accounts ?? []).filter((a) => a.accountClass === "credit-card" && !a.excluded && !a.closed);
   const yearCount = Number(years);
   const valid = name.trim().length > 0 && Number.isInteger(yearCount) && yearCount >= MIN_YEARS && yearCount <= MAX_YEARS;
   const hasHistory = !!snapshot && snapshot.movement.length > 0;
 
   const create = () => {
     if (!valid) return;
-    if ((template === "groups" || template === "categories") && snapshot) onCreate(buildPlanFromActuals(snapshot, { name, startMonth: start, years: yearCount, detail: template }));
-    else onCreate(createPlanDocument({ name, startMonth: start, years: yearCount, useActuals: template !== "worksheet" }));
+    if ((template === "groups" || template === "categories") && snapshot) onCreate(buildPlanFromActuals(snapshot, { name, startMonth: start, years: yearCount, detail: template, cards }));
+    else {
+      const doc = createPlanDocument({ name, startMonth: start, years: yearCount, useActuals: template !== "worksheet" });
+      onCreate(template === "blank" && cards === "outside" ? { ...doc, accountRoles: Object.fromEntries(cardAccounts.map((a) => [a.id, "outside" as const])) } : doc);
+    }
   };
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !busy) onClose(); }}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>New cash plan</DialogTitle>
           <DialogDescription>A plan is a month-by-month view of your cash, years ahead. It is saved in Actual Bench and never changes anything in Actual.</DialogDescription>
@@ -53,6 +58,15 @@ export function NewPlanDialog({ snapshot, today, existingNames, busy, loansPendi
               { value: "worksheet", title: "Plain worksheet", detail: "Not connected to Actual: every month is typed, starting from an opening balance you enter." },
             ]}
           />
+          {cardAccounts.length > 0 && template !== "worksheet" && (
+            <ChoiceCards<"cash" | "outside">
+              legend={`Credit cards (${cardAccounts.length})`} name="cf-new-cards" columns={2} value={cards} onChange={setCards}
+              options={[
+                { value: "cash", title: "Count card spending when it happens", detail: "Cards are part of the plan's cash: a purchase lowers the balance in the month it is made, and paying the card moves nothing. Category rows show everything you spent." },
+                { value: "outside", title: "Count card payments only", detail: "Cards are outside the plan: only what you pay to them counts, in the month you pay, each card on its own row. Category rows then show only what was paid straight from the bank, so do not forecast them from Actual's budget." },
+              ]}
+            />
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={busy}>Cancel</Button>

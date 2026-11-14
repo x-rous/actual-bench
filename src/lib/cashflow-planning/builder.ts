@@ -1,5 +1,5 @@
 import type { Basis, Month, PlanDocument, PlanGroup, PlanRow, SectionId } from "./types";
-import { accountRole, placeActuals, type Snapshot } from "./actuals";
+import { accountRole, placeActuals, unplannedTarget, type Snapshot } from "./actuals";
 import { createPlanDocument, createRow } from "./document";
 import { addMonths, monthIndex } from "./months";
 import { generateId } from "@/lib/uuid";
@@ -16,12 +16,17 @@ export type BuildOptions = {
   years: number;
   /** One expense row per category group, or one per category. */
   detail: "groups" | "categories";
+  /** Credit cards as part of the plan's cash (a purchase counts when it is made), or outside it (only the payments to them count). */
+  cards?: "cash" | "outside";
 };
 
 const LOOKBACK = 12;
 
 export function buildPlanFromActuals(snapshot: Snapshot, options: BuildOptions): PlanDocument {
-  const doc = createPlanDocument({ name: options.name, startMonth: options.startMonth, years: options.years, useActuals: true });
+  const base = createPlanDocument({ name: options.name, startMonth: options.startMonth, years: options.years, useActuals: true });
+  const doc = options.cards === "outside"
+    ? { ...base, accountRoles: Object.fromEntries(snapshot.accounts.filter((a) => a.accountClass === "credit-card" && !a.excluded).map((a) => [a.id, "outside" as const])) }
+    : base;
   const currentMonth = snapshot.today.slice(0, 7);
   const since = addMonths(currentMonth, -LOOKBACK);
   // With no rows, every movement lands in "Not in plan" with what it is: exactly the list of rows to create.
@@ -89,6 +94,8 @@ export function buildPlanFromActuals(snapshot: Snapshot, options: BuildOptions):
   }
   // A tracked loan gets a row even when nothing was paid yet: its schedule is what matters.
   for (const id of Object.keys(snapshot.loans)) if (snapshot.loans[id].state === "ready" && !transferMonths.has(id)) transferMonths.set(id, new Set());
+  // Loans that paid money into cash in these months: borrowing, shown as income on its own row.
+  const borrowedFrom = new Set(recent.filter((c) => c.kind === "transfer" && c.target === unplannedTarget("income")).map((c) => c.id));
   for (const id of [...transferMonths.keys()].sort((a, b) => (account.get(a)?.name ?? "").localeCompare(account.get(b)?.name ?? ""))) {
     const info = account.get(id);
     if (!info) continue;
@@ -97,7 +104,9 @@ export function buildPlanFromActuals(snapshot: Snapshot, options: BuildOptions):
     if (role === "savings") {
       rows.push(createRow({ name: info.name, section: "savings", basis: basisFor(transferMonths.get(id)!), links: { accounts: [{ id }] } }));
     } else if (info.accountClass === "loan" || info.accountClass === "other-liability" || info.accountClass === "credit-card") {
-      rows.push(createRow({ name: info.name, section: "debt", basis: loan?.state === "ready" ? { kind: "loan" } : basisFor(transferMonths.get(id)!), links: { accounts: [{ id }] } }));
+      rows.push(createRow({ name: info.accountClass === "credit-card" ? `${info.name} payments` : info.name, section: "debt", basis: loan?.state === "ready" ? { kind: "loan" } : basisFor(transferMonths.get(id)!), links: { accounts: [info.accountClass === "loan" ? { id, flow: "out" } : { id }] } }));
+      // Borrowing is not a monthly habit: the row shows what was drawn, and the next amounts are typed by hand.
+      if (borrowedFrom.has(id)) rows.push(createRow({ name: `${info.name} borrowed`, section: "income", basis: { kind: "manual" }, links: { accounts: [{ id, flow: "in" }] } }));
     } else if (info.accountClass === "property" || info.accountClass === "vehicle" || info.accountClass === "other-asset") {
       // What was put into an asset is rarely a monthly habit: the row is there to plan the next amounts by hand.
       rows.push(createRow({ name: info.name, section: "expenses", groupId: options.detail === "categories" ? group("expenses", "Assets") : null, basis: { kind: "manual" }, links: { accounts: [{ id }] } }));

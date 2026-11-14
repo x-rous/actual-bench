@@ -44,6 +44,8 @@ export type Computed = {
   unplanned: Record<SectionId, number[]>;
   /** Cash-signed lines outside the sections. */
   inTransit: number[];
+  /** What counting transactions in another month took out of or added to each month, so the balances stay real. */
+  moved: number[];
   startingBalances: number[];
   net: number[];
   opening: number[];
@@ -169,12 +171,13 @@ export function computePlan(doc: PlanDocument, snapshot: Snapshot | null, placed
         const byMonth = new Map<Month, number>();
         const problems: string[] = [];
         let found = 0;
+        const principalOnly = row.basis.count === "principal";
         for (const link of row.links.accounts) {
           const loan = live.snapshot.loans[link.id];
           if (!loan) continue;
           found++;
           if (loan.state === "unavailable") { problems.push(loan.reason); continue; }
-          for (const [due, amount] of Object.entries(loan.byMonth)) {
+          for (const [due, amount] of Object.entries(principalOnly ? loan.principal : loan.payment)) {
             const month = currentMonth && due < currentMonth ? currentMonth : due;
             byMonth.set(month, (byMonth.get(month) ?? 0) + amount * -SECTION_SIGN[row.section]);
           }
@@ -228,7 +231,7 @@ export function computePlan(doc: PlanDocument, snapshot: Snapshot | null, placed
     const section = sectionTotals[row.section];
     for (let i = 0; i < count; i++) { section[i] += values[i]; if (group) group[i] += values[i]; }
   }
-  const inTransit = zeros(count), startingBalances = zeros(count);
+  const inTransit = zeros(count), startingBalances = zeros(count), moved = zeros(count);
   if (live) {
     for (const section of SECTIONS) {
       for (const [month, amount] of live.placed.unplanned[section]) {
@@ -238,6 +241,7 @@ export function computePlan(doc: PlanDocument, snapshot: Snapshot | null, placed
     }
     for (const [month, amount] of live.placed.inTransit) { const i = at(month); if (i >= 0 && i < count) inTransit[i] += amount; }
     for (const [month, amount] of live.placed.startingCash) { const i = at(month); if (i >= 0 && i < count) startingBalances[i] += amount; }
+    for (const [month, amount] of live.placed.moved) { const i = at(month); if (i >= 0 && i < count) moved[i] += amount; }
   }
 
   // ── Balances ───────────────────────────────────────────────────────────────
@@ -250,7 +254,7 @@ export function computePlan(doc: PlanDocument, snapshot: Snapshot | null, placed
   }
   const cashNow = live ? [...live.placed.cashChange.values()].reduce((sum, amount) => sum + amount, 0) : doc.openingBalance;
   for (let i = 0; i < count; i++) {
-    let flow = inTransit[i] + startingBalances[i];
+    let flow = inTransit[i] + moved[i] + startingBalances[i];
     for (const section of SECTIONS) flow += sectionTotals[section][i] * SECTION_SIGN[section];
     // A plan that starts in the future starts from today's balance.
     if (live && i === 0 && kinds[0] === "forecast") balance = cashNow;
@@ -312,7 +316,7 @@ export function computePlan(doc: PlanDocument, snapshot: Snapshot | null, placed
   });
 
   return {
-    months, kinds, currentIndex, rows, groupTotals, sectionTotals, unplanned, inTransit, startingBalances, net, opening, closing, belowMinimum, savings,
+    months, kinds, currentIndex, rows, groupTotals, sectionTotals, unplanned, inTransit, moved, startingBalances, net, opening, closing, belowMinimum, savings,
     kpis: {
       cashNow,
       lowest12: lowest(from + 12),

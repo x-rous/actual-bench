@@ -45,7 +45,8 @@ function household(): Snapshot {
     uncategorizedIn: [{ month: "2026-01", accountId: "bank", amountMinor: 5_000 }],
     transfersIn,
     schedules: [{ id: "s-rent", name: "Insurance", completed: false, amount: -120_000, dates: ["2026-03-20", "2026-06-20", "2026-09-20"] }],
-    loans: { mortgage: { state: "ready", name: "Mortgage", byMonth: { "2026-03": 100_000, "2026-04": 100_000, "2026-05": 100_000, "2026-06": 40_000 } } },
+    loans: { mortgage: { state: "ready", name: "Mortgage", split: true, principal: { "2026-03": 100_000, "2026-04": 100_000, "2026-05": 100_000, "2026-06": 40_000 }, payment: { "2026-03": 130_000, "2026-04": 130_000, "2026-05": 130_000, "2026-06": 45_000 } } },
+    loanCosts: [], shifts: [],
     budget: { months: { "2026-03": { groceries: 110_000 }, "2026-04": { groceries: 120_000 } }, lastMonth: "2026-04" },
   };
 }
@@ -56,7 +57,7 @@ function plan(change?: (doc: PlanDocument) => PlanDocument): PlanDocument {
     createRow({ name: "Salary", section: "income", basis: { kind: "average", months: 3 }, links: { categories: ["salary"] } }),
     createRow({ name: "Living", section: "expenses", basis: { kind: "average", months: 3 }, links: { categoryGroups: ["g-living"] } }),
     createRow({ name: "Broker", section: "savings", basis: { kind: "average", months: 3 }, links: { accounts: [{ id: "broker" }] } }),
-    createRow({ name: "Mortgage", section: "debt", basis: { kind: "loan" }, links: { accounts: [{ id: "mortgage" }] } }),
+    createRow({ name: "Mortgage", section: "debt", basis: { kind: "loan", count: "principal" }, links: { accounts: [{ id: "mortgage" }] } }),
   ];
   const built = { ...doc, rows };
   return change ? change(built) : built;
@@ -180,6 +181,99 @@ describe("forecasting", () => {
   });
 });
 
+describe("whole loan repayments", () => {
+  // Each month 300.00 of interest is recorded on its own line, in the Mortgage Interest category, next to the 1,000 transfer.
+  const withInterest = (): Snapshot => {
+    const snapshot = household();
+    const months = ["2025-11", "2025-12", "2026-01", "2026-02", "2026-03"];
+    return {
+      ...snapshot,
+      categories: [...snapshot.categories, { id: "interest", name: "Mortgage Interest", groupId: "g-home", groupName: "Home", isIncome: false, hidden: false }],
+      movement: [...snapshot.movement, ...months.map((month) => ({ month, accountId: "bank", categoryId: "interest", transferAccountId: null, amountMinor: -30_000, count: 1 }))],
+      loanCosts: months.map((month) => ({ id: `i-${month}`, month, accountId: "bank", categoryId: "interest", amountMinor: -30_000, loanAccountId: "mortgage" })),
+    };
+  };
+  const withHome = (count?: "principal") => plan((d) => ({
+    ...d,
+    rows: [...d.rows.filter((r) => r.name !== "Mortgage"), createRow({ name: "Mortgage", section: "debt", basis: count ? { kind: "loan", count } : { kind: "loan" }, links: { accounts: [{ id: "mortgage" }] } }), createRow({ name: "Home", section: "expenses", basis: { kind: "average", months: 3 }, links: { categoryGroups: ["g-home"] } })],
+  }));
+
+  it("counts the interest lines with the loan, not with their category, and forecasts the whole instalment", () => {
+    const doc = withHome();
+    const result = run(doc, withInterest());
+    expect(result.rows.get(rowOf(doc, "Mortgage").id)!.actual[0]).toBe(130_000);
+    expect(result.rows.get(rowOf(doc, "Home").id)!.actual[0]).toBe(0);
+    expect(result.rows.get(rowOf(doc, "Home").id)!.typical).toBe(0);
+    expect(result.rows.get(rowOf(doc, "Mortgage").id)!.values.slice(3, 6)).toEqual([130_000, 130_000, 45_000]);
+    // Nothing is counted twice: the month still adds up to the change in cash.
+    const flows = SECTIONS.reduce((sum, s) => sum + result.sectionTotals[s][0] * SECTION_SIGN[s], 0);
+    expect(result.closing[0] - result.opening[0]).toBe(flows);
+  });
+
+  it("keeps the interest in its category when only the principal is counted", () => {
+    const doc = withHome("principal");
+    const result = run(doc, withInterest());
+    expect(result.rows.get(rowOf(doc, "Mortgage").id)!.actual[0]).toBe(100_000);
+    expect(result.rows.get(rowOf(doc, "Home").id)!.actual[0]).toBe(30_000);
+    expect(result.rows.get(rowOf(doc, "Mortgage").id)!.values[3]).toBe(100_000);
+  });
+});
+
+describe("money borrowed from a loan", () => {
+  // 20,000 drawn from the mortgage into the bank in January, next to the usual 1,000 repayment.
+  const drawn = (): Snapshot => {
+    const snapshot = household();
+    return {
+      ...snapshot,
+      movement: [...snapshot.movement, { month: "2026-01", accountId: "bank", categoryId: null, transferAccountId: "mortgage", amountMinor: 2_000_000, count: 1 }],
+      transfersIn: [...snapshot.transfersIn, { month: "2026-01", accountId: "bank", transferAccountId: "mortgage", amountMinor: 2_000_000 }],
+    };
+  };
+
+  it("is income, never a negative repayment, whether or not a row follows it", () => {
+    const doc = plan();
+    const result = run(doc, drawn());
+    expect(result.rows.get(rowOf(doc, "Mortgage").id)!.actual[0]).toBe(100_000);
+    expect(result.unplanned.income[0]).toBe(2_000_000 + 5_000);
+    const withRow = plan((d) => ({ ...d, rows: [...d.rows, createRow({ name: "Drawn", section: "income", links: { accounts: [{ id: "mortgage", flow: "in" }] } })] }));
+    const followed = run(withRow, drawn());
+    expect(followed.rows.get(rowOf(withRow, "Drawn").id)!.actual[0]).toBe(2_000_000);
+    expect(followed.rows.get(rowOf(withRow, "Mortgage").id)!.actual[0]).toBe(100_000);
+    expect(placeActuals(withRow, drawn()).conflicts).toEqual([]);
+    const built = buildPlanFromActuals(drawn(), { name: "Mine", startMonth: "2026-01", years: 1, detail: "groups" });
+    expect(built.rows.filter((r) => r.links.accounts[0]?.id === "mortgage").map((r) => [r.section, r.name, r.links.accounts[0].flow])).toEqual([["debt", "mortgage", "out"], ["income", "mortgage borrowed", "in"]]);
+  });
+});
+
+describe("counting a transaction in another month", () => {
+  // 150.00 of groceries dated 1 Feb that belonged to January.
+  const late = { id: "t-late", date: "2026-02-01", accountId: "bank", categoryId: "groceries", transferAccountId: null, amountMinor: -15_000 };
+
+  it("follows a #YYYY-MM tag, keeps the real balances, and shows what was moved", () => {
+    const doc = plan();
+    const snapshot = { ...household(), shifts: [{ ...late, tagMonth: "2026-01" }] };
+    const base = run(doc, household()), result = run(doc, snapshot);
+    const living = result.rows.get(rowOf(doc, "Living").id)!;
+    expect(living.actual.slice(0, 2)).toEqual([115_000, 85_000]);
+    expect(result.moved.slice(0, 3)).toEqual([15_000, -15_000, 0]);
+    expect(result.closing).toEqual(base.closing);
+    const placed = placeActuals(doc, snapshot);
+    expect(placed.shifted.get("t-late")).toEqual({ from: "2026-02", to: "2026-01", byTag: true });
+    expect(placed.shiftNotes.get(`${rowOf(doc, "Living").id}|2026-01`)).toEqual([{ id: "t-late", amount: 15_000, from: "2026-02", to: "2026-01" }]);
+  });
+
+  it("lets the plan move a transaction, or cancel its tag, and never into a month that has not ended", () => {
+    const tagged = { ...household(), shifts: [{ ...late, tagMonth: "2026-01" as string | null }] };
+    const untagged = { ...household(), shifts: [{ ...late, tagMonth: null }] };
+    const moved = { ...plan(), moves: { "t-late": "2026-01" } };
+    expect(run(moved, untagged).rows.get(rowOf(moved, "Living").id)!.actual[0]).toBe(115_000);
+    const cancelled = { ...plan(), moves: { "t-late": "2026-02" } };
+    expect(run(cancelled, tagged).rows.get(rowOf(cancelled, "Living").id)!.actual[0]).toBe(100_000);
+    const future = { ...plan(), moves: { "t-late": "2026-06" } };
+    expect(run(future, untagged).moved.every((v) => v === 0)).toBe(true);
+  });
+});
+
 describe("building a plan from Actual", () => {
   it("creates a row for everything that moved cash, and leaves nothing unplanned but uncategorized entries", () => {
     const snapshot = household();
@@ -187,6 +281,13 @@ describe("building a plan from Actual", () => {
     expect(doc.rows.map((r) => [r.section, r.name, r.basis.kind])).toEqual([
       ["income", "Salary", "average"], ["expenses", "Living", "average"], ["savings", "broker", "average"], ["debt", "mortgage", "loan"],
     ]);
+    // A whole repayment is the default for a loan with a schedule.
+    expect(doc.rows[3].basis).toEqual({ kind: "loan" });
+    // With cards outside the plan, only the payments to them count.
+    const outside = buildPlanFromActuals(snapshot, { name: "Mine", startMonth: "2026-01", years: 2, detail: "groups", cards: "outside" });
+    expect(outside.accountRoles).toEqual({ card: "outside" });
+    expect(outside.rows.map((r) => r.name)).toContain("card payments");
+    expect(run(outside, snapshot).rows.get(outside.rows.find((r) => r.name === "Living")!.id)!.actual[0]).toBe(80_000);
     const result = run(doc, snapshot);
     expect(result.unplanned.expenses[1]).toBe(0);
     expect(result.unplanned.debt[1]).toBe(0);

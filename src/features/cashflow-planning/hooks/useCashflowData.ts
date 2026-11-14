@@ -11,7 +11,10 @@ import { useAccountFlags } from "@/features/accounts/hooks/useAccountFlags";
 import { useAccountReporting } from "@/features/accounts/hooks/useAccountReporting";
 import { useLocalToday } from "@/features/assets-debt/lib/useLocalToday";
 import type { SnapAccount, Snapshot } from "@/lib/cashflow-planning/actuals";
-import { readBudget, readLedger, readLoanForecasts } from "../lib/reads";
+import { readBudget, readLedger, readLoanForecasts, readShifts } from "../lib/reads";
+
+const EMPTY_COSTS: Snapshot["loanCosts"] = [];
+const EMPTY_SHIFTS: Snapshot["shifts"] = [];
 
 export type CashflowData =
   | { state: "idle" }
@@ -30,7 +33,7 @@ export type CashflowData =
  * categories, monthly movements, schedules), then the loans' projections and, only when a row follows it, the budget.
  * Account classes, Financial Reporting choices and flags come from the app database, as on the Accounts page. Read-only.
  */
-export function useCashflowData(options: { enabled: boolean; needBudget: boolean }): CashflowData {
+export function useCashflowData(options: { enabled: boolean; needBudget: boolean; /** Ids of the transactions the open plan counts in another month. */ movedIds?: readonly string[] }): CashflowData {
   const connection = useConnectionStore(selectActiveInstance);
   const queryClient = useQueryClient();
   const today = useLocalToday();
@@ -81,7 +84,18 @@ export function useCashflowData(options: { enabled: boolean; needBudget: boolean
     retry: false,
   });
 
+  // Tagged and moved transactions: optional, so a failed read only means nothing is moved.
+  const movedKey = [...(options.movedIds ?? [])].sort().join(",");
+  const shifts = useQuery({
+    queryKey: ["cashflow-planning", "shifts", connection?.id, budgetSyncId, today, movedKey],
+    queryFn: () => readShifts(connection!, today, movedKey ? movedKey.split(",") : []),
+    enabled: enabled && !!ledger.data,
+    retry: false,
+    placeholderData: (previous) => previous,
+  });
+
   const refresh = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ["cashflow-planning", "shifts", connection?.id] });
     void queryClient.invalidateQueries({ queryKey: ["cashflow-planning", "ledger", connection?.id] });
     void queryClient.invalidateQueries({ queryKey: ["cashflow-planning", "loans", connection?.id] });
     void queryClient.invalidateQueries({ queryKey: ["cashflow-planning", "budget", connection?.id] });
@@ -96,9 +110,9 @@ export function useCashflowData(options: { enabled: boolean; needBudget: boolean
     return {
       today, accounts, categories: ledger.data.categories, movement: ledger.data.movement, startingBalances: ledger.data.startingBalances,
       uncategorizedIn: ledger.data.uncategorizedIn, transfersIn: ledger.data.transfersIn, schedules: ledger.data.schedules,
-      loans: loans.data ?? {}, budget: budget.data ?? null,
+      loans: loans.data?.forecasts ?? {}, loanCosts: loans.data?.costs ?? EMPTY_COSTS, shifts: shifts.data ?? EMPTY_SHIFTS, budget: budget.data ?? null,
     };
-  }, [ledger.data, accounts, today, loans.data, budget.data]);
+  }, [ledger.data, accounts, today, loans.data, shifts.data, budget.data]);
 
   const { isError: ledgerFailed, error: ledgerError, isFetching: ledgerFetching, data: ledgerData } = ledger;
   const metaFailed = classes.failed || reporting.failed || flags.failed;

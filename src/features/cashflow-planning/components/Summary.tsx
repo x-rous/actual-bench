@@ -7,20 +7,24 @@ import { useTip, useWidth } from "@/features/financial-insights/components/chart
 import { cn } from "@/lib/utils";
 import type { Computed } from "@/lib/cashflow-planning/engine";
 import { monthLabel, yearOf } from "@/lib/cashflow-planning/months";
-import type { PlanDocument } from "@/lib/cashflow-planning/types";
+import type { Month, PlanDocument } from "@/lib/cashflow-planning/types";
 
-function Stat({ label, value, detail, tone }: { label: string; value: string; detail?: string; tone?: "bad" | "good" }) {
-  return (
-    <div className="min-w-0 flex-1 border-r border-border px-4 py-2 last:border-r-0">
+function Stat({ label, value, detail, tone, onClick }: { label: string; value: string; detail?: string; tone?: "bad" | "good"; /** Shows the month the figure is about in the grid. */ onClick?: () => void }) {
+  const content = (
+    <>
       <p className="truncate text-[11px] text-muted-foreground">{label}</p>
       <p className={cn("truncate text-base font-semibold leading-tight tabular-nums", tone === "bad" && "text-destructive", tone === "good" && "text-emerald-700 dark:text-emerald-400")}>{value}</p>
-      <p className="truncate text-[11px] text-muted-foreground">{detail ?? " "}</p>
-    </div>
+      <p className="truncate text-[11px] text-muted-foreground">{detail ?? "\u00a0"}</p>
+    </>
   );
+  const box = "min-w-0 flex-1 border-r border-border px-4 py-2 text-left last:border-r-0";
+  return onClick
+    ? <button type="button" onClick={onClick} title="Show this month in the grid" className={cn(box, "outline-none hover:bg-accent/60 focus-visible:bg-accent")}>{content}</button>
+    : <div className={box}>{content}</div>;
 }
 
 /** The answers the plan exists for, in one row: where cash stands, how low it gets, and when. */
-export function SummaryStrip({ doc, computed }: { doc: PlanDocument; computed: Computed }) {
+export function SummaryStrip({ doc, computed, onGo }: { doc: PlanDocument; computed: Computed; onGo: (month: Month) => void }) {
   const { kpis } = computed;
   const minimum = doc.minimumCash;
   const lowest = kpis.lowest12;
@@ -28,13 +32,13 @@ export function SummaryStrip({ doc, computed }: { doc: PlanDocument; computed: C
   return (
     <div className="flex shrink-0 border-b border-border bg-background" role="group" aria-label="Key figures">
       <Stat label={doc.useActuals ? "Cash today" : "Opening cash"} value={money(kpis.cashNow)} detail={doc.useActuals ? "In the plan's cash accounts" : "Typed in Plan settings"} />
-      <Stat label="Lowest point, next 12 months" value={lowest ? money(lowest.amount) : "-"} detail={lowest ? `End of ${monthLabel(lowest.month)}` : undefined} tone={lowest && lowest.amount < (minimum ?? 0) ? "bad" : undefined} />
+      <Stat label="Lowest point, next 12 months" value={lowest ? money(lowest.amount) : "-"} detail={lowest ? `End of ${monthLabel(lowest.month)}` : undefined} tone={lowest && lowest.amount < (minimum ?? 0) ? "bad" : undefined} onClick={lowest ? () => onGo(lowest.month) : undefined} />
       {minimum === null
         ? <Stat label="Minimum cash" value="Not set" detail="Set one in Plan settings" />
         : kpis.firstBelow
-          ? <Stat label={`Below the minimum (${money(minimum)})`} value={monthLabel(kpis.firstBelow)} detail="First month it happens" tone="bad" />
+          ? <Stat label={`Below the minimum (${money(minimum)})`} value={monthLabel(kpis.firstBelow)} detail="First month it happens" tone="bad" onClick={() => onGo(kpis.firstBelow!)} />
           : <Stat label={`Minimum cash (${money(minimum)})`} value="Never below" detail="Through the whole plan" tone="good" />}
-      {kpis.endOfYear && <Stat label={`End of ${kpis.endOfYear.month.slice(0, 4)}`} value={money(kpis.endOfYear.amount)} detail="Forecast closing balance" />}
+      {kpis.endOfYear && <Stat label={`End of ${kpis.endOfYear.month.slice(0, 4)}`} value={money(kpis.endOfYear.amount)} detail="Forecast closing balance" onClick={() => onGo(kpis.endOfYear!.month)} />}
       <Stat label="Next 12 months, net" value={money(kpis.next12.net)} detail={`${money(average)} a month on average`} tone={kpis.next12.net < 0 ? "bad" : undefined} />
       <Stat label={`End of plan (${monthLabel(kpis.endOfPlan.month)})`} value={money(kpis.endOfPlan.amount)} detail={computed.savings ? `With savings ${money(kpis.endOfPlan.amount + computed.savings[computed.savings.length - 1])}` : undefined} />
     </div>

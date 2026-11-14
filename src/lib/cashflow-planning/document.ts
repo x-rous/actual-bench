@@ -18,6 +18,7 @@ export const MAX_GROUPS = 100;
 export const MAX_RULES = 24;
 export const MAX_GOALS = 20;
 export const MAX_LINKS = 400;
+export const MAX_MOVES = 2000;
 /** 10^13 minor units: far above any real balance, far below where integers stop being exact. */
 export const MAX_AMOUNT = 10_000_000_000_000;
 
@@ -37,6 +38,7 @@ export function createPlanDocument(input: { name: string; startMonth: Month; yea
     groups: [],
     rows: [],
     goals: [],
+    moves: {},
   };
 }
 
@@ -74,7 +76,7 @@ function parseBasis(value: unknown, row: string): Basis {
   switch (value.kind) {
     case "manual": return { kind: "manual" };
     case "budget": return { kind: "budget" };
-    case "loan": return { kind: "loan" };
+    case "loan": return value.count === "principal" ? { kind: "loan", count: "principal" } : { kind: "loan" };
     case "schedule": return { kind: "schedule", scheduleIds: ids(value.scheduleIds, `${row}: schedules`) };
     case "average": {
       const months = (AVERAGE_WINDOWS as readonly unknown[]).includes(value.months) ? (value.months as (typeof AVERAGE_WINDOWS)[number]) : fail(`${row}: the average must be over 3, 6, 12 or 24 months`);
@@ -164,6 +166,12 @@ export function parsePlanDocument(value: unknown): PlanDocument {
     return { id: id(entry.id, "A goal"), name: text(entry.name, "A goal name", NAME_MAX).trim() || "Goal", month: month(entry.month, "A goal's month"), amount: amount(entry.amount, "A goal's amount"), basis: entry.basis === "total" ? "total" : "cash" };
   });
 
+  const moves: Record<string, Month> = {};
+  if (value.moves != null) {
+    if (!isRecord(value.moves)) fail("Moved transactions are not valid");
+    for (const [transactionId, to] of Object.entries(value.moves as Record<string, unknown>).slice(0, MAX_MOVES)) moves[id(transactionId, "A moved transaction")] = month(to, "A moved transaction's month");
+  }
+
   return {
     schemaVersion: SCHEMA_VERSION, name: name.slice(0, NAME_MAX), startMonth, years,
     useActuals: value.useActuals !== false,
@@ -171,7 +179,7 @@ export function parsePlanDocument(value: unknown): PlanDocument {
     accountRoles,
     minimumCash: value.minimumCash == null ? null : amount(value.minimumCash, "The minimum cash"),
     savingsGrowthPct: value.savingsGrowthPct == null ? 0 : percent(value.savingsGrowthPct, "Savings growth"),
-    groups, rows, goals,
+    groups, rows, goals, moves,
   };
 }
 
@@ -312,6 +320,7 @@ export function duplicateDocument(doc: PlanDocument, name: string): PlanDocument
     rows: doc.rows.map((r) => ({ ...r, id: generateId(), groupId: r.groupId ? groupIds.get(r.groupId) ?? null : null, rules: r.rules.map((rule) => ({ ...rule, id: generateId() })), cells: { ...r.cells }, links: { categories: [...r.links.categories], categoryGroups: [...r.links.categoryGroups], accounts: r.links.accounts.map((a) => ({ ...a })) } })),
     goals: doc.goals.map((g) => ({ ...g, id: generateId() })),
     accountRoles: { ...doc.accountRoles },
+    moves: { ...doc.moves },
   };
 }
 
@@ -341,4 +350,25 @@ export function parseAmount(source: string): number | null {
   const minor = Number(whole) * 100 + Number(frac.slice(0, 2)) + (Number(frac[2]) >= 5 ? 1 : 0);
   if (!Number.isSafeInteger(minor) || minor > MAX_AMOUNT) return null;
   return negative && minor !== 0 ? -minor : minor;
+}
+
+/** Counts an Actual transaction in another month (`null` puts it back where its date, or its tag, says). */
+export function setMove(doc: PlanDocument, transactionId: string, month: Month | null): PlanDocument {
+  const moves = { ...doc.moves };
+  if (month === null) { if (!(transactionId in moves)) return doc; delete moves[transactionId]; }
+  else {
+    if (moves[transactionId] === month) return doc;
+    if (!(transactionId in moves) && Object.keys(moves).length >= MAX_MOVES) throw new PlanDocumentError(`A plan can move ${MAX_MOVES} transactions`);
+    moves[transactionId] = month;
+  }
+  return { ...doc, moves };
+}
+
+/** Puts a row just before another one, in that row's section and group. */
+export function moveRowBefore(doc: PlanDocument, rowId: string, beforeRowId: string): PlanDocument {
+  const row = doc.rows.find((r) => r.id === rowId), before = doc.rows.find((r) => r.id === beforeRowId);
+  if (!row || !before || row === before) return doc;
+  const rest = doc.rows.filter((r) => r !== row);
+  const at = rest.indexOf(before);
+  return { ...doc, rows: [...rest.slice(0, at), { ...row, section: before.section, groupId: before.groupId }, ...rest.slice(at)] };
 }

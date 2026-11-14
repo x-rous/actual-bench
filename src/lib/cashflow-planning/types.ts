@@ -50,8 +50,12 @@ export type Basis =
   | { kind: "budget" }
   /** The upcoming dates of Actual schedules. */
   | { kind: "schedule"; scheduleIds: string[] }
-  /** The repayments the Loans page projects for the linked loan accounts. */
-  | { kind: "loan" };
+  /**
+   * The repayments the Loans page projects for the linked loan accounts: the whole instalment, or (`count: "principal"`) only the
+   * part that reaches the loan account. With the whole instalment, the interest and fee lines of recorded repayments count in
+   * this row too, not in their category's.
+   */
+  | { kind: "loan"; count?: "principal" };
 
 export type BasisKind = Basis["kind"];
 
@@ -101,6 +105,8 @@ export type PlanDocument = {
   groups: PlanGroup[];
   rows: PlanRow[];
   goals: Goal[];
+  /** Actual transactions this plan counts in another month than their date, by transaction id. A transaction's own month here cancels a `#YYYY-MM` tag in its note. */
+  moves: Record<string, Month>;
 };
 
 /** A saved plan as the app database returns it. */
