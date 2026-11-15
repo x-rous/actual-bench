@@ -307,7 +307,10 @@ export function PlanGrid({ doc, computed, lines, columns, cents, pastMode, selec
       if (line.kind !== "row") continue;
       for (let c = start; c <= to; c++) {
         const column = columns[c], source = columns[range.left + ((c - start) % width)];
-        if (column?.kind === "month" && source?.kind === "month" && isEditable(line, column, kinds)) edits.push({ rowId: line.row.id, month: column.month, amount: line.result.values[source.index] });
+        if (column?.kind !== "month" || source?.kind !== "month" || !isEditable(line, column, kinds)) continue;
+        // The amount the source cell shows (the plan, in a past month of the Planned view); a cell showing none copies nothing.
+        const shown = monthValue(line, source.index, kinds[source.index], pastMode, planTotals);
+        if (shown !== null) edits.push({ rowId: line.row.id, month: column.month, amount: shown });
       }
     }
     if (edits.length) onEdit(edits);
@@ -346,6 +349,7 @@ export function PlanGrid({ doc, computed, lines, columns, cents, pastMode, selec
     const startEdit = (text: string | null) => {
       if (!line || !column || line.kind !== "row" || column.kind !== "month" || !isEditable(line, column, kinds)) return false;
       const typed = line.row.cells[column.month];
+      cancelled.current.edit = false;
       setEditing({ line: line.key, col: column.key, text: text ?? (typed !== undefined ? formatAmountInput(typed) : "") });
       return true;
     };
@@ -403,6 +407,8 @@ export function PlanGrid({ doc, computed, lines, columns, cents, pastMode, selec
 
   // The lines are memoized, so they are handed callbacks that never change and reach the latest state through a ref.
   const dragging = useRef<"select" | "fill" | null>(null);
+  /** Set when Escape closes an editor, so the blur that follows as focus returns to the grid does not commit what was typed. */
+  const cancelled = useRef({ edit: false, rename: false });
   const latest = useRef({ commit, onSelect, onToggle, onCommand, selection, range, fillRight, fillTo, startRename, lines, lineIndex, colIndex });
   useLayoutEffect(() => { latest.current = { commit, onSelect, onToggle, onCommand, selection, range, fillRight, fillTo, startRename, lines, lineIndex, colIndex }; });
   useEffect(() => {
@@ -430,13 +436,19 @@ export function PlanGrid({ doc, computed, lines, columns, cents, pastMode, selec
       else if (dragging.current === "fill" && r) setFillTo(Math.max(r.right, cols.get(col) ?? r.right));
     },
     fillStart: () => { dragging.current = "fill"; },
-    startEdit: (line, col, text) => setEditing({ line, col, text }),
+    startEdit: (line, col, text) => { cancelled.current.edit = false; setEditing({ line, col, text }); },
     editText: (text) => setEditing((e) => (e ? { ...e, text } : e)),
-    commit: (text, target, move) => latest.current.commit(text, target, move),
-    cancel: () => { setEditing(null); scroller.current?.focus(); },
-    startRename: (line) => { const found = latest.current.lines[latest.current.lineIndex.get(line) ?? -1]; if (found) latest.current.startRename(found); },
+    commit: (text, target, move) => {
+      // The blur after Escape (no move) is not a commit.
+      if (cancelled.current.edit && move === null) { cancelled.current.edit = false; return; }
+      latest.current.commit(text, target, move);
+    },
+    cancel: () => { cancelled.current.edit = true; setEditing(null); scroller.current?.focus(); },
+    startRename: (line) => { cancelled.current.rename = false; const found = latest.current.lines[latest.current.lineIndex.get(line) ?? -1]; if (found) latest.current.startRename(found); },
     renameText: (text) => setRenaming((r) => (r ? { ...r, text } : r)),
     renameDone: (save, line, text) => {
+      if (save && cancelled.current.rename) { cancelled.current.rename = false; return; }
+      cancelled.current.rename = !save;
       setRenaming(null);
       if (save && text.trim()) latest.current.onCommand({ type: "rename", line, name: text.trim() });
       scroller.current?.focus();
@@ -798,7 +810,8 @@ const GridLine = memo(function GridLine({ line, gridId, rowNumber, columns, kind
         const inFill = fillRight >= 0 && c > rangeRight && c <= fillRight;
         const mouse = { onMouseDown: (e: React.MouseEvent) => handlers.cellDown(line.key, column.key, e), onMouseEnter: () => handlers.cellEnter(line.key, column.key), onContextMenu: (e: React.MouseEvent) => handlers.menu(line.key, column.key, e) };
         if (column.kind === "year") {
-          const total = aggregate(values, column.indexes, line.aggregate);
+          // A year adds up the months as they are shown: the plan, or the difference, in the past months of those views.
+          const total = aggregate(pastMode === "actual" ? values : values.map((_, i) => monthValue(line, i, kinds[i], pastMode, planTotals) ?? 0), column.indexes, line.aggregate);
           return (
             <td key={column.key} id={cellId(gridId, line.key, column.key)} data-cell={cellKey} role="gridcell" aria-selected={active} {...mouse}
               className={cn("relative z-0 h-7 cursor-default border-b border-l-2 border-border px-2 text-right font-medium tabular-nums whitespace-nowrap", "bg-muted", rowTone, strong && "font-semibold", inRange && "bg-accent", active && "outline outline-2 -outline-offset-2 outline-primary")}>

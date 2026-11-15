@@ -47,9 +47,12 @@ export function usePlans() {
  * tried again on the next edit or on Retry; a plan changed in another tab is never overwritten without the user saying so.
  * Plain functions over the store, so nothing here depends on React's render cycle.
  */
+/** Saves in flight, by budget and plan. Shared by every controller, so a page left and reopened never sends a plan twice at once. */
+const inFlight = new Set<string>();
+
 export function createAutosave(budgetSyncId: string) {
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
-  const running = new Set<string>();
+  const running = { has: (id: string) => inFlight.has(`${budgetSyncId}|${id}`), add: (id: string) => void inFlight.add(`${budgetSyncId}|${id}`), delete: (id: string) => void inFlight.delete(`${budgetSyncId}|${id}`) };
   let disposed = false;
   /** The page is going away or hidden: a follow-up save then goes out at once, with keepalive. */
   let leaving = false;
@@ -65,7 +68,8 @@ export function createAutosave(budgetSyncId: string) {
     if (running.has(id)) return;
     const state = useCashflowStore.getState();
     const current = state.sessions[id];
-    if (!current || state.budgetSyncId !== budgetSyncId || current.doc === current.saved) return;
+    // An explicit overwrite goes ahead even when the working copy equals the old saved copy: that copy no longer proves what the database holds.
+    if (!current || state.budgetSyncId !== budgetSyncId || (current.doc === current.saved && !force)) return;
     if (current.status === "conflict" && !force) return;
     running.add(id);
     const sent = current.doc;
@@ -150,7 +154,8 @@ export function usePlanActions(budgetSyncId: string | null) {
     if (!budgetSyncId) return null;
     try {
       const record = await savePlan({ budgetSyncId, document });
-      useCashflowStore.getState().adopt(record);
+      // The tab may have moved to another budget while this was on its way: that budget must not show this plan.
+      if (useCashflowStore.getState().budgetSyncId === budgetSyncId) useCashflowStore.getState().adopt(record);
       return record.id;
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not create the plan");
@@ -162,7 +167,7 @@ export function usePlanActions(budgetSyncId: string | null) {
     if (!budgetSyncId) return false;
     try {
       await deletePlan(budgetSyncId, id);
-      useCashflowStore.getState().remove(id);
+      if (useCashflowStore.getState().budgetSyncId === budgetSyncId) useCashflowStore.getState().remove(id);
       return true;
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not delete the plan");
@@ -175,7 +180,7 @@ export function usePlanActions(budgetSyncId: string | null) {
     if (!budgetSyncId) return;
     try {
       await deletePlan(budgetSyncId, id);
-      useCashflowStore.getState().setUnreadable(useCashflowStore.getState().unreadable.filter((p) => p.id !== id));
+      if (useCashflowStore.getState().budgetSyncId === budgetSyncId) useCashflowStore.getState().setUnreadable(useCashflowStore.getState().unreadable.filter((p) => p.id !== id));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not delete the plan");
     }
@@ -186,6 +191,7 @@ export function usePlanActions(budgetSyncId: string | null) {
     if (!budgetSyncId) return;
     try {
       const { plans, unreadable } = await listPlans(budgetSyncId);
+      if (useCashflowStore.getState().budgetSyncId !== budgetSyncId) return;
       useCashflowStore.getState().setUnreadable(unreadable);
       const record = plans.find((p) => p.id === id);
       if (record) useCashflowStore.getState().adopt(record, false);

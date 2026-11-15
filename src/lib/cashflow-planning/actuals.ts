@@ -366,7 +366,7 @@ export function placeActuals(doc: PlacementDoc, snapshot: Snapshot): Placed {
       if (borrowed) {
         put(undefined, "income", cell.month, moneyIn, "transfer", cell.counterpart);
         // What was repaid in the same month follows its category when it has one.
-        const categories = [...cell.byCategory.keys()];
+        const categories = [...cell.byCategory.keys()].filter((c) => c);
         const rowId = categories.length === 1 ? rowForCategory(categories[0]) : undefined;
         put(rowId, fallback, cell.month, moneyOut, rowId ? "category" : "transfer", rowId ? categories[0]! : cell.counterpart);
         continue;
@@ -412,7 +412,7 @@ export function placementKey(doc: PlacementDoc): string {
 }
 
 /** The pieces behind one row (or one section's "Not in plan") in the given months, largest first, with their names. */
-export function contributionsOf(placed: Placed, snapshot: Snapshot, target: string, months: ReadonlySet<Month>): { kind: Contribution["kind"]; id: string; label: string; amount: number }[] {
+export function contributionsOf(placed: Placed, snapshot: Snapshot, target: string, months: ReadonlySet<Month>, keepZero = false): { kind: Contribution["kind"]; id: string; label: string; amount: number }[] {
   const names = new Map<string, string>();
   for (const c of snapshot.categories) names.set(`category:${c.id}`, c.name);
   for (const a of snapshot.accounts) { names.set(`transfer:${a.id}`, `Transfers: ${a.name}`); names.set(`uncategorized:${a.id}`, `Uncategorized in ${a.name}`); names.set(`loanCost:${a.id}`, `Interest and fees: ${a.name}`); }
@@ -426,7 +426,7 @@ export function contributionsOf(placed: Placed, snapshot: Snapshot, target: stri
   }
   return [...sums.entries()]
     .map(([k, entry]) => ({ ...entry, label: names.get(k) ?? (entry.kind === "category" ? "Deleted category" : "Unknown account") }))
-    .filter((entry) => entry.amount !== 0)
+    .filter((entry) => keepZero || entry.amount !== 0)
     .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
 }
 

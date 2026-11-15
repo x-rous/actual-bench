@@ -49,8 +49,10 @@ export function ColorPicker({ value, onChange, onClear, ariaLabel, fallback = "#
   children?: ReactNode;
   className?: string;
 }) {
-  const current = value && HEX.test(value) ? value.toLowerCase() : null;
+  const current = value ? normalize(value) : null;
   const [mode, setMode] = useState<"palette" | "custom">("palette");
+  // The one swatch in the tab order: the chosen colour, or the first when the colour is not from the palette.
+  const inPalette = !!current && TONES.flat().includes(current);
   return (
     <Popover>
       <PopoverTrigger
@@ -67,9 +69,23 @@ export function ColorPicker({ value, onChange, onClear, ariaLabel, fallback = "#
           ))}
         </div>
         {mode === "palette" ? (
-          <div className="grid grid-cols-6 gap-1.5" role="radiogroup" aria-label="Palette">
-            {TONES.flat().map((hex) => (
-              <button key={hex} type="button" role="radio" aria-checked={current === hex} aria-label={hex} title={hex} onClick={() => onChange(hex)} style={{ backgroundColor: hex }} className="flex size-7 items-center justify-center rounded-md border border-border/60 transition-transform hover:scale-110 focus-visible:outline-2 focus-visible:outline-ring">
+          <div
+            className="grid grid-cols-6 gap-1.5" role="radiogroup" aria-label="Palette"
+            onKeyDown={(e) => {
+              // Arrows move through the colours and choose as they go; Tab leaves the palette.
+              const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -6, ArrowDown: 6 }[e.key];
+              if (!step) return;
+              const swatches = [...e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="radio"]')];
+              const at = swatches.indexOf(document.activeElement as HTMLButtonElement);
+              const next = swatches[at + step];
+              if (at < 0 || !next) return;
+              e.preventDefault();
+              next.focus();
+              next.click();
+            }}
+          >
+            {TONES.flat().map((hex, i) => (
+              <button key={hex} type="button" role="radio" tabIndex={(inPalette ? current === hex : i === 0) ? 0 : -1} aria-checked={current === hex} aria-label={hex} title={hex} onClick={() => onChange(hex)} style={{ backgroundColor: hex }} className="flex size-7 items-center justify-center rounded-md border border-border/60 transition-transform hover:scale-110 focus-visible:outline-2 focus-visible:outline-ring">
                 {current === hex && <Check className={cn("size-3.5", isLight(hex) ? "text-black" : "text-white")} aria-hidden />}
               </button>
             ))}

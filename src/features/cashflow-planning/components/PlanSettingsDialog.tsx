@@ -32,6 +32,7 @@ export function PlanSettingsDialog({ doc, snapshot, onEdit, onClose }: { doc: Pl
   // The plan runs from the first month to the last, both included.
   const monthCount = monthsBetween(start, last) + 1;
   const lengthValid = monthCount >= MIN_MONTHS && monthCount <= MAX_MONTHS;
+  const [startInvalid, setStartInvalid] = useState(false), [lastInvalid, setLastInvalid] = useState(false);
   const horizonChanged = start !== doc.startMonth || (lengthValid && monthCount !== doc.months);
   const dropped = lengthValid ? countOutside(doc, start, monthCount) : 0;
   const droppedGoals = lengthValid ? doc.goals.filter((g) => g.month < start || g.month > last).length : 0;
@@ -59,9 +60,9 @@ export function PlanSettingsDialog({ doc, snapshot, onEdit, onClose }: { doc: Pl
             <fieldset className="space-y-3 rounded-lg border bg-background p-4">
               <legend className="px-1 text-sm font-medium">Months covered</legend>
               <div className="flex flex-wrap items-end gap-3">
-                <div className="space-y-1.5"><Label htmlFor="cf-plan-start" className="text-xs text-muted-foreground">First month</Label><MonthField id="cf-plan-start" className="w-28" value={start} onCommit={(m) => { if (m) setStart(m); }} /></div>
-                <div className="space-y-1.5"><Label htmlFor="cf-plan-last" className="text-xs text-muted-foreground">Last month</Label><MonthField id="cf-plan-last" className="w-28" value={last} onCommit={(m) => { if (m) setLast(m); }} /></div>
-                <Button size="sm" disabled={!horizonChanged || !lengthValid} onClick={() => onEdit((d) => setHorizon(d, start, monthCount))}>Apply</Button>
+                <div className="space-y-1.5"><Label htmlFor="cf-plan-start" className="text-xs text-muted-foreground">First month</Label><MonthField id="cf-plan-start" className="w-28" value={start} onInvalid={setStartInvalid} onCommit={(m) => { if (m) setStart(m); }} /></div>
+                <div className="space-y-1.5"><Label htmlFor="cf-plan-last" className="text-xs text-muted-foreground">Last month</Label><MonthField id="cf-plan-last" className="w-28" value={last} onInvalid={setLastInvalid} onCommit={(m) => { if (m) setLast(m); }} /></div>
+                <Button size="sm" disabled={!horizonChanged || !lengthValid || startInvalid || lastInvalid} onClick={() => onEdit((d) => setHorizon(d, start, monthCount))}>Apply</Button>
                 <p className="pb-1.5 text-xs text-muted-foreground">Now {doc.startMonth} to {end}, {lengthLabel(doc.months)}.</p>
               </div>
               {!lengthValid && <p role="alert" className="text-xs text-destructive">A plan covers {MIN_MONTHS} months to {MAX_MONTHS / 12} years: the last month must be {MIN_MONTHS - 1} to {MAX_MONTHS - 1} months after the first.</p>}

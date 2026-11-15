@@ -127,7 +127,7 @@ export function parsePlanDocument(value: unknown): PlanDocument {
   const length = value.months !== undefined ? value.months : typeof value.years === "number" ? value.years * 12 : undefined;
   const months = typeof length === "number" && Number.isInteger(length) && length >= MIN_MONTHS && length <= MAX_MONTHS ? length : fail(`A plan covers ${MIN_MONTHS} to ${MAX_MONTHS} months (${MAX_MONTHS / 12} years at most)`);
   const endMonth = planEndMonth({ startMonth, months });
-  if (endMonth > "9999-12") fail("The plan ends too far in the future");
+  if (!isMonth(endMonth) || endMonth > "9999-12") fail("The plan ends too far in the future");
 
   const groups = list(value.groups, "Groups", MAX_GROUPS).map((entry): PlanGroup => {
     if (!isRecord(entry)) return fail("A group is not valid");
@@ -172,7 +172,9 @@ export function parsePlanDocument(value: unknown): PlanDocument {
   const moves: Record<string, Month> = {};
   if (value.moves != null) {
     if (!isRecord(value.moves)) fail("Moved transactions are not valid");
-    for (const [transactionId, to] of Object.entries(value.moves as Record<string, unknown>).slice(0, MAX_MOVES)) moves[id(transactionId, "A moved transaction")] = month(to, "A moved transaction's month");
+    const entries = Object.entries(value.moves as Record<string, unknown>);
+    if (entries.length > MAX_MOVES) fail(`A plan can hold ${MAX_MOVES} moved transactions at most`);
+    for (const [transactionId, to] of entries) moves[id(transactionId, "A moved transaction")] = month(to, "A moved transaction's month");
   }
 
   return {

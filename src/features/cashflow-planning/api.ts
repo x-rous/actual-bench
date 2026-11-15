@@ -5,6 +5,9 @@ import type { PlanDocument, PlanRecord, UnreadablePlan } from "@/lib/cashflow-pl
 /** The plan was saved from somewhere else since it was opened here. */
 export class PlanConflictError extends Error {}
 
+/** The app database is locked: nothing is wrong with the plan, and saving works again once it is unlocked. */
+export class PlanLockedError extends Error {}
+
 async function message(response: Response, fallback: string): Promise<string> {
   try { return ((await response.json()) as { error?: string }).error ?? fallback; } catch { return fallback; }
 }
@@ -23,7 +26,11 @@ export async function savePlan(input: { budgetSyncId: string; id?: string; baseR
   const body = JSON.stringify(input);
   const keepalive = options?.keepalive === true && new TextEncoder().encode(body).length < KEEPALIVE_MAX_BYTES;
   const response = await fetch("/api/cashflow-plans", { method: "PUT", headers: { "Content-Type": "application/json" }, body, keepalive });
-  if (response.status === 409) throw new PlanConflictError(await message(response, "This plan was changed somewhere else"));
+  if (response.status === 409) {
+    const text = await message(response, "This plan was changed somewhere else");
+    const code = await response.clone().json().then((b: { code?: string }) => b.code, () => undefined);
+    throw code === "VAULT_LOCKED" ? new PlanLockedError(text) : new PlanConflictError(text);
+  }
   if (!response.ok) throw new Error(await message(response, "Could not save the plan"));
   return ((await response.json()) as { plan: PlanRecord }).plan;
 }

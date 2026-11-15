@@ -24,7 +24,8 @@ export function AddRowDialog({ doc, snapshot, section, groupId, onAdd, onClose }
   // A loan with a schedule in Loans is forecast from it; anything else followed in Actual starts from its own recent months.
   const autoBasis = (links: RowLinks): Basis => {
     const linked = links.categories.length + links.categoryGroups.length + links.accounts.length > 0;
-    const loan = links.accounts.length > 0 && links.categories.length + links.categoryGroups.length === 0 && links.accounts.every((l) => snapshot?.loans[l.id]?.state === "ready");
+    // Not for income: a loan row forecasts repayments, and what an income row follows from a loan is money borrowed.
+    const loan = section !== "income" && links.accounts.length > 0 && links.categories.length + links.categoryGroups.length === 0 && links.accounts.every((l) => snapshot?.loans[l.id]?.state === "ready");
     return !linked ? { kind: "manual" } : loan ? { kind: "loan" } : { kind: "average", months: 12 };
   };
   const edit = (change: (row: PlanRow) => PlanRow) => {

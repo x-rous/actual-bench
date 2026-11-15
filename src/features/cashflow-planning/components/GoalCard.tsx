@@ -18,7 +18,8 @@ export function GoalCard({ result, computed }: { result: GoalResult; computed: C
   const balance = (i: number) => computed.closing[i] + (goal.basis === "total" ? computed.savings?.[i] ?? 0 : 0);
   const outside = projected === null || end < 0;
   const reached = !outside && !shortfall;
-  const today = balance(from);
+  // Today's cash, not this month's closing forecast; the savings estimate of the month before stands for today's savings.
+  const today = computed.kpis.cashNow + (goal.basis === "total" ? computed.savings?.[Math.max(0, from - 1)] ?? 0 : 0);
   const share = goal.amount > 0 ? Math.max(0, Math.min(1, today / goal.amount)) : 1;
   const tone = outside ? "text-muted-foreground" : reached ? "text-emerald-700 dark:text-emerald-400" : "text-destructive";
 

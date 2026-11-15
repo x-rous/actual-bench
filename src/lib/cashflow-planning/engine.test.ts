@@ -358,12 +358,17 @@ describe("building a plan from Actual", () => {
 
 describe("plan documents", () => {
   it("round-trips through a file and refuses what it cannot read", () => {
-    const doc = setCells(plan(), [{ rowId: plan().rows[0].id, month: "2026-02", amount: 1 }]);
+    const base = plan();
+    const doc = setCells(base, [{ rowId: base.rows[0].id, month: "2026-02", amount: 1 }]);
     expect(importPlanJson(exportPlanJson(doc))).toEqual(doc);
+    expect(importPlanJson(exportPlanJson(doc)).rows[0].cells["2026-02"]).toBe(1);
     expect(() => importPlanJson("{}")).toThrow("not a cashflow plan exported");
     expect(() => parsePlanDocument({ ...doc, schemaVersion: 2 })).toThrow("newer version");
     expect(() => parsePlanDocument({ ...doc, months: 601 })).toThrow("6 to 600 months");
     expect(() => parsePlanDocument({ ...doc, months: 5 })).toThrow("6 to 600 months");
+    // A plan may not run past the year 9999, and moves past the limit are refused, not dropped.
+    expect(() => parsePlanDocument({ ...doc, startMonth: "9999-12", months: 6 })).toThrow("too far");
+    expect(() => parsePlanDocument({ ...doc, moves: Object.fromEntries(Array.from({ length: 2001 }, (_, i) => [`t${i}`, "2026-02"])) })).toThrow("moved transactions");
     // A plan saved before the length was in months says how many years it covers.
     expect(parsePlanDocument({ ...doc, months: undefined, years: 2 }).months).toBe(24);
     expect(() => parsePlanDocument({ ...doc, months: undefined, years: 51 })).toThrow("6 to 600 months");

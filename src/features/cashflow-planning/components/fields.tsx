@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { formatAmountInput, parseAmount } from "@/lib/cashflow-planning/document";
@@ -37,9 +37,10 @@ export function AmountField({ value, onCommit, allowEmpty = false, className, pl
 }
 
 /** A month typed as YYYY-MM. */
-export function MonthField({ value, onCommit, allowEmpty = false, min, max, className, id, ...aria }: { value: Month | null; onCommit: (month: Month | null) => void; allowEmpty?: boolean; min?: Month; max?: Month; className?: string; id?: string; "aria-label"?: string }) {
+export function MonthField({ value, onCommit, onInvalid, allowEmpty = false, min, max, className, id, ...aria }: { value: Month | null; onCommit: (month: Month | null) => void; /** Told whether the text typed is not a month the field can take, so a dialog can hold back what depends on it. */ onInvalid?: (invalid: boolean) => void; allowEmpty?: boolean; min?: Month; max?: Month; className?: string; id?: string; "aria-label"?: string }) {
   const [draft, setDraft] = useState<string | null>(null);
   const [invalid, setInvalid] = useState(false);
+  useEffect(() => { onInvalid?.(invalid); }, [invalid, onInvalid]);
   const commit = () => {
     if (draft === null) return;
     const text = draft.trim();

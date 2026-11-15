@@ -19,7 +19,7 @@ import { setMove } from "@/lib/cashflow-planning/document";
 import { addMonths, monthEnd, monthLabel } from "@/lib/cashflow-planning/months";
 import type { Month, PlanDocument } from "@/lib/cashflow-planning/types";
 import { money } from "@/features/financial-insights/format";
-import type { TransactionsRequest } from "../lib/transactions";
+import { piecesOf, type TransactionsRequest } from "../lib/transactions";
 
 type Row = { id: string; date: string; amount: number; account: string; category: string | null; notes: string | null; payee: string | null; "payee.transfer_acct": string | null };
 
@@ -123,7 +123,11 @@ export function TransactionsDialog({ request, doc, snapshot, placed, onEdit, onC
     }
     if (row.category) return wantedCategories.has(row.category);
     // A "Not in plan" line holds only the money in or only the money out of an account's uncategorized entries, by its section.
-    return wantedUncategorized.has(row.account) && (!unplannedOnly || (request.sign === 1 ? row.amount > 0 : row.amount < 0));
+    if (!wantedUncategorized.has(row.account)) return false;
+    if (unplannedOnly) return request.sign === 1 ? row.amount > 0 : row.amount < 0;
+    // Rows that follow the account for money in and for money out each hold their own direction.
+    const owner = transferOwner(doc, snapshot, row.account, row.amount >= 0 ? "in" : "out");
+    return owner ? request.targets.includes(owner) : true;
   });
   // The search looks at everything shown in a line: date, account, payee, category, notes and amount.
   const needle = find.trim().toLowerCase();
@@ -153,7 +157,8 @@ export function TransactionsDialog({ request, doc, snapshot, placed, onEdit, onC
     return groupBy === "month" ? list.sort((a, b) => b.key.localeCompare(a.key)) : list.sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
   })();
   // The figure this list is behind, and whether what is listed adds up to it.
-  const expected = request.items.reduce((sum, item) => sum + item.amount, 0);
+  // From where the transactions sit now, so a move made here changes the figure as it changes the list.
+  const expected = piecesOf(placed, snapshot, request.targets, wantedMonths, true).reduce((sum, item) => sum + item.amount, 0);
   const listComplete = (query.data?.rows.length ?? 0) < LIMIT;
   const narrowed = needle !== "" || movedOnly;
   const selectedRows = shown.filter((row) => selected.has(row.id));

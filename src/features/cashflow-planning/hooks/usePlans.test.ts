@@ -45,3 +45,31 @@ describe("autosave when the page is left", () => {
     expect(useCashflowStore.getState().sessions.p1).toMatchObject({ status: "saved", revision: 3 });
   });
 });
+
+describe("a page left and opened again while a save is on its way", () => {
+  it("does not send the same plan a second time until the first save is done", async () => {
+    const base = { ...createPlanDocument({ name: "Plan", startMonth: "2026-01", years: 1 }), rows: [createRow({ name: "Salary", section: "income" })] };
+    useCashflowStore.setState({ budgetSyncId: null, sessions: {}, order: [], activeId: null, unreadable: [] });
+    useCashflowStore.getState().hydrate("b1", [record(1, base)]);
+    mockSave.mockReset();
+    let finish!: (r: PlanRecord) => void;
+    mockSave.mockImplementationOnce(() => new Promise<PlanRecord>((resolve) => { finish = resolve; }));
+
+    const first = createAutosave("b1");
+    useCashflowStore.getState().edit("p1", (d) => setCells(d, [{ rowId: d.rows[0].id, month: "2026-02", amount: 100 }]));
+    first.save("p1");
+    const sent = useCashflowStore.getState().sessions.p1.doc;
+    first.dispose();
+
+    // The page is opened again: its controller must wait for the save already on its way.
+    const second = createAutosave("b1");
+    second.save("p1");
+    expect(mockSave).toHaveBeenCalledTimes(1);
+
+    finish(record(2, sent));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    second.dispose();
+    expect(mockSave).toHaveBeenCalledTimes(1);
+    expect(useCashflowStore.getState().sessions.p1).toMatchObject({ status: "saved", revision: 2 });
+  });
+});

@@ -74,8 +74,10 @@ export function saveCashflowPlan(db: SqliteDatabase, input: unknown): PlanRecord
       if (body.baseRevision !== undefined && body.force !== true) throw new AppDbConflictError("This plan was deleted somewhere else since it was opened here");
       const count = (db.prepare("SELECT COUNT(*) AS n FROM cashflow_plans WHERE budget_sync_id = ?").get(budgetSyncId) as { n: number }).n;
       if (count >= MAX_PER_BUDGET) throw new AppDbValidationError(`A budget can hold ${MAX_PER_BUDGET} plans; delete one first`);
-      db.prepare("INSERT INTO cashflow_plans (budget_sync_id, id, name, revision, document, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?, ?)").run(budgetSyncId, id, document.name, json, now, now);
-      return { budgetSyncId, id, name: document.name, revision: 1, document, createdAt: now, updatedAt: now };
+      // A plan brought back after a delete continues the revision the caller knew, so a stale save from another tab cannot match it.
+      const first = typeof body.baseRevision === "number" && Number.isInteger(body.baseRevision) && body.baseRevision >= 1 ? body.baseRevision + 1 : 1;
+      db.prepare("INSERT INTO cashflow_plans (budget_sync_id, id, name, revision, document, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(budgetSyncId, id, document.name, first, json, now, now);
+      return { budgetSyncId, id, name: document.name, revision: first, document, createdAt: now, updatedAt: now };
     }
     if (body.force !== true && body.baseRevision !== existing.revision) throw new AppDbConflictError("This plan was changed somewhere else since it was opened here");
     const revision = existing.revision + 1;

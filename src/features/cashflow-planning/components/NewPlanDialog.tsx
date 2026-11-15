@@ -28,7 +28,9 @@ export function NewPlanDialog({ snapshot, today, existingNames, busy, loansPendi
   const cardAccounts = (snapshot?.accounts ?? []).filter((a) => a.accountClass === "credit-card" && !a.excluded && !a.closed);
   const monthCount = monthsBetween(start, last) + 1;
   const lengthValid = monthCount >= MIN_MONTHS && monthCount <= MAX_MONTHS;
-  const valid = name.trim().length > 0 && lengthValid;
+  // Text typed in a month field that is not a month leaves the month before it in place: creating then would not match what is shown.
+  const [startInvalid, setStartInvalid] = useState(false), [lastInvalid, setLastInvalid] = useState(false);
+  const valid = name.trim().length > 0 && lengthValid && !startInvalid && !lastInvalid;
   const hasHistory = !!snapshot && snapshot.movement.length > 0;
 
   const create = () => {
@@ -50,8 +52,8 @@ export function NewPlanDialog({ snapshot, today, existingNames, busy, loansPendi
         <div className="space-y-4">
           <div className="flex flex-wrap items-end gap-3">
             <div className="min-w-0 flex-1 space-y-1.5"><Label htmlFor="cf-new-name">Name</Label><Input id="cf-new-name" value={name} maxLength={NAME_MAX} onChange={(e) => setName(e.target.value)} /></div>
-            <div className="space-y-1.5"><Label htmlFor="cf-new-start">First month</Label><MonthField id="cf-new-start" className="h-8 w-28" value={start} onCommit={(m) => { if (!m) return; setStart(m); if (!lastChosen) setLast(addMonths(m, 59)); }} /></div>
-            <div className="space-y-1.5"><Label htmlFor="cf-new-last">Last month</Label><MonthField id="cf-new-last" className="h-8 w-28" value={last} onCommit={(m) => { if (m) { setLast(m); setLastChosen(true); } }} /></div>
+            <div className="space-y-1.5"><Label htmlFor="cf-new-start">First month</Label><MonthField id="cf-new-start" className="h-8 w-28" value={start} onInvalid={setStartInvalid} onCommit={(m) => { if (!m) return; setStart(m); if (!lastChosen) setLast(addMonths(m, 59)); }} /></div>
+            <div className="space-y-1.5"><Label htmlFor="cf-new-last">Last month</Label><MonthField id="cf-new-last" className="h-8 w-28" value={last} onInvalid={setLastInvalid} onCommit={(m) => { if (m) { setLast(m); setLastChosen(true); } }} /></div>
           </div>
           <p role={lengthValid ? undefined : "alert"} className={lengthValid ? "text-xs text-muted-foreground" : "text-xs text-destructive"}>{lengthValid ? `${lengthLabel(monthCount)}.` : `A plan covers ${MIN_MONTHS} months to ${MAX_MONTHS / 12} years: the last month must be ${MIN_MONTHS - 1} to ${MAX_MONTHS - 1} months after the first.`}</p>
           <ChoiceCards<Template>

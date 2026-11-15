@@ -29,15 +29,16 @@ export function targetsOf(doc: PlanDocument, line: Line): string[] {
 }
 
 /** The pieces of several targets together, the same kind and id added up. */
-export function piecesOf(placed: Placed, snapshot: Snapshot, targets: readonly string[], months: ReadonlySet<Month>) {
+/** `keepZero` keeps a piece whose transactions add up to nothing (a purchase and its refund), so they can still be listed. */
+export function piecesOf(placed: Placed, snapshot: Snapshot, targets: readonly string[], months: ReadonlySet<Month>, keepZero = false) {
   const merged = new Map<string, ReturnType<typeof contributionsOf>[number]>();
   for (const target of targets) {
-    for (const piece of contributionsOf(placed, snapshot, target, months)) {
+    for (const piece of contributionsOf(placed, snapshot, target, months, keepZero)) {
       const key = `${piece.kind}:${piece.id}`, entry = merged.get(key);
       if (entry) entry.amount += piece.amount; else merged.set(key, { ...piece });
     }
   }
-  return [...merged.values()].filter((p) => p.amount !== 0).sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+  return [...merged.values()].filter((p) => keepZero || p.amount !== 0).sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
 }
 
 /** The request for a line over some months, or null when the line has no transactions behind it there. */
@@ -51,7 +52,7 @@ export function requestFor(doc: PlanDocument, snapshot: Snapshot | null, placed:
   const section = line.kind === "row" ? line.row.section : line.kind === "group" ? line.group.section : line.kind === "section" || line.kind === "unplanned" ? line.section : null;
   if (!section) return null;
   const targets = targetsOf(doc, line);
-  const items = piecesOf(placed, snapshot, targets, new Set(months));
+  const items = piecesOf(placed, snapshot, targets, new Set(months), true);
   if (items.length === 0) return null;
   const name = line.kind === "row" ? line.row.name : line.kind === "group" ? line.group.name : line.kind === "section" ? SECTION_LABEL[section] : `Not in plan (${SECTION_LABEL[section]})`;
   return { title: `${name}, ${label}`, targets, months, items, sign: section === "income" ? 1 : -1 };

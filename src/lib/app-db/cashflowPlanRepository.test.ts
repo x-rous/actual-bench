@@ -51,8 +51,10 @@ describe("cashflow plan repository", () => {
     expect(() => saveCashflowPlan(db, { budgetSyncId: "b1", id: created.id, baseRevision: 1, document: document() })).toThrow(AppDbConflictError);
     expect(listCashflowPlans(db, "b1")).toEqual([]);
     // Choosing to keep it brings it back deliberately.
-    expect(saveCashflowPlan(db, { budgetSyncId: "b1", id: created.id, baseRevision: 1, force: true, document: document() })).toMatchObject({ id: created.id, revision: 1 });
+    expect(saveCashflowPlan(db, { budgetSyncId: "b1", id: created.id, baseRevision: 1, force: true, document: document() })).toMatchObject({ id: created.id, revision: 2 });
     expect(listCashflowPlans(db, "b1")).toHaveLength(1);
+    // The other tab's stale autosave, still at revision 1, no longer matches the brought-back plan.
+    expect(() => saveCashflowPlan(db, { budgetSyncId: "b1", id: created.id, baseRevision: 1, document: document() })).toThrow(AppDbConflictError);
   });
 
   it("skips a stored plan this version cannot read", () => {

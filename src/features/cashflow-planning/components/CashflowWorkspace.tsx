@@ -29,7 +29,7 @@ import { MonthJumpPopover } from "@/features/budget-management/components/MonthJ
 import { cn } from "@/lib/utils";
 import { useCashflowData } from "../hooks/useCashflowData";
 import { usePlanActions, usePlanAutosave, usePlans } from "../hooks/usePlans";
-import { buildColumns, buildLines, planYears, type Column, type Line } from "../lib/view";
+import { buildColumns, buildLines, lineKey, planYears, type Column, type Line } from "../lib/view";
 import { useCashflowStore, type PlanSession } from "../store";
 import { AddRowDialog } from "./AddRowDialog";
 import { CashflowGuide, type CashflowGuideSection } from "./guide/CashflowGuide";
@@ -73,11 +73,12 @@ export function CashflowWorkspace() {
   const data = useCashflowData({ enabled: plans.ready && (!doc || doc.useActuals || newPlan), needBudget, movedIds });
   const snapshot = data.state === "ready" ? data.snapshot : null;
 
-  const createPlan = async (document: PlanDocument) => {
+  const createPlan = async (document: PlanDocument): Promise<boolean> => {
     setCreating(true);
     const id = await actions.create(document);
     setCreating(false);
     if (id) setNewPlan(false);
+    return id !== null;
   };
 
   const title = "Cashflow Planning";
@@ -170,7 +171,7 @@ type PlanViewProps = {
   session: PlanSession; doc: PlanDocument; data: ReturnType<typeof useCashflowData>; today: string;
   planOptions: { value: string; label: string }[];
   onNewPlan: () => void; onRetrySave: () => void; onOverwrite: () => void; onReload: () => void;
-  onDelete: () => Promise<boolean>; onCreate: (doc: PlanDocument) => Promise<void>;
+  onDelete: () => Promise<boolean>; onCreate: (doc: PlanDocument) => Promise<boolean>;
   unreadable: UnreadablePlan[]; onDeleteUnreadable: (id: string) => void;
 };
 
@@ -244,7 +245,15 @@ function PlanView({ session, doc, data, today, planOptions, onNewPlan, onRetrySa
   const selectedLine: Line | null = selection ? lines.find((l) => l.key === selection.line) ?? null : null;
   const pickedColumnValue = pickedColumn ? columns.find((c) => c.key === pickedColumn) ?? null : null;
   const selectedColumn = selection?.col ? columns.find((c) => c.key === selection.col) ?? null : null;
-  const selectLine = (lineKeyValue: string | null) => { setPickedColumn(null); setSelection(lineKeyValue ? { line: lineKeyValue, col: null } : null); if (lineKeyValue) setView((v) => ({ ...v, details: true })); };
+  const selectLine = (lineKeyValue: string | null) => {
+    setPickedColumn(null);
+    setSelection(lineKeyValue ? { line: lineKeyValue, col: null } : null);
+    if (!lineKeyValue) return;
+    // A row inside a collapsed section or group, or hidden by the row search, has to be on the grid to be selected.
+    const row = doc.rows.find((r) => lineKey.row(r.id) === lineKeyValue);
+    if (row) setFind("");
+    setView((v) => ({ ...v, details: true, ...(row ? { collapsed: v.collapsed.filter((k) => k !== lineKey.section(row.section) && k !== (row.groupId ? lineKey.group(row.groupId) : "")) } : {}) }));
+  };
 
   // A click on empty space outside the grid and the details panel clears the selection, which shows the plan overview again.
   useEffect(() => {
@@ -347,8 +356,8 @@ function PlanView({ session, doc, data, today, planOptions, onNewPlan, onRetrySa
   const importFile = async (file: File) => {
     try {
       const imported = importPlanJson(await file.text());
-      await onCreate({ ...imported, name: planOptions.some((p) => p.label === imported.name) ? `${imported.name} (imported)`.slice(0, 80) : imported.name });
-      toast.success("Plan imported as a new plan");
+      const created = await onCreate({ ...imported, name: planOptions.some((p) => p.label === imported.name) ? `${imported.name} (imported)`.slice(0, 80) : imported.name });
+      if (created) toast.success("Plan imported as a new plan");
     } catch (error) {
       toast.error(error instanceof PlanDocumentError ? error.message : "The file could not be imported");
     }
