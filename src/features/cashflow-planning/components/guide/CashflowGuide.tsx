@@ -76,7 +76,7 @@ export function CashflowGuide({ section, onSection, onClose, docsUrl }: { sectio
           ["Typed amounts", "A number you type into a month. It always wins and is marked with a corner."],
           ["A repeating amount", "An amount every 1 to 24 months, with a start, an optional end and a yearly change."],
           ["Average", "The average of the last 3, 6, 12 or 24 complete months, with an optional yearly change."],
-          ["Budget", "Actual’s budget for the followed categories. Months past the last budgeted one repeat it."],
+          ["Budget", "Actual’s budget for the followed categories. Months past the last budgeted one repeat it. Set Paid to the month after for a credit card paid after its statement."],
           ["Schedule", "The upcoming dates and amounts of Actual schedules."],
           ["Loan", "The repayments the Loans page projects for a tracked loan."],
         ]} />
@@ -84,6 +84,10 @@ export function CashflowGuide({ section, onSection, onClose, docsUrl }: { sectio
         <Para>A row that follows a tracked loan counts the <b>whole repayment</b> by default: each instalment is forecast whole, and the interest and fee lines of repayments already recorded as splits count in the loan row instead of in their category, so nothing is counted twice. Choose <b>Principal only</b> to keep the interest with its category. Money that arrives from a loan account is borrowing: it shows under Income and is never netted against repayments.</Para>
         <Heading>Putting a transaction in another month</Heading>
         <Para>A transaction in a cash account counts in another month when its Actual note carries a <b>#YYYY-MM</b> tag, or when you move it to the month before or after in the plan’s transaction list (“Counted in”; saved in the plan, Actual is not changed). A <b>Moved between months</b> line puts the amount back in the month the money really moved, so the balances stay the real ones, and moved cells are marked.</Para>
+        <Heading>A card paid the month after</Heading>
+        <Para>A card is usually paid after its statement, so this month’s payment is last month’s spending. On a row that follows the budget, set <b>Paid</b> to <b>The month after</b> (or two months after). A month then shows what the credit cards recorded for the followed categories the month before, once that month is over; for the month in progress, the larger of what was spent so far and its budget; and the budget for months still to come. Use it for the row that stands for the card’s repayment, and keep the cash rows of the same categories at zero so nothing is counted twice.</Para>
+        <Heading>When two rows follow the same thing</Heading>
+        <Para>Recorded history goes to the first row, in plan order, that follows a category, group or account, so a later row that follows it too shows none of it in past months. It can still use it for its forecast. The row shows a quiet note, with a link to the row that holds it. It becomes a warning only when both rows forecast it, which would count it twice, or when the later row averages history it does not have.</Para>
         <Callout title="See what is behind a figure">Right-click a past month on a row, a group, a section, a Not in plan line, Transfers in transit or Moved between months, or click an amount in the details panel, to list the transactions that make it up.</Callout>
       </>}
 

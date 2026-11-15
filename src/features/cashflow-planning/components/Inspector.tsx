@@ -2,10 +2,11 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { AlertTriangle, ArrowDown, ArrowLeftRight, ArrowUp, MoreHorizontal, Plus, Trash2, X } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowLeftRight, ArrowUp, Info, MoreHorizontal, Plus, Trash2, X } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ColorPicker } from "@/components/ui/color-picker";
 import { cn } from "@/lib/utils";
+import type { LinkNote } from "@/lib/cashflow-planning/linkNotes";
 import { Button } from "@/components/ui/button";
 import { MultiSearchableCombobox, type ComboboxOption } from "@/components/ui/combobox";
 import { Label } from "@/components/ui/label";
@@ -33,6 +34,8 @@ type Props = {
   line: Line | null;
   column: Column | null;
   problems: ReadonlyMap<string, string>;
+  /** What a row's links that an earlier row already holds mean for it, by row id. */
+  linkNotes: ReadonlyMap<string, LinkNote>;
   width: number;
   onResize: (width: number) => void;
   onEdit: (change: (doc: PlanDocument) => PlanDocument) => void;
@@ -151,9 +154,30 @@ const columnLabel = (column: Column) => (column.kind === "month" ? monthLabel(co
  * Everything about a row in one scroll, in the order it is used: the selected month, where coming months come from, what the
  * row follows in Actual, and notes. Its name, section and group are changed in the grid (rename in place, drag to move).
  */
-function RowPanel({ doc, computed, snapshot, placed, row, column, problems, onEdit, onDeleteRow, onShowTransactions, onClose }: Props & { row: PlanRow }) {
+/** Which things this row follows that an earlier row follows too, with that row one click away, and what it means. */
+function LinkNoteBlock({ note, onSelectLine }: { note: LinkNote; onSelectLine: (key: string | null) => void }) {
+  const warning = note.severity === "warning";
+  return (
+    <div role="status" className={cn("space-y-2 rounded-md border p-2", warning ? "border-amber-500/40 bg-amber-50 text-amber-900 dark:bg-amber-950/30 dark:text-amber-200" : "border-border bg-muted/40 text-foreground/80")}>
+      <p className="flex gap-2 font-medium">{warning ? <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden /> : <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />}{warning ? "Followed by an earlier row too" : "Also followed by an earlier row"}</p>
+      <ul className="space-y-1">
+        {note.items.map((item, i) => (
+          <li key={i} className="flex flex-wrap items-baseline gap-x-1.5">
+            <span className="font-medium">{item.name}{item.kind === "group" ? " (group)" : ""}</span>
+            <span aria-hidden>→</span>
+            <button type="button" className="underline underline-offset-2" onClick={() => onSelectLine(`row:${item.heldBy.id}`)}>{item.heldBy.name}</button>
+          </li>
+        ))}
+      </ul>
+      <p className="leading-relaxed">{warning ? note.reason : "Nothing is counted twice."} Recorded history of these goes to the row that comes first in the plan, so this row shows none of it in past months. It can still use them for its forecast.</p>
+    </div>
+  );
+}
+
+function RowPanel({ doc, computed, snapshot, placed, row, column, problems, linkNotes, onSelectLine, onEdit, onDeleteRow, onShowTransactions, onClose }: Props & { row: PlanRow }) {
   const result = computed.rows.get(row.id)!;
   const edit = (change: (row: PlanRow) => PlanRow) => onEdit((d) => updateRow(d, row.id, change));
+  const note = linkNotes.get(row.id);
   const problem = problems.get(row.id);
   return (
     <>
@@ -174,7 +198,8 @@ function RowPanel({ doc, computed, snapshot, placed, row, column, problems, onEd
         <Button size="icon-xs" variant="ghost" onClick={onClose} aria-label="Close details"><X className="size-3.5" aria-hidden /></Button>
       </header>
       <div className="min-h-0 flex-1 divide-y divide-border overflow-y-auto p-3 text-xs [&>section]:py-4 [&>section:first-child]:pt-0 [&>section:last-child]:pb-0">
-        {problem && <p role="status" className="flex gap-2 rounded-md border border-amber-500/40 bg-amber-50 p-2 text-amber-900 dark:bg-amber-950/30 dark:text-amber-200"><AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />{problem}</p>}
+        {note && <LinkNoteBlock note={note} onSelectLine={onSelectLine} />}
+        {problem && problem !== note?.summary && <p role="status" className="flex gap-2 rounded-md border border-amber-500/40 bg-amber-50 p-2 text-amber-900 dark:bg-amber-950/30 dark:text-amber-200"><AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />{problem}</p>}
         {column && <CellBlock doc={doc} computed={computed} snapshot={snapshot} placed={placed} row={row} column={column} onEdit={onEdit} onShowTransactions={onShowTransactions} />}
         <BasisBlock doc={doc} snapshot={snapshot} row={row} typical={result.typical} problem={result.problem} edit={edit} />
         {doc.useActuals && snapshot && <LinksBlock doc={doc} snapshot={snapshot} row={row} edit={edit} />}
@@ -370,7 +395,17 @@ export function BasisBlock({ doc, snapshot, row, typical, problem, edit }: { doc
           {typical !== null && <Fact label="Comes to, each month" strong>{money(typical)}</Fact>}
         </div>
       ); })()}
-      {row.basis.kind === "budget" && <p className="text-muted-foreground">Uses what Actual&apos;s budget holds for the categories this row follows, from this month on. Months after the last budgeted one repeat it. If another row follows an account these categories pay into (a loan, for example), that money is forecast there too.</p>}
+      {row.basis.kind === "budget" && (() => { const basis = row.basis; const lag = basis.lag ?? 0; return (
+        <div className="space-y-2">
+          <p className="text-muted-foreground">Uses what Actual&apos;s budget holds for the categories this row follows, from this month on. Months after the last budgeted one repeat it. If another row follows an account these categories pay into (a loan, for example), that money is forecast there too.</p>
+          <div className="space-y-1">
+            <Label htmlFor="cf-lag" className="text-xs">Paid</Label>
+            <Select id="cf-lag" size="sm" className="w-full" value={String(lag)} onValueChange={(v) => edit((r) => ({ ...r, basis: Number(v) === 1 || Number(v) === 2 ? { kind: "budget", lag: Number(v) as 1 | 2 } : { kind: "budget" } }))}
+              options={[{ value: "0", label: "In the month it is budgeted" }, { value: "1", label: "The month after" }, { value: "2", label: "Two months after" }]} />
+          </div>
+          {lag > 0 && <p className="text-muted-foreground">For a credit card paid after its statement: a month shows what the cards recorded for these categories {lag === 1 ? "the month before" : `${lag} months before`}, once that month is over, and its budget before that (for the month in progress, the larger of what was spent so far and its budget).</p>}
+        </div>
+      ); })()}
       {row.basis.kind === "schedule" && (() => { const basis = row.basis; return (
         <MultiSearchableCombobox ariaLabel="Schedules this row follows" options={scheduleOptions} placeholder="Choose schedules" triggerClassName="w-full" values={basis.scheduleIds} summary={basis.scheduleIds.length ? `${basis.scheduleIds.length} ${basis.scheduleIds.length === 1 ? "schedule" : "schedules"}` : undefined} onChange={(scheduleIds) => edit((r) => ({ ...r, basis: { kind: "schedule", scheduleIds } }))} />
       ); })()}

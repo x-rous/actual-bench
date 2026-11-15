@@ -1,8 +1,9 @@
 "use client";
 
 import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, ArrowLeftRight, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Link2Off, Plus, TrendingDown } from "lucide-react";
+import { AlertTriangle, ArrowLeftRight, Info, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Link2Off, Plus, TrendingDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { LinkNote } from "@/lib/cashflow-planning/linkNotes";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { InfoHint } from "@/components/ui/info-hint";
 import { Input } from "@/components/ui/input";
@@ -46,6 +47,8 @@ type Props = {
   selection: GridSelection | null;
   /** Row ids with something to look at (a link held twice, a forecast that cannot be read), and what. */
   problems: ReadonlyMap<string, string>;
+  /** Links an earlier row already holds; a `note` (nothing counted twice) shows as a small quiet icon beside the name. */
+  linkNotes: ReadonlyMap<string, LinkNote>;
   /** `lineKey|month` of the cells a transaction counted in another month left or joined. */
   shiftedCells: ReadonlySet<string>;
   find: string;
@@ -112,7 +115,7 @@ function buildPlanTotals(doc: PlanDocument, computed: Computed): Map<string, (nu
 
 type Menu = { x: number; y: number; line: string; col: string | null };
 
-export function PlanGrid({ doc, computed, lines, columns, cents, pastMode, selection, problems, shiftedCells, find, onFind, scrollToken, scrollMonth, pickedColumn, onPickColumn, onSelect, onCollapseAll, onToggle, onEdit, onCommand, onNotice }: Props) {
+export function PlanGrid({ doc, computed, lines, columns, cents, pastMode, selection, problems, linkNotes, shiftedCells, find, onFind, scrollToken, scrollMonth, pickedColumn, onPickColumn, onSelect, onCollapseAll, onToggle, onEdit, onCommand, onNotice }: Props) {
   const scroller = useRef<HTMLDivElement>(null);
   const gridId = useId();
   const [editing, setEditing] = useState<{ line: string; col: string; text: string } | null>(null);
@@ -430,6 +433,7 @@ export function PlanGrid({ doc, computed, lines, columns, cents, pastMode, selec
         editing={editing?.line === line.key ? editing : null}
         renaming={renaming?.line === line.key ? renaming.text : null}
         problem={line.kind === "row" ? problems.get(line.row.id) ?? null : null}
+        note={line.kind === "row" && linkNotes.get(line.row.id)?.severity === "note" ? linkNotes.get(line.row.id)!.summary : null}
         unlinked={line.kind === "row" && doc.useActuals && line.row.links.categories.length + line.row.links.categoryGroups.length + line.row.links.accounts.length === 0}
         shiftedCells={shiftedCells} dropTarget={dropTarget?.line === line.key ? dropTarget.pos : null} tone={toneOf(doc, line)}
         handlers={handlers}
@@ -466,13 +470,13 @@ export function PlanGrid({ doc, computed, lines, columns, cents, pastMode, selec
             {columns.map((c, ci) => {
               if (c.kind === "year") return <th key={c.key} role="columnheader" scope="col" aria-selected={pickedColumn === c.key} onClick={() => onPickColumn?.(c.key)} title="Show a summary of this year (S on a cell of this column)" className={cn("h-8 cursor-pointer border-b border-l-2 border-border bg-[color-mix(in_oklab,var(--muted),var(--foreground)_6%)] px-2 text-right align-middle hover:bg-accent", pickedColumn === c.key && "bg-accent shadow-[inset_0_-2px_0_var(--primary)]")}>
                 <span className="block text-[11px] font-semibold leading-tight">{c.partial ? "Total*" : "Total"}{c.partial && <span className="sr-only"> (not a full year in this plan)</span>}</span>
-                <span className="block text-[10px] font-normal leading-tight text-muted-foreground">{c.year}</span>
+                <span className="block text-[11px] font-normal leading-tight text-foreground/70">{c.year}</span>
               </th>;
               const kind = kinds[c.index];
               return (
                 <th key={c.key} role="columnheader" scope="col" aria-selected={pickedColumn === c.key} data-month={c.month} data-now={kind === "current" || undefined} onClick={() => onPickColumn?.(c.key)} title="Show a summary of this month (S on a cell of this column)" className={cn("h-8 cursor-pointer border-b border-border bg-background px-2 text-right align-middle font-medium hover:bg-accent", pickedColumn === c.key && "bg-accent shadow-[inset_0_-2px_0_var(--primary)]", kind === "current" && "bg-[color-mix(in_oklab,var(--color-amber-500)_12%,var(--background))]", kind !== "actual" && c.index > 0 && kinds[c.index - 1] === "actual" && "border-l border-l-primary/30", startsYear(columns, ci) && "border-l-2 border-l-border")}>
                   <span className="block leading-tight">{monthShort(c.month)}</span>
-                  <span className={cn("block text-[10px] font-normal leading-tight text-muted-foreground", kind === "current" && "font-semibold text-amber-700 dark:text-amber-300")}>{kind === "current" && <span aria-hidden className="mr-1 inline-block size-1.5 rounded-full bg-amber-500 align-[1px]" />}{doc.useActuals ? KIND_LABEL[kind] : "Plan"}</span>
+                  <span className={cn("block text-[11px] font-normal leading-tight text-foreground/70", kind === "current" && "font-semibold text-amber-700 dark:text-amber-300")}>{kind === "current" && <span aria-hidden className="mr-1 inline-block size-1.5 rounded-full bg-amber-500 align-[1px]" />}{doc.useActuals ? KIND_LABEL[kind] : "Plan"}</span>
                 </th>
               );
             })}
@@ -583,6 +587,8 @@ type LineProps = {
   editing: { col: string; text: string } | null;
   renaming: string | null;
   problem: string | null;
+  /** A quiet note about the row (an earlier row follows the same things), when there is one and it is not a problem. */
+  note: string | null;
   unlinked: boolean;
   shiftedCells: ReadonlySet<string>;
   dropTarget: DropPos | null;
@@ -612,7 +618,7 @@ function toneOf(doc: PlanDocument, line: Line): { fill: string; stripe: string }
   return { fill: mix(Math.round(strength * 0.24)), stripe: mix(strength) };
 }
 
-const GridLine = memo(function GridLine({ line, gridId, rowNumber, columns, kinds, cents, pastMode, planTotals, belowMinimum, activeCol, rangeLeft, rangeRight, fillRight, handleAt, editing, renaming, problem, unlinked, shiftedCells, dropTarget, tone, handlers }: LineProps) {
+const GridLine = memo(function GridLine({ line, gridId, rowNumber, columns, kinds, cents, pastMode, planTotals, belowMinimum, activeCol, rangeLeft, rangeRight, fillRight, handleAt, editing, renaming, problem, note, unlinked, shiftedCells, dropTarget, tone, handlers }: LineProps) {
   const strong = line.kind === "section" || line.kind === "balance" || (line.kind === "memo" && line.key === "total");
   const band = line.kind === "section";
   const pinned = isPinned(line);
@@ -678,6 +684,7 @@ const GridLine = memo(function GridLine({ line, gridId, rowNumber, columns, kind
           )}
           {line.kind === "memo" && line.hint && <InfoHint label={label}>{line.hint}</InfoHint>}
           {problem && <span title={problem} className="shrink-0 text-amber-600 dark:text-amber-400"><AlertTriangle className="size-3.5" aria-hidden /><span className="sr-only">Needs attention: {problem}</span></span>}
+          {note && !problem && <span title={note} className="shrink-0 text-muted-foreground/70"><Info className="size-3.5" aria-hidden /><span className="sr-only">Note: {note}</span></span>}
           {unlinked && !problem && <span title="Not linked to Actual: past months show nothing for this row" className="shrink-0 text-muted-foreground/70"><Link2Off className="size-3.5" aria-hidden /><span className="sr-only">Not linked to Actual</span></span>}
           {(line.kind === "section" || line.kind === "group") && (
             <DropdownMenu>
@@ -711,7 +718,7 @@ const GridLine = memo(function GridLine({ line, gridId, rowNumber, columns, kind
         const value = monthValue(line, column.index, kind, pastMode, planTotals);
         const boundary = column.index > 0 && kind !== "actual" && kinds[column.index - 1] === "actual";
         // Recorded figures are "written in ink": a dark blue, where the forecast stays in the normal text colour. The fill and the header say so too.
-        const ink = kind === "actual" && pastMode === "actual" && (line.kind === "row" || line.kind === "group" || line.kind === "section" || line.kind === "balance" || (line.kind === "memo" && line.key === "total"));
+        const ink = kind === "actual" && pastMode === "actual" && (line.kind === "row" || line.kind === "group" || line.kind === "section" || line.kind === "balance" || (line.kind === "memo" && (line.key === "total" || line.key === "net")));
         const typed = line.kind === "row" && kind !== "actual" && line.row.cells[column.month] !== undefined;
         const below = belowMinimum?.[column.index] ?? false;
         const editable = isEditable(line, column, kinds);
@@ -745,7 +752,7 @@ const GridLine = memo(function GridLine({ line, gridId, rowNumber, columns, kind
             className={cn(
               "relative z-0 h-7 cursor-default border-b border-border/40 px-2 text-right tabular-nums whitespace-nowrap",
               pinned ? (kind === "current" ? "bg-[color-mix(in_oklab,var(--color-amber-500)_10%,var(--background))]" : kind === "actual" ? "bg-[color-mix(in_oklab,var(--muted)_30%,var(--background))]" : "bg-background") : cn(kind === "actual" && "bg-muted/30", kind === "current" && "bg-amber-500/10"),
-              startsYear(columns, c) && "border-l-2 border-l-border", rowTone, sumLine && (kind === "actual" ? "bg-[color-mix(in_oklab,var(--muted)_70%,var(--background))]" : kind === "current" ? "bg-[color-mix(in_oklab,var(--color-amber-500)_12%,color-mix(in_oklab,var(--muted)_50%,var(--background)))]" : "bg-[color-mix(in_oklab,var(--muted)_50%,var(--background))]"), line.kind === "row" && kind === "forecast" && "bg-background", boundary && "border-l border-l-primary/30", strong && "font-semibold", line.kind === "group" && "font-semibold", (line.kind === "unplanned" || (line.kind === "memo" && !strong)) && "text-muted-foreground",
+              startsYear(columns, c) && "border-l-2 border-l-border", rowTone, line.kind === "section" && kind === "current" && "bg-[color-mix(in_oklab,var(--color-amber-500)_12%,var(--muted))]", sumLine && (kind === "actual" ? "bg-[color-mix(in_oklab,var(--muted)_70%,var(--background))]" : kind === "current" ? "bg-[color-mix(in_oklab,var(--color-amber-500)_12%,color-mix(in_oklab,var(--muted)_50%,var(--background)))]" : "bg-[color-mix(in_oklab,var(--muted)_50%,var(--background))]"), line.kind === "row" && kind === "forecast" && "bg-background", boundary && "border-l border-l-primary/30", strong && "font-semibold", line.kind === "group" && "font-semibold", (line.kind === "unplanned" || (line.kind === "memo" && !strong)) && "text-muted-foreground",
 ink && "text-[#1e3a8a] dark:text-blue-300",               below && "text-destructive",
               diff && (better ? "text-emerald-700 dark:text-emerald-400" : "text-amber-700 dark:text-amber-400"),
               inRange && "bg-accent", inFill && "bg-accent/60 outline-dashed outline-1 -outline-offset-1 outline-primary/60", active && "outline outline-2 -outline-offset-2 outline-primary",

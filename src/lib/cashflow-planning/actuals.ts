@@ -162,7 +162,8 @@ export type Contribution = {
   amount: number;
 };
 
-export type LinkConflict = { rowId: string; what: string };
+/** A link a row holds that an earlier row already holds: recorded history goes to the earlier row, so the link has no effect on it. */
+export type LinkConflict = { rowId: string; what: string; kind: "category" | "group" | "account"; /** The category, group or account. */ name: string; /** The earlier row that holds it. */ heldBy: string };
 
 export type Placed = {
   cashIds: ReadonlySet<string>;
@@ -210,18 +211,21 @@ export function placeActuals(doc: PlacementDoc, snapshot: Snapshot): Placed {
   const accountRows = new Map<string, { rowId: string; flow?: "in" | "out" }[]>();
   for (const row of doc.rows) {
     for (const id of row.links.categories) {
-      if (categoryRow.has(id)) conflicts.push({ rowId: row.id, what: `${category.get(id)?.name ?? "A category"} is already followed by another row` });
+      if (categoryRow.has(id)) conflicts.push({ rowId: row.id, what: `${category.get(id)?.name ?? "A category"} is already followed by another row`, kind: "category", name: category.get(id)?.name ?? "A category", heldBy: categoryRow.get(id)! });
       else categoryRow.set(id, row.id);
     }
     for (const id of row.links.categoryGroups) {
-      if (groupRow.has(id)) conflicts.push({ rowId: row.id, what: "A category group is already followed by another row" });
+      if (groupRow.has(id)) {
+        const name = snapshot.categories.find((c) => c.groupId === id)?.groupName ?? "A category group";
+        conflicts.push({ rowId: row.id, what: `${name} (group) is already followed by another row`, kind: "group", name, heldBy: groupRow.get(id)! });
+      }
       else groupRow.set(id, row.id);
     }
     for (const link of row.links.accounts) {
       const held = accountRows.get(link.id) ?? [];
       const flow = effectiveFlow(link, accountOf.get(link.id), roleOf.get(link.id));
-      const clash = held.some((h) => !h.flow || !flow || h.flow === flow);
-      if (clash) conflicts.push({ rowId: row.id, what: `${accountOf.get(link.id)?.name ?? "An account"} is already followed by another row` });
+      const clash = held.find((h) => !h.flow || !flow || h.flow === flow);
+      if (clash) conflicts.push({ rowId: row.id, what: `${accountOf.get(link.id)?.name ?? "An account"} is already followed by another row`, kind: "account", name: accountOf.get(link.id)?.name ?? "An account", heldBy: clash.rowId });
       else accountRows.set(link.id, [...held, { rowId: row.id, flow }]);
     }
   }

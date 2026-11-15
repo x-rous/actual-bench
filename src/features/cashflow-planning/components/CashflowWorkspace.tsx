@@ -20,6 +20,7 @@ import { money } from "@/features/financial-insights/format";
 import { placeActualsCached, unplannedTarget, type OptionalRead, type Placed } from "@/lib/cashflow-planning/actuals";
 import { NAME_MAX, PlanDocumentError, addGroup, addRow, duplicateDocument, exportPlanJson, importPlanJson, moveGroup, moveRow, moveRowBefore, placeRow, removeRow, renameGroup, setCells, updateRow } from "@/lib/cashflow-planning/document";
 import { computePlan, type Computed } from "@/lib/cashflow-planning/engine";
+import { linkNotes as buildLinkNotes } from "@/lib/cashflow-planning/linkNotes";
 import { monthLabel, yearOf } from "@/lib/cashflow-planning/months";
 import { SECTIONS, SECTION_LABEL, type Month, type PlanDocument, type PlanRow, type SectionId, type UnreadablePlan } from "@/lib/cashflow-planning/types";
 import { FEATURES } from "@/lib/features/catalogue";
@@ -208,13 +209,15 @@ function PlanView({ session, doc, data, today, planOptions, onNewPlan, onRetrySa
   const shiftedCells = useMemo(() => new Set([...(placed?.shiftNotes.keys() ?? [])].map((k) => (k.startsWith("unplanned:") ? k : `row:${k}`))), [placed]);
   const columns = useMemo(() => (computed ? buildColumns(computed.months, { mode: view.mode, fromYear, span, totals: view.totals }) : []), [computed, view.mode, view.totals, fromYear, span]);
 
+  // Links an earlier row already holds: a warning only when something is counted twice, otherwise a quiet note.
+  const linkNotes = useMemo(() => (computed ? buildLinkNotes(doc, computed, placed) : new Map()), [doc, computed, placed]);
   const problems = useMemo(() => {
     const map = new Map<string, string>();
     if (!computed) return map;
-    for (const conflict of placed?.conflicts ?? []) map.set(conflict.rowId, conflict.what);
+    for (const [rowId, note] of linkNotes) if (note.severity === "warning") map.set(rowId, note.summary);
     for (const row of doc.rows) { const problem = computed.rows.get(row.id)?.problem; if (problem && !map.has(row.id)) map.set(row.id, problem); }
     return map;
-  }, [computed, placed, doc.rows]);
+  }, [computed, linkNotes, doc.rows]);
 
   const edit = (change: (doc: PlanDocument) => PlanDocument) => {
     try { store.getState().edit(session.id, change); } catch (error) { toast.error(error instanceof PlanDocumentError ? error.message : "That change could not be made"); }
@@ -353,7 +356,7 @@ function PlanView({ session, doc, data, today, planOptions, onNewPlan, onRetrySa
 
   const header = (
     <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-border px-4 py-2">
-      <h1 className="text-sm font-semibold">Cashflow Planning</h1>
+      <h1 className="text-sm font-semibold">Cashflow Plan</h1>
       <Select size="sm" className="w-56" value={session.id} title="Open another plan" onValueChange={(id) => store.getState().select(id)} options={planOptions} />
       <SaveStatusBadge session={session} onRetry={onRetrySave} />
       {view.mode === "months" && years.length > 0 && computed && (
@@ -392,11 +395,6 @@ function PlanView({ session, doc, data, today, planOptions, onNewPlan, onRetrySa
             </section>
           </PopoverContent>
         </Popover>
-        {doc.useActuals && data.state === "ready" && (
-          <Button size="sm" variant="outline" onClick={data.refresh} disabled={data.refreshing} title={`Read from Actual at ${new Date(data.readAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}>
-            <RefreshCw className={data.refreshing ? "size-3.5 animate-spin" : "size-3.5"} aria-hidden />Refresh
-          </Button>
-        )}
         <Button size="sm" variant="outline" onClick={() => setSettings(true)}><Settings2 className="size-3.5" aria-hidden />Plan settings</Button>
         <DropdownMenu>
           <DropdownMenuTrigger render={<Button size="icon-sm" variant="outline" aria-label="More plan actions" />}><MoreHorizontal className="size-3.5" aria-hidden /></DropdownMenuTrigger>
@@ -411,6 +409,11 @@ function PlanView({ session, doc, data, today, planOptions, onNewPlan, onRetrySa
             <DropdownMenuItem variant="destructive" onClick={() => setConfirm({ title: `Delete "${doc.name}"?`, message: "The plan is removed from Actual Bench for good. Export it first if you may want it back. Nothing in Actual changes.", destructive: true, destructiveLabel: "Delete plan", onConfirm: () => void onDelete() })}>Delete this plan…</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        {doc.useActuals && data.state === "ready" && (
+          <Button size="sm" variant="outline" onClick={data.refresh} disabled={data.refreshing} title={`Read from Actual at ${new Date(data.readAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}>
+            <RefreshCw className={data.refreshing ? "size-3.5 animate-spin" : "size-3.5"} aria-hidden />Refresh
+          </Button>
+        )}
         <Button size="sm" variant="outline" title="How to read and work in a cash plan, and the keyboard shortcuts (?)" onClick={() => setGuide("start")}><BookOpen className="size-3.5" aria-hidden />Guide</Button>
         <Button size="icon-sm" variant={view.details ? "secondary" : "ghost"} aria-pressed={view.details} aria-label={view.details ? "Hide details" : "Show details"} title="Details panel" onClick={() => setView((v) => ({ ...v, details: !v.details }))}><PanelRight className="size-3.5" aria-hidden /></Button>
       </div>
@@ -443,7 +446,7 @@ function PlanView({ session, doc, data, today, planOptions, onNewPlan, onRetrySa
                 </p>
               )}
               <PlanGrid
-                doc={doc} computed={computed} lines={lines} columns={columns} cents={view.cents} pastMode={view.pastMode} selection={selection} problems={problems}
+                doc={doc} computed={computed} lines={lines} columns={columns} cents={view.cents} pastMode={view.pastMode} selection={selection} problems={problems} linkNotes={linkNotes}
                 shiftedCells={shiftedCells} find={find} onFind={setFind} scrollToken={scrollToken} scrollMonth={scrollMonth}
                 onSelect={(next) => { setSelection(next); setPickedColumn(null); }}
                 pickedColumn={pickedColumn} onPickColumn={(key, fromKeyboard) => {
@@ -459,7 +462,7 @@ function PlanView({ session, doc, data, today, planOptions, onNewPlan, onRetrySa
             </div>
             {view.details && (
               <Inspector
-                doc={doc} computed={computed} snapshot={snapshot} placed={placed} line={pickedColumnValue ? null : selectedLine} column={pickedColumnValue ? null : selectedColumn} problems={problems}
+                doc={doc} computed={computed} snapshot={snapshot} placed={placed} line={pickedColumnValue ? null : selectedLine} column={pickedColumnValue ? null : selectedColumn} problems={problems} linkNotes={linkNotes}
                 width={Math.min(INSPECTOR_MAX, Math.max(INSPECTOR_MIN, view.panelWidth))} onResize={(panelWidth) => setView((v) => ({ ...v, panelWidth }))}
                 onEdit={edit} onSelectLine={selectLine} onAddRow={addRowTo} onDeleteRow={deleteRow} onShowTransactions={setTransactions}
                 onClose={() => setView((v) => ({ ...v, details: false }))}
@@ -546,16 +549,27 @@ function Overview({ doc, computed, data, problems, placed, onShowUnplanned, onSe
         </section>
       )}
 
-      <section className="space-y-1.5">
+      <section className="space-y-3">
         <h3 className={heading}>How the grid works</h3>
-        <ul className="list-disc space-y-1 pl-4 text-muted-foreground">
-          {doc.useActuals && <li>Past months are what Actual recorded. The forecast starts from today&apos;s real balance.</li>}
-          <li>Select a row to see its month, choose where its forecast comes from, and set what it follows.</li>
-          <li>Double-click a name to rename it; drag it onto another row, group or section to move it.</li>
-          <li>Type in a coming month to override the forecast; a marked corner shows a typed amount. Delete clears it.</li>
-          <li>Right-click a cell or a row for more, and drag a row&apos;s name to move it.</li>
-          <li>Amounts are positive in their section&apos;s direction. A negative expense is a refund; a negative saving is a withdrawal.</li>
-        </ul>
+        {([
+          ["Reading it", [
+            ...(doc.useActuals ? ["Past months are what Actual recorded, in blue. The forecast starts from today’s real balance."] : []),
+            "Amounts are positive in their section’s direction. A negative expense is a refund; a negative saving is a withdrawal.",
+          ]],
+          ["Typing amounts", [
+            "Type in a coming month to override the forecast; a marked corner shows a typed amount. Delete clears it.",
+          ]],
+          ["Working with rows", [
+            "Select a row to see its month, choose where its forecast comes from, and set what it follows.",
+            "Double-click a name to rename it; drag it onto another row, group or section to move it.",
+            "Right-click a cell or a row for more.",
+          ]],
+        ] as [string, string[]][]).map(([title, items]) => (
+          <div key={title} className="space-y-1">
+            <h4 className="font-medium text-foreground">{title}</h4>
+            <ul className="list-disc space-y-1 pl-4 text-muted-foreground">{items.map((item) => <li key={item}>{item}</li>)}</ul>
+          </div>
+        ))}
         <button type="button" className="underline underline-offset-2" onClick={onHelp}>Open the guide</button>
       </section>
     </>

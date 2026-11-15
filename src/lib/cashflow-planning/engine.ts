@@ -135,12 +135,32 @@ export function computePlan(doc: PlanDocument, snapshot: Snapshot | null, placed
         const budget = live?.snapshot.budget;
         if (!budget || !budget.lastMonth) { result.problem = live ? "No budget month could be read" : "Needs Actual data"; break; }
         const ids = categoriesOf(row, live!.snapshot);
+        const problems: string[] = [];
         if (ids.length === 0) { result.problem = "Link a category to use its budget"; break; }
-        basis = (month) => {
+        const lag = row.basis.lag ?? 0;
+        // Paid after the month's spending: the purchases the credit cards recorded in a month that is over (natural amounts).
+        const cardSpent = new Map<Month, number>();
+        if (lag > 0) {
+          const wanted = new Set(ids), cards = new Set(live!.snapshot.accounts.filter((a) => a.accountClass === "credit-card").map((a) => a.id));
+          if (cards.size === 0) problems.push("No credit card account to take the spending from");
+          for (const m of live!.snapshot.movement) {
+            if (m.categoryId && m.transferAccountId === null && wanted.has(m.categoryId) && cards.has(m.accountId)) cardSpent.set(m.month, (cardSpent.get(m.month) ?? 0) + m.amountMinor * SECTION_SIGN[row.section]);
+          }
+        }
+        const budgeted = (month: Month): number | null => {
           const values = budget.months[month] ?? budget.months[budget.lastMonth!];
-          if (!values) return null;
-          return { amount: ids.reduce((sum, id) => sum + (values[id] ?? 0), 0), source: "budget" };
+          return values ? ids.reduce((sum, id) => sum + (values[id] ?? 0), 0) : null;
         };
+        basis = (month) => {
+          const from = lag > 0 ? addMonths(month, -lag) : month;
+          let amount: number | null;
+          if (lag === 0 || !currentMonth || from > currentMonth) amount = budgeted(from);
+          else if (from < currentMonth) amount = cardSpent.get(from) ?? 0;
+          // The month in progress: what was spent so far, or the budget when that is more.
+          else { const planned = budgeted(from); amount = Math.max(cardSpent.get(from) ?? 0, planned ?? 0); }
+          return amount === null ? null : { amount, source: "budget" };
+        };
+        if (problems.length) result.problem = problems.join("; ");
         break;
       }
       case "schedule": {

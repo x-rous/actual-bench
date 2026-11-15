@@ -75,7 +75,7 @@ function parseBasis(value: unknown, row: string): Basis {
   if (!isRecord(value)) return fail(`${row}: the forecast setting is missing`);
   switch (value.kind) {
     case "manual": return { kind: "manual" };
-    case "budget": return { kind: "budget" };
+    case "budget": return value.lag === 1 || value.lag === 2 ? { kind: "budget", lag: value.lag } : { kind: "budget" };
     case "loan": return value.count === "principal" ? { kind: "loan", count: "principal" } : { kind: "loan" };
     case "schedule": return { kind: "schedule", scheduleIds: ids(value.scheduleIds, `${row}: schedules`) };
     case "average": {

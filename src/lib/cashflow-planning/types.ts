@@ -46,8 +46,12 @@ export type Basis =
   | { kind: "manual" }
   /** The monthly average of the row's own actuals over the last complete months, optionally growing each year. */
   | { kind: "average"; months: AverageWindow; growthPct?: number }
-  /** What Actual's budget holds for the linked categories; months past the last budgeted one repeat it. */
-  | { kind: "budget" }
+  /**
+   * What Actual's budget holds for the linked categories; months past the last budgeted one repeat it. With `lag`, the amount is
+   * paid that many months after it is spent (a card paid after its statement): a month shows the spending of the month `lag`
+   * before it, taken from the credit cards' recorded purchases once that month is over, and from the budget before that.
+   */
+  | { kind: "budget"; lag?: 1 | 2 }
   /** The upcoming dates of Actual schedules. */
   | { kind: "schedule"; scheduleIds: string[] }
   /**

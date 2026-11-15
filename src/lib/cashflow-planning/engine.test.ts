@@ -3,6 +3,7 @@ import { contributionsOf, placeActuals, unplannedTarget, type SnapAccount, type 
 import { buildPlanFromActuals } from "./builder";
 import { createPlanDocument, createRow, exportPlanJson, importPlanJson, parseAmount, parsePlanDocument, ruleAmount, setCells, setHorizon } from "./document";
 import { computePlan } from "./engine";
+import { linkNotes } from "./linkNotes";
 
 const account = (id: string, accountClass: SnapAccount["accountClass"], offBudget = false): SnapAccount => ({ id, name: id, offBudget, closed: false, accountClass, treatment: null, excluded: false, groupName: null });
 
@@ -108,7 +109,7 @@ describe("placing what Actual recorded", () => {
     const doc = plan((d) => ({ ...d, rows: [...d.rows.filter((r) => r.name !== "Mortgage"), createRow({ name: "Home", section: "expenses", links: { categories: ["mortgage"] } }), createRow({ name: "Again", section: "expenses", links: { categories: ["mortgage"] } })] }));
     const placed = placeActuals(doc, household());
     expect(placed.rowActual.get(rowOf(doc, "Home").id)!.get("2026-01")).toBe(100_000);
-    expect(placed.conflicts).toEqual([{ rowId: rowOf(doc, "Again").id, what: "Mortgage is already followed by another row" }]);
+    expect(placed.conflicts).toEqual([{ rowId: rowOf(doc, "Again").id, what: "Mortgage is already followed by another row", kind: "category", name: "Mortgage", heldBy: rowOf(doc, "Home").id }]);
   });
 });
 
@@ -178,6 +179,49 @@ describe("forecasting", () => {
     expect(result.kinds.every((k) => k === "forecast")).toBe(true);
     expect(result.closing.slice(0, 3)).toEqual([150_000, 130_000, 180_000]);
     expect(result.kpis.cashNow).toBe(100_000);
+  });
+});
+
+describe("rows that follow what an earlier row follows", () => {
+  const rows = (second: { basis: Parameters<typeof createRow>[0]["basis"] }) => {
+    const first = createRow({ name: "Food", section: "expenses", links: { categories: ["groceries"] } });
+    const later = createRow({ name: "Card", section: "expenses", links: { categories: ["groceries"] }, ...second });
+    return { first, later, doc: plan((d) => ({ ...d, rows: [first, later] })) };
+  };
+  const notesOf = (doc: PlanDocument) => linkNotes(doc, run(doc), placeActuals(doc, household()));
+
+  it("is only a note when nothing is counted twice, and names the earlier row", () => {
+    const { later, first, doc } = rows({ basis: { kind: "budget" } });
+    const note = notesOf(doc).get(later.id)!;
+    expect(note).toMatchObject({ severity: "note", items: [{ kind: "category", name: "Groceries", heldBy: { id: first.id, name: "Food" } }] });
+    expect(note.summary).toContain("“Food”");
+  });
+
+  it("warns when both rows forecast it, or when the later row needs history it does not have", () => {
+    const both = rows({ basis: { kind: "budget" } });
+    const typed = setCells(both.doc, [{ rowId: both.first.id, month: "2026-06", amount: 5_000 }]);
+    expect(notesOf(typed).get(both.later.id)).toMatchObject({ severity: "warning", reason: expect.stringContaining("twice") });
+    const average = rows({ basis: { kind: "average", months: 3 } });
+    expect(notesOf(average.doc).get(average.later.id)).toMatchObject({ severity: "warning", reason: expect.stringContaining("average") });
+  });
+});
+
+describe("a budget row paid after the spending (a card paid next month)", () => {
+  it("takes the card's recorded purchases of a month that is over, then the month in progress, then the budget", () => {
+    const withLag = (lag?: 1 | 2) => {
+      const row = createRow({ name: "Card", section: "expenses", basis: lag ? { kind: "budget", lag } : { kind: "budget" }, links: { categories: ["groceries"] } });
+      const doc = plan((d) => ({ ...d, rows: [row] }));
+      return run(doc).rows.get(row.id)!;
+    };
+    // Today is 15 Mar 2026. Groceries went on the card: 200.00 in Feb, 100.00 so far in March. The budget: 1,100.00 in March, 1,200.00 from April.
+    const lagged = withLag(1);
+    expect(lagged.plan[2]).toBe(20_000); // March: paid for February's card spending
+    expect(lagged.plan[3]).toBe(110_000); // April: March is in progress, so the larger of 100.00 so far and its budget
+    expect(lagged.plan[4]).toBe(120_000); // May: April's budget
+    expect(lagged.plan[5]).toBe(120_000); // June: May is not budgeted, so the last budgeted month repeats
+    expect(lagged.problem).toBeUndefined();
+    // Without a lag the same row follows the budget of its own month.
+    expect(withLag().plan.slice(3, 5)).toEqual([120_000, 120_000]);
   });
 });
 
