@@ -1,11 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeftRight } from "lucide-react";
+import { ArrowLeftRight, ChevronDown, ChevronRight } from "lucide-react";
+import { toast } from "sonner";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { PillGroup } from "@/components/ui/pill-group";
 import { SearchInput } from "@/components/ui/search-input";
+import { SortableHeader, compareValues, type SortDirection } from "@/components/ui/sortable-header";
 import { cn } from "@/lib/utils";
 import { getTransport } from "@/lib/actual";
 import { runQuery } from "@/lib/api/query";
@@ -18,6 +22,9 @@ import { money } from "@/features/financial-insights/format";
 import type { TransactionsRequest } from "../lib/transactions";
 
 type Row = { id: string; date: string; amount: number; account: string; category: string | null; notes: string | null; payee: string | null; "payee.transfer_acct": string | null };
+
+type GroupBy = "none" | "month" | "category" | "payee" | "account";
+type SortKey = "date" | "account" | "payee" | "category" | "notes" | "amount";
 
 const LIMIT = 2000;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -33,6 +40,12 @@ const shortDate = (date: string) => `${date.slice(8, 10)} ${MONTHS[Number(date.s
 export function TransactionsDialog({ request, doc, snapshot, placed, onEdit, onClose }: { request: TransactionsRequest; doc: PlanDocument; snapshot: Snapshot; placed: Placed; onEdit: (change: (doc: PlanDocument) => PlanDocument) => void; onClose: () => void }) {
   const connection = useConnectionStore(selectActiveInstance);
   const [find, setFind] = useState("");
+  // Sorted by a header, or (null) in the order Actual returned: newest first.
+  const [sort, setSort] = useState<{ key: SortKey; direction: SortDirection } | null>(null);
+  const [groupBy, setGroupBy] = useState<GroupBy>("none");
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+  const [movedOnly, setMovedOnly] = useState(false);
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const months = [...request.months].sort();
   const wantedMonths = new Set(months);
   const from = `${months[0]}-01`;
@@ -92,6 +105,7 @@ export function TransactionsDialog({ request, doc, snapshot, placed, onEdit, onC
   const tagOf = new Map(snapshot.shifts.map((s) => [s.id, s.tagMonth]));
   // Accounts some row follows: their transfers belong to that row, whatever category they carry.
   const followed = new Set(doc.rows.flatMap((r) => r.links.accounts.map((a) => a.id)));
+  const unplannedOnly = request.targets.length > 0 && request.targets.every((t) => t.startsWith("unplanned:"));
   const wantedTransfers = new Set(transfers), wantedCategories = new Set(categories), wantedUncategorized = new Set(uncategorized);
   const countedIn = (row: Row): Month => placed.shifted.get(row.id)?.to ?? row.date.slice(0, 7);
   const matched = (query.data?.rows ?? []).filter((row) => {
@@ -107,7 +121,9 @@ export function TransactionsDialog({ request, doc, snapshot, placed, onEdit, onC
       if (wantedTransfers.has(other)) { const owner = transferOwner(doc, snapshot, other, row.amount >= 0 ? "in" : "out"); return owner ? request.targets.includes(owner) : request.targets.some((t) => t.startsWith("unplanned:")); }
       return !followed.has(other) && !!row.category && wantedCategories.has(row.category);
     }
-    return row.category ? wantedCategories.has(row.category) : wantedUncategorized.has(row.account);
+    if (row.category) return wantedCategories.has(row.category);
+    // A "Not in plan" line holds only the money in or only the money out of an account's uncategorized entries, by its section.
+    return wantedUncategorized.has(row.account) && (!unplannedOnly || (request.sign === 1 ? row.amount > 0 : row.amount < 0));
   });
   // The search looks at everything shown in a line: date, account, payee, category, notes and amount.
   const needle = find.trim().toLowerCase();
@@ -116,14 +132,46 @@ export function TransactionsDialog({ request, doc, snapshot, placed, onEdit, onC
     const text = [row.date, accountName.get(row.account), other ? `Transfer: ${accountName.get(other) ?? ""}` : row.payee ? query.data?.payees.get(row.payee) : "", row.category ? categoryName.get(row.category) : "", row.notes, money(row.amount * request.sign), String(row.amount / 100)].join(" ").toLowerCase();
     return text.includes(needle);
   });
-  const total = rows.reduce((sum, row) => sum + row.amount, 0) * request.sign;
+  const payeeText = (row: Row) => { const other = row["payee.transfer_acct"]; return other ? `Transfer: ${accountName.get(other) ?? "another account"}` : row.payee ? query.data?.payees.get(row.payee) ?? "" : ""; };
+  const sortValue = (row: Row, key: SortKey): string | number | null => key === "date" ? row.date : key === "account" ? accountName.get(row.account) ?? "" : key === "payee" ? payeeText(row) : key === "category" ? (row.category ? categoryName.get(row.category) ?? "" : "") : key === "notes" ? row.notes ?? "" : row.amount * request.sign;
+  const listed = movedOnly ? rows.filter((row) => placed.shifted.has(row.id)) : rows;
+  const shown = sort && sort.direction ? [...listed].sort((a, b) => compareValues(sortValue(a, sort.key), sortValue(b, sort.key), sort.direction!) || a.id.localeCompare(b.id)) : listed;
+  const natural = (list: Row[]) => list.reduce((sum, row) => sum + row.amount, 0) * request.sign;
+  const total = natural(listed);
+  // Grouped, each group with its own subtotal: by the month a transaction counts in, its category or its payee.
+  const groupOf = (row: Row): { key: string; label: string } => {
+    if (groupBy === "month") { const m = countedIn(row); return { key: m, label: monthLabel(m) }; }
+    if (groupBy === "account") { const name = accountName.get(row.account) ?? ""; return { key: row.account, label: name || "Unknown account" }; }
+    if (groupBy === "category") { const name = row.category ? categoryName.get(row.category) : null; return { key: name ?? "", label: name ?? "No category" }; }
+    const name = payeeText(row); return { key: name, label: name || "No payee" };
+  };
+  const groups = (() => {
+    if (groupBy === "none") return [{ key: "", label: "", rows: shown, total: 0 }];
+    const map = new Map<string, { key: string; label: string; rows: Row[]; total: number }>();
+    for (const row of shown) { const g = groupOf(row); const entry = map.get(g.key) ?? { ...g, rows: [], total: 0 }; entry.rows.push(row); map.set(g.key, entry); }
+    const list = [...map.values()].map((g) => ({ ...g, total: natural(g.rows) }));
+    return groupBy === "month" ? list.sort((a, b) => b.key.localeCompare(a.key)) : list.sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
+  })();
+  // The figure this list is behind, and whether what is listed adds up to it.
+  const expected = request.items.reduce((sum, item) => sum + item.amount, 0);
+  const listComplete = (query.data?.rows.length ?? 0) < LIMIT;
+  const narrowed = needle !== "" || movedOnly;
+  const selectedRows = shown.filter((row) => selected.has(row.id));
   // A move lists money that left one month and joined another, and a transit pairs the two sides of a transfer: neither has a total.
   const showTotal = !mode;
+  // Uncategorized entries a row follows can be split by direction in ways this list does not repeat: no comparison then.
+  const comparable = uncategorized.length === 0 || unplannedOnly;
 
-  const move = (row: Row, month: Month) => {
-    const dated = row.date.slice(0, 7);
-    // Back to its own month: forget the plan's move, or, when its note carries a tag, say so explicitly so the tag no longer applies.
-    onEdit((d) => setMove(d, row.id, month !== dated ? month : tagOf.get(row.id) && tagOf.get(row.id) !== dated ? dated : null));
+  // Back to its own month: forget the plan's move, or, when its note carries a tag, say so explicitly so the tag no longer applies.
+  const moveTo = (row: Row, month: Month): Month | null => { const dated = row.date.slice(0, 7); return month !== dated ? month : tagOf.get(row.id) && tagOf.get(row.id) !== dated ? dated : null; };
+  const move = (row: Row, month: Month) => onEdit((d) => setMove(d, row.id, moveTo(row, month)));
+  /** The chosen transactions counted in the month before or after their own, or back in it. A month that has not ended holds no actuals to join. */
+  const moveSelected = (where: "before" | "own" | "after") => {
+    const target = (row: Row) => (where === "own" ? row.date.slice(0, 7) : addMonths(row.date.slice(0, 7), where === "before" ? -1 : 1));
+    const movable = selectedRows.filter((row) => target(row) <= currentMonth);
+    if (movable.length > 0) onEdit((d) => movable.reduce((doc, row) => setMove(doc, row.id, moveTo(row, target(row))), d));
+    if (movable.length < selectedRows.length) toast.message(`${selectedRows.length - movable.length} not moved: that month has not ended.`);
+    setSelected(new Set());
   };
 
   return (
@@ -133,51 +181,107 @@ export function TransactionsDialog({ request, doc, snapshot, placed, onEdit, onC
           <DialogTitle>{request.title}</DialogTitle>
           <DialogDescription>Transactions in the plan&apos;s cash accounts, as recorded in Actual. Nothing here changes Actual. “Counted in” moves a transaction to a neighbouring month in this plan only; a <span className="font-mono">#YYYY-MM</span> tag in its Actual note does the same for every plan.</DialogDescription>
         </DialogHeader>
-        <div className="shrink-0 border-b border-border px-5 py-2"><SearchInput value={find} onValueChange={setFind} placeholder="Search these transactions" aria-label="Search these transactions" className="h-8 w-full max-w-sm text-xs" /></div>
+        <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-border px-5 py-2">
+          <SearchInput value={find} onValueChange={setFind} placeholder="Search these transactions" aria-label="Search these transactions" className="h-8 w-full max-w-sm text-xs" />
+          {!mode && (
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="text-muted-foreground">Group by</span>
+              <PillGroup<GroupBy> options={[{ value: "none", label: "None" }, { value: "month", label: "Month" }, { value: "category", label: "Category" }, { value: "payee", label: "Payee" }, { value: "account", label: "Account" }]} value={groupBy} onChange={(g) => { setGroupBy(g); setCollapsed(new Set()); }} />
+            </div>
+          )}
+          {matched.some((row) => placed.shifted.has(row.id)) && <Button size="xs" variant={movedOnly ? "secondary" : "outline"} aria-pressed={movedOnly} onClick={() => setMovedOnly((v) => !v)}><ArrowLeftRight className="size-3" aria-hidden />Moved only</Button>}
+        </div>
+        {selectedRows.length > 0 && (
+          <div role="status" className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-border bg-muted/50 px-5 py-1.5 text-xs">
+            <span className="font-medium">{selectedRows.length} selected · <span className="tabular-nums">{money(natural(selectedRows))}</span></span>
+            <span className="flex flex-wrap items-center gap-1.5">
+              <span className="text-muted-foreground">Count in</span>
+              <Button size="xs" variant="outline" onClick={() => moveSelected("before")}>The month before</Button>
+              <Button size="xs" variant="outline" onClick={() => moveSelected("own")}>Their own month</Button>
+              <Button size="xs" variant="outline" onClick={() => moveSelected("after")}>The month after</Button>
+            </span>
+            <Button size="xs" variant="ghost" className="ml-auto" onClick={() => setSelected(new Set())}>Clear selection</Button>
+          </div>
+        )}
         <div className="min-h-0 flex-1 overflow-auto">
           {query.isLoading ? <p className="p-5 text-sm text-muted-foreground" role="status">Reading transactions…</p>
             : query.isError ? <div className="space-y-2 p-5 text-sm"><p role="alert">The transactions could not be read.</p><Button size="sm" variant="outline" onClick={() => void query.refetch()}>Try again</Button></div>
-            : rows.length === 0 ? <p className="p-5 text-sm text-muted-foreground">{needle ? "No transaction matches the search." : "No transactions."}</p>
+            : listed.length === 0 ? <p className="p-5 text-sm text-muted-foreground">{needle ? "No transaction matches the search." : movedOnly ? "No transaction is counted in another month here." : "No transactions."}</p>
             : (
-              <table className="w-full border-separate border-spacing-0 text-xs">
+              <table className="w-full min-w-[1300px] table-fixed border-separate border-spacing-0 text-xs">
                 <thead className="sticky top-0 z-10 bg-muted text-left text-[11px] text-muted-foreground">
-                  <tr>{[["Date", "w-[104px]"], ["Account", "w-[150px]"], ["Payee", "w-[190px]"], ["Category", "w-[200px]"], ["Notes", ""]].map(([h, w]) => <th key={h} scope="col" className={`h-8 border-b border-border px-3 font-medium ${w}`}>{h}</th>)}<th scope="col" className="h-8 border-b border-border px-3 text-right font-medium">Amount</th><th scope="col" className="h-8 w-40 border-b border-border px-3 font-medium">Counted in</th></tr>
+                  <tr>
+                    <th scope="col" className="h-8 w-10 border-b border-border px-3"><Checkbox aria-label="Select all the transactions shown" checked={shown.length > 0 && selectedRows.length === shown.length} indeterminate={selectedRows.length > 0 && selectedRows.length < shown.length} onCheckedChange={(on) => setSelected(on ? new Set(shown.map((r) => r.id)) : new Set())} /></th>
+                    {([["date", "Date", "w-[104px]"], ["account", "Account", "w-[173px]"], ["payee", "Payee", "w-[219px]"], ["category", "Category", "w-[230px]"], ["notes", "Notes", ""]] as [SortKey, string, string][]).map(([key, label, width]) => (
+                      <SortableHeader<SortKey> key={key} label={label} sortKey={key} sort={sort} onSort={(k, direction) => setSort(direction ? { key: k, direction } : null)} className={cn("h-8 border-b border-border px-3 py-0", width)} />
+                    ))}
+                    <SortableHeader<SortKey> label="Amount" sortKey="amount" align="right" sort={sort} onSort={(k, direction) => setSort(direction ? { key: k, direction } : null)} className="h-8 w-[110px] border-b border-border px-3 py-0" />
+                    <th scope="col" className="h-8 w-[270px] border-b border-border px-3 font-medium">Counted in</th>
+                  </tr>
                 </thead>
                 <tbody>
-                  {rows.map((row) => {
-                    const other = row["payee.transfer_acct"];
-                    const dated = row.date.slice(0, 7), counted = countedIn(row);
-                    const shift = placed.shifted.get(row.id);
-                    // The month before, its own, and the month after; a month that has not ended holds no actuals to join.
-                    const choices = [...new Set([addMonths(dated, -1), dated, addMonths(dated, 1), counted])].filter((m) => m <= currentMonth || m === counted).sort();
+                  {groups.map((group) => {
+                    const open = groupBy === "none" || !collapsed.has(group.key);
                     return (
-                      <tr key={row.id} className="hover:bg-muted/40">
-                        <td className="h-8 border-b border-border/40 px-3 tabular-nums whitespace-nowrap">{shortDate(row.date)}</td>
-                        <td className="max-w-[150px] truncate border-b border-border/40 px-3">{accountName.get(row.account) ?? "-"}</td>
-                        <td className="max-w-[200px] truncate border-b border-border/40 px-3">{other ? `Transfer: ${accountName.get(other) ?? "another account"}` : row.payee ? query.data!.payees.get(row.payee) ?? "-" : "-"}</td>
-                        <td className="max-w-[170px] truncate border-b border-border/40 px-3">{row.category ? categoryName.get(row.category) ?? "-" : "-"}</td>
-                        <td className="max-w-0 truncate border-b border-border/40 px-3 text-muted-foreground" title={row.notes ?? undefined}>{row.notes ?? ""}</td>
-                        <td className="border-b border-border/40 px-3 text-right tabular-nums whitespace-nowrap">{money(row.amount * request.sign)}</td>
-                        <td className="border-b border-border/40 px-3">
-                          <div className="flex items-center gap-1.5">
-                            <div role="radiogroup" aria-label="Month this transaction counts in" title={shift?.byTag ? "Counted in the month its note's tag names" : undefined} className="flex gap-px rounded-md border border-border bg-muted/40 p-px">
-                              {choices.map((m) => (
-                                <button key={m} type="button" role="radio" aria-checked={m === counted} onClick={() => { if (m !== counted) move(row, m); }} className={cn("h-6 whitespace-nowrap rounded px-2 text-[11px]", m === counted ? "bg-background font-semibold text-foreground shadow-sm ring-1 ring-border" : "text-muted-foreground/70 hover:text-foreground")}>{monthLabel(m)}</button>
-                              ))}
-                            </div>
-                            {counted !== dated && <span title={shift?.byTag ? "Moved by the tag in its note" : "Moved in this plan"} className="text-muted-foreground"><ArrowLeftRight className="size-3.5" aria-hidden /><span className="sr-only">{shift?.byTag ? "Moved by the tag in its note" : "Moved in this plan"}</span></span>}
-                          </div>
-                        </td>
-                      </tr>
+                      <Fragment key={group.key || "all"}>
+                        {groupBy !== "none" && (
+                          <tr>
+                            <td colSpan={8} className="h-8 border-b border-border bg-muted/50 px-3">
+                              <button type="button" aria-expanded={open} onClick={() => setCollapsed((prev) => { const next = new Set(prev); if (next.has(group.key)) next.delete(group.key); else next.add(group.key); return next; })} className="flex w-full items-center gap-2 text-left font-medium">
+                                {open ? <ChevronDown className="size-3.5 shrink-0" aria-hidden /> : <ChevronRight className="size-3.5 shrink-0" aria-hidden />}
+                                <span className="min-w-0 truncate">{group.label}</span>
+                                <span className="font-normal text-muted-foreground">{group.rows.length} {group.rows.length === 1 ? "transaction" : "transactions"}</span>
+                                <span className="ml-auto tabular-nums">{money(group.total)}</span>
+                              </button>
+                            </td>
+                          </tr>
+                        )}
+                        {open && group.rows.map((row) => {
+                          const dated = row.date.slice(0, 7), counted = countedIn(row);
+                          const shift = placed.shifted.get(row.id);
+                          // The month before, its own, and the month after; a month that has not ended holds no actuals to join.
+                          const choices = [...new Set([addMonths(dated, -1), dated, addMonths(dated, 1), counted])].filter((m) => m <= currentMonth || m === counted).sort();
+                          return (
+                            <tr key={row.id} className={cn("hover:bg-muted/40", selected.has(row.id) && "bg-accent/40")}>
+                              <td className="h-8 border-b border-border/40 px-3"><Checkbox aria-label={`Select the transaction of ${shortDate(row.date)}, ${money(row.amount * request.sign)}`} checked={selected.has(row.id)} onCheckedChange={(on) => setSelected((prev) => { const next = new Set(prev); if (on) next.add(row.id); else next.delete(row.id); return next; })} /></td>
+                              <td className="h-8 border-b border-border/40 px-3 tabular-nums whitespace-nowrap">{shortDate(row.date)}</td>
+                              <td className="truncate border-b border-border/40 px-3" title={accountName.get(row.account) ?? undefined}>{accountName.get(row.account) ?? "-"}</td>
+                              <td className="truncate border-b border-border/40 px-3" title={payeeText(row) || undefined}>{payeeText(row) || "-"}</td>
+                              <td className="truncate border-b border-border/40 px-3" title={row.category ? categoryName.get(row.category) ?? undefined : undefined}>{row.category ? categoryName.get(row.category) ?? "-" : "-"}</td>
+                              <td className="truncate border-b border-border/40 px-3 text-muted-foreground" title={row.notes ?? undefined}>{row.notes ?? ""}</td>
+                              <td className="border-b border-border/40 px-3 text-right tabular-nums whitespace-nowrap">{money(row.amount * request.sign)}</td>
+                              <td className="border-b border-border/40 px-3">
+                                <div className="flex items-center gap-1.5">
+                                  <div role="radiogroup" aria-label="Month this transaction counts in" title={shift?.byTag ? "Counted in the month its note's tag names" : undefined} className="flex gap-px rounded-md border border-border bg-muted/40 p-px">
+                                    {choices.map((m) => (
+                                      <button key={m} type="button" role="radio" aria-checked={m === counted} onClick={() => { if (m !== counted) move(row, m); }} className={cn("h-6 whitespace-nowrap rounded px-2 text-[11px]", m === counted ? "bg-background font-semibold text-foreground shadow-sm ring-1 ring-border" : "text-muted-foreground/70 hover:text-foreground")}>{monthLabel(m)}</button>
+                                    ))}
+                                  </div>
+                                  {counted !== dated && <span title={shift?.byTag ? "Moved by the tag in its note" : "Moved in this plan"} className="text-muted-foreground"><ArrowLeftRight className="size-3.5" aria-hidden /><span className="sr-only">{shift?.byTag ? "Moved by the tag in its note" : "Moved in this plan"}</span></span>}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </Fragment>
                     );
                   })}
                 </tbody>
               </table>
             )}
         </div>
-        {rows.length > 0 && (
-          <div className="flex shrink-0 items-center justify-between border-t border-border px-5 py-2 text-xs">
-            <span className="text-muted-foreground">{rows.length} {rows.length === 1 ? "transaction" : "transactions"}{(query.data?.rows.length ?? 0) >= LIMIT && ` (the first ${LIMIT}; the total may be incomplete)`}</span>
+        {listed.length > 0 && (
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-x-6 gap-y-1 border-t border-border px-5 py-2 text-xs">
+            <span className="text-muted-foreground">{listed.length} {listed.length === 1 ? "transaction" : "transactions"}{!listComplete && ` (the first ${LIMIT}; the total may be incomplete)`}</span>
+            {showTotal && comparable && (
+              <span role="status" className="min-w-0 flex-1 sm:text-right">
+                {narrowed ? <span className="text-muted-foreground">Part of the figure ({money(expected)}): the list is narrowed.</span>
+                  : !listComplete ? <span className="text-muted-foreground">Not every transaction is loaded, so the total is not compared with the figure.</span>
+                  : query.isFetching ? null
+                  : natural(matched) === expected ? <span className="font-medium">Matches the figure ({money(expected)}).</span>
+                  : <span role="alert" className="font-medium text-amber-700 dark:text-amber-400">Differs from the figure by {money(natural(matched) - expected)}: the figure is {money(expected)}, the list adds up to {money(natural(matched))}.</span>}
+              </span>
+            )}
             {showTotal && <span className="font-semibold tabular-nums">Total {money(total)}</span>}
           </div>
         )}

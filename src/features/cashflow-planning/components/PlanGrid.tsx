@@ -2,7 +2,9 @@
 
 import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ArrowLeftRight, Info, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Link2Off, Plus, TrendingDown } from "lucide-react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { money } from "@/features/financial-insights/format";
 import type { LinkNote } from "@/lib/cashflow-planning/linkNotes";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { InfoHint } from "@/components/ui/info-hint";
@@ -138,6 +140,32 @@ export function PlanGrid({ doc, computed, lines, columns, cents, pastMode, selec
     if (r1 === undefined || r2 === undefined || c1 === undefined || c2 === undefined) return null;
     return { top: Math.min(r1, r2), bottom: Math.max(r1, r2), left: Math.min(c1, c2), right: Math.max(c1, c2) };
   }, [selection, lineIndex, colIndex]);
+
+  // What the selected cells add up to, as the grid shows them. Only the months of rows count: a group or a section is the sum of
+  // its rows, and a year's Total the sum of its months, so counting them would add the same money twice.
+  const stats = useMemo(() => {
+    if (!range) return null;
+    const values: number[] = [];
+    const sections = new Set<SectionId>();
+    let rowCount = 0;
+    const months = new Set<number>();
+    for (let r = range.top; r <= range.bottom; r++) {
+      const line = lines[r];
+      if (line?.kind !== "row") continue;
+      let any = false;
+      for (let c = range.left; c <= range.right; c++) {
+        const column = columns[c];
+        if (column?.kind !== "month") continue;
+        const value = monthValue(line, column.index, kinds[column.index], pastMode, planTotals);
+        if (value === null) continue;
+        values.push(value); months.add(column.index); any = true;
+      }
+      if (any) { rowCount++; sections.add(line.row.section); }
+    }
+    if (values.length === 0) return null;
+    const sum = values.reduce((total, v) => total + v, 0);
+    return { count: values.length, rows: rowCount, months: months.size, sum, average: Math.round(sum / values.length), min: Math.min(...values), max: Math.max(...values), mixed: sections.size > 1 };
+  }, [range, lines, columns, kinds, pastMode, planTotals]);
 
   useEffect(() => {
     if (!selection?.col) return;
@@ -455,6 +483,7 @@ export function PlanGrid({ doc, computed, lines, columns, cents, pastMode, selec
   };
 
   return (
+    <>
     <div
       ref={scroller} tabIndex={0} role="grid" aria-label="Cash plan" aria-rowcount={lines.length + HEADER_ROWS} aria-colcount={columns.length + 1} aria-activedescendant={activeId} onKeyDown={onKeyDown}
       onPaste={(event) => { if (!editing && !renaming && event.target === event.currentTarget) { event.preventDefault(); paste(event.clipboardData.getData("text/plain")); } }}
@@ -504,6 +533,37 @@ export function PlanGrid({ doc, computed, lines, columns, cents, pastMode, selec
         <tfoot role="rowgroup" className="sticky bottom-0 z-30 shadow-[0_-1px_0_color-mix(in_oklab,var(--foreground)_25%,transparent)]">{pinned.map(renderLine)}</tfoot>
       </table>
       {menu && <ContextMenu menu={menu} lines={lines} columns={columns} kinds={kinds} onClose={() => { setMenu(null); focusGrid(); }} onCommand={onCommand} onRename={(line) => startRename(line)} onAddBelow={addBelow} onClear={() => { const cells = editableInRange(); if (cells.length) onEdit(cells.map((c) => ({ rowId: c.rowId, month: c.month, amount: null }))); }} onCopy={() => void copy()} />}
+    </div>
+    <SelectionBar stats={stats} />
+    </>
+  );
+}
+
+type Stats = { count: number; rows: number; months: number; sum: number; average: number; min: number; max: number; mixed: boolean } | null;
+
+/** The sum and friends of the selected cells, under the grid. A figure copies when clicked. */
+function SelectionBar({ stats }: { stats: Stats }) {
+  const copy = (value: number) => {
+    const text = (value / 100).toFixed(2);
+    void navigator.clipboard?.writeText(text).then(() => toast.message(`Copied ${text}`), () => undefined);
+  };
+  const figure = (label: string, value: number, strong = false) => (
+    <button type="button" onClick={() => copy(value)} title="Copy this figure" className="flex items-baseline gap-1.5 rounded px-1 hover:bg-accent">
+      <span className="text-muted-foreground">{label}</span><span className={cn("tabular-nums", strong ? "font-semibold" : "font-medium")}>{money(value)}</span>
+    </button>
+  );
+  return (
+    <div role="status" aria-label="Selection summary" className="flex h-7 shrink-0 items-center gap-4 border-t border-border bg-muted/40 px-3 text-xs">
+      {!stats ? <span className="text-muted-foreground">Select cells of a row to see their sum and average</span> : (
+        <>
+          {figure("Sum", stats.sum, true)}
+          {stats.count > 1 && <>{figure("Average", stats.average)}{figure("Min", stats.min)}{figure("Max", stats.max)}</>}
+          <span className="text-muted-foreground">
+            {stats.count} {stats.count === 1 ? "cell" : "cells"}{stats.count > 1 && ` · ${stats.rows} ${stats.rows === 1 ? "row" : "rows"} × ${stats.months} ${stats.months === 1 ? "month" : "months"}`}
+            {stats.mixed && " · rows of different sections, added as shown"}
+          </span>
+        </>
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { contributionsOf, unplannedTarget, type Contribution, type Placed, type Snapshot } from "@/lib/cashflow-planning/actuals";
+import { contributionsOf, unplannedTarget, type Placed, type Snapshot } from "@/lib/cashflow-planning/actuals";
 import { monthLabel } from "@/lib/cashflow-planning/months";
 import { SECTION_LABEL, type Month, type PlanDocument } from "@/lib/cashflow-planning/types";
 import type { Line } from "./view";
@@ -9,7 +9,8 @@ export type TransactionsRequest = {
   /** The row ids and "Not in plan" targets whose figures are listed together. */
   targets: string[];
   months: Month[];
-  items: Pick<Contribution, "kind" | "id">[];
+  /** What the figure is made of, with each piece's amount (natural sign): their sum is the figure the list is checked against. */
+  items: ReturnType<typeof contributionsOf>;
   /** Natural-sign multiplier for display. */
   sign: 1 | -1;
   /** "transit": transfers between the plan's cash accounts. "moved": transactions counted in another month than their date. */

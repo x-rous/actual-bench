@@ -96,7 +96,7 @@ export function CashflowGuide({ section, onSection, onClose, docsUrl }: { sectio
         <ShortcutGroups />
         <Heading>With the mouse</Heading>
         <Grid>
-          <Card icon={Keyboard} tone="value" title="Select and extend">Click a cell, or drag across several. Shift-click extends the selection; drag the small square at the corner to fill to the right.</Card>
+          <Card icon={Keyboard} tone="value" title="Select and extend">Click a cell, or drag across several. Shift-click extends the selection; drag the small square at the corner to fill to the right. The bar under the grid adds up what is selected: sum, average, smallest and largest. Click a figure to copy it.</Card>
           <Card icon={Keyboard} tone="income" title="Open a summary">Click a month (or a year’s Total) in the header to see its summary in the details panel. The keyboard way is S on a cell.</Card>
           <Card icon={Keyboard} tone="warn" title="Rows and groups">Double-click a name to rename it; drag a label onto another row, a group or a section to move it; right-click for the full menu.</Card>
         </Grid>

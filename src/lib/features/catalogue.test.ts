@@ -8,7 +8,7 @@ describe("feature presentation contracts", () => {
     expect(FEATURE_SECTIONS.flatMap((section) => section.items)).toEqual(FEATURES);
     expect(FEATURES.filter((feature) => feature.maturity === "experimental")).toHaveLength(7);
     expect(FEATURES.filter((feature) => feature.groupId === "financial-management").map((feature) => feature.id)).toEqual([
-      "financial-insights", "cashflow-planning", "budget-management", "reconciliation", "credit-cards", "assets", "loans",
+      "financial-insights", "budget-management", "cashflow-planning", "reconciliation", "credit-cards", "assets", "loans",
     ]);
     expect(FEATURES.filter((feature) => feature.groupId === "sync-automations").map((feature) => feature.id)).toEqual([
       "sync", "backups", "automations", "fx-rates",
