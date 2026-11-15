@@ -5,6 +5,7 @@ import Link from "next/link";
 import { AlertTriangle, ArrowDown, ArrowLeftRight, ArrowUp, Info, MoreHorizontal, Plus, Trash2, X } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ColorPicker } from "@/components/ui/color-picker";
+import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
 import type { LinkNote } from "@/lib/cashflow-planning/linkNotes";
 import { Button } from "@/components/ui/button";
@@ -110,7 +111,10 @@ export function Inspector(props: Props) {
               <h2 className="truncate text-sm font-semibold leading-tight" title={title}>{title}</h2>
               {subtitle && <p className="mt-1 truncate text-xs leading-tight tabular-nums text-muted-foreground">{subtitle}</p>}
             </div>
-            <Button size="icon-xs" variant="ghost" className="ml-auto" onClick={onClose} aria-label="Close details"><X className="size-3.5" aria-hidden /></Button>
+            <div className="ml-auto flex items-center gap-1">
+              {line?.kind === "group" && <GroupMenu groupId={line.group.id} name={line.group.name} onEdit={props.onEdit} onSelectLine={props.onSelectLine} />}
+              <Button size="icon-xs" variant="ghost" onClick={onClose} aria-label="Close details"><X className="size-3.5" aria-hidden /></Button>
+            </div>
           </header>
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3 text-xs">
             {!line ? props.overview
@@ -492,31 +496,119 @@ function UnplannedPanel({ computed, snapshot, placed, section, column, onEdit, o
 
 // ─── Groups, sections, balances ──────────────────────────────────────────────
 
-function GroupPanel({ doc, computed, snapshot, placed, line, column, groupId, onEdit, onSelectLine, onAddRow, onShowTransactions }: Props & { line: Line; column: Column | null; groupId: string }) {
-  const group = doc.groups.find((g) => g.id === groupId);
-  if (!group) return null;
-  const add = () => onAddRow(group.section, groupId);
+/** The amounts of a group's figure for the selection: the month's breakdown, or (nothing selected) a summary of the group. */
+function GroupFigures({ doc, computed, snapshot, placed, line, column, rows, onShowTransactions }: Pick<Props, "doc" | "computed" | "snapshot" | "placed" | "onShowTransactions"> & { line: Extract<Line, { kind: "group" }>; column: Column | null; rows: PlanRow[] }) {
+  const months = monthsOf(column, computed);
+  const request = column ? requestFor(doc, snapshot, placed, line, months, columnLabel(column)) : null;
+  const sum = (indexes: number[], pick: (i: number) => number) => indexes.reduce((acc, i) => acc + pick(i), 0);
+  const ofRows = (indexes: number[], field: "values" | "actual" | "plan") => sum(indexes, (i) => rows.reduce((acc, r) => acc + (computed.rows.get(r.id)?.[field][i] ?? 0), 0));
+  if (column) {
+    const open = request ? () => onShowTransactions(request) : undefined;
+    if (column.kind === "year") return <Block><Fact label="Year total" strong onClick={open}>{money(aggregate(line.values, column.indexes, line.aggregate))}</Fact></Block>;
+    const kind = computed.kinds[column.index], i = [column.index];
+    const total = line.values[column.index];
+    return (
+      <Block>
+        {doc.useActuals && kind === "actual" && <Fact label="Recorded" strong onClick={open}>{money(total)}</Fact>}
+        {doc.useActuals && kind === "current" && <>
+          <Fact label="Recorded so far" onClick={open}>{money(ofRows(i, "actual"))}</Fact>
+          <Fact label="Planned for the month">{money(ofRows(i, "plan"))}</Fact>
+          <Fact label="Expected by month end" strong>{money(total)}</Fact>
+        </>}
+        {(!doc.useActuals || kind === "forecast") && <Fact label={doc.useActuals ? "Forecast" : "Plan"} strong onClick={open}>{money(total)}</Fact>}
+      </Block>
+    );
+  }
+  // Nothing selected but the group itself: what it adds up to.
+  const all = computed.months.map((_, i) => i);
+  const from = computed.currentIndex >= 0 ? computed.currentIndex + 1 : 0;
+  const next12 = all.slice(from, from + 12);
+  return (
+    <Block>
+      <p className="text-muted-foreground">{rows.length === 0 ? "No rows yet" : `${rows.length} ${rows.length === 1 ? "row" : "rows"}`}</p>
+      {computed.currentIndex >= 0 && <Fact label="This month">{money(line.values[computed.currentIndex])}</Fact>}
+      {next12.length > 0 && <Fact label="Next 12 months">{money(sum(next12, (i) => line.values[i]))}</Fact>}
+      <Fact label="Whole plan" strong>{money(sum(all, (i) => line.values[i]))}</Fact>
+    </Block>
+  );
+}
+
+/** The group's rows with their amount for the selection, largest first. A name opens the row's details, an amount the transactions behind it. */
+function GroupRows({ doc, computed, snapshot, placed, rows, column, problems, linkNotes, onSelectLine, onShowTransactions }: Pick<Props, "doc" | "computed" | "snapshot" | "placed" | "problems" | "linkNotes" | "onSelectLine" | "onShowTransactions"> & { rows: PlanRow[]; column: Column | null }) {
+  const from = computed.currentIndex >= 0 ? computed.currentIndex + 1 : 0;
+  const indexes = column ? (column.kind === "month" ? [column.index] : column.indexes) : computed.months.map((_, i) => i).slice(from, from + 12);
+  const label = column ? columnLabel(column) : "Next 12 months";
+  const items = rows.map((row) => ({ row, amount: indexes.reduce((acc, i) => acc + (computed.rows.get(row.id)?.values[i] ?? 0), 0) })).sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+  const months = monthsOf(column, computed);
+  return (
+    <Block title="Made up of" action={<span className="text-[11px] text-muted-foreground">{label}</span>}>
+      {items.length === 0 ? <p className="text-muted-foreground">No rows yet. Add one below, or drag a row onto this group.</p> : (
+        <ul className="divide-y divide-border/50 rounded-md border border-border">
+          {items.map(({ row, amount }) => {
+            const note = linkNotes.get(row.id);
+            const result = computed.rows.get(row.id);
+            const request = column && result ? requestFor(doc, snapshot, placed, { kind: "row", key: `row:${row.id}`, row, result, aggregate: "sum", depth: 1 }, months, columnLabel(column)) : null;
+            return (
+              <li key={row.id} className="flex h-7 items-center gap-2 px-2 hover:bg-accent/40">
+                <button type="button" onClick={() => onSelectLine(`row:${row.id}`)} title={`Show the details of ${row.name}`} className="min-w-0 flex-1 truncate text-left hover:underline">{row.name}</button>
+                {problems.has(row.id) ? <AlertTriangle className="size-3.5 shrink-0 text-amber-600" aria-label="Needs a look" /> : note ? <Info className="size-3.5 shrink-0 text-muted-foreground/70" aria-label="Also followed by an earlier row" /> : null}
+                {amount === 0 ? <span className="shrink-0 text-muted-foreground">–</span>
+                  : request ? <AmountLink onClick={() => onShowTransactions(request)}>{money(amount)}</AmountLink>
+                  : <span className="shrink-0 tabular-nums">{money(amount)}</span>}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Block>
+  );
+}
+
+/** Moving and removing a group, kept out of the way of the settings: the same "more" menu a row has. */
+function GroupMenu({ groupId, name, onEdit, onSelectLine }: { groupId: string; name: string; onEdit: Props["onEdit"]; onSelectLine: Props["onSelectLine"] }) {
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   return (
     <>
-    <FigureBlock doc={doc} computed={computed} snapshot={snapshot} placed={placed} line={line} column={column} onShowTransactions={onShowTransactions} />
-    <Block>
-      <div className="space-y-1"><Label htmlFor="cf-group-name" className="text-xs">Name</Label><TextField id="cf-group-name" value={group.name} maxLength={NAME_MAX} onCommit={(name) => onEdit((d) => renameGroup(d, groupId, name))} /></div>
-      <div className="flex flex-wrap items-center gap-1">
-        <Button size="xs" variant="outline" onClick={add}><Plus className="size-3" aria-hidden />Add a row</Button>
-        <Button size="xs" variant="outline" onClick={() => onEdit((d) => moveGroup(d, groupId, -1))}><ArrowUp className="size-3" aria-hidden />Up</Button>
-        <Button size="xs" variant="outline" onClick={() => onEdit((d) => moveGroup(d, groupId, 1))}><ArrowDown className="size-3" aria-hidden />Down</Button>
-        <Button size="xs" variant="ghost" className="ml-auto text-destructive hover:text-destructive" title="Its rows stay, directly under the section" onClick={() => { onEdit((d) => removeGroup(d, groupId)); onSelectLine(null); }}><Trash2 className="size-3" aria-hidden />Remove group</Button>
-      </div>
-      <div className="space-y-1">
-        <span className="text-xs font-medium">Colour</span>
-        <div className="flex items-center gap-2">
-          <ColorPicker ariaLabel="Group colour" value={group.color} fallback="#3b82f6" onChange={(hex) => onEdit((d) => setGroupColor(d, groupId, hex))} onClear={() => onEdit((d) => setGroupColor(d, groupId, null))} />
-          <span className="tabular-nums text-muted-foreground">{group.color ?? "No colour"}</span>
+      <DropdownMenu>
+        <DropdownMenuTrigger render={<Button size="icon-xs" variant="ghost" aria-label={`More for ${name}`} />}><MoreHorizontal className="size-3.5" aria-hidden /></DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-44">
+          <DropdownMenuItem onClick={() => onEdit((d) => moveGroup(d, groupId, -1))}><ArrowUp className="size-3.5" aria-hidden />Move up</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => onEdit((d) => moveGroup(d, groupId, 1))}><ArrowDown className="size-3.5" aria-hidden />Move down</DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem variant="destructive" onClick={() => setConfirm({ title: `Remove the group "${name}"?`, message: "Its rows stay, directly under the section. Only the subtotal goes.", destructive: true, destructiveLabel: "Remove group", onConfirm: () => { onEdit((d) => removeGroup(d, groupId)); onSelectLine(null); } })}><Trash2 className="size-3.5" aria-hidden />Remove group</DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <ConfirmDialog open={!!confirm} onOpenChange={(open) => { if (!open) setConfirm(null); }} state={confirm} />
+    </>
+  );
+}
+
+function GroupPanel({ doc, computed, snapshot, placed, line, column, groupId, problems, linkNotes, onEdit, onSelectLine, onAddRow, onShowTransactions }: Props & { line: Line; column: Column | null; groupId: string }) {
+  const group = doc.groups.find((g) => g.id === groupId);
+  if (!group || line.kind !== "group") return null;
+  const rows = doc.rows.filter((r) => r.groupId === groupId);
+  return (
+    <>
+      <GroupFigures doc={doc} computed={computed} snapshot={snapshot} placed={placed} line={line} column={column} rows={rows} onShowTransactions={onShowTransactions} />
+      <GroupRows doc={doc} computed={computed} snapshot={snapshot} placed={placed} rows={rows} column={column} problems={problems} linkNotes={linkNotes} onSelectLine={onSelectLine} onShowTransactions={onShowTransactions} />
+      <Block title="Group">
+        <div className="space-y-1"><Label htmlFor="cf-group-name" className="text-xs">Name</Label><TextField id="cf-group-name" value={group.name} maxLength={NAME_MAX} onCommit={(name) => onEdit((d) => renameGroup(d, groupId, name))} /></div>
+        <div className="space-y-1">
+          <span className="text-xs font-medium">Colour</span>
+          <div className="flex items-center gap-2">
+            <ColorPicker ariaLabel="Group colour" value={group.color} fallback="#3b82f6" onChange={(hex) => onEdit((d) => setGroupColor(d, groupId, hex))} onClear={() => onEdit((d) => setGroupColor(d, groupId, null))}>
+              <span aria-hidden className={cn("block size-5 rounded-full", group.color ? "border border-border/60" : "border border-dashed border-muted-foreground/60")} style={group.color ? { backgroundColor: group.color } : undefined} />
+            </ColorPicker>
+            <span className="tabular-nums text-muted-foreground">{group.color ?? "None"}</span>
+            {group.color && <button type="button" className="text-muted-foreground underline underline-offset-2 hover:text-foreground" onClick={() => onEdit((d) => setGroupColor(d, groupId, null))}>Clear</button>}
+          </div>
+          <p className="text-muted-foreground">Rows in the group use a lighter shade of this colour.</p>
         </div>
-        <p className="text-muted-foreground">The rows in the group follow it at 60% of its strength.</p>
-      </div>
-      <p className="text-muted-foreground">A group is a subtotal. To put a row in it, drag the row onto the group or under one of its rows.</p>
-    </Block>
+        <div className="space-y-1.5">
+          <Button size="xs" variant="outline" onClick={() => onAddRow(group.section, groupId)}><Plus className="size-3" aria-hidden />Add a row</Button>
+          <p className="text-muted-foreground">To put an existing row in this group, drag it onto the group or under one of its rows.</p>
+        </div>
+      </Block>
     </>
   );
 }

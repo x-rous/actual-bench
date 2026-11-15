@@ -141,7 +141,20 @@ export function PlanGrid({ doc, computed, lines, columns, cents, pastMode, selec
 
   useEffect(() => {
     if (!selection?.col) return;
-    scroller.current?.querySelector<HTMLElement>(`[data-cell="${CSS.escape(`${selection.line}|${selection.col}`)}"]`)?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    const el = scroller.current;
+    const cell = el?.querySelector<HTMLElement>(`[data-cell="${CSS.escape(`${selection.line}|${selection.col}`)}"]`);
+    if (!el || !cell) return;
+    // A pinned line is always in view at the bottom: only the columns can need scrolling, never the rows (the browser would
+    // take the pinned cells for being out of view, behind the padding that keeps other cells clear of them).
+    if (lines.some((l) => l.key === selection.line && isPinned(l))) {
+      const box = el.getBoundingClientRect(), at = cell.getBoundingClientRect();
+      const visibleLeft = box.left + LABEL_WIDTH, visibleRight = box.left + el.clientWidth;
+      if (at.left < visibleLeft) el.scrollLeft -= visibleLeft - at.left;
+      else if (at.right > visibleRight) el.scrollLeft += at.right - visibleRight;
+      return;
+    }
+    cell.scrollIntoView({ block: "nearest", inline: "nearest" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the selection moves, not whenever the lines are rebuilt
   }, [selection]);
 
   // Open on the current month (one month of history beside it), and again whenever asked.
@@ -447,10 +460,10 @@ export function PlanGrid({ doc, computed, lines, columns, cents, pastMode, selec
       onPaste={(event) => { if (!editing && !renaming && event.target === event.currentTarget) { event.preventDefault(); paste(event.clipboardData.getData("text/plain")); } }}
       // A click on the empty space around the table clears the selection, which shows the plan overview again.
       onMouseDown={(e) => { if (e.target === e.currentTarget) onSelect(null); }}
-      className="relative min-h-0 flex-1 overflow-auto outline-none focus-visible:ring-1 focus-visible:ring-ring/60"
-      style={{ scrollPaddingLeft: LABEL_WIDTH, scrollPaddingTop: 56, scrollPaddingBottom: 58 }}
+      className="cashflow-scroll relative min-h-0 flex-1 overflow-auto outline-none focus-visible:ring-1 focus-visible:ring-ring/60"
+      style={{ "--cf-label-width": `${LABEL_WIDTH}px`, scrollPaddingLeft: LABEL_WIDTH, scrollPaddingTop: 56, scrollPaddingBottom: 29 * pinned.length } as React.CSSProperties}
     >
-      <table role="presentation" className="border-separate border-spacing-0 text-xs select-none" style={{ tableLayout: "fixed", width: LABEL_WIDTH + columns.reduce((sum, c) => sum + (c.kind === "year" ? yearWidth : monthWidth), 0) }}>
+      <table role="presentation" className="border-separate border-spacing-0 text-xs select-none" style={{ tableLayout: "fixed", height: "100%", width: LABEL_WIDTH + columns.reduce((sum, c) => sum + (c.kind === "year" ? yearWidth : monthWidth), 0) }}>
         <colgroup>
           <col style={{ width: LABEL_WIDTH, minWidth: LABEL_WIDTH }} />
           {columns.map((c) => <col key={c.key} style={{ width: c.kind === "year" ? yearWidth : monthWidth, minWidth: c.kind === "year" ? yearWidth : monthWidth }} />)}
@@ -485,9 +498,10 @@ export function PlanGrid({ doc, computed, lines, columns, cents, pastMode, selec
         <tbody role="rowgroup">
           {body.map(renderLine)}
           {find.trim() !== "" && !body.some((l) => l.kind === "row") && <tr role="row"><td role="gridcell" colSpan={columns.length + 1} className="px-3 py-4 text-muted-foreground">No row is named like “{find.trim()}”.</td></tr>}
+          <FillerRow columns={columns} kinds={kinds} />
         </tbody>
         {/* What everything above adds up to stays in view. */}
-        <tfoot role="rowgroup" className="sticky bottom-0 z-30 shadow-[0_-1px_0_var(--border)]">{pinned.map(renderLine)}</tfoot>
+        <tfoot role="rowgroup" className="sticky bottom-0 z-30 shadow-[0_-1px_0_color-mix(in_oklab,var(--foreground)_25%,transparent)]">{pinned.map(renderLine)}</tfoot>
       </table>
       {menu && <ContextMenu menu={menu} lines={lines} columns={columns} kinds={kinds} onClose={() => { setMenu(null); focusGrid(); }} onCommand={onCommand} onRename={(line) => startRename(line)} onAddBelow={addBelow} onClear={() => { const cells = editableInRange(); if (cells.length) onEdit(cells.map((c) => ({ rowId: c.rowId, month: c.month, amount: null }))); }} onCopy={() => void copy()} />}
     </div>
@@ -618,6 +632,27 @@ function toneOf(doc: PlanDocument, line: Line): { fill: string; stripe: string }
   return { fill: mix(Math.round(strength * 0.24)), stripe: mix(strength) };
 }
 
+/**
+ * Takes the height the rows leave over, so the pinned lines sit at the bottom of the grid even when the plan is short, and
+ * carries the columns' fills (the past, the current month, the forecast, the year dividers) down to them.
+ */
+function FillerRow({ columns, kinds }: { columns: Column[]; kinds: readonly MonthKind[] }) {
+  return (
+    <tr role="presentation" aria-hidden style={{ height: "100%" }}>
+      <td className="sticky left-0 z-20 border-r border-border/60 bg-background p-0" />
+      {columns.map((column, i) => {
+        const kind = column.kind === "month" ? kinds[column.index] : null;
+        return (
+          <td key={column.key} className={cn("p-0",
+            column.kind === "year" ? "border-l-2 border-border bg-muted" : kind === "actual" ? "bg-muted/30" : kind === "current" ? "bg-amber-500/10" : "bg-background",
+            column.kind === "month" && column.index > 0 && kind !== "actual" && kinds[column.index - 1] === "actual" && "border-l border-l-primary/30",
+            startsYear(columns, i) && "border-l-2 border-l-border")} />
+        );
+      })}
+    </tr>
+  );
+}
+
 const GridLine = memo(function GridLine({ line, gridId, rowNumber, columns, kinds, cents, pastMode, planTotals, belowMinimum, activeCol, rangeLeft, rangeRight, fillRight, handleAt, editing, renaming, problem, note, unlinked, shiftedCells, dropTarget, tone, handlers }: LineProps) {
   const strong = line.kind === "section" || line.kind === "balance" || (line.kind === "memo" && line.key === "total");
   const band = line.kind === "section";
@@ -629,7 +664,7 @@ const GridLine = memo(function GridLine({ line, gridId, rowNumber, columns, kind
   const droppable = line.kind === "row" || line.kind === "group" || line.kind === "section";
   const sumLine = line.kind === "group";
   const closing = line.kind === "balance" && line.key === "closing";
-  const rowTone = cn(band && "bg-muted", line.kind === "balance" && "bg-[color-mix(in_oklab,var(--muted)_60%,var(--background))]", closing && "border-t border-t-foreground/25 bg-muted");
+  const rowTone = cn(band && "bg-muted", line.kind === "balance" && "bg-[color-mix(in_oklab,var(--muted)_60%,var(--background))]", closing && "border-t border-t-foreground/25 bg-muted", line.kind === "memo" && line.key === "total" && "border-t border-t-border");
 
   return (
     <tr

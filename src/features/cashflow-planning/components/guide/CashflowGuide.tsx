@@ -55,7 +55,7 @@ export function CashflowGuide({ section, onSection, onClose, docsUrl }: { sectio
           ["Group", "A subtotal you create, tinted and bold. It adds up its rows and is not typed into."],
           ["Row", "One thing you plan, on a white background in the forecast. This is where you type amounts."],
           ["Not in plan", "What Actual recorded that no row follows. It keeps the months adding up, and its details can turn each item into a row."],
-          ["Net cashflow, Closing balance", "Pinned under the grid so they stay in view while you scroll."],
+          ["Net cashflow, Closing balance, Savings (estimate), Cash + savings", "Pinned at the bottom of the grid, so they stay in view while you scroll. The last two appear when the plan has savings accounts."],
         ]} />
         <Callout title="Amounts are positive in their section’s direction">An expense of 500 is typed as 500. A negative amount is the reverse: a refund in Expenses, a withdrawal in Savings, new borrowing in Loans & debt.</Callout>
         <Heading>Past months, three ways</Heading>

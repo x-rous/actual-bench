@@ -83,7 +83,7 @@ export function LayoutSketch() {
         <Block className="flex flex-wrap items-center gap-x-4 gap-y-1"><b>Plan bar</b><span className="text-muted-foreground">plan picker · Saved · month window · Months / Years · Undo, Redo · View · Refresh · Plan settings · Guide</span></Block>
         <Block className="flex flex-wrap items-center gap-x-4 gap-y-1"><b>Key figures</b><span className="text-muted-foreground">Cash today · Lowest point, next 12 months · Minimum cash · End of the year · Next 12 months · End of plan</span></Block>
         <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_14rem]">
-          <Block className="space-y-1.5"><p><b>The grid</b></p><div className="space-y-1">{[70, 45, 60, 52].map((w, i) => <div key={i} className="h-2 rounded bg-muted" style={{ width: `${w}%` }} />)}</div><p className="text-muted-foreground">Past months, this month and the forecast, line by line. Net cashflow and Closing balance stay pinned at the bottom.</p></Block>
+          <Block className="space-y-1.5"><p><b>The grid</b></p><div className="space-y-1">{[70, 45, 60, 52].map((w, i) => <div key={i} className="h-2 rounded bg-muted" style={{ width: `${w}%` }} />)}</div><p className="text-muted-foreground">Past months, this month and the forecast, line by line. Net cashflow and Closing balance stay pinned at the bottom, with Savings (estimate) and Cash + savings under them when there are savings accounts.</p></Block>
           <Block className="space-y-1"><p><b>Details panel</b></p><p className="text-muted-foreground">The plan overview, or whatever you select: a row, a month, a year.</p></Block>
         </div>
       </div>

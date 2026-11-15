@@ -45,11 +45,11 @@ export const lineKey = {
   unplanned: (section: SectionId) => `unplanned:${section}`,
 };
 
-/** The lines pinned under the grid: they are what the rest adds up to. */
+/** The lines pinned at the bottom of the grid, in order: net cashflow, the closing balance and, when there are savings accounts, the savings balance and cash plus savings. They are what the rest adds up to. */
 /** The width of the name column in the grid, and of the first key figure above it. */
 export const LABEL_WIDTH = 259;
 
-export const isPinned = (line: Line): boolean => (line.kind === "memo" && line.key === "net") || (line.kind === "balance" && line.key === "closing");
+export const isPinned = (line: Line): boolean => (line.kind === "memo" && (line.key === "net" || line.key === "savings" || line.key === "total")) || (line.kind === "balance" && line.key === "closing");
 
 /** `find` keeps only the rows whose name contains it (with their groups and sections), whatever is collapsed. */
 export function buildLines(doc: PlanDocument, computed: Computed, collapsed: ReadonlySet<string>, find = ""): Line[] {
@@ -80,13 +80,14 @@ export function buildLines(doc: PlanDocument, computed: Computed, collapsed: Rea
   if (nonZero(computed.inTransit)) lines.push({ kind: "memo", key: "inTransit", label: "Transfers in transit", values: computed.inTransit, aggregate: "sum", hint: "Transfers between the plan's cash accounts whose two sides fall in different months. They cancel out over time." });
   if (nonZero(computed.moved)) lines.push({ kind: "memo", key: "moved", label: "Moved between months", values: computed.moved, aggregate: "sum", hint: "Transactions counted in another month than their date (a #YYYY-MM tag in the note, or moved in this plan). This line puts the amount back in the month the money really moved, so the balances stay the real ones." });
   if (nonZero(computed.startingBalances)) lines.push({ kind: "memo", key: "starting", label: "Starting balances added", values: computed.startingBalances, aggregate: "sum", hint: "Starting balances recorded in Actual in these months: an account that joined the plan's cash. Not income." });
+  // The pinned lines, at the bottom of the grid.
+  lines.push({ kind: "memo", key: "net", label: "Net cashflow", values: computed.net, aggregate: "sum" });
+  lines.push({ kind: "balance", key: "closing", label: "Closing balance", values: computed.closing, aggregate: "last" });
+  // With savings accounts, the savings balance and cash plus savings close the pinned block, as a small sum under the closing balance.
   if (computed.savings) {
     lines.push({ kind: "memo", key: "savings", label: "Savings (estimate)", values: computed.savings, aggregate: "last", hint: "The balance of the plan's savings accounts in Actual, then what the plan puts aside each month, with the yearly growth set in Plan settings. Market changes are not forecast." });
     lines.push({ kind: "memo", key: "total", label: "Cash + savings", values: computed.closing.map((v, i) => v + computed.savings![i]), aggregate: "last" });
   }
-  // Last, and pinned under the grid.
-  lines.push({ kind: "memo", key: "net", label: "Net cashflow", values: computed.net, aggregate: "sum" });
-  lines.push({ kind: "balance", key: "closing", label: "Closing balance", values: computed.closing, aggregate: "last" });
   return lines;
 }
 
