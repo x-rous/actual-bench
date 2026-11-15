@@ -73,6 +73,16 @@ function NotesField({ value, onCommit }: { value: string; onCommit: (notes: stri
   return <Textarea aria-label="Notes" value={draft ?? value} maxLength={NOTES_MAX} rows={2} className="text-xs" onChange={(e) => setDraft(e.target.value)} onBlur={commit} />;
 }
 
+/** A panel's title and, when there is one, what it is about (a month and what it is), on one line: the title gives way first. */
+function PanelTitle({ title, subtitle }: { title: string; subtitle?: string | null }) {
+  return (
+    <div className="flex min-w-0 flex-1 items-baseline gap-2">
+      <h2 className="min-w-0 truncate text-xs font-semibold" title={title}>{title}</h2>
+      {subtitle && <p className="shrink-0 whitespace-nowrap text-[11px] tabular-nums text-muted-foreground">{subtitle}</p>}
+    </div>
+  );
+}
+
 /** The period a panel is about, for its header: a month with what it is (Actual, This month, Forecast), or a year. */
 function periodOf(column: Column | null, computed: Computed, doc: PlanDocument): string | null {
   if (!column) return null;
@@ -106,11 +116,8 @@ export function Inspector(props: Props) {
       />
       {line?.kind === "row" ? <RowPanel {...props} row={line.row} column={column} /> : (
         <>
-          <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border bg-muted px-3">
-            <div className="min-w-0">
-              <h2 className="truncate text-sm font-semibold leading-tight" title={title}>{title}</h2>
-              {subtitle && <p className="mt-1 truncate text-xs leading-tight tabular-nums text-muted-foreground">{subtitle}</p>}
-            </div>
+          <header className="flex h-8 shrink-0 items-center gap-2 border-b-2 border-border bg-muted px-3">
+            <PanelTitle title={title} subtitle={subtitle} />
             <div className="ml-auto flex items-center gap-1">
               {line?.kind === "group" && <GroupMenu groupId={line.group.id} name={line.group.name} onEdit={props.onEdit} onSelectLine={props.onSelectLine} />}
               <Button size="icon-xs" variant="ghost" onClick={onClose} aria-label="Close details"><X className="size-3.5" aria-hidden /></Button>
@@ -185,11 +192,8 @@ function RowPanel({ doc, computed, snapshot, placed, row, column, problems, link
   const problem = problems.get(row.id);
   return (
     <>
-      <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border bg-muted px-3">
-        <div className="min-w-0 flex-1">
-          <h2 className="truncate text-sm font-semibold leading-tight" title={row.name}>{row.name}</h2>
-          {column && <p className="mt-1 truncate text-xs leading-tight tabular-nums text-muted-foreground">{periodOf(column, computed, doc)}</p>}
-        </div>
+      <header className="flex h-8 shrink-0 items-center gap-2 border-b-2 border-border bg-muted px-3">
+        <PanelTitle title={row.name} subtitle={column ? periodOf(column, computed, doc) : null} />
         <DropdownMenu>
           <DropdownMenuTrigger render={<Button size="icon-xs" variant="ghost" aria-label={`More for ${row.name}`} />}><MoreHorizontal className="size-3.5" aria-hidden /></DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-44">

@@ -17,11 +17,20 @@ const SHORT: Record<string, string> = { income: "Income", expenses: "Spent", sav
 const heading = "text-[11px] font-semibold uppercase tracking-wide text-muted-foreground";
 const sum = (values: readonly number[], indexes: readonly number[]) => indexes.reduce((total, i) => total + (values[i] ?? 0), 0);
 
-type Point = { label: string; value: number; total?: boolean };
+/** One colour for each kind of movement, the same in the chart, the list and the biggest lines: money in green, spending red, savings and investments blue, debt amber, anything else (other movements) purple. */
+const COLOUR: Record<string, { dot: string; fill: string }> = {
+  income: { dot: "bg-emerald-500", fill: "fill-emerald-500" },
+  expenses: { dot: "bg-red-500", fill: "fill-red-500" },
+  savings: { dot: "bg-blue-500", fill: "fill-blue-500" },
+  debt: { dot: "bg-amber-500", fill: "fill-amber-500" },
+  other: { dot: "bg-purple-500", fill: "fill-purple-500" },
+};
+
+type Point = { label: string; value: number; total?: boolean; /** Which colour the step takes. */ kind?: string };
 
 /**
  * Opening balance, each step that moved the cash, and the closing balance, as a small waterfall: money in rises (green), money
- * out falls (rose), the two balances stand on the base line. The scale starts below the lowest level, so the steps stay visible
+ * out falls, each in the colour of what it is, and the two balances stand on the base line. The scale starts below the lowest level, so the steps stay visible
  * against balances far larger than any of them. Static; the ledger under it has the exact figures.
  */
 function CashWaterfall({ points, description }: { points: Point[]; description: string }) {
@@ -44,7 +53,7 @@ function CashWaterfall({ points, description }: { points: Point[]; description: 
           const start = Number.isNaN(from) ? base : from;
           const x = left + i * step + (step - bar) / 2;
           const yTop = y(Math.max(start, to)), yBottom = y(Math.min(start, to));
-          const colour = p.total ? "fill-muted-foreground/45" : p.value >= 0 ? "fill-emerald-500/80" : "fill-rose-400/80";
+          const colour = p.total ? "fill-muted-foreground/45" : COLOUR[p.kind ?? "other"]?.fill ?? "fill-purple-500";
           return (
             <g key={p.label}>
               <rect x={x} y={yTop} width={bar} height={Math.max(1.5, yBottom - yTop)} rx={2} className={colour} />
@@ -128,7 +137,7 @@ export function MonthSummary({ doc, computed, snapshot, placed, column, onShowTr
           </div>
           <p className="text-xl font-semibold tabular-nums">{money(closing)}</p>
           <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 tabular-nums">
-            <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium", closing - opening >= 0 ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" : "bg-rose-500/15 text-rose-700 dark:text-rose-300")}>
+            <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium", closing - opening >= 0 ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" : "bg-red-500/15 text-red-700 dark:text-red-300")}>
               {closing - opening >= 0 ? <ArrowUpRight className="size-3.5" aria-hidden /> : <ArrowDownRight className="size-3.5" aria-hidden />}
               {signedMoney(closing - opening)}
             </span>
@@ -148,11 +157,11 @@ export function MonthSummary({ doc, computed, snapshot, placed, column, onShowTr
         <h3 className={heading}>Where the cash went</h3>
         <CashWaterfall
           description={`Cash from ${money(cashOpening)} to ${money(cashClosing)}: ${steps.filter((x) => x.cash !== 0).map((x) => `${x.label} ${signedMoney(x.cash)}`).join(", ")}`}
-          points={[{ label: "Open", value: cashOpening, total: true }, ...steps.filter((x) => x.cash !== 0).map((x) => ({ label: SHORT[x.key] ?? x.label, value: x.cash })), { label: "Close", value: cashClosing, total: true }]} />
+          points={[{ label: "Open", value: cashOpening, total: true }, ...steps.filter((x) => x.cash !== 0).map((x) => ({ label: SHORT[x.key] ?? x.label, value: x.cash, kind: x.key })), { label: "Close", value: cashClosing, total: true }]} />
         <ul className="space-y-1.5">
           <li className="flex items-baseline justify-between gap-2"><span className="text-muted-foreground">Opening balance</span><span className="tabular-nums">{money(cashOpening)}</span></li>
           {steps.map((step) => (
-            <li key={step.key} className="flex items-baseline justify-between gap-2"><span className="flex items-center gap-2"><span aria-hidden className={cn("size-2 rounded-full", step.cash > 0 ? "bg-emerald-500/80" : step.cash < 0 ? "bg-rose-400/80" : "bg-transparent")} />{step.label}{step.key === "other" && (
+            <li key={step.key} className="flex items-baseline justify-between gap-2"><span className="flex items-center gap-2"><span aria-hidden className={cn("size-2 rounded-full", COLOUR[step.key]?.dot)} />{step.label}{step.key === "other" && (
               <Popover>
                 <PopoverTrigger render={<button type="button" aria-label="What Other movements are" title="What Other movements are" className="text-muted-foreground hover:text-foreground" />}><Info className="size-3.5" aria-hidden /></PopoverTrigger>
                 <PopoverContent align="start" className="w-72 space-y-2 p-3 text-xs">
@@ -181,7 +190,7 @@ export function MonthSummary({ doc, computed, snapshot, placed, column, onShowTr
           <h3 className={heading}>Biggest lines</h3>
           {biggestBySection.filter((x) => x.list.length > 0).map(({ section, list }) => (
             <div key={section} className="space-y-1">
-              <p className="flex items-center gap-2 text-muted-foreground"><span aria-hidden className={cn("size-2 rounded-full", natural[section] * SECTION_SIGN[section] > 0 ? "bg-emerald-500/80" : natural[section] * SECTION_SIGN[section] < 0 ? "bg-rose-400/80" : "bg-muted-foreground/30")} />{SECTION_LABEL[section]}</p>
+              <p className="flex items-center gap-2 text-muted-foreground"><span aria-hidden className={cn("size-2 rounded-full", COLOUR[section]?.dot)} />{SECTION_LABEL[section]}</p>
               <ul className="space-y-1">
                 {list.map(({ row, amount, request }) => (
                   <li key={row.id} className="flex items-baseline justify-between gap-2">

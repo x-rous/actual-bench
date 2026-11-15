@@ -203,20 +203,20 @@ export function TransactionsDialog({ request, doc, snapshot, placed, onEdit, onC
             <Button size="xs" variant="ghost" className="ml-auto" onClick={() => setSelected(new Set())}>Clear selection</Button>
           </div>
         )}
-        <div className="min-h-0 flex-1 overflow-auto">
+        <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
           {query.isLoading ? <p className="p-5 text-sm text-muted-foreground" role="status">Reading transactions…</p>
             : query.isError ? <div className="space-y-2 p-5 text-sm"><p role="alert">The transactions could not be read.</p><Button size="sm" variant="outline" onClick={() => void query.refetch()}>Try again</Button></div>
             : listed.length === 0 ? <p className="p-5 text-sm text-muted-foreground">{needle ? "No transaction matches the search." : movedOnly ? "No transaction is counted in another month here." : "No transactions."}</p>
             : (
-              <table className="w-full min-w-[1300px] table-fixed border-separate border-spacing-0 text-xs">
+              <table className="w-full table-fixed border-separate border-spacing-0 text-xs">
                 <thead className="sticky top-0 z-10 bg-muted text-left text-[11px] text-muted-foreground">
                   <tr>
                     <th scope="col" className="h-8 w-10 border-b border-border px-3"><Checkbox aria-label="Select all the transactions shown" checked={shown.length > 0 && selectedRows.length === shown.length} indeterminate={selectedRows.length > 0 && selectedRows.length < shown.length} onCheckedChange={(on) => setSelected(on ? new Set(shown.map((r) => r.id)) : new Set())} /></th>
-                    {([["date", "Date", "w-[104px]"], ["account", "Account", "w-[173px]"], ["payee", "Payee", "w-[219px]"], ["category", "Category", "w-[230px]"], ["notes", "Notes", ""]] as [SortKey, string, string][]).map(([key, label, width]) => (
+                    {([["date", "Date", "w-[7.5%]"], ["account", "Account", "w-[11.5%]"], ["payee", "Payee", "w-[13.5%]"], ["category", "Category", "w-[15%]"], ["notes", "Notes", ""]] as [SortKey, string, string][]).map(([key, label, width]) => (
                       <SortableHeader<SortKey> key={key} label={label} sortKey={key} sort={sort} onSort={(k, direction) => setSort(direction ? { key: k, direction } : null)} className={cn("h-8 border-b border-border px-3 py-0", width)} />
                     ))}
-                    <SortableHeader<SortKey> label="Amount" sortKey="amount" align="right" sort={sort} onSort={(k, direction) => setSort(direction ? { key: k, direction } : null)} className="h-8 w-[110px] border-b border-border px-3 py-0" />
-                    <th scope="col" className="h-8 w-[270px] border-b border-border px-3 font-medium">Counted in</th>
+                    <SortableHeader<SortKey> label="Amount" sortKey="amount" align="right" sort={sort} onSort={(k, direction) => setSort(direction ? { key: k, direction } : null)} className="h-8 w-[7.5%] border-b border-border px-3 py-0" />
+                    <th scope="col" className="h-8 w-[17.5%] border-b border-border px-3 font-medium">Counted in</th>
                   </tr>
                 </thead>
                 <tbody>

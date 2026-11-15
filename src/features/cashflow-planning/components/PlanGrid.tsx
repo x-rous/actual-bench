@@ -74,7 +74,14 @@ type Props = {
 };
 
 const PAGE = 12;
-const KIND_LABEL: Record<MonthKind, string> = { actual: "Actual", current: "This month", forecast: "Forecast" };
+/** The tag at the left of a month's header: A for recorded months (ink blue), C for the current one (amber), F for forecast, or P in a plan that does not use Actual. */
+function statusTag(kind: MonthKind, usesActuals: boolean): { letter: string; word: string; className: string } {
+  const plain = "bg-foreground/[0.07] text-foreground";
+  if (!usesActuals) return { letter: "P", word: "Plan", className: plain };
+  if (kind === "actual") return { letter: "A", word: "Actual, recorded in Actual", className: "bg-[#1e3a8a]/10 text-[#1e3a8a] dark:bg-blue-300/15 dark:text-blue-300" };
+  if (kind === "current") return { letter: "C", word: "This month, recorded so far plus what is still expected", className: "bg-amber-500/20 text-amber-800 dark:text-amber-300" };
+  return { letter: "F", word: "Forecast", className: plain };
+}
 
 /** What a line shows in a month. `null` is "nothing to show" (never zero). */
 function monthValue(line: Line, index: number, kind: MonthKind, pastMode: PastMode, planTotals: ReadonlyMap<string, (number | null)[]> | null): number | null {
@@ -186,7 +193,7 @@ export function PlanGrid({ doc, computed, lines, columns, cents, pastMode, selec
   }, [selection]);
 
   // Open on the current month (one month of history beside it), and again whenever asked.
-  const monthWidth = cents ? 104 : 88;
+  const monthWidth = cents ? 109 : 93;
   useEffect(() => {
     const el = scroller.current;
     const th = scrollMonth ? el?.querySelector<HTMLElement>(`th[data-month="${scrollMonth}"]`) : el?.querySelector<HTMLElement>('th[data-now="true"]');
@@ -390,16 +397,6 @@ export function PlanGrid({ doc, computed, lines, columns, cents, pastMode, selec
     if (!mod && !event.altKey && /^[0-9.\-+(]$/.test(event.key) && startEdit(event.key)) event.preventDefault();
   };
 
-  const years = useMemo(() => {
-    // The year band above the month names: each calendar year spans its months and its total.
-    const bands: { year: number; span: number }[] = [];
-    for (const column of columns) {
-      const year = column.kind === "year" ? column.year : Number(column.month.slice(0, 4));
-      const last = bands[bands.length - 1];
-      if (last?.year === year) last.span++; else bands.push({ year, span: 1 });
-    }
-    return bands;
-  }, [columns]);
 
   // With only year columns there is room to spare: wider columns read better than a narrow block.
   const yearWidth = columns.every((c) => c.kind === "year") ? 136 : monthWidth + 12;
@@ -490,7 +487,7 @@ export function PlanGrid({ doc, computed, lines, columns, cents, pastMode, selec
       // A click on the empty space around the table clears the selection, which shows the plan overview again.
       onMouseDown={(e) => { if (e.target === e.currentTarget) onSelect(null); }}
       className="cashflow-scroll relative min-h-0 flex-1 overflow-auto outline-none focus-visible:ring-1 focus-visible:ring-ring/60"
-      style={{ "--cf-label-width": `${LABEL_WIDTH}px`, scrollPaddingLeft: LABEL_WIDTH, scrollPaddingTop: 56, scrollPaddingBottom: 29 * pinned.length } as React.CSSProperties}
+      style={{ "--cf-label-width": `${LABEL_WIDTH}px`, scrollPaddingLeft: LABEL_WIDTH, scrollPaddingTop: 32, scrollPaddingBottom: 29 * pinned.length } as React.CSSProperties}
     >
       <table role="presentation" className="border-separate border-spacing-0 text-xs select-none" style={{ tableLayout: "fixed", height: "100%", width: LABEL_WIDTH + columns.reduce((sum, c) => sum + (c.kind === "year" ? yearWidth : monthWidth), 0) }}>
         <colgroup>
@@ -499,26 +496,26 @@ export function PlanGrid({ doc, computed, lines, columns, cents, pastMode, selec
         </colgroup>
         <thead role="rowgroup" className="sticky top-0 z-30">
           <tr role="row" aria-rowindex={1}>
-            <th role="columnheader" scope="col" rowSpan={2} aria-colindex={1} className="sticky left-0 z-40 border-b border-r border-border bg-background px-2 text-left align-middle font-normal">
+            <th role="columnheader" scope="col" aria-colindex={1} className="sticky left-0 z-40 h-8 border-b-2 border-r border-border bg-muted px-2 py-0 text-left align-middle font-normal">
               <div className="flex items-center gap-1">
                 <SearchInput value={find} onValueChange={onFind} placeholder="Find a row" aria-label="Find a row by name" className="h-7 min-w-0 flex-1 text-xs" />
                 <button type="button" tabIndex={-1} onClick={() => onCollapseAll(false)} aria-label="Expand all sections and groups" title="Expand all" className="flex size-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"><ChevronsUpDown className="size-4" aria-hidden /></button>
                 <button type="button" tabIndex={-1} onClick={() => onCollapseAll(true)} aria-label="Collapse all sections and groups" title="Collapse all" className="flex size-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"><ChevronsDownUp className="size-4" aria-hidden /></button>
               </div>
             </th>
-            {years.map((band) => <th key={band.year} role="columnheader" scope="colgroup" colSpan={band.span} className="h-6 border-b border-l border-border bg-muted px-2 text-left text-[11px] font-semibold"><span className="sticky inline-block" style={{ left: LABEL_WIDTH + 8 }}>{band.year}</span></th>)}
-          </tr>
-          <tr role="row" aria-rowindex={2}>
             {columns.map((c, ci) => {
-              if (c.kind === "year") return <th key={c.key} role="columnheader" scope="col" aria-selected={pickedColumn === c.key} onClick={() => onPickColumn?.(c.key)} title="Show a summary of this year (S on a cell of this column)" className={cn("h-8 cursor-pointer border-b border-l-2 border-border bg-[color-mix(in_oklab,var(--muted),var(--foreground)_6%)] px-2 text-right align-middle hover:bg-accent", pickedColumn === c.key && "bg-accent shadow-[inset_0_-2px_0_var(--primary)]")}>
-                <span className="block text-[11px] font-semibold leading-tight">{c.partial ? "Total*" : "Total"}{c.partial && <span className="sr-only"> (not a full year in this plan)</span>}</span>
-                <span className="block text-[11px] font-normal leading-tight text-foreground/70">{c.year}</span>
+              if (c.kind === "year") return <th key={c.key} role="columnheader" scope="col" aria-selected={pickedColumn === c.key} onClick={() => onPickColumn?.(c.key)} title="Show a summary of this year (S on a cell of this column)" className={cn("h-8 cursor-pointer border-b-2 border-l-2 bg-[color-mix(in_oklab,var(--muted),var(--foreground)_6%)] px-2 text-right align-middle text-xs hover:brightness-95 dark:hover:brightness-125", pickedColumn === c.key ? "border-b-primary/70" : "border-b-border", "border-l-border")}>
+                <span className="whitespace-nowrap font-semibold leading-tight">{c.partial ? "Total*" : "Total"} <span className="font-normal text-foreground/70">{c.year}</span>{c.partial && <span className="sr-only"> (not a full year in this plan)</span>}</span>
               </th>;
               const kind = kinds[c.index];
+              const tag = statusTag(kind, doc.useActuals);
               return (
-                <th key={c.key} role="columnheader" scope="col" aria-selected={pickedColumn === c.key} data-month={c.month} data-now={kind === "current" || undefined} onClick={() => onPickColumn?.(c.key)} title="Show a summary of this month (S on a cell of this column)" className={cn("h-8 cursor-pointer border-b border-border bg-background px-2 text-right align-middle font-medium hover:bg-accent", pickedColumn === c.key && "bg-accent shadow-[inset_0_-2px_0_var(--primary)]", kind === "current" && "bg-[color-mix(in_oklab,var(--color-amber-500)_12%,var(--background))]", kind !== "actual" && c.index > 0 && kinds[c.index - 1] === "actual" && "border-l border-l-primary/30", startsYear(columns, ci) && "border-l-2 border-l-border")}>
-                  <span className="block leading-tight">{monthShort(c.month)}</span>
-                  <span className={cn("block text-[11px] font-normal leading-tight text-foreground/70", kind === "current" && "font-semibold text-amber-700 dark:text-amber-300")}>{kind === "current" && <span aria-hidden className="mr-1 inline-block size-1.5 rounded-full bg-amber-500 align-[1px]" />}{doc.useActuals ? KIND_LABEL[kind] : "Plan"}</span>
+                <th key={c.key} role="columnheader" scope="col" aria-selected={pickedColumn === c.key} data-month={c.month} data-now={kind === "current" || undefined} onClick={() => onPickColumn?.(c.key)} title={`${monthShort(c.month)} ${c.month.slice(0, 4)}: ${tag.word}. Show a summary of this month (S on a cell of this column)`} className={cn("h-8 cursor-pointer border-b-2 bg-muted px-1.5 text-right align-middle text-xs hover:brightness-95 dark:hover:brightness-125", kind === "current" ? "border-primary font-bold" : pickedColumn === c.key ? "border-primary/70 font-semibold" : "border-border font-semibold", kind === "current" && "bg-[color-mix(in_oklab,var(--color-amber-500)_12%,var(--background))]", kind !== "actual" && c.index > 0 && kinds[c.index - 1] === "actual" && "border-l border-l-primary/30", startsYear(columns, ci) && "border-l-2 border-l-border")}>
+                  <span className="flex items-center justify-between gap-1 whitespace-nowrap leading-tight">
+                    <span aria-hidden className={cn("inline-flex size-4 shrink-0 items-center justify-center rounded-full text-[9px] font-bold leading-none", tag.className)}>{tag.letter}</span>
+                    <span>{monthShort(c.month)} {c.month.slice(0, 4)}</span>
+                    <span className="sr-only">, {tag.word}</span>
+                  </span>
                 </th>
               );
             })}
@@ -672,7 +669,7 @@ type LineProps = {
 };
 
 /** The two header lines above the body, which count in the grid's row numbers. */
-const HEADER_ROWS = 2;
+const HEADER_ROWS = 1;
 
 /** The element id of a cell (or of a line's label when `col` is empty), which the grid names as its active descendant. */
 const cellId = (gridId: string, line: string, col: string) => `${gridId}-${line}-${col}`.replace(/\s+/g, "_");
