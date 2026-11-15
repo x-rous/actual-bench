@@ -27,6 +27,14 @@ export function monthsBetween(from: Month, to: Month): number {
   return monthIndex(to) - monthIndex(from);
 }
 
+/** A plan's length for people: "36 months (3 years)", "30 months (2 years 6 months)", "8 months". */
+export function lengthLabel(months: number): string {
+  const years = Math.floor(months / 12), rest = months % 12;
+  const part = (n: number, unit: string) => `${n} ${unit}${n === 1 ? "" : "s"}`;
+  if (years === 0) return part(months, "month");
+  return `${part(months, "month")} (${part(years, "year")}${rest ? ` ${part(rest, "month")}` : ""})`;
+}
+
 export function monthRange(start: Month, count: number): Month[] {
   const first = monthIndex(start);
   return Array.from({ length: count }, (_, i) => monthFromIndex(first + i));

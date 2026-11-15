@@ -88,7 +88,7 @@ function categoriesOf(row: PlanRow, snapshot: Snapshot): string[] {
 }
 
 export function computePlan(doc: PlanDocument, snapshot: Snapshot | null, placed: Placed | null): Computed {
-  const count = doc.years * 12;
+  const count = doc.months;
   const months = monthRange(doc.startMonth, count);
   const live = doc.useActuals && snapshot && placed ? { snapshot, placed } : null;
   const currentMonth = live ? live.snapshot.today.slice(0, 7) : null;

@@ -49,8 +49,9 @@ describe("feature presentation contracts", () => {
     expect(getFeatureForPath("/budget-diagnostics")?.feedbackUrl).toBeUndefined();
     expect(getFeatureForPath("/rules")?.feedbackUrl).toBe(getFeatureForPath("/rules/diagnostics")?.feedbackUrl);
     expect(getFeatureForPath("/sync")?.feedbackUrl).toBe(getFeatureForPath("/fx-rates")?.feedbackUrl);
-    expect(new Set(FEATURES.flatMap((feature) => feature.feedbackUrl ? [feature.feedbackUrl] : [])).size).toBe(14);
+    expect(new Set(FEATURES.flatMap((feature) => feature.feedbackUrl ? [feature.feedbackUrl] : [])).size).toBe(15);
     expect(getFeatureForPath("/assets")?.feedbackUrl).toBe("https://github.com/x-rous/actual-bench/issues/417");
     expect(getFeatureForPath("/financial-insights")?.feedbackUrl).toBe("https://github.com/x-rous/actual-bench/issues/446");
+    expect(getFeatureForPath("/cashflow-planning")?.feedbackUrl).toBe("https://github.com/x-rous/actual-bench/issues/463");
   });
 });

@@ -1,6 +1,6 @@
 import { generateId } from "@/lib/uuid";
 import {
-  AVERAGE_WINDOWS, MAX_YEARS, MIN_YEARS, SCHEMA_VERSION, SECTIONS,
+  AVERAGE_WINDOWS, MAX_MONTHS, MIN_MONTHS, SCHEMA_VERSION, SECTIONS,
   type AccountLink, type GroupColor, isGroupColor, type Basis, type Goal, type Month, type PlanAccountRole, type PlanDocument, type PlanGroup, type PlanRow, type RepeatRule, type RowLinks, type SectionId,
 } from "./types";
 import { addMonths, isMonth, monthsBetween } from "./months";
@@ -24,12 +24,13 @@ export const MAX_AMOUNT = 10_000_000_000_000;
 
 export class PlanDocumentError extends Error {}
 
-export function createPlanDocument(input: { name: string; startMonth: Month; years?: number; useActuals?: boolean }): PlanDocument {
+/** A new plan, of `months` months, or of `years` years (5 when neither is given). */
+export function createPlanDocument(input: { name: string; startMonth: Month; years?: number; months?: number; useActuals?: boolean }): PlanDocument {
   return {
     schemaVersion: SCHEMA_VERSION,
     name: input.name.trim().slice(0, NAME_MAX) || "Cash plan",
     startMonth: input.startMonth,
-    years: input.years ?? 5,
+    months: input.months ?? (input.years ?? 5) * 12,
     useActuals: input.useActuals ?? true,
     openingBalance: 0,
     accountRoles: {},
@@ -57,7 +58,7 @@ export function createRow(input: { name: string; section: SectionId; groupId?: s
 }
 
 /** The last month of the plan. */
-export const planEndMonth = (doc: Pick<PlanDocument, "startMonth" | "years">): Month => addMonths(doc.startMonth, doc.years * 12 - 1);
+export const planEndMonth = (doc: Pick<PlanDocument, "startMonth" | "months">): Month => addMonths(doc.startMonth, doc.months - 1);
 
 // ─── Reading ─────────────────────────────────────────────────────────────────
 
@@ -122,8 +123,10 @@ export function parsePlanDocument(value: unknown): PlanDocument {
   }
   const name = text(value.name, "The plan name", NAME_MAX).trim() || fail("The plan needs a name");
   const startMonth = month(value.startMonth, "The first month");
-  const years = typeof value.years === "number" && Number.isInteger(value.years) && value.years >= MIN_YEARS && value.years <= MAX_YEARS ? value.years : fail(`A plan covers ${MIN_YEARS} to ${MAX_YEARS} years`);
-  const endMonth = planEndMonth({ startMonth, years });
+  // A plan saved before the length was in months says how many years it covers.
+  const length = value.months !== undefined ? value.months : typeof value.years === "number" ? value.years * 12 : undefined;
+  const months = typeof length === "number" && Number.isInteger(length) && length >= MIN_MONTHS && length <= MAX_MONTHS ? length : fail(`A plan covers ${MIN_MONTHS} to ${MAX_MONTHS} months (${MAX_MONTHS / 12} years at most)`);
+  const endMonth = planEndMonth({ startMonth, months });
   if (endMonth > "9999-12") fail("The plan ends too far in the future");
 
   const groups = list(value.groups, "Groups", MAX_GROUPS).map((entry): PlanGroup => {
@@ -173,7 +176,7 @@ export function parsePlanDocument(value: unknown): PlanDocument {
   }
 
   return {
-    schemaVersion: SCHEMA_VERSION, name: name.slice(0, NAME_MAX), startMonth, years,
+    schemaVersion: SCHEMA_VERSION, name: name.slice(0, NAME_MAX), startMonth, months,
     useActuals: value.useActuals !== false,
     openingBalance: value.openingBalance == null ? 0 : amount(value.openingBalance, "The opening balance"),
     accountRoles,
@@ -309,19 +312,19 @@ export function moveGroup(doc: PlanDocument, groupId: string, direction: -1 | 1)
  * Changes the plan's first month or length. Typed amounts and goals that fall outside the new months are dropped; the
  * caller says how many beforehand (`countOutside`).
  */
-export function setHorizon(doc: PlanDocument, startMonth: Month, years: number): PlanDocument {
-  const end = planEndMonth({ startMonth, years });
+export function setHorizon(doc: PlanDocument, startMonth: Month, months: number): PlanDocument {
+  const end = planEndMonth({ startMonth, months });
   const rows = doc.rows.map((row) => {
     const kept = Object.entries(row.cells).filter(([m]) => m >= startMonth && m <= end);
     return kept.length === Object.keys(row.cells).length ? row : { ...row, cells: Object.fromEntries(kept) };
   });
   const goals = doc.goals.filter((g) => g.month >= startMonth && g.month <= end);
-  return { ...doc, startMonth, years, rows, goals: goals.length === doc.goals.length ? doc.goals : goals };
+  return { ...doc, startMonth, months, rows, goals: goals.length === doc.goals.length ? doc.goals : goals };
 }
 
 /** How many typed amounts a new first month or length would drop. */
-export function countOutside(doc: PlanDocument, startMonth: Month, years: number): number {
-  const end = planEndMonth({ startMonth, years });
+export function countOutside(doc: PlanDocument, startMonth: Month, months: number): number {
+  const end = planEndMonth({ startMonth, months });
   return doc.rows.reduce((sum, row) => sum + Object.keys(row.cells).filter((m) => m < startMonth || m > end).length, 0);
 }
 

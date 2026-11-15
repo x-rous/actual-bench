@@ -135,7 +135,7 @@ export function CashflowGuide({ section, onSection, onClose, docsUrl }: { sectio
         <Para>When the budget has credit cards, you choose whether to count card spending when it happens (cards are cash) or card payments only (cards are outside the plan, each with a payments row).</Para>
         <Heading>Plan settings</Heading>
         <Example caption="What you can set" head={["Setting", "What it does"]} rows={[
-          ["First month and years", "The plan’s length, from 1 to 50 years. Shortening it removes typed amounts and goals outside the new months; Undo brings them back."],
+          ["First and last month", "The plan runs from the first month to the last, 6 months to 50 years, ending in any month. Shortening it removes typed amounts and goals outside the new months; Undo brings them back."],
           ["Minimum cash", "The floor the key figures and the balance row warn about."],
           ["Accounts", "Per plan, each account is cash, savings or outside. By default Cash and Bank accounts and credit cards are cash, fixed deposits, investments and retirement accounts are savings, and everything else is outside. Classes come from the Accounts page."],
           ["Goals and savings growth", "The targets and the expected yearly growth the answers use."],

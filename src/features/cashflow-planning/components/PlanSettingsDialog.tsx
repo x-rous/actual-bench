@@ -5,7 +5,6 @@ import Link from "next/link";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SearchInput } from "@/components/ui/search-input";
 import { Select } from "@/components/ui/select";
@@ -15,8 +14,8 @@ import { generateId } from "@/lib/uuid";
 import { accountClassLabel } from "@/lib/account-class";
 import { accountRole, defaultAccountRole, type Snapshot } from "@/lib/cashflow-planning/actuals";
 import { MAX_GOALS, NAME_MAX, countOutside, planEndMonth, setHorizon } from "@/lib/cashflow-planning/document";
-import { addMonths } from "@/lib/cashflow-planning/months";
-import { MAX_YEARS, MIN_YEARS, type Goal, type Month, type PlanAccountRole, type PlanDocument } from "@/lib/cashflow-planning/types";
+import { lengthLabel, monthsBetween } from "@/lib/cashflow-planning/months";
+import { MAX_MONTHS, MIN_MONTHS, type Goal, type Month, type PlanAccountRole, type PlanDocument } from "@/lib/cashflow-planning/types";
 import { AmountField, MonthField, PercentField, TextField } from "./fields";
 
 const ROLE_LABEL: Record<PlanAccountRole, string> = { cash: "Cash", savings: "Savings", outside: "Outside the plan" };
@@ -27,14 +26,15 @@ const ROLE_LABEL: Record<PlanAccountRole, string> = { cash: "Cash", savings: "Sa
  */
 export function PlanSettingsDialog({ doc, snapshot, onEdit, onClose }: { doc: PlanDocument; snapshot: Snapshot | null; onEdit: (change: (doc: PlanDocument) => PlanDocument) => void; onClose: () => void }) {
   const [start, setStart] = useState<Month>(doc.startMonth);
-  const [years, setYears] = useState(String(doc.years));
+  const [last, setLast] = useState<Month>(planEndMonth(doc));
   const [showClosed, setShowClosed] = useState(false);
   const [find, setFind] = useState("");
-  const yearCount = Number(years);
-  const yearsValid = Number.isInteger(yearCount) && yearCount >= MIN_YEARS && yearCount <= MAX_YEARS;
-  const horizonChanged = start !== doc.startMonth || (yearsValid && yearCount !== doc.years);
-  const dropped = yearsValid ? countOutside(doc, start, yearCount) : 0;
-  const droppedGoals = yearsValid ? doc.goals.filter((g) => g.month < start || g.month > planEndMonth({ startMonth: start, years: yearCount })).length : 0;
+  // The plan runs from the first month to the last, both included.
+  const monthCount = monthsBetween(start, last) + 1;
+  const lengthValid = monthCount >= MIN_MONTHS && monthCount <= MAX_MONTHS;
+  const horizonChanged = start !== doc.startMonth || (lengthValid && monthCount !== doc.months);
+  const dropped = lengthValid ? countOutside(doc, start, monthCount) : 0;
+  const droppedGoals = lengthValid ? doc.goals.filter((g) => g.month < start || g.month > last).length : 0;
   const accounts = (snapshot?.accounts ?? []).filter((a) => (showClosed || !a.closed || doc.accountRoles[a.id]) && a.name.toLowerCase().includes(find.trim().toLowerCase()));
   const setGoal = (id: string, change: Partial<Goal>) => onEdit((d) => ({ ...d, goals: d.goals.map((g) => (g.id === id ? { ...g, ...change } : g)) }));
   const end = planEndMonth(doc);
@@ -60,11 +60,13 @@ export function PlanSettingsDialog({ doc, snapshot, onEdit, onClose }: { doc: Pl
               <legend className="px-1 text-sm font-medium">Months covered</legend>
               <div className="flex flex-wrap items-end gap-3">
                 <div className="space-y-1.5"><Label htmlFor="cf-plan-start" className="text-xs text-muted-foreground">First month</Label><MonthField id="cf-plan-start" className="w-28" value={start} onCommit={(m) => { if (m) setStart(m); }} /></div>
-                <div className="space-y-1.5"><Label htmlFor="cf-plan-years" className="text-xs text-muted-foreground">Years ({MIN_YEARS} to {MAX_YEARS})</Label><Input id="cf-plan-years" size="sm" inputMode="numeric" className="w-20 text-right tabular-nums" aria-invalid={!yearsValid || undefined} value={years} onChange={(e) => setYears(e.target.value)} /></div>
-                <Button size="sm" disabled={!horizonChanged || !yearsValid} onClick={() => onEdit((d) => setHorizon(d, start, yearCount))}>Apply</Button>
-                <p className="pb-1.5 text-xs text-muted-foreground">Now {doc.startMonth} to {end}.</p>
+                <div className="space-y-1.5"><Label htmlFor="cf-plan-last" className="text-xs text-muted-foreground">Last month</Label><MonthField id="cf-plan-last" className="w-28" value={last} onCommit={(m) => { if (m) setLast(m); }} /></div>
+                <Button size="sm" disabled={!horizonChanged || !lengthValid} onClick={() => onEdit((d) => setHorizon(d, start, monthCount))}>Apply</Button>
+                <p className="pb-1.5 text-xs text-muted-foreground">Now {doc.startMonth} to {end}, {lengthLabel(doc.months)}.</p>
               </div>
-              {horizonChanged && yearsValid && (dropped > 0 || droppedGoals > 0) && <p role="status" className="text-xs text-amber-700 dark:text-amber-400">Applying removes {dropped} typed {dropped === 1 ? "amount" : "amounts"}{droppedGoals ? ` and ${droppedGoals} ${droppedGoals === 1 ? "goal" : "goals"}` : ""} that fall outside the new months. Undo brings them back.</p>}
+              {!lengthValid && <p role="alert" className="text-xs text-destructive">A plan covers {MIN_MONTHS} months to {MAX_MONTHS / 12} years: the last month must be {MIN_MONTHS - 1} to {MAX_MONTHS - 1} months after the first.</p>}
+              {horizonChanged && lengthValid && <p className="text-xs text-muted-foreground">New length: {lengthLabel(monthCount)}.</p>}
+              {horizonChanged && lengthValid && (dropped > 0 || droppedGoals > 0) && <p role="status" className="text-xs text-amber-700 dark:text-amber-400">Applying removes {dropped} typed {dropped === 1 ? "amount" : "amounts"}{droppedGoals ? ` and ${droppedGoals} ${droppedGoals === 1 ? "goal" : "goals"}` : ""} that fall outside the new months. Undo brings them back.</p>}
               <p className="text-xs text-muted-foreground">Starting a year or two back shows how past months really went next to the forecast.</p>
             </fieldset>
 
@@ -141,7 +143,7 @@ export function PlanSettingsDialog({ doc, snapshot, onEdit, onClose }: { doc: Pl
               </table>
               </div>
             )}
-            <Button size="xs" variant="outline" disabled={doc.goals.length >= MAX_GOALS} onClick={() => onEdit((d) => ({ ...d, goals: [...d.goals, { id: generateId(), name: "New goal", month: addMonths(d.startMonth, d.years * 12 - 1), amount: 0, basis: "cash" }] }))}><Plus className="size-3" aria-hidden />Add a goal</Button>
+            <Button size="xs" variant="outline" disabled={doc.goals.length >= MAX_GOALS} onClick={() => onEdit((d) => ({ ...d, goals: [...d.goals, { id: generateId(), name: "New goal", month: planEndMonth(d), amount: 0, basis: "cash" }] }))}><Plus className="size-3" aria-hidden />Add a goal</Button>
           </TabsContent>
         </Tabs>
       </DialogContent>

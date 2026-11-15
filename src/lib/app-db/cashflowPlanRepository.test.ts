@@ -36,7 +36,7 @@ describe("cashflow plan repository", () => {
     const a = saveCashflowPlan(db, { budgetSyncId: "b1", document: document() });
     saveCashflowPlan(db, { budgetSyncId: "b2", document: document() });
     expect(listCashflowPlans(db, "b1").map((p) => p.id)).toEqual([a.id]);
-    expect(() => saveCashflowPlan(db, { budgetSyncId: "b1", document: { ...document(), years: 80 } })).toThrow(AppDbValidationError);
+    expect(() => saveCashflowPlan(db, { budgetSyncId: "b1", document: { ...document(), months: 601 } })).toThrow(AppDbValidationError);
     expect(() => saveCashflowPlan(db, { document: document() })).toThrow("budgetSyncId is required");
     deleteCashflowPlan(db, "b1", a.id);
     expect(listCashflowPlans(db, "b1")).toEqual([]);

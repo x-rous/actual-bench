@@ -171,6 +171,7 @@ export const FEATURES: readonly FeatureDefinition[] = [
     accessSummary: "Read-only accounts, transactions, budget, schedules and loans.",
     maturity: "experimental",
     docsUrl: `${DOCS_BASE_URL}user-guide/cashflow-planning/`,
+    feedbackUrl: `${ISSUE_BASE_URL}463`,
     usesStagedActions: false,
     pendingChangesPanel: "none",
     requiresSavedData: true,

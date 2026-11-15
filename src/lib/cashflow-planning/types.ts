@@ -89,8 +89,10 @@ export type Goal = { id: string; name: string; month: Month; /** Minor units. */
 /** How an account counts in a plan: part of its cash, part of its savings, or outside both. */
 export type PlanAccountRole = "cash" | "savings" | "outside";
 
-export const MIN_YEARS = 1;
+/** A plan covers at least 6 months and at most 50 years. */
+export const MIN_MONTHS = 6;
 export const MAX_YEARS = 50;
+export const MAX_MONTHS = MAX_YEARS * 12;
 export const SCHEMA_VERSION = 1;
 
 export type PlanDocument = {
@@ -98,8 +100,8 @@ export type PlanDocument = {
   name: string;
   /** First month of the plan. */
   startMonth: Month;
-  /** Length in years, 1 to 50. */
-  years: number;
+  /** Length in months, 6 to 600: the plan ends on the month this many after the first (the first included). */
+  months: number;
   /** Past months and balances come from Actual. When false the plan is a plain worksheet that starts from `openingBalance`. */
   useActuals: boolean;
   /** Opening cash (minor units) of a plan that does not use Actual. */

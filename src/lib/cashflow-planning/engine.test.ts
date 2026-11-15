@@ -1,7 +1,7 @@
 import { SECTIONS, SECTION_SIGN, type PlanDocument } from "./types";
 import { contributionsOf, placeActuals, unplannedTarget, type SnapAccount, type Snapshot } from "./actuals";
 import { buildPlanFromActuals } from "./builder";
-import { createPlanDocument, createRow, exportPlanJson, importPlanJson, parseAmount, parsePlanDocument, ruleAmount, setCells, setHorizon } from "./document";
+import { createPlanDocument, createRow, exportPlanJson, importPlanJson, parseAmount, parsePlanDocument, planEndMonth, ruleAmount, setCells, setHorizon } from "./document";
 import { computePlan } from "./engine";
 import { linkNotes } from "./linkNotes";
 
@@ -362,14 +362,23 @@ describe("plan documents", () => {
     expect(importPlanJson(exportPlanJson(doc))).toEqual(doc);
     expect(() => importPlanJson("{}")).toThrow("not a cashflow plan exported");
     expect(() => parsePlanDocument({ ...doc, schemaVersion: 2 })).toThrow("newer version");
-    expect(() => parsePlanDocument({ ...doc, years: 51 })).toThrow("1 to 50 years");
+    expect(() => parsePlanDocument({ ...doc, months: 601 })).toThrow("6 to 600 months");
+    expect(() => parsePlanDocument({ ...doc, months: 5 })).toThrow("6 to 600 months");
+    // A plan saved before the length was in months says how many years it covers.
+    expect(parsePlanDocument({ ...doc, months: undefined, years: 2 }).months).toBe(24);
+    expect(() => parsePlanDocument({ ...doc, months: undefined, years: 51 })).toThrow("6 to 600 months");
     expect(() => parsePlanDocument({ ...doc, rows: [{ ...doc.rows[0], cells: { "2026-02": 1.5 } }] })).toThrow("not a valid amount");
   });
 
   it("drops typed amounts outside a shortened plan", () => {
     let doc = plan();
     doc = setCells(doc, [{ rowId: doc.rows[0].id, month: "2026-11", amount: 5 }, { rowId: doc.rows[0].id, month: "2026-02", amount: 7 }]);
-    expect(setHorizon(doc, "2026-06", 1).rows[0].cells).toEqual({ "2026-11": 5 });
+    expect(setHorizon(doc, "2026-06", 12).rows[0].cells).toEqual({ "2026-11": 5 });
+    // A plan can end in any month: eight months from January stop in August.
+    const short = setHorizon(doc, "2026-01", 8);
+    expect(planEndMonth(short)).toBe("2026-08");
+    expect(short.rows[0].cells).toEqual({ "2026-02": 7 });
+    expect(run(short, null).months).toHaveLength(8);
   });
 
   it("reads amounts as people type and paste them", () => {

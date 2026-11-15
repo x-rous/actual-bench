@@ -75,7 +75,7 @@
 
 ## Cashflow Planning
 
-**Financial Management → Cashflow Planning** (experimental) is a month-by-month plan of your cash, up to 50 years ahead, laid over what Actual recorded. It reads Actual through Direct or HTTP and never writes to it. Plans are saved in the Actual Bench app database as you edit.
+**Financial Management → Cashflow Planning** (experimental) is a month-by-month plan of your cash, up to 50 years ahead (from 6 months, ending in any month you choose), laid over what Actual recorded. It reads Actual through Direct or HTTP and never writes to it. Plans are saved in the Actual Bench app database as you edit.
 
 - **One grid, past and future:** months before the current one show what Actual recorded; the current month shows what was recorded so far plus what is still expected; later months show the forecast. Opening and closing balances chain from the real balance of the plan's cash accounts, so the forecast always starts from today. Month columns are followed by a total per calendar year; a Years view shows one column per year.
 - **Sections:** Income, Expenses, Savings & investments and Loans & debt, with optional groups (subtotals). Amounts are positive in their section's direction; a negative amount is the reverse (a refund, a withdrawal, new borrowing). Net cashflow and the closing balance follow.

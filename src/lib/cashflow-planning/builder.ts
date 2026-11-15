@@ -13,7 +13,9 @@ import { generateId } from "@/lib/uuid";
 export type BuildOptions = {
   name: string;
   startMonth: Month;
-  years: number;
+  /** How long the plan is: `months`, or `years` years (5 when neither is given). */
+  years?: number;
+  months?: number;
   /** One expense row per category group, or one per category. */
   detail: "groups" | "categories";
   /** Credit cards as part of the plan's cash (a purchase counts when it is made), or outside it (only the payments to them count). */
@@ -23,7 +25,7 @@ export type BuildOptions = {
 const LOOKBACK = 12;
 
 export function buildPlanFromActuals(snapshot: Snapshot, options: BuildOptions): PlanDocument {
-  const base = createPlanDocument({ name: options.name, startMonth: options.startMonth, years: options.years, useActuals: true });
+  const base = createPlanDocument({ name: options.name, startMonth: options.startMonth, years: options.years, months: options.months, useActuals: true });
   const doc = options.cards === "outside"
     ? { ...base, accountRoles: Object.fromEntries(snapshot.accounts.filter((a) => a.accountClass === "credit-card" && !a.excluded).map((a) => [a.id, "outside" as const])) }
     : base;

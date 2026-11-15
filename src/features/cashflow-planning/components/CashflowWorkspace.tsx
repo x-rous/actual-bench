@@ -342,7 +342,7 @@ function PlanView({ session, doc, data, today, planOptions, onNewPlan, onRetrySa
       line.kind === "row" ? SECTION_LABEL[line.row.section] : line.kind === "group" ? SECTION_LABEL[line.group.section] : line.kind === "section" || line.kind === "unplanned" ? SECTION_LABEL[line.section] : "",
       ...(line.kind === "row" ? line.result.values : line.values).map((v) => (v / 100).toFixed(2)),
     ]);
-    downloadCsv(`${doc.name.replace(/[^\w.-]+/g, "-") || "cash-plan"}.csv`, [header, ...rows]);
+    downloadCsv(`${doc.name.replace(/[^\w.-]+/g, "-") || "cash-plan"}.csv`, [header, ...rows], { includeBom: true });
   };
   const importFile = async (file: File) => {
     try {

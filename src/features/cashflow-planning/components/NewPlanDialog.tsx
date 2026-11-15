@@ -9,7 +9,8 @@ import { Label } from "@/components/ui/label";
 import type { Snapshot } from "@/lib/cashflow-planning/actuals";
 import { buildPlanFromActuals } from "@/lib/cashflow-planning/builder";
 import { NAME_MAX, createPlanDocument } from "@/lib/cashflow-planning/document";
-import { MAX_YEARS, MIN_YEARS, type Month, type PlanDocument } from "@/lib/cashflow-planning/types";
+import { addMonths, lengthLabel, monthsBetween } from "@/lib/cashflow-planning/months";
+import { MAX_MONTHS, MIN_MONTHS, type Month, type PlanDocument } from "@/lib/cashflow-planning/types";
 import { MonthField } from "./fields";
 
 type Template = "groups" | "categories" | "blank" | "worksheet";
@@ -19,19 +20,22 @@ export function NewPlanDialog({ snapshot, today, existingNames, busy, loansPendi
   const year = today.slice(0, 4);
   const [name, setName] = useState(existingNames.length === 0 ? "My cash plan" : `Cash plan ${existingNames.length + 1}`);
   const [start, setStart] = useState<Month>(`${year}-01`);
-  const [years, setYears] = useState("5");
+  // Five years unless the last month is chosen; it follows the first month until then.
+  const [last, setLast] = useState<Month>(addMonths(`${year}-01`, 59));
+  const [lastChosen, setLastChosen] = useState(false);
   const [template, setTemplate] = useState<Template>(snapshot ? "groups" : "blank");
   const [cards, setCards] = useState<"cash" | "outside">("cash");
   const cardAccounts = (snapshot?.accounts ?? []).filter((a) => a.accountClass === "credit-card" && !a.excluded && !a.closed);
-  const yearCount = Number(years);
-  const valid = name.trim().length > 0 && Number.isInteger(yearCount) && yearCount >= MIN_YEARS && yearCount <= MAX_YEARS;
+  const monthCount = monthsBetween(start, last) + 1;
+  const lengthValid = monthCount >= MIN_MONTHS && monthCount <= MAX_MONTHS;
+  const valid = name.trim().length > 0 && lengthValid;
   const hasHistory = !!snapshot && snapshot.movement.length > 0;
 
   const create = () => {
     if (!valid) return;
-    if ((template === "groups" || template === "categories") && snapshot) onCreate(buildPlanFromActuals(snapshot, { name, startMonth: start, years: yearCount, detail: template, cards }));
+    if ((template === "groups" || template === "categories") && snapshot) onCreate(buildPlanFromActuals(snapshot, { name, startMonth: start, months: monthCount, detail: template, cards }));
     else {
-      const doc = createPlanDocument({ name, startMonth: start, years: yearCount, useActuals: template !== "worksheet" });
+      const doc = createPlanDocument({ name, startMonth: start, months: monthCount, useActuals: template !== "worksheet" });
       onCreate(template === "blank" && cards === "outside" ? { ...doc, accountRoles: Object.fromEntries(cardAccounts.map((a) => [a.id, "outside" as const])) } : doc);
     }
   };
@@ -46,9 +50,10 @@ export function NewPlanDialog({ snapshot, today, existingNames, busy, loansPendi
         <div className="space-y-4">
           <div className="flex flex-wrap items-end gap-3">
             <div className="min-w-0 flex-1 space-y-1.5"><Label htmlFor="cf-new-name">Name</Label><Input id="cf-new-name" value={name} maxLength={NAME_MAX} onChange={(e) => setName(e.target.value)} /></div>
-            <div className="space-y-1.5"><Label htmlFor="cf-new-start">First month</Label><MonthField id="cf-new-start" className="h-8 w-28" value={start} onCommit={(m) => { if (m) setStart(m); }} /></div>
-            <div className="space-y-1.5"><Label htmlFor="cf-new-years">Years</Label><Input id="cf-new-years" inputMode="numeric" className="w-20 text-right tabular-nums" value={years} aria-invalid={!(Number.isInteger(yearCount) && yearCount >= MIN_YEARS && yearCount <= MAX_YEARS) || undefined} onChange={(e) => setYears(e.target.value)} /></div>
+            <div className="space-y-1.5"><Label htmlFor="cf-new-start">First month</Label><MonthField id="cf-new-start" className="h-8 w-28" value={start} onCommit={(m) => { if (!m) return; setStart(m); if (!lastChosen) setLast(addMonths(m, 59)); }} /></div>
+            <div className="space-y-1.5"><Label htmlFor="cf-new-last">Last month</Label><MonthField id="cf-new-last" className="h-8 w-28" value={last} onCommit={(m) => { if (m) { setLast(m); setLastChosen(true); } }} /></div>
           </div>
+          <p role={lengthValid ? undefined : "alert"} className={lengthValid ? "text-xs text-muted-foreground" : "text-xs text-destructive"}>{lengthValid ? `${lengthLabel(monthCount)}.` : `A plan covers ${MIN_MONTHS} months to ${MAX_MONTHS / 12} years: the last month must be ${MIN_MONTHS - 1} to ${MAX_MONTHS - 1} months after the first.`}</p>
           <ChoiceCards<Template>
             legend="Start from" name="cf-new-template" columns={2} value={template} onChange={setTemplate}
             options={[
