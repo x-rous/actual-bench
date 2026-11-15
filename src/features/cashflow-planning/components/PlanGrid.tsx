@@ -88,6 +88,8 @@ function monthValue(line: Line, index: number, kind: MonthKind, pastMode: PastMo
   return line.values[index];
 }
 
+/** A month column that starts a new year right after a month column (the year's Total is hidden): the border shows where the year changes. */
+const startsYear = (columns: readonly Column[], i: number): boolean => { const column = columns[i], before = columns[i - 1]; return column?.kind === "month" && before?.kind === "month" && before.month.slice(0, 4) !== column.month.slice(0, 4); };
 const isEditable = (line: Line, column: Column, kinds: readonly MonthKind[]): boolean => line.kind === "row" && column.kind === "month" && kinds[column.index] !== "actual";
 const sectionOfLine = (line: Line): SectionId | null => (line.kind === "row" ? line.row.section : line.kind === "group" ? line.group.section : line.kind === "section" || line.kind === "unplanned" ? line.section : null);
 const labelOf = (line: Line): string => (line.kind === "row" ? line.row.name : line.kind === "group" ? line.group.name : line.label);
@@ -461,13 +463,16 @@ export function PlanGrid({ doc, computed, lines, columns, cents, pastMode, selec
             {years.map((band) => <th key={band.year} role="columnheader" scope="colgroup" colSpan={band.span} className="h-6 border-b border-l border-border bg-muted px-2 text-left text-[11px] font-semibold"><span className="sticky inline-block" style={{ left: LABEL_WIDTH + 8 }}>{band.year}</span></th>)}
           </tr>
           <tr role="row" aria-rowindex={2}>
-            {columns.map((c) => {
-              if (c.kind === "year") return <th key={c.key} role="columnheader" scope="col" aria-selected={pickedColumn === c.key} onClick={() => onPickColumn?.(c.key)} title="Show a summary of this year (S on a cell of this column)" className={cn("h-8 cursor-pointer border-b border-l border-border bg-muted px-2 text-right text-[11px] font-semibold hover:bg-accent", pickedColumn === c.key && "bg-accent shadow-[inset_0_-2px_0_var(--primary)]")}>{c.partial ? "Total*" : "Total"}{c.partial && <span className="sr-only"> (not a full year in this plan)</span>}</th>;
+            {columns.map((c, ci) => {
+              if (c.kind === "year") return <th key={c.key} role="columnheader" scope="col" aria-selected={pickedColumn === c.key} onClick={() => onPickColumn?.(c.key)} title="Show a summary of this year (S on a cell of this column)" className={cn("h-8 cursor-pointer border-b border-l-2 border-border bg-[color-mix(in_oklab,var(--muted),var(--foreground)_6%)] px-2 text-right align-middle hover:bg-accent", pickedColumn === c.key && "bg-accent shadow-[inset_0_-2px_0_var(--primary)]")}>
+                <span className="block text-[11px] font-semibold leading-tight">{c.partial ? "Total*" : "Total"}{c.partial && <span className="sr-only"> (not a full year in this plan)</span>}</span>
+                <span className="block text-[10px] font-normal leading-tight text-muted-foreground">{c.year}</span>
+              </th>;
               const kind = kinds[c.index];
               return (
-                <th key={c.key} role="columnheader" scope="col" aria-selected={pickedColumn === c.key} data-month={c.month} data-now={kind === "current" || undefined} onClick={() => onPickColumn?.(c.key)} title="Show a summary of this month (S on a cell of this column)" className={cn("h-8 cursor-pointer border-b border-border bg-background px-2 text-right align-middle font-medium hover:bg-accent", pickedColumn === c.key && "bg-accent shadow-[inset_0_-2px_0_var(--primary)]", kind === "current" && "bg-[color-mix(in_oklab,var(--primary)_10%,var(--background))]", c.index === computed.currentIndex + 1 && computed.currentIndex >= 0 && "border-l")}>
+                <th key={c.key} role="columnheader" scope="col" aria-selected={pickedColumn === c.key} data-month={c.month} data-now={kind === "current" || undefined} onClick={() => onPickColumn?.(c.key)} title="Show a summary of this month (S on a cell of this column)" className={cn("h-8 cursor-pointer border-b border-border bg-background px-2 text-right align-middle font-medium hover:bg-accent", pickedColumn === c.key && "bg-accent shadow-[inset_0_-2px_0_var(--primary)]", kind === "current" && "bg-[color-mix(in_oklab,var(--color-amber-500)_12%,var(--background))]", kind !== "actual" && c.index > 0 && kinds[c.index - 1] === "actual" && "border-l border-l-primary/30", startsYear(columns, ci) && "border-l-2 border-l-border")}>
                   <span className="block leading-tight">{monthShort(c.month)}</span>
-                  <span className={cn("block text-[10px] font-normal leading-tight text-muted-foreground", kind === "current" && "font-medium text-foreground")}>{doc.useActuals ? KIND_LABEL[kind] : "Plan"}</span>
+                  <span className={cn("block text-[10px] font-normal leading-tight text-muted-foreground", kind === "current" && "font-semibold text-amber-700 dark:text-amber-300")}>{kind === "current" && <span aria-hidden className="mr-1 inline-block size-1.5 rounded-full bg-amber-500 align-[1px]" />}{doc.useActuals ? KIND_LABEL[kind] : "Plan"}</span>
                 </th>
               );
             })}
@@ -608,7 +613,7 @@ function toneOf(doc: PlanDocument, line: Line): { fill: string; stripe: string }
 }
 
 const GridLine = memo(function GridLine({ line, gridId, rowNumber, columns, kinds, cents, pastMode, planTotals, belowMinimum, activeCol, rangeLeft, rangeRight, fillRight, handleAt, editing, renaming, problem, unlinked, shiftedCells, dropTarget, tone, handlers }: LineProps) {
-  const strong = line.kind === "section" || line.kind === "balance" || (line.kind === "memo" && (line.key === "net" || line.key === "total"));
+  const strong = line.kind === "section" || line.kind === "balance" || (line.kind === "memo" && line.key === "total");
   const band = line.kind === "section";
   const pinned = isPinned(line);
   const values = line.kind === "row" ? line.result.values : line.values;
@@ -616,7 +621,9 @@ const GridLine = memo(function GridLine({ line, gridId, rowNumber, columns, kind
   const section = sectionOfLine(line);
   // Pinned lines sit over the scrolling ones, so their background must be opaque.
   const droppable = line.kind === "row" || line.kind === "group" || line.kind === "section";
-  const rowTone = cn(band && "bg-muted", line.kind === "balance" && "bg-[color-mix(in_oklab,var(--muted)_60%,var(--background))]");
+  const sumLine = line.kind === "group";
+  const closing = line.kind === "balance" && line.key === "closing";
+  const rowTone = cn(band && "bg-muted", line.kind === "balance" && "bg-[color-mix(in_oklab,var(--muted)_60%,var(--background))]", closing && "border-t border-t-foreground/25 bg-muted");
 
   return (
     <tr
@@ -645,7 +652,7 @@ const GridLine = memo(function GridLine({ line, gridId, rowNumber, columns, kind
         id={cellId(gridId, line.key, "")} role="rowheader" scope="row" aria-selected={activeCol === ""}
         onContextMenu={(e) => handlers.menu(line.key, null, e)}
         style={tone && activeCol === null ? { backgroundColor: tone.fill } : undefined}
-        className={cn("sticky left-0 z-20 h-7 border-b border-r border-border/60 bg-background p-0 text-left font-normal", rowTone, activeCol !== null && "bg-accent", activeCol === "" && "outline outline-2 -outline-offset-2 outline-primary", dropTarget === "into" && "bg-accent shadow-[inset_0_0_0_2px_var(--primary)]")}
+        className={cn("sticky left-0 z-20 h-7 border-b border-r border-border/60 bg-background p-0 text-left font-normal", sumLine && "bg-[color-mix(in_oklab,var(--muted)_50%,var(--background))]", rowTone, activeCol !== null && "bg-accent", activeCol === "" && "outline outline-2 -outline-offset-2 outline-primary", dropTarget === "into" && "bg-accent shadow-[inset_0_0_0_2px_var(--primary)]")}
       >
         <div style={tone ? { borderLeft: `3px solid ${tone.stripe}` } : undefined} className={cn("flex h-7 items-center gap-1 pr-1", line.kind === "row" ? (line.depth === 2 ? "pl-8" : "pl-6") : line.kind === "group" ? "pl-2" : line.kind === "unplanned" ? "pl-6" : "pl-1.5")}>
           {(line.kind === "section" || line.kind === "group") && (
@@ -664,9 +671,9 @@ const GridLine = memo(function GridLine({ line, gridId, rowNumber, columns, kind
               type="button" tabIndex={-1} title={line.kind === "row" ? `${label} (drag to move, double-click to rename)` : label}
               onClick={() => handlers.selectLine(line.key)} onDoubleClick={() => handlers.startRename(line.key)}
               draggable={line.kind === "row"} onDragStart={line.kind === "row" ? (e) => { e.dataTransfer.setData(ROW_MIME, line.row.id); e.dataTransfer.effectAllowed = "move"; } : undefined}
-              className={cn("min-w-0 flex-1 truncate rounded-sm text-left outline-none", strong && "font-semibold", band && "text-[11px] uppercase tracking-wide", line.kind === "group" && "font-medium", line.kind === "unplanned" && "italic text-muted-foreground", line.kind === "memo" && !strong && "text-muted-foreground")}
+              className={cn("min-w-0 truncate rounded-sm text-left outline-none", line.kind === "memo" && line.hint ? "flex-initial" : "flex-1", strong && "font-semibold", band && "text-[11px] uppercase tracking-wide", line.kind === "group" && "font-semibold", line.kind === "unplanned" && "italic text-muted-foreground", line.kind === "memo" && !strong && "text-muted-foreground")}
             >
-              {label}{line.kind === "group" && line.collapsed && <span className="ml-1.5 font-normal text-muted-foreground">{line.count}</span>}
+              {label}{line.kind === "group" && line.collapsed && <span className="ml-1.5 font-normal text-foreground/60">{line.count}</span>}
             </button>
           )}
           {line.kind === "memo" && line.hint && <InfoHint label={label}>{line.hint}</InfoHint>}
@@ -695,14 +702,16 @@ const GridLine = memo(function GridLine({ line, gridId, rowNumber, columns, kind
           const total = aggregate(values, column.indexes, line.aggregate);
           return (
             <td key={column.key} id={cellId(gridId, line.key, column.key)} data-cell={cellKey} role="gridcell" aria-selected={active} {...mouse}
-              style={tone && !inRange ? { backgroundColor: tone.fill } : undefined}
-              className={cn("relative z-0 h-7 cursor-default border-b border-l border-border/60 px-2 text-right font-medium tabular-nums whitespace-nowrap", pinned ? "bg-muted" : "bg-muted/50", band && "bg-muted", strong && "font-semibold", inRange && "bg-accent", active && "outline outline-2 -outline-offset-2 outline-primary")}>
-              {total === 0 && (line.kind === "row" || line.kind === "unplanned") ? "" : formatCell(total, cents)}
+              className={cn("relative z-0 h-7 cursor-default border-b border-l-2 border-border px-2 text-right font-medium tabular-nums whitespace-nowrap", "bg-muted", rowTone, strong && "font-semibold", inRange && "bg-accent", active && "outline outline-2 -outline-offset-2 outline-primary")}>
+              {total === 0 && (line.kind === "row" || line.kind === "unplanned") ? "" : total === 0 && (line.kind === "group" || line.kind === "section") ? <span className="text-muted-foreground/60">–</span> : formatCell(total, cents)}
             </td>
           );
         }
         const kind = kinds[column.index];
         const value = monthValue(line, column.index, kind, pastMode, planTotals);
+        const boundary = column.index > 0 && kind !== "actual" && kinds[column.index - 1] === "actual";
+        // Recorded figures are "written in ink": a dark blue, where the forecast stays in the normal text colour. The fill and the header say so too.
+        const ink = kind === "actual" && pastMode === "actual" && (line.kind === "row" || line.kind === "group" || line.kind === "section" || line.kind === "balance" || (line.kind === "memo" && line.key === "total"));
         const typed = line.kind === "row" && kind !== "actual" && line.row.cells[column.month] !== undefined;
         const below = belowMinimum?.[column.index] ?? false;
         const editable = isEditable(line, column, kinds);
@@ -731,22 +740,21 @@ const GridLine = memo(function GridLine({ line, gridId, rowNumber, columns, kind
         return (
           <td
             key={column.key} id={cellId(gridId, line.key, column.key)} data-cell={cellKey} role="gridcell" aria-selected={active} aria-readonly={!editable} {...mouse}
-            style={tone && !inRange ? { backgroundColor: tone.fill } : undefined}
             onDoubleClick={() => { if (editable && line.kind === "row") { const cell = line.row.cells[column.month]; handlers.startEdit(line.key, column.key, cell !== undefined ? formatAmountInput(cell) : ""); } }}
             title={typed ? "Typed amount (overrides the forecast)" : shifted ? "Includes or leaves out a transaction counted in another month" : undefined}
             className={cn(
               "relative z-0 h-7 cursor-default border-b border-border/40 px-2 text-right tabular-nums whitespace-nowrap",
-              pinned ? (kind === "current" ? "bg-[color-mix(in_oklab,var(--primary)_6%,var(--background))]" : kind === "actual" ? "bg-[color-mix(in_oklab,var(--muted)_30%,var(--background))]" : "bg-background") : cn(kind === "actual" && "bg-muted/30", kind === "current" && "bg-primary/[0.06]"),
-              rowTone, strong && "font-semibold", line.kind === "group" && "font-medium", (line.kind === "unplanned" || (line.kind === "memo" && !strong)) && "text-muted-foreground",
-              typed && "font-semibold", below && "text-destructive",
+              pinned ? (kind === "current" ? "bg-[color-mix(in_oklab,var(--color-amber-500)_10%,var(--background))]" : kind === "actual" ? "bg-[color-mix(in_oklab,var(--muted)_30%,var(--background))]" : "bg-background") : cn(kind === "actual" && "bg-muted/30", kind === "current" && "bg-amber-500/10"),
+              startsYear(columns, c) && "border-l-2 border-l-border", rowTone, sumLine && (kind === "actual" ? "bg-[color-mix(in_oklab,var(--muted)_70%,var(--background))]" : kind === "current" ? "bg-[color-mix(in_oklab,var(--color-amber-500)_12%,color-mix(in_oklab,var(--muted)_50%,var(--background)))]" : "bg-[color-mix(in_oklab,var(--muted)_50%,var(--background))]"), line.kind === "row" && kind === "forecast" && "bg-background", boundary && "border-l border-l-primary/30", strong && "font-semibold", line.kind === "group" && "font-semibold", (line.kind === "unplanned" || (line.kind === "memo" && !strong)) && "text-muted-foreground",
+ink && "text-[#1e3a8a] dark:text-blue-300",               below && "text-destructive",
               diff && (better ? "text-emerald-700 dark:text-emerald-400" : "text-amber-700 dark:text-amber-400"),
               inRange && "bg-accent", inFill && "bg-accent/60 outline-dashed outline-1 -outline-offset-1 outline-primary/60", active && "outline outline-2 -outline-offset-2 outline-primary",
             )}
           >
             {typed && <span aria-hidden className="absolute right-[3px] top-[3px] size-0 border-[3px] border-transparent border-r-primary border-t-primary" />}
-            {shifted && <ArrowLeftRight className="mr-1 inline size-3 align-[-1px] text-muted-foreground" aria-label="A transaction is counted in another month" />}
+            {shifted && <ArrowLeftRight className="absolute left-1.5 top-1/2 size-2.5 -translate-y-1/2 text-muted-foreground" aria-label="A transaction is counted in another month" />}
             {below && <TrendingDown className="mr-1 inline size-3 align-[-1px]" aria-label="Below the minimum cash" />}
-            {value === null ? <span className="text-muted-foreground">-</span> : value === 0 && (line.kind === "row" || line.kind === "unplanned" || (line.kind === "memo" && (line.key === "moved" || line.key === "inTransit" || line.key === "starting"))) ? "" : `${diff && value > 0 ? "+" : ""}${formatCell(value, cents)}`}
+            {value === null ? <span className="text-muted-foreground">-</span> : value === 0 && (line.kind === "group" || line.kind === "section") ? <span className="text-muted-foreground/60">–</span> : value === 0 && (line.kind === "row" || line.kind === "unplanned" || (line.kind === "memo" && (line.key === "moved" || line.key === "inTransit" || line.key === "starting"))) ? "" : `${diff && value > 0 ? "+" : ""}${formatCell(value, cents)}`}
             {c === handleAt && editable && <span aria-hidden title="Drag to fill to the right" onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); handlers.fillStart(); }} className="absolute -bottom-[3px] -right-[3px] z-10 size-[7px] cursor-crosshair border border-background bg-primary" />}
           </td>
         );

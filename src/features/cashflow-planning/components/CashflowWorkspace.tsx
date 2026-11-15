@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, CalendarDays, Check, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, CircleAlert, CircleHelp, Loader2, MoreHorizontal, PanelRight, Plus, Redo2, RefreshCw, Settings2, SlidersHorizontal, Undo2 } from "lucide-react";
+import { AlertTriangle, BookOpen, CalendarDays, Check, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, CircleAlert, Loader2, MoreHorizontal, PanelRight, Plus, Redo2, RefreshCw, Settings2, SlidersHorizontal, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { Button } from "@/components/ui/button";
@@ -31,7 +31,7 @@ import { usePlanActions, usePlanAutosave, usePlans } from "../hooks/usePlans";
 import { buildColumns, buildLines, planYears, type Column, type Line } from "../lib/view";
 import { useCashflowStore, type PlanSession } from "../store";
 import { AddRowDialog } from "./AddRowDialog";
-import { HelpDialog } from "./HelpDialog";
+import { CashflowGuide, type CashflowGuideSection } from "./guide/CashflowGuide";
 import { INSPECTOR_MAX, INSPECTOR_MIN, Inspector, type TransactionsRequest } from "./Inspector";
 import { NewPlanDialog } from "./NewPlanDialog";
 import { PlanGrid, type CellEdit, type GridCommand, type GridSelection, type PastMode } from "./PlanGrid";
@@ -41,11 +41,11 @@ import { MonthSummary } from "./MonthSummary";
 import { BalanceChart, SummaryStrip } from "./Summary";
 import { TransactionsDialog } from "./TransactionsDialog";
 
-type ViewPrefs = { mode: "months" | "years"; cents: boolean; chart: boolean; pastMode: PastMode; details: boolean; collapsed: string[]; panelWidth: number };
+type ViewPrefs = { mode: "months" | "years"; cents: boolean; chart: boolean; pastMode: PastMode; /** Whether each year in the months view is followed by its Total column. */ totals: boolean; details: boolean; collapsed: string[]; panelWidth: number };
 const navButton = "flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-40";
 /** How many years the grid draws at once; the navigator and the month picker move through the rest of the plan. */
 const YEARS_ON_SCREEN = 2;
-const DEFAULT_VIEW: ViewPrefs = { mode: "months", cents: false, chart: true, pastMode: "actual", details: true, collapsed: [], panelWidth: 400 };
+const DEFAULT_VIEW: ViewPrefs = { mode: "months", cents: false, chart: true, pastMode: "actual", totals: true, details: true, collapsed: [], panelWidth: 400 };
 const DOCS_URL = FEATURES.find((f) => f.id === "cashflow-planning")?.docsUrl;
 
 /**
@@ -186,7 +186,7 @@ function PlanView({ session, doc, data, today, planOptions, onNewPlan, onRetrySa
   /** The month or year picked in the grid's header: its summary replaces the plan overview. */
   const [pickedColumn, setPickedColumn] = useState<string | null>(null);
   const [adding, setAdding] = useState<{ section: SectionId; groupId: string | null; afterRowId?: string } | null>(null);
-  const [help, setHelp] = useState(false);
+  const [guide, setGuide] = useState<CashflowGuideSection | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const snapshot = doc.useActuals && data.state === "ready" ? data.snapshot : null;
 
@@ -206,7 +206,7 @@ function PlanView({ session, doc, data, today, planOptions, onNewPlan, onRetrySa
   const lines = useMemo(() => (computed ? buildLines(doc, computed, collapsed, find) : []), [doc, computed, collapsed, find]);
   // Cells a transaction counted in another month left or joined, by grid line.
   const shiftedCells = useMemo(() => new Set([...(placed?.shiftNotes.keys() ?? [])].map((k) => (k.startsWith("unplanned:") ? k : `row:${k}`))), [placed]);
-  const columns = useMemo(() => (computed ? buildColumns(computed.months, { mode: view.mode, fromYear, span }) : []), [computed, view.mode, fromYear, span]);
+  const columns = useMemo(() => (computed ? buildColumns(computed.months, { mode: view.mode, fromYear, span, totals: view.totals }) : []), [computed, view.mode, view.totals, fromYear, span]);
 
   const problems = useMemo(() => {
     const map = new Map<string, string>();
@@ -320,7 +320,7 @@ function PlanView({ session, doc, data, today, planOptions, onNewPlan, onRetrySa
       }
       case "clearFrom": edit((d) => setCells(d, Object.keys(d.rows.find((r) => r.id === command.rowId)?.cells ?? {}).filter((m) => m >= command.month).map((month) => ({ rowId: command.rowId, month, amount: null })))); return;
       case "transactions": { const line = lines.find((l) => l.key === command.line), column = columns.find((c) => c.key === command.col); if (line && column) showTransactions(line, column); return; }
-      case "help": setHelp(true); return;
+      case "help": setGuide("working"); return;
     }
   };
 
@@ -367,22 +367,28 @@ function PlanView({ session, doc, data, today, planOptions, onNewPlan, onRetrySa
         </div>
       )}
       <PillGroup<ViewPrefs["mode"]> options={[{ value: "months", label: "Months" }, { value: "years", label: "Years" }]} value={view.mode} onChange={(mode) => setView((v) => ({ ...v, mode }))} />
+      {doc.useActuals && (
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-muted-foreground">Past months</span>
+          <PillGroup<PastMode>
+            options={[
+              { value: "actual", label: "Actual", title: "Past months show what Actual recorded" },
+              { value: "plan", label: "Planned", title: "Past months show what the plan said for them" },
+              { value: "diff", label: "Difference", title: "Past months show actual minus planned: green is better than planned, amber is worse" },
+            ]}
+            value={view.pastMode} onChange={(pastMode) => setView((p) => ({ ...p, pastMode }))} />
+        </div>
+      )}
       <div className="ml-auto flex flex-wrap items-center gap-1.5">
         <Button size="icon-sm" variant="ghost" onClick={undo} disabled={session.past.length === 0} aria-label="Undo" title="Undo (Ctrl+Z)"><Undo2 className="size-3.5" aria-hidden /></Button>
         <Button size="icon-sm" variant="ghost" onClick={redo} disabled={session.future.length === 0} aria-label="Redo" title="Redo (Ctrl+Y)"><Redo2 className="size-3.5" aria-hidden /></Button>
         <Popover>
           <PopoverTrigger render={<Button size="sm" variant="outline" />}><SlidersHorizontal className="size-3.5" aria-hidden />View</PopoverTrigger>
           <PopoverContent align="end" className="w-80 divide-y divide-border p-0 text-xs">
-            {doc.useActuals && (
-              <section className="space-y-2 p-3">
-                <h3 className="font-medium">Past months show</h3>
-                <PillGroup<PastMode> options={[{ value: "actual", label: "Actual" }, { value: "plan", label: "Planned" }, { value: "diff", label: "Difference" }]} value={view.pastMode} onChange={(pastMode) => setView((p) => ({ ...p, pastMode }))} />
-                <p className="text-muted-foreground">{view.pastMode === "actual" ? "What Actual recorded." : view.pastMode === "plan" ? "What the plan said for those months." : "Actual minus planned: green is better than planned, amber is worse."}</p>
-              </section>
-            )}
             <section className="space-y-3 p-3">
               <label className="flex cursor-pointer items-center justify-between gap-3"><span><span className="block font-medium">Balance chart</span><span className="text-muted-foreground">The closing balance above the grid.</span></span><Switch checked={view.chart} onCheckedChange={(chart) => setView((p) => ({ ...p, chart }))} /></label>
               <label className="flex cursor-pointer items-center justify-between gap-3"><span><span className="block font-medium">Show decimals</span><span className="text-muted-foreground">Amounts as 12,000.00 instead of 12,000.</span></span><Switch checked={view.cents} onCheckedChange={(cents) => setView((p) => ({ ...p, cents }))} /></label>
+              <label className="flex cursor-pointer items-center justify-between gap-3"><span><span className="block font-medium">Year totals</span><span className="text-muted-foreground">A Total column after each year of months. The Years view always shows them.</span></span><Switch checked={view.totals} onCheckedChange={(totals) => setView((p) => ({ ...p, totals }))} /></label>
             </section>
           </PopoverContent>
         </Popover>
@@ -405,7 +411,7 @@ function PlanView({ session, doc, data, today, planOptions, onNewPlan, onRetrySa
             <DropdownMenuItem variant="destructive" onClick={() => setConfirm({ title: `Delete "${doc.name}"?`, message: "The plan is removed from Actual Bench for good. Export it first if you may want it back. Nothing in Actual changes.", destructive: true, destructiveLabel: "Delete plan", onConfirm: () => void onDelete() })}>Delete this plan…</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <Button size="icon-sm" variant="ghost" aria-label="Keyboard shortcuts and help" title="Keyboard shortcuts and help (?)" onClick={() => setHelp(true)}><CircleHelp className="size-3.5" aria-hidden /></Button>
+        <Button size="sm" variant="outline" title="How to read and work in a cash plan, and the keyboard shortcuts (?)" onClick={() => setGuide("start")}><BookOpen className="size-3.5" aria-hidden />Guide</Button>
         <Button size="icon-sm" variant={view.details ? "secondary" : "ghost"} aria-pressed={view.details} aria-label={view.details ? "Hide details" : "Show details"} title="Details panel" onClick={() => setView((v) => ({ ...v, details: !v.details }))}><PanelRight className="size-3.5" aria-hidden /></Button>
       </div>
       <input ref={fileInput} type="file" accept="application/json,.json" className="hidden" aria-hidden tabIndex={-1} onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ""; if (file) void importFile(file); }} />
@@ -459,7 +465,7 @@ function PlanView({ session, doc, data, today, planOptions, onNewPlan, onRetrySa
                 onClose={() => setView((v) => ({ ...v, details: false }))}
                 overviewSubtitle={pickedColumnValue ? (pickedColumnValue.kind === "year" ? (pickedColumnValue.partial ? "Year total (part of the year)" : "Year total") : !doc.useActuals ? "Plan" : computed.kinds[pickedColumnValue.index] === "actual" ? "Actual" : computed.kinds[pickedColumnValue.index] === "current" ? "This month, recorded so far and expected" : "Forecast") : undefined}
                 overviewTitle={pickedColumn && pickedColumnValue ? (pickedColumnValue.kind === "month" ? monthLabel(pickedColumnValue.month) : String(pickedColumnValue.year)) : undefined}
-                overview={pickedColumnValue ? <MonthSummary doc={doc} computed={computed} snapshot={snapshot} placed={placed} column={pickedColumnValue} onShowTransactions={setTransactions} onSelectLine={selectLine} /> : <Overview doc={doc} computed={computed} data={data} problems={problems} placed={placed} onShowUnplanned={showUnplanned} onSelectLine={selectLine} onOpenSettings={() => setSettings(true)} onHelp={() => setHelp(true)} />}
+                overview={pickedColumnValue ? <MonthSummary doc={doc} computed={computed} snapshot={snapshot} placed={placed} column={pickedColumnValue} onShowTransactions={setTransactions} onSelectLine={selectLine} /> : <Overview doc={doc} computed={computed} data={data} problems={problems} placed={placed} onShowUnplanned={showUnplanned} onSelectLine={selectLine} onOpenSettings={() => setSettings(true)} onHelp={() => setGuide("working")} />}
               />
             )}
           </div>
@@ -468,7 +474,7 @@ function PlanView({ session, doc, data, today, planOptions, onNewPlan, onRetrySa
       {settings && <PlanSettingsDialog doc={doc} snapshot={snapshot} onEdit={edit} onClose={() => setSettings(false)} />}
       {transactions && snapshot && placed && <TransactionsDialog request={transactions} doc={doc} snapshot={snapshot} placed={placed} onEdit={edit} onClose={() => setTransactions(null)} />}
       {adding && <AddRowDialog doc={doc} snapshot={snapshot} section={adding.section} groupId={adding.groupId} onAdd={added} onClose={() => setAdding(null)} />}
-      {help && <HelpDialog docsUrl={DOCS_URL} onClose={() => setHelp(false)} />}
+      {guide && <CashflowGuide section={guide} onSection={setGuide} onClose={() => setGuide(null)} docsUrl={DOCS_URL} />}
       <ConfirmDialog open={!!confirm} onOpenChange={(open) => { if (!open) setConfirm(null); }} state={confirm} />
     </PageLayout>
   );
@@ -550,7 +556,7 @@ function Overview({ doc, computed, data, problems, placed, onShowUnplanned, onSe
           <li>Right-click a cell or a row for more, and drag a row&apos;s name to move it.</li>
           <li>Amounts are positive in their section&apos;s direction. A negative expense is a refund; a negative saving is a withdrawal.</li>
         </ul>
-        <button type="button" className="underline underline-offset-2" onClick={onHelp}>Keyboard shortcuts and help</button>
+        <button type="button" className="underline underline-offset-2" onClick={onHelp}>Open the guide</button>
       </section>
     </>
   );

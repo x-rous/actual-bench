@@ -11,7 +11,7 @@ export type Column =
   | { kind: "year"; key: string; year: number; indexes: number[]; partial: boolean };
 
 /** Month columns of the plan years in the window, each calendar year followed by its total; or one column per year. */
-export function buildColumns(months: readonly Month[], view: { mode: "months" | "years"; fromYear: number; span: number }): Column[] {
+export function buildColumns(months: readonly Month[], view: { mode: "months" | "years"; fromYear: number; span: number; /** Whether each calendar year in the months view is followed by its total (the years view is all totals). Default true. */ totals?: boolean }): Column[] {
   const byYear = new Map<number, number[]>();
   months.forEach((month, index) => byYear.set(yearOf(month), [...(byYear.get(yearOf(month)) ?? []), index]));
   const columns: Column[] = [];
@@ -20,7 +20,7 @@ export function buildColumns(months: readonly Month[], view: { mode: "months" | 
     if (view.mode === "years") { columns.push(total); continue; }
     if (year < view.fromYear || year >= view.fromYear + view.span) continue;
     for (const index of indexes) columns.push({ kind: "month", key: months[index], index, month: months[index] });
-    columns.push(total);
+    if (view.totals !== false) columns.push(total);
   }
   return columns;
 }
