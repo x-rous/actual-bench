@@ -1,6 +1,6 @@
 import { generateId } from "@/lib/uuid";
 import { PlanDocumentError, parsePlanDocument } from "@/lib/cashflow-planning/document";
-import type { PlanDocument, PlanRecord } from "@/lib/cashflow-planning/types";
+import type { PlanDocument, PlanRecord, UnreadablePlan } from "@/lib/cashflow-planning/types";
 import { AppDbConflictError, AppDbValidationError } from "./errors";
 import type { SqliteDatabase } from "./types";
 
@@ -17,24 +17,38 @@ const MAX_PER_BUDGET = 30;
 /** A full plan (500 rows over 50 years, every month typed) stays well under this. */
 const DOCUMENT_MAX_BYTES = 8_000_000;
 
-function fromRow(row: PlanRow): PlanRecord | null {
+function fromRow(row: PlanRow): { record: PlanRecord } | { unreadable: UnreadablePlan } {
   try {
-    return { budgetSyncId: row.budget_sync_id, id: row.id, name: row.name, revision: row.revision, document: parsePlanDocument(JSON.parse(row.document)), createdAt: row.created_at, updatedAt: row.updated_at };
-  } catch {
-    return null;
+    return { record: { budgetSyncId: row.budget_sync_id, id: row.id, name: row.name, revision: row.revision, document: parsePlanDocument(JSON.parse(row.document)), createdAt: row.created_at, updatedAt: row.updated_at } };
+  } catch (error) {
+    return { unreadable: { id: row.id, name: row.name, why: error instanceof PlanDocumentError ? error.message : "The stored data is not a readable plan" } };
   }
 }
 
-/** The budget's plans, oldest first. A row this build cannot read is skipped, not an error: a newer version may have written it. */
-export function listCashflowPlans(db: SqliteDatabase, budgetSyncId: string): PlanRecord[] {
+/**
+ * The budget's plans, oldest first. A row this build cannot read is not an error (a newer version may have written it): it is
+ * left out of `plans` and listed in `unreadable`, since it still counts toward the plan limit and the user may want to delete it.
+ */
+export function listCashflowPlansWithUnreadable(db: SqliteDatabase, budgetSyncId: string): { plans: PlanRecord[]; unreadable: UnreadablePlan[] } {
   const rows = db.prepare("SELECT * FROM cashflow_plans WHERE budget_sync_id = ? ORDER BY created_at, id").all(budgetSyncId.trim()) as PlanRow[];
-  return rows.flatMap((row) => { const record = fromRow(row); return record ? [record] : []; });
+  const plans: PlanRecord[] = [];
+  const unreadable: UnreadablePlan[] = [];
+  for (const row of rows) {
+    const read = fromRow(row);
+    if ("record" in read) plans.push(read.record); else unreadable.push(read.unreadable);
+  }
+  return { plans, unreadable };
+}
+
+export function listCashflowPlans(db: SqliteDatabase, budgetSyncId: string): PlanRecord[] {
+  return listCashflowPlansWithUnreadable(db, budgetSyncId).plans;
 }
 
 /**
  * Saves one plan and returns it with its new revision. Without an id it is a new plan. With one, `baseRevision` must be the
  * revision the caller last read: otherwise the plan was changed elsewhere in the meantime and the save is refused (a conflict),
- * unless `force` says to overwrite it.
+ * unless `force` says to overwrite it. A save that carries a `baseRevision` for a plan that no longer exists was deleted
+ * elsewhere: it is a conflict too, and only `force` brings the plan back.
  */
 export function saveCashflowPlan(db: SqliteDatabase, input: unknown): PlanRecord {
   if (typeof input !== "object" || input === null || Array.isArray(input)) throw new AppDbValidationError("Plan payload must be an object");
@@ -57,6 +71,7 @@ export function saveCashflowPlan(db: SqliteDatabase, input: unknown): PlanRecord
   return db.transaction((): PlanRecord => {
     const existing = db.prepare("SELECT revision, created_at FROM cashflow_plans WHERE budget_sync_id = ? AND id = ?").get(budgetSyncId, id) as { revision: number; created_at: string } | undefined;
     if (!existing) {
+      if (body.baseRevision !== undefined && body.force !== true) throw new AppDbConflictError("This plan was deleted somewhere else since it was opened here");
       const count = (db.prepare("SELECT COUNT(*) AS n FROM cashflow_plans WHERE budget_sync_id = ?").get(budgetSyncId) as { n: number }).n;
       if (count >= MAX_PER_BUDGET) throw new AppDbValidationError(`A budget can hold ${MAX_PER_BUDGET} plans; delete one first`);
       db.prepare("INSERT INTO cashflow_plans (budget_sync_id, id, name, revision, document, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?, ?)").run(budgetSyncId, id, document.name, json, now, now);

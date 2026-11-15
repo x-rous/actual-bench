@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import type { PlanDocument, PlanRecord } from "@/lib/cashflow-planning/types";
+import type { PlanDocument, PlanRecord, UnreadablePlan } from "@/lib/cashflow-planning/types";
 
 /**
  * The plans open in this tab. Each plan is saved to the app database on its own shortly after every edit (see
@@ -32,7 +32,10 @@ type State = {
   sessions: Record<string, PlanSession>;
   order: string[];
   activeId: string | null;
-  hydrate: (budgetSyncId: string, records: PlanRecord[], preferredId?: string | null) => void;
+  /** Stored plans this build cannot read; they still count toward the plan limit, so they can be deleted. */
+  unreadable: UnreadablePlan[];
+  hydrate: (budgetSyncId: string, records: PlanRecord[], preferredId?: string | null, unreadable?: UnreadablePlan[]) => void;
+  setUnreadable: (unreadable: UnreadablePlan[]) => void;
   /** Adds a plan the database just created (or replaces one it just returned). */
   adopt: (record: PlanRecord, select?: boolean) => void;
   select: (id: string) => void;
@@ -46,6 +49,9 @@ type State = {
   failed: (id: string, status: "error" | "conflict", error: string) => void;
 };
 
+/** Outside a conflict, a plan is saved exactly when its working copy is the document the database holds. */
+const settled = (s: PlanSession, doc: PlanDocument): SaveStatus => (s.status === "conflict" ? "conflict" : doc === s.saved ? "saved" : "dirty");
+
 const session = (record: PlanRecord): PlanSession => ({ id: record.id, revision: record.revision, saved: record.document, doc: record.document, past: [], future: [], status: "saved" });
 
 export const useCashflowStore = create<State>((set) => {
@@ -56,13 +62,14 @@ export const useCashflowStore = create<State>((set) => {
     return next === current ? state : { sessions: { ...state.sessions, [id]: next } };
   });
   return {
-    budgetSyncId: null, sessions: {}, order: [], activeId: null,
-    hydrate: (budgetSyncId, records, preferredId) => set((state) => {
+    budgetSyncId: null, sessions: {}, order: [], activeId: null, unreadable: [],
+    setUnreadable: (unreadable) => set({ unreadable }),
+    hydrate: (budgetSyncId, records, preferredId, unreadable = []) => set((state) => {
       // Coming back to the same budget keeps the working copies (and their undo history) of this tab.
       if (state.budgetSyncId === budgetSyncId) return state;
       const sessions = Object.fromEntries(records.map((r) => [r.id, session(r)]));
       const order = records.map((r) => r.id);
-      return { budgetSyncId, sessions, order, activeId: preferredId && sessions[preferredId] ? preferredId : order[0] ?? null };
+      return { budgetSyncId, sessions, order, unreadable, activeId: preferredId && sessions[preferredId] ? preferredId : order[0] ?? null };
     }),
     adopt: (record, select = true) => set((state) => ({
       sessions: { ...state.sessions, [record.id]: session(record) },
@@ -79,10 +86,10 @@ export const useCashflowStore = create<State>((set) => {
     edit: (id, change) => patch(id, (s) => {
       const doc = change(s.doc);
       if (doc === s.doc) return s;
-      return { ...s, doc, past: [...s.past.slice(-(HISTORY_LIMIT - 1)), s.doc], future: [], status: s.status === "conflict" ? "conflict" : "dirty" };
+      return { ...s, doc, past: [...s.past.slice(-(HISTORY_LIMIT - 1)), s.doc], future: [], status: settled(s, doc) };
     }),
-    undo: (id) => patch(id, (s) => (s.past.length === 0 ? s : { ...s, doc: s.past[s.past.length - 1], past: s.past.slice(0, -1), future: [s.doc, ...s.future], status: s.status === "conflict" ? "conflict" : "dirty" })),
-    redo: (id) => patch(id, (s) => (s.future.length === 0 ? s : { ...s, doc: s.future[0], past: [...s.past, s.doc], future: s.future.slice(1), status: s.status === "conflict" ? "conflict" : "dirty" })),
+    undo: (id) => patch(id, (s) => (s.past.length === 0 ? s : { ...s, doc: s.past[s.past.length - 1], past: s.past.slice(0, -1), future: [s.doc, ...s.future], status: settled(s, s.past[s.past.length - 1]) })),
+    redo: (id) => patch(id, (s) => (s.future.length === 0 ? s : { ...s, doc: s.future[0], past: [...s.past, s.doc], future: s.future.slice(1), status: settled(s, s.future[0]) })),
     saving: (id) => patch(id, (s) => ({ ...s, status: "saving", error: undefined })),
     savedAs: (id, record, sent) => patch(id, (s) => ({ ...s, revision: record.revision, saved: sent, status: s.doc === sent ? "saved" : "dirty", error: undefined })),
     failed: (id, status, error) => patch(id, (s) => ({ ...s, status, error })),

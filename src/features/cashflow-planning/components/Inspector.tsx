@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { AlertTriangle, ArrowDown, ArrowLeftRight, ArrowUp, MoreHorizontal, Plus, Trash2, X } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -61,6 +61,13 @@ const BASIS_LABEL: Record<BasisKind, string> = {
 };
 
 const EVERY_OPTIONS = [{ value: "1", label: "Every month" }, { value: "2", label: "Every 2 months" }, { value: "3", label: "Every 3 months" }, { value: "6", label: "Every 6 months" }, { value: "12", label: "Every year" }, { value: "24", label: "Every 2 years" }];
+
+/** The row's notes: a local draft while typing, the document's text otherwise, so an undo shows at once and is never written back. */
+function NotesField({ value, onCommit }: { value: string; onCommit: (notes: string) => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const commit = () => { if (draft === null) return; const notes = draft.trim(); setDraft(null); if (notes !== value) onCommit(notes); };
+  return <Textarea aria-label="Notes" value={draft ?? value} maxLength={NOTES_MAX} rows={2} className="text-xs" onChange={(e) => setDraft(e.target.value)} onBlur={commit} />;
+}
 
 /** The period a panel is about, for its header: a month with what it is (Actual, This month, Forecast), or a year. */
 function periodOf(column: Column | null, computed: Computed, doc: PlanDocument): string | null {
@@ -172,7 +179,7 @@ function RowPanel({ doc, computed, snapshot, placed, row, column, problems, onEd
         <BasisBlock doc={doc} snapshot={snapshot} row={row} typical={result.typical} problem={result.problem} edit={edit} />
         {doc.useActuals && snapshot && <LinksBlock doc={doc} snapshot={snapshot} row={row} edit={edit} />}
         <Block title="Notes">
-          <Textarea aria-label="Notes" key={row.id} defaultValue={row.notes ?? ""} maxLength={NOTES_MAX} rows={2} className="text-xs" onBlur={(e) => { const notes = e.target.value.trim(); if (notes !== (row.notes ?? "")) edit((r) => { const next = { ...r }; if (notes) next.notes = notes; else delete next.notes; return next; }); }} />
+          <NotesField key={row.id} value={row.notes ?? ""} onCommit={(notes) => edit((r) => { const next = { ...r }; if (notes) next.notes = notes; else delete next.notes; return next; })} />
         </Block>
       </div>
     </>

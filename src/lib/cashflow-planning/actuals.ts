@@ -62,6 +62,9 @@ export type BudgetSnapshot = {
   lastMonth: Month | null;
 };
 
+/** The optional reads a plan can do without: a failure leaves what follows them empty, which is not the user's doing. */
+export type OptionalRead = "schedules" | "loans" | "shifts";
+
 export type Snapshot = {
   /** `YYYY-MM-DD`: nothing after it was read. */
   today: string;
@@ -79,6 +82,8 @@ export type Snapshot = {
   loanCosts: LoanCostLine[];
   shifts: ShiftedTransaction[];
   budget: BudgetSnapshot | null;
+  /** The optional reads that failed. Rows that depend on one say so instead of blaming their links. */
+  failedReads?: readonly OptionalRead[];
 };
 
 // ─── Accounts ────────────────────────────────────────────────────────────────

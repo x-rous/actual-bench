@@ -159,7 +159,8 @@ export function computePlan(doc: PlanDocument, snapshot: Snapshot | null, placed
             byMonth.set(month, (byMonth.get(month) ?? 0) + schedule.amount * SECTION_SIGN[row.section]);
           }
         }
-        if (wanted.size > 0) problems.push(`${wanted.size} linked schedule${wanted.size === 1 ? " no longer exists" : "s no longer exist"}`);
+        if (wanted.size > 0 && live.snapshot.failedReads?.includes("schedules")) problems.push("Schedules could not be read from Actual");
+        else if (wanted.size > 0) problems.push(`${wanted.size} linked schedule${wanted.size === 1 ? " no longer exists" : "s no longer exist"}`);
         if (row.basis.scheduleIds.length === 0) problems.push("Choose a schedule");
         if (problems.length) result.problem = problems.join("; ");
         datedBasis = true;
@@ -182,7 +183,8 @@ export function computePlan(doc: PlanDocument, snapshot: Snapshot | null, placed
             byMonth.set(month, (byMonth.get(month) ?? 0) + amount * -SECTION_SIGN[row.section]);
           }
         }
-        if (found === 0) problems.push("Link a loan account that is tracked in Loans");
+        if (found === 0 && live.snapshot.failedReads?.includes("loans")) problems.push("Loans could not be read, so this repayment is not forecast");
+        else if (found === 0) problems.push("Link a loan account that is tracked in Loans");
         if (problems.length) result.problem = problems.join("; ");
         datedBasis = true;
         basis = (month) => ({ amount: byMonth.get(month) ?? 0, source: "loan" });
@@ -288,19 +290,22 @@ export function computePlan(doc: PlanDocument, snapshot: Snapshot | null, placed
   }
 
   // ── Key figures ────────────────────────────────────────────────────────────
+  // A plan whose last month is behind today has no future: its months are past actuals, so nothing is looked forward over.
+  const ended = !!currentMonth && currentIndex < 0 && currentMonth > months[count - 1];
   const from = Math.max(0, currentIndex);
   const lowest = (to: number) => {
+    if (ended) return null;
     let best: { month: Month; amount: number } | null = null;
     for (let i = from; i < Math.min(count, to); i++) if (!best || closing[i] < best.amount) best = { month: months[i], amount: closing[i] };
     return best;
   };
-  const firstBelowIndex = belowMinimum.findIndex((below, i) => below && i >= from);
+  const firstBelowIndex = ended ? -1 : belowMinimum.findIndex((below, i) => below && i >= from);
   const yearEndMonth = `${(currentMonth ?? months[0]).slice(0, 4)}-12`;
   const yearEndIndex = at(yearEndMonth);
   const next12 = { income: 0, expenses: 0, savings: 0, debt: 0, net: 0, months: 0 };
   // The next twelve whole months: the current month is partly behind us, so it is left out when later months exist.
   const forecastFrom = currentIndex >= 0 ? currentIndex + 1 : 0;
-  for (let i = forecastFrom; i < Math.min(count, forecastFrom + 12); i++) {
+  for (let i = forecastFrom; !ended && i < Math.min(count, forecastFrom + 12); i++) {
     for (const section of SECTIONS) next12[section] += sectionTotals[section][i];
     next12.net += net[i];
     next12.months++;

@@ -61,7 +61,7 @@ export function PlanSettingsDialog({ doc, snapshot, onEdit, onClose }: { doc: Pl
               <div className="flex flex-wrap items-end gap-3">
                 <div className="space-y-1.5"><Label htmlFor="cf-plan-start" className="text-xs text-muted-foreground">First month</Label><MonthField id="cf-plan-start" className="w-28" value={start} onCommit={(m) => { if (m) setStart(m); }} /></div>
                 <div className="space-y-1.5"><Label htmlFor="cf-plan-years" className="text-xs text-muted-foreground">Years ({MIN_YEARS} to {MAX_YEARS})</Label><Input id="cf-plan-years" size="sm" inputMode="numeric" className="w-20 text-right tabular-nums" aria-invalid={!yearsValid || undefined} value={years} onChange={(e) => setYears(e.target.value)} /></div>
-                <Button size="sm" disabled={!horizonChanged || !yearsValid} onClick={() => onEdit((d) => ({ ...setHorizon(d, start, yearCount), goals: d.goals.filter((g) => g.month >= start && g.month <= planEndMonth({ startMonth: start, years: yearCount })) }))}>Apply</Button>
+                <Button size="sm" disabled={!horizonChanged || !yearsValid} onClick={() => onEdit((d) => setHorizon(d, start, yearCount))}>Apply</Button>
                 <p className="pb-1.5 text-xs text-muted-foreground">Now {doc.startMonth} to {end}.</p>
               </div>
               {horizonChanged && yearsValid && (dropped > 0 || droppedGoals > 0) && <p role="status" className="text-xs text-amber-700 dark:text-amber-400">Applying removes {dropped} typed {dropped === 1 ? "amount" : "amounts"}{droppedGoals ? ` and ${droppedGoals} ${droppedGoals === 1 ? "goal" : "goals"}` : ""} that fall outside the new months. Undo brings them back.</p>}

@@ -13,6 +13,7 @@ const GROUPS: { title: string; keys: [string, string][] }[] = [
     ["Home / End", `First or last month of the line (${MOD} for the whole grid)`],
     ["Page Up / Page Down", "Move twelve lines"],
     ["Space or Enter on a label", "Collapse or expand a section or group"],
+    ["S", "Show the summary of the selected cell's month or year"],
     ["Esc", "Clear the selection and show the plan overview"],
   ] },
   { title: "Amounts", keys: [

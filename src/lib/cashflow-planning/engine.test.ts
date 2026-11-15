@@ -181,6 +181,23 @@ describe("forecasting", () => {
   });
 });
 
+describe("key figures when today is outside the plan", () => {
+  it("looks ahead over nothing once the plan has ended, and as usual when it starts later", () => {
+    // Today is 15 Mar 2026: a plan of 2025 is over, a plan starting in 2027 has not begun.
+    const ended = run({ ...plan(), startMonth: "2025-01" });
+    expect(ended.currentIndex).toBe(-1);
+    expect(ended.kpis.next12.months).toBe(0);
+    expect(ended.kpis).toMatchObject({ lowest12: null, lowestAll: null, firstBelow: null });
+    expect(ended.kpis.endOfPlan.month).toBe("2025-12");
+
+    const future = run({ ...plan(), startMonth: "2027-01", minimumCash: 10_000_000 });
+    expect(future.currentIndex).toBe(-1);
+    expect(future.kpis.next12.months).toBe(12);
+    expect(future.kpis.lowest12).not.toBeNull();
+    expect(future.kpis.firstBelow).toBe("2027-01");
+  });
+});
+
 describe("whole loan repayments", () => {
   // Each month 300.00 of interest is recorded on its own line, in the Mortgage Interest category, next to the 1,000 transfer.
   const withInterest = (): Snapshot => {

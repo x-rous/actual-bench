@@ -315,7 +315,8 @@ export function setHorizon(doc: PlanDocument, startMonth: Month, years: number):
     const kept = Object.entries(row.cells).filter(([m]) => m >= startMonth && m <= end);
     return kept.length === Object.keys(row.cells).length ? row : { ...row, cells: Object.fromEntries(kept) };
   });
-  return { ...doc, startMonth, years, rows };
+  const goals = doc.goals.filter((g) => g.month >= startMonth && g.month <= end);
+  return { ...doc, startMonth, years, rows, goals: goals.length === doc.goals.length ? doc.goals : goals };
 }
 
 /** How many typed amounts a new first month or length would drop. */

@@ -31,7 +31,7 @@ export function usePlans() {
     if (!budgetSyncId || !query.data || loadedBudget === budgetSyncId) return;
     let preferred: string | null = null;
     try { preferred = sessionStorage.getItem(ACTIVE_KEY(budgetSyncId)); } catch { /* storage may be unavailable */ }
-    hydrate(budgetSyncId, query.data, preferred);
+    hydrate(budgetSyncId, query.data.plans, preferred, query.data.unreadable);
   }, [budgetSyncId, query.data, loadedBudget, hydrate]);
 
   useEffect(() => {
@@ -47,9 +47,12 @@ export function usePlans() {
  * tried again on the next edit or on Retry; a plan changed in another tab is never overwritten without the user saying so.
  * Plain functions over the store, so nothing here depends on React's render cycle.
  */
-function createAutosave(budgetSyncId: string) {
+export function createAutosave(budgetSyncId: string) {
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
   const running = new Set<string>();
+  let disposed = false;
+  /** The page is going away or hidden: a follow-up save then goes out at once, with keepalive. */
+  let leaving = false;
 
   const schedule = (id: string) => {
     const existing = timers.get(id);
@@ -57,7 +60,8 @@ function createAutosave(budgetSyncId: string) {
     timers.set(id, setTimeout(() => { timers.delete(id); void save(id); }, SAVE_DELAY_MS));
   };
 
-  const save = async (id: string, force = false) => {
+  /** `keepalive` is for a page that is really going away; the request layer drops it when the body is too large for it. */
+  const save = async (id: string, force = false, keepalive = false) => {
     if (running.has(id)) return;
     const state = useCashflowStore.getState();
     const current = state.sessions[id];
@@ -67,32 +71,37 @@ function createAutosave(budgetSyncId: string) {
     const sent = current.doc;
     state.saving(id);
     try {
-      const record = await savePlan({ budgetSyncId, id, baseRevision: current.revision, force, document: sent });
+      const record = await savePlan({ budgetSyncId, id, baseRevision: current.revision, force, document: sent }, { keepalive });
       useCashflowStore.getState().savedAs(id, record, sent);
     } catch (error) {
       useCashflowStore.getState().failed(id, error instanceof PlanConflictError ? "conflict" : "error", error instanceof Error ? error.message : "Could not save the plan");
     } finally {
       running.delete(id);
-      // Edits made while the save was on its way.
-      if (useCashflowStore.getState().sessions[id]?.status === "dirty") schedule(id);
+      // Edits made while the save was on its way. After dispose, or on a page that is going away, no timer may be left
+      // behind: the follow-up is sent directly, and `save` keeps it one at a time.
+      if (useCashflowStore.getState().sessions[id]?.status === "dirty") {
+        if (disposed || leaving) void save(id, false, leaving);
+        else schedule(id);
+      }
     }
   };
 
-  /** Saves what is pending right away (the page or the tab is going away). */
-  const flush = () => {
+  /** Saves what is pending right away, through the same one-at-a-time path as every other save. */
+  const flush = (keepalive: boolean) => {
     const state = useCashflowStore.getState();
     if (state.budgetSyncId !== budgetSyncId) return;
     for (const id of state.order) {
-      const s = state.sessions[id];
-      if (!s || s.doc === s.saved || s.status === "conflict" || running.has(id)) continue;
       const timer = timers.get(id);
       if (timer) { clearTimeout(timer); timers.delete(id); }
-      const sent = s.doc;
-      void savePlan({ budgetSyncId, id, baseRevision: s.revision, document: sent }, { keepalive: true })
-        .then((record) => useCashflowStore.getState().savedAs(id, record, sent))
-        .catch(() => undefined);
+      void save(id, false, keepalive);
     }
   };
+
+  // A plan left unsaved (a failed leave-save, or an error) is tried again as soon as the plans are open.
+  for (const id of useCashflowStore.getState().order) {
+    const s = useCashflowStore.getState().sessions[id];
+    if (useCashflowStore.getState().budgetSyncId === budgetSyncId && s && s.doc !== s.saved && s.status !== "conflict") schedule(id);
+  }
 
   const unsubscribe = useCashflowStore.subscribe((state, previous) => {
     for (const id of state.order) {
@@ -100,8 +109,11 @@ function createAutosave(budgetSyncId: string) {
       if (now && now.doc !== before?.doc && now.doc !== now.saved && now.status !== "conflict") schedule(id);
     }
   });
-  const beforeUnload = (event: BeforeUnloadEvent) => { if (hasUnsavedPlans()) { flush(); event.preventDefault(); } };
-  const hidden = () => { if (document.visibilityState === "hidden") flush(); };
+  const beforeUnload = (event: BeforeUnloadEvent) => { if (hasUnsavedPlans()) { leaving = true; flush(true); event.preventDefault(); } };
+  const hidden = () => {
+    leaving = document.visibilityState === "hidden";
+    if (leaving) flush(true);
+  };
   window.addEventListener("beforeunload", beforeUnload);
   document.addEventListener("visibilitychange", hidden);
 
@@ -111,7 +123,9 @@ function createAutosave(budgetSyncId: string) {
       unsubscribe();
       window.removeEventListener("beforeunload", beforeUnload);
       document.removeEventListener("visibilitychange", hidden);
-      flush();
+      // Leaving the page inside the app: the page is not unloading, so this is an ordinary save and a failure is recorded.
+      flush(false);
+      disposed = true;
       for (const timer of timers.values()) clearTimeout(timer);
     },
   };
@@ -156,11 +170,24 @@ export function usePlanActions(budgetSyncId: string | null) {
     }
   }, [budgetSyncId]);
 
+  /** Deletes a stored plan this build cannot read. It is only removed, never repaired or rewritten. */
+  const removeUnreadable = useCallback(async (id: string): Promise<void> => {
+    if (!budgetSyncId) return;
+    try {
+      await deletePlan(budgetSyncId, id);
+      useCashflowStore.getState().setUnreadable(useCashflowStore.getState().unreadable.filter((p) => p.id !== id));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not delete the plan");
+    }
+  }, [budgetSyncId]);
+
   /** Drops this tab's copy of a plan and reads what the database holds now. */
   const reload = useCallback(async (id: string): Promise<void> => {
     if (!budgetSyncId) return;
     try {
-      const record = (await listPlans(budgetSyncId)).find((p) => p.id === id);
+      const { plans, unreadable } = await listPlans(budgetSyncId);
+      useCashflowStore.getState().setUnreadable(unreadable);
+      const record = plans.find((p) => p.id === id);
       if (record) useCashflowStore.getState().adopt(record, false);
       else useCashflowStore.getState().remove(id);
     } catch (error) {
@@ -168,5 +195,5 @@ export function usePlanActions(budgetSyncId: string | null) {
     }
   }, [budgetSyncId]);
 
-  return { create, remove, reload };
+  return { create, remove, reload, removeUnreadable };
 }

@@ -114,6 +114,9 @@ export type PlanDocument = {
 };
 
 /** A saved plan as the app database returns it. */
+/** A stored plan this build cannot read, and why. It is reported, never repaired or rewritten. */
+export type UnreadablePlan = { id: string; name: string; why: string };
+
 export type PlanRecord = { id: string; budgetSyncId: string; name: string; revision: number; document: PlanDocument; createdAt: string; updatedAt: string };
 
 export const EMPTY_LINKS: RowLinks = { categories: [], categoryGroups: [], accounts: [] };

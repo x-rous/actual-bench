@@ -31,6 +31,8 @@ export type LedgerRead = {
   uncategorizedIn: DatedAmount[];
   transfersIn: (DatedAmount & { transferAccountId: string })[];
   schedules: SnapSchedule[];
+  /** The schedules could not be read: `schedules` is then empty, which says nothing about the user's links. */
+  schedulesFailed: boolean;
   readAt: string;
 };
 
@@ -60,8 +62,10 @@ export async function readLedger(connection: ConnectionInstance, today: string, 
   onStage?.("Reading schedules…");
   // Schedules are optional: a plan works without them, and a failed read only disables the rows that follow one.
   let schedules: SnapSchedule[] = [];
+  let schedulesFailed = false;
   try {
-    const horizon = `${Number(today.slice(0, 4)) + MAX_YEARS + 1}${today.slice(4)}`;
+    // The last day of a year, which exists in every year (today's month and day would not on 29 February).
+    const horizon = `${Number(today.slice(0, 4)) + MAX_YEARS + 1}-12-31`;
     const payees = new Map((await transport.getPayees()).map((p) => [p.id, p.name]));
     schedules = (await transport.getSchedules()).map((schedule): SnapSchedule => {
       const name = schedule.name?.trim() || (schedule.payeeId ? payees.get(schedule.payeeId) : undefined) || "Unnamed schedule";
@@ -71,8 +75,9 @@ export async function readLedger(connection: ConnectionInstance, today: string, 
     });
   } catch {
     schedules = [];
+    schedulesFailed = true;
   }
-  return { accounts, accountGroups, categories, movement, startingBalances, uncategorizedIn, transfersIn, schedules, readAt: new Date().toISOString() };
+  return { accounts, accountGroups, categories, movement, startingBalances, uncategorizedIn, transfersIn, schedules, schedulesFailed, readAt: new Date().toISOString() };
 }
 
 export type LoanRead = { forecasts: Record<string, LoanForecast>; costs: LoanCostLine[] };

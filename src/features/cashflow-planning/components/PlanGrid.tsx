@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ArrowLeftRight, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Link2Off, Plus, TrendingDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -57,7 +57,8 @@ type Props = {
   onSelect: (selection: GridSelection | null) => void;
   /** The column picked in the header, and the call that picks one. */
   pickedColumn?: string | null;
-  onPickColumn?: (key: string) => void;
+  /** `fromKeyboard`: the grid selection stays where it is, and `null` closes the summary. */
+  onPickColumn?: (key: string | null, fromKeyboard?: boolean) => void;
   /** Collapses every section and group, or opens them all. */
   onCollapseAll: (collapse: boolean) => void;
   onToggle: (key: string) => void;
@@ -111,6 +112,7 @@ type Menu = { x: number; y: number; line: string; col: string | null };
 
 export function PlanGrid({ doc, computed, lines, columns, cents, pastMode, selection, problems, shiftedCells, find, onFind, scrollToken, scrollMonth, pickedColumn, onPickColumn, onSelect, onCollapseAll, onToggle, onEdit, onCommand, onNotice }: Props) {
   const scroller = useRef<HTMLDivElement>(null);
+  const gridId = useId();
   const [editing, setEditing] = useState<{ line: string; col: string; text: string } | null>(null);
   const [renaming, setRenaming] = useState<{ line: string; text: string } | null>(null);
   const [menu, setMenu] = useState<Menu | null>(null);
@@ -323,7 +325,8 @@ export function PlanGrid({ doc, computed, lines, columns, cents, pastMode, selec
       case "Enter": if (startEdit(null)) event.preventDefault(); else if (collapsible) { event.preventDefault(); onToggle(collapsible.key); } return;
       case "F2": event.preventDefault(); if (at?.col === null && line) startRename(line); else startEdit(null); return;
       case "Insert": if (line) { event.preventDefault(); addBelow(line); } return;
-      case "Escape": event.preventDefault(); onSelect(selection?.anchor ? { line: selection.line, col: selection.col } : null); return;
+      // A summary opened from the keyboard closes first, leaving the active cell where it is.
+      case "Escape": event.preventDefault(); if (pickedColumn && selection && onPickColumn) { onPickColumn(null, true); return; } onSelect(selection?.anchor ? { line: selection.line, col: selection.col } : null); return;
       case "Delete":
       case "Backspace": {
         const cells = editableInRange();
@@ -331,6 +334,8 @@ export function PlanGrid({ doc, computed, lines, columns, cents, pastMode, selec
         return;
       }
       case "?": event.preventDefault(); onCommand({ type: "help" }); return;
+      // The keyboard way to what a click on the month or year header does.
+      case "s": case "S": if (!mod && !event.altKey && column && onPickColumn) { event.preventDefault(); onPickColumn(pickedColumn === column.key ? null : column.key, true); } return;
     }
     const k = event.key.toLowerCase();
     if (mod && k === "c") { event.preventDefault(); void copy(); return; }
@@ -406,12 +411,15 @@ export function PlanGrid({ doc, computed, lines, columns, cents, pastMode, selec
   }), []);
 
   const body = lines.filter((l) => !isPinned(l)), pinned = lines.filter(isPinned);
+  // The focus stays on the grid; the active cell (or the row label) is what assistive technology reads out.
+  const activeId = selection && lineIndex.has(selection.line) ? cellId(gridId, selection.line, selection.col ?? "") : undefined;
+
   const renderLine = (line: Line) => {
     const r = lineIndex.get(line.key)!;
     const inRange = range && r >= range.top && r <= range.bottom ? range : null;
     return (
       <GridLine
-        key={line.key} line={line} rowNumber={r + 1} columns={columns} kinds={kinds} cents={cents} pastMode={pastMode} planTotals={planTotals}
+        key={line.key} line={line} gridId={gridId} rowNumber={r + HEADER_ROWS + 1} columns={columns} kinds={kinds} cents={cents} pastMode={pastMode} planTotals={planTotals}
         belowMinimum={line.kind === "balance" && line.key === "closing" ? computed.belowMinimum : null}
         activeCol={selection?.line === line.key ? selection.col ?? "" : null}
         rangeLeft={inRange ? inRange.left : -1} rangeRight={inRange ? inRange.right : -1}
@@ -429,35 +437,35 @@ export function PlanGrid({ doc, computed, lines, columns, cents, pastMode, selec
 
   return (
     <div
-      ref={scroller} tabIndex={0} role="grid" aria-label="Cash plan" aria-rowcount={lines.length} onKeyDown={onKeyDown}
+      ref={scroller} tabIndex={0} role="grid" aria-label="Cash plan" aria-rowcount={lines.length + HEADER_ROWS} aria-colcount={columns.length + 1} aria-activedescendant={activeId} onKeyDown={onKeyDown}
       onPaste={(event) => { if (!editing && !renaming && event.target === event.currentTarget) { event.preventDefault(); paste(event.clipboardData.getData("text/plain")); } }}
       // A click on the empty space around the table clears the selection, which shows the plan overview again.
       onMouseDown={(e) => { if (e.target === e.currentTarget) onSelect(null); }}
       className="relative min-h-0 flex-1 overflow-auto outline-none focus-visible:ring-1 focus-visible:ring-ring/60"
       style={{ scrollPaddingLeft: LABEL_WIDTH, scrollPaddingTop: 56, scrollPaddingBottom: 58 }}
     >
-      <table className="border-separate border-spacing-0 text-xs select-none" style={{ tableLayout: "fixed", width: LABEL_WIDTH + columns.reduce((sum, c) => sum + (c.kind === "year" ? yearWidth : monthWidth), 0) }}>
+      <table role="presentation" className="border-separate border-spacing-0 text-xs select-none" style={{ tableLayout: "fixed", width: LABEL_WIDTH + columns.reduce((sum, c) => sum + (c.kind === "year" ? yearWidth : monthWidth), 0) }}>
         <colgroup>
           <col style={{ width: LABEL_WIDTH, minWidth: LABEL_WIDTH }} />
           {columns.map((c) => <col key={c.key} style={{ width: c.kind === "year" ? yearWidth : monthWidth, minWidth: c.kind === "year" ? yearWidth : monthWidth }} />)}
         </colgroup>
-        <thead className="sticky top-0 z-30">
-          <tr>
-            <th scope="col" rowSpan={2} className="sticky left-0 z-40 border-b border-r border-border bg-background px-2 text-left align-middle font-normal">
+        <thead role="rowgroup" className="sticky top-0 z-30">
+          <tr role="row" aria-rowindex={1}>
+            <th role="columnheader" scope="col" rowSpan={2} aria-colindex={1} className="sticky left-0 z-40 border-b border-r border-border bg-background px-2 text-left align-middle font-normal">
               <div className="flex items-center gap-1">
                 <SearchInput value={find} onValueChange={onFind} placeholder="Find a row" aria-label="Find a row by name" className="h-7 min-w-0 flex-1 text-xs" />
                 <button type="button" tabIndex={-1} onClick={() => onCollapseAll(false)} aria-label="Expand all sections and groups" title="Expand all" className="flex size-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"><ChevronsUpDown className="size-4" aria-hidden /></button>
                 <button type="button" tabIndex={-1} onClick={() => onCollapseAll(true)} aria-label="Collapse all sections and groups" title="Collapse all" className="flex size-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"><ChevronsDownUp className="size-4" aria-hidden /></button>
               </div>
             </th>
-            {years.map((band) => <th key={band.year} scope="colgroup" colSpan={band.span} className="h-6 border-b border-l border-border bg-muted px-2 text-left text-[11px] font-semibold"><span className="sticky inline-block" style={{ left: LABEL_WIDTH + 8 }}>{band.year}</span></th>)}
+            {years.map((band) => <th key={band.year} role="columnheader" scope="colgroup" colSpan={band.span} className="h-6 border-b border-l border-border bg-muted px-2 text-left text-[11px] font-semibold"><span className="sticky inline-block" style={{ left: LABEL_WIDTH + 8 }}>{band.year}</span></th>)}
           </tr>
-          <tr>
+          <tr role="row" aria-rowindex={2}>
             {columns.map((c) => {
-              if (c.kind === "year") return <th key={c.key} scope="col" onClick={() => onPickColumn?.(c.key)} title="Show a summary of this year" className={cn("h-8 cursor-pointer border-b border-l border-border bg-muted px-2 text-right text-[11px] font-semibold hover:bg-accent", pickedColumn === c.key && "bg-accent shadow-[inset_0_-2px_0_var(--primary)]")}>{c.partial ? "Total*" : "Total"}{c.partial && <span className="sr-only"> (not a full year in this plan)</span>}</th>;
+              if (c.kind === "year") return <th key={c.key} role="columnheader" scope="col" aria-selected={pickedColumn === c.key} onClick={() => onPickColumn?.(c.key)} title="Show a summary of this year (S on a cell of this column)" className={cn("h-8 cursor-pointer border-b border-l border-border bg-muted px-2 text-right text-[11px] font-semibold hover:bg-accent", pickedColumn === c.key && "bg-accent shadow-[inset_0_-2px_0_var(--primary)]")}>{c.partial ? "Total*" : "Total"}{c.partial && <span className="sr-only"> (not a full year in this plan)</span>}</th>;
               const kind = kinds[c.index];
               return (
-                <th key={c.key} scope="col" data-month={c.month} data-now={kind === "current" || undefined} onClick={() => onPickColumn?.(c.key)} title="Show a summary of this month" className={cn("h-8 cursor-pointer border-b border-border bg-background px-2 text-right align-middle font-medium hover:bg-accent", pickedColumn === c.key && "bg-accent shadow-[inset_0_-2px_0_var(--primary)]", kind === "current" && "bg-[color-mix(in_oklab,var(--primary)_10%,var(--background))]", c.index === computed.currentIndex + 1 && computed.currentIndex >= 0 && "border-l")}>
+                <th key={c.key} role="columnheader" scope="col" aria-selected={pickedColumn === c.key} data-month={c.month} data-now={kind === "current" || undefined} onClick={() => onPickColumn?.(c.key)} title="Show a summary of this month (S on a cell of this column)" className={cn("h-8 cursor-pointer border-b border-border bg-background px-2 text-right align-middle font-medium hover:bg-accent", pickedColumn === c.key && "bg-accent shadow-[inset_0_-2px_0_var(--primary)]", kind === "current" && "bg-[color-mix(in_oklab,var(--primary)_10%,var(--background))]", c.index === computed.currentIndex + 1 && computed.currentIndex >= 0 && "border-l")}>
                   <span className="block leading-tight">{monthShort(c.month)}</span>
                   <span className={cn("block text-[10px] font-normal leading-tight text-muted-foreground", kind === "current" && "font-medium text-foreground")}>{doc.useActuals ? KIND_LABEL[kind] : "Plan"}</span>
                 </th>
@@ -465,12 +473,12 @@ export function PlanGrid({ doc, computed, lines, columns, cents, pastMode, selec
             })}
           </tr>
         </thead>
-        <tbody>
+        <tbody role="rowgroup">
           {body.map(renderLine)}
-          {find.trim() !== "" && !body.some((l) => l.kind === "row") && <tr><td colSpan={columns.length + 1} className="px-3 py-4 text-muted-foreground">No row is named like “{find.trim()}”.</td></tr>}
+          {find.trim() !== "" && !body.some((l) => l.kind === "row") && <tr role="row"><td role="gridcell" colSpan={columns.length + 1} className="px-3 py-4 text-muted-foreground">No row is named like “{find.trim()}”.</td></tr>}
         </tbody>
         {/* What everything above adds up to stays in view. */}
-        <tfoot className="sticky bottom-0 z-30 shadow-[0_-1px_0_var(--border)]">{pinned.map(renderLine)}</tfoot>
+        <tfoot role="rowgroup" className="sticky bottom-0 z-30 shadow-[0_-1px_0_var(--border)]">{pinned.map(renderLine)}</tfoot>
       </table>
       {menu && <ContextMenu menu={menu} lines={lines} columns={columns} kinds={kinds} onClose={() => { setMenu(null); focusGrid(); }} onCommand={onCommand} onRename={(line) => startRename(line)} onAddBelow={addBelow} onClear={() => { const cells = editableInRange(); if (cells.length) onEdit(cells.map((c) => ({ rowId: c.rowId, month: c.month, amount: null }))); }} onCopy={() => void copy()} />}
     </div>
@@ -557,7 +565,7 @@ type LineHandlers = {
 };
 
 type LineProps = {
-  line: Line; rowNumber: number; columns: Column[]; kinds: readonly MonthKind[]; cents: boolean; pastMode: PastMode;
+  line: Line; gridId: string; rowNumber: number; columns: Column[]; kinds: readonly MonthKind[]; cents: boolean; pastMode: PastMode;
   planTotals: ReadonlyMap<string, (number | null)[]> | null;
   belowMinimum: readonly boolean[] | null;
   /** The active column key on this line, "" when the line itself is selected, null when it is not. */
@@ -578,6 +586,12 @@ type LineProps = {
   handlers: LineHandlers;
 };
 
+/** The two header lines above the body, which count in the grid's row numbers. */
+const HEADER_ROWS = 2;
+
+/** The element id of a cell (or of a line's label when `col` is empty), which the grid names as its active descendant. */
+const cellId = (gridId: string, line: string, col: string) => `${gridId}-${line}-${col}`.replace(/\s+/g, "_");
+
 const ROW_MIME = "application/x-cashflow-row";
 
 /** Where a dragged row would land relative to the line it is over. */
@@ -593,7 +607,7 @@ function toneOf(doc: PlanDocument, line: Line): { fill: string; stripe: string }
   return { fill: mix(Math.round(strength * 0.24)), stripe: mix(strength) };
 }
 
-const GridLine = memo(function GridLine({ line, rowNumber, columns, kinds, cents, pastMode, planTotals, belowMinimum, activeCol, rangeLeft, rangeRight, fillRight, handleAt, editing, renaming, problem, unlinked, shiftedCells, dropTarget, tone, handlers }: LineProps) {
+const GridLine = memo(function GridLine({ line, gridId, rowNumber, columns, kinds, cents, pastMode, planTotals, belowMinimum, activeCol, rangeLeft, rangeRight, fillRight, handleAt, editing, renaming, problem, unlinked, shiftedCells, dropTarget, tone, handlers }: LineProps) {
   const strong = line.kind === "section" || line.kind === "balance" || (line.kind === "memo" && (line.key === "net" || line.key === "total"));
   const band = line.kind === "section";
   const pinned = isPinned(line);
@@ -606,7 +620,7 @@ const GridLine = memo(function GridLine({ line, rowNumber, columns, kinds, cents
 
   return (
     <tr
-      aria-rowindex={rowNumber} className={cn("group/line", dropTarget === "before" && "[&>*]:shadow-[inset_0_2px_0_var(--primary)]", dropTarget === "after" && "[&>*]:shadow-[inset_0_-2px_0_var(--primary)]")}
+      role="row" aria-rowindex={rowNumber} className={cn("group/line", dropTarget === "before" && "[&>*]:shadow-[inset_0_2px_0_var(--primary)]", dropTarget === "after" && "[&>*]:shadow-[inset_0_-2px_0_var(--primary)]")}
       // A row dropped on the upper half of a row goes above it, on the lower half below it, in the same group; on a group or
       // section heading it joins it. The whole line is the target, not only its name.
       onDragOver={droppable ? (e) => {
@@ -628,7 +642,7 @@ const GridLine = memo(function GridLine({ line, rowNumber, columns, kinds, cents
       } : undefined}
     >
       <th
-        scope="row"
+        id={cellId(gridId, line.key, "")} role="rowheader" scope="row" aria-selected={activeCol === ""}
         onContextMenu={(e) => handlers.menu(line.key, null, e)}
         style={tone && activeCol === null ? { backgroundColor: tone.fill } : undefined}
         className={cn("sticky left-0 z-20 h-7 border-b border-r border-border/60 bg-background p-0 text-left font-normal", rowTone, activeCol !== null && "bg-accent", activeCol === "" && "outline outline-2 -outline-offset-2 outline-primary", dropTarget === "into" && "bg-accent shadow-[inset_0_0_0_2px_var(--primary)]")}
@@ -680,7 +694,7 @@ const GridLine = memo(function GridLine({ line, rowNumber, columns, kinds, cents
         if (column.kind === "year") {
           const total = aggregate(values, column.indexes, line.aggregate);
           return (
-            <td key={column.key} data-cell={cellKey} role="gridcell" aria-selected={active} {...mouse}
+            <td key={column.key} id={cellId(gridId, line.key, column.key)} data-cell={cellKey} role="gridcell" aria-selected={active} {...mouse}
               style={tone && !inRange ? { backgroundColor: tone.fill } : undefined}
               className={cn("relative z-0 h-7 cursor-default border-b border-l border-border/60 px-2 text-right font-medium tabular-nums whitespace-nowrap", pinned ? "bg-muted" : "bg-muted/50", band && "bg-muted", strong && "font-semibold", inRange && "bg-accent", active && "outline outline-2 -outline-offset-2 outline-primary")}>
               {total === 0 && (line.kind === "row" || line.kind === "unplanned") ? "" : formatCell(total, cents)}
@@ -698,7 +712,7 @@ const GridLine = memo(function GridLine({ line, rowNumber, columns, kinds, cents
         const shifted = shiftedCells.has(`${line.key}|${column.month}`);
         if (editing?.col === column.key) {
           return (
-            <td key={column.key} data-cell={cellKey} role="gridcell" className="h-7 border-b border-border/40 p-0">
+            <td key={column.key} id={cellId(gridId, line.key, column.key)} data-cell={cellKey} role="gridcell" aria-selected className="h-7 border-b border-border/40 p-0">
               <Input
                 autoFocus value={editing.text} aria-label={`${label}, ${column.month}`} inputMode="decimal"
                 onChange={(e) => handlers.editText(e.target.value)}
@@ -716,7 +730,7 @@ const GridLine = memo(function GridLine({ line, rowNumber, columns, kinds, cents
         }
         return (
           <td
-            key={column.key} data-cell={cellKey} role="gridcell" aria-selected={active} aria-readonly={!editable} {...mouse}
+            key={column.key} id={cellId(gridId, line.key, column.key)} data-cell={cellKey} role="gridcell" aria-selected={active} aria-readonly={!editable} {...mouse}
             style={tone && !inRange ? { backgroundColor: tone.fill } : undefined}
             onDoubleClick={() => { if (editable && line.kind === "row") { const cell = line.row.cells[column.month]; handlers.startEdit(line.key, column.key, cell !== undefined ? formatAmountInput(cell) : ""); } }}
             title={typed ? "Typed amount (overrides the forecast)" : shifted ? "Includes or leaves out a transaction counted in another month" : undefined}

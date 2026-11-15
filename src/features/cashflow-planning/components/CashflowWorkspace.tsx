@@ -17,11 +17,11 @@ import { usePersistedFilters } from "@/hooks/usePersistedFilters";
 import { useLocalToday } from "@/features/assets-debt/lib/useLocalToday";
 import { TipProvider } from "@/features/financial-insights/components/charts/Tip";
 import { money } from "@/features/financial-insights/format";
-import { placeActualsCached, unplannedTarget, type Placed } from "@/lib/cashflow-planning/actuals";
+import { placeActualsCached, unplannedTarget, type OptionalRead, type Placed } from "@/lib/cashflow-planning/actuals";
 import { NAME_MAX, PlanDocumentError, addGroup, addRow, duplicateDocument, exportPlanJson, importPlanJson, moveGroup, moveRow, moveRowBefore, placeRow, removeRow, renameGroup, setCells, updateRow } from "@/lib/cashflow-planning/document";
 import { computePlan, type Computed } from "@/lib/cashflow-planning/engine";
 import { monthLabel, yearOf } from "@/lib/cashflow-planning/months";
-import { SECTIONS, SECTION_LABEL, type Month, type PlanDocument, type PlanRow, type SectionId } from "@/lib/cashflow-planning/types";
+import { SECTIONS, SECTION_LABEL, type Month, type PlanDocument, type PlanRow, type SectionId, type UnreadablePlan } from "@/lib/cashflow-planning/types";
 import { FEATURES } from "@/lib/features/catalogue";
 import { requestFor } from "../lib/transactions";
 import { MonthJumpPopover } from "@/features/budget-management/components/MonthJumpPopover";
@@ -58,6 +58,7 @@ export function CashflowWorkspace() {
   const order = useCashflowStore((s) => s.order);
   const sessions = useCashflowStore((s) => s.sessions);
   const activeId = useCashflowStore((s) => s.activeId);
+  const unreadable = useCashflowStore((s) => s.unreadable);
   const session = activeId ? sessions[activeId] ?? null : null;
   const autosave = usePlanAutosave(plans.budgetSyncId);
   const actions = usePlanActions(plans.budgetSyncId);
@@ -99,6 +100,7 @@ export function CashflowWorkspace() {
           <Button onClick={() => setNewPlan(true)} disabled={data.state === "loading"}>{data.state === "loading" ? <><Loader2 className="size-3.5 animate-spin" aria-hidden />{data.stage ?? "Reading Actual…"}</> : <><Plus className="size-3.5" aria-hidden />Create your first plan</>}</Button>
           {data.state === "error" && <p className="text-xs text-muted-foreground" role="status">Actual could not be read ({data.message}), so a plan can only start empty for now. <button type="button" className="underline underline-offset-2" onClick={data.retry}>Try again</button></p>}
           <p className="text-xs text-muted-foreground">Plans are saved in Actual Bench. Nothing is ever written to Actual.</p>
+          <UnreadableNotice plans={unreadable} onDelete={(id) => void actions.removeUnreadable(id)} />
         </div>
         {dialog}
       </PageLayout>
@@ -112,11 +114,38 @@ export function CashflowWorkspace() {
         planOptions={order.map((id) => ({ value: id, label: sessions[id]?.doc.name ?? "Plan" }))}
         onNewPlan={() => setNewPlan(true)} onRetrySave={() => autosave.retry(session.id)} onOverwrite={() => autosave.overwrite(session.id)}
         onReload={() => void actions.reload(session.id)} onDelete={() => actions.remove(session.id)} onCreate={createPlan}
+        unreadable={unreadable} onDeleteUnreadable={(id) => void actions.removeUnreadable(id)}
       />
       {dialog}
     </TipProvider>
   );
 }
+
+/** Stored plans this version cannot read. They still count toward the plan limit, so each can be deleted; none is ever repaired. */
+function UnreadableNotice({ plans, onDelete }: { plans: UnreadablePlan[]; onDelete: (id: string) => void }) {
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
+  if (plans.length === 0) return null;
+  return (
+    <div role="status" className="space-y-1 rounded-md border border-amber-500/40 bg-amber-50 px-3 py-2 text-left text-xs text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+      <p>{plans.length === 1 ? "1 saved plan cannot be read by this version" : `${plans.length} saved plans cannot be read by this version`} (a newer version may have written {plans.length === 1 ? "it" : "them"}). {plans.length === 1 ? "It still counts" : "They still count"} toward the limit of plans.</p>
+      <ul className="space-y-0.5">
+        {plans.map((p) => (
+          <li key={p.id} className="flex items-center justify-between gap-2">
+            <span className="min-w-0 truncate"><span className="font-medium">{p.name || "Unnamed plan"}</span>: {p.why}</span>
+            <Button size="xs" variant="outline" onClick={() => setConfirm({ title: `Delete "${p.name || "Unnamed plan"}"?`, message: "This stored plan cannot be read here, so it cannot be exported first. It is removed from Actual Bench for good. Nothing in Actual changes.", destructive: true, destructiveLabel: "Delete plan", onConfirm: () => onDelete(p.id) })}>Delete…</Button>
+          </li>
+        ))}
+      </ul>
+      <ConfirmDialog open={!!confirm} onOpenChange={(open) => { if (!open) setConfirm(null); }} state={confirm} />
+    </div>
+  );
+}
+
+const FAILED_READ: Record<OptionalRead, string> = {
+  schedules: "Actual's schedules could not be read, so rows that follow a schedule have no forecast.",
+  loans: "The loan schedules could not be read, so loan repayment rows have no forecast.",
+  shifts: "The tagged and moved transactions could not be read, so they count in their original months.",
+};
 
 function Centered({ title, detail, action, busy }: { title: string; detail?: string; action?: React.ReactNode; busy?: boolean }) {
   return (
@@ -141,9 +170,10 @@ type PlanViewProps = {
   planOptions: { value: string; label: string }[];
   onNewPlan: () => void; onRetrySave: () => void; onOverwrite: () => void; onReload: () => void;
   onDelete: () => Promise<boolean>; onCreate: (doc: PlanDocument) => Promise<void>;
+  unreadable: UnreadablePlan[]; onDeleteUnreadable: (id: string) => void;
 };
 
-function PlanView({ session, doc, data, today, planOptions, onNewPlan, onRetrySave, onOverwrite, onReload, onDelete, onCreate }: PlanViewProps) {
+function PlanView({ session, doc, data, today, planOptions, onNewPlan, onRetrySave, onOverwrite, onReload, onDelete, onCreate, unreadable, onDeleteUnreadable }: PlanViewProps) {
   const store = useCashflowStore;
   const [view, setView] = usePersistedFilters<ViewPrefs>("filters:cashflow-planning", DEFAULT_VIEW);
   const [selection, setSelection] = useState<GridSelection | null>(null);
@@ -386,10 +416,11 @@ function PlanView({ session, doc, data, today, planOptions, onNewPlan, onRetrySa
     <PageLayout header={header} scrollManaged>
       {session.status === "conflict" && (
         <div role="alert" className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-amber-500/40 bg-amber-50 px-4 py-1.5 text-xs text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
-          <span>This plan was changed somewhere else (another tab or device) after it was opened here, so your changes here have not been saved.</span>
+          <span>This plan was changed or deleted somewhere else (another tab or device) after it was opened here, so your changes here have not been saved. If it was deleted, loading the other version closes it here, and keeping yours puts it back.</span>
           <span className="flex gap-1.5"><Button size="xs" variant="outline" onClick={onReload}>Load the other version</Button><Button size="xs" variant="outline" onClick={onOverwrite}>Keep mine and overwrite</Button></span>
         </div>
       )}
+      {unreadable.length > 0 && <div className="shrink-0 px-4 pt-2"><UnreadableNotice plans={unreadable} onDelete={onDeleteUnreadable} /></div>}
       {doc.useActuals && data.state === "error" ? (
         <Centered title="Actual could not be read" detail={`${data.message}. This plan uses Actual for past months and balances, so nothing is shown until the read succeeds.`} action={<Button size="sm" onClick={data.retry}>Try again</Button>} />
       ) : !computed ? (
@@ -409,7 +440,12 @@ function PlanView({ session, doc, data, today, planOptions, onNewPlan, onRetrySa
                 doc={doc} computed={computed} lines={lines} columns={columns} cents={view.cents} pastMode={view.pastMode} selection={selection} problems={problems}
                 shiftedCells={shiftedCells} find={find} onFind={setFind} scrollToken={scrollToken} scrollMonth={scrollMonth}
                 onSelect={(next) => { setSelection(next); setPickedColumn(null); }}
-                pickedColumn={pickedColumn} onPickColumn={(key) => { setSelection(null); setPickedColumn(key); setView((v) => ({ ...v, details: true })); }}
+                pickedColumn={pickedColumn} onPickColumn={(key, fromKeyboard) => {
+                  // A click on a header replaces the selection; the keyboard keeps the active cell, and the summary stands in for its details until the cell moves or Escape closes it.
+                  if (!fromKeyboard) setSelection(null);
+                  setPickedColumn(key);
+                  if (key) setView((v) => ({ ...v, details: true }));
+                }}
                 onCollapseAll={(collapse) => setView((v) => ({ ...v, collapsed: collapse ? [...SECTIONS.map((x) => `section:${x}`), ...doc.groups.map((g) => `group:${g.id}`)] : [] }))}
                 onToggle={(k) => setView((v) => ({ ...v, collapsed: v.collapsed.includes(k) ? v.collapsed.filter((x) => x !== k) : [...v.collapsed, k] }))}
                 onEdit={editCells} onCommand={onCommand} onNotice={(message) => toast.message(message)}
@@ -417,7 +453,7 @@ function PlanView({ session, doc, data, today, planOptions, onNewPlan, onRetrySa
             </div>
             {view.details && (
               <Inspector
-                doc={doc} computed={computed} snapshot={snapshot} placed={placed} line={selectedLine} column={selectedColumn} problems={problems}
+                doc={doc} computed={computed} snapshot={snapshot} placed={placed} line={pickedColumnValue ? null : selectedLine} column={pickedColumnValue ? null : selectedColumn} problems={problems}
                 width={Math.min(INSPECTOR_MAX, Math.max(INSPECTOR_MIN, view.panelWidth))} onResize={(panelWidth) => setView((v) => ({ ...v, panelWidth }))}
                 onEdit={edit} onSelectLine={selectLine} onAddRow={addRowTo} onDeleteRow={deleteRow} onShowTransactions={setTransactions}
                 onClose={() => setView((v) => ({ ...v, details: false }))}
@@ -489,10 +525,16 @@ function Overview({ doc, computed, data, problems, placed, onShowUnplanned, onSe
         </section>
       )}
 
-      {doc.useActuals && data.state === "ready" && (data.unclassified > 0 || data.pending.loans || data.pending.budget) && (
+      {doc.useActuals && data.state === "ready" && (data.unclassified > 0 || data.pending.loans || data.pending.budget || data.failedReads.length > 0) && (
         <section className="space-y-1.5">
           <h3 className={heading}>Actual data</h3>
           {data.unclassified > 0 && <p className="text-muted-foreground">{data.unclassified} {data.unclassified === 1 ? "account has" : "accounts have"} no class, so the plan guesses: on budget counts as cash, off budget is left outside. Set classes on the <Link href="/accounts" className="underline underline-offset-2">Accounts</Link> page, or choose per account in Plan settings.</p>}
+          {data.failedReads.length > 0 && (
+            <p className="text-amber-700 dark:text-amber-400" role="status">
+              {data.failedReads.map((r) => FAILED_READ[r]).join(" ")} The plan works without {data.failedReads.length === 1 ? "it" : "them"}, but what depends on {data.failedReads.length === 1 ? "it is" : "them are"} left out.{" "}
+              <button type="button" className="underline underline-offset-2" onClick={data.refresh} disabled={data.refreshing}>Try again</button>
+            </p>
+          )}
           {data.pending.loans && <p className="text-muted-foreground" role="status">Reading loan schedules…</p>}
           {data.pending.budget && <p className="text-muted-foreground" role="status">Reading the budget…</p>}
         </section>

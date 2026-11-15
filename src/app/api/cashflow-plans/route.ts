@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAppDb } from "@/lib/app-db/connection";
 import { appDbErrorResponse, readJsonBody } from "@/lib/app-db/routeResponses";
-import { deleteCashflowPlan, listCashflowPlans, saveCashflowPlan } from "@/lib/app-db/cashflowPlanRepository";
+import { deleteCashflowPlan, listCashflowPlansWithUnreadable, saveCashflowPlan } from "@/lib/app-db/cashflowPlanRepository";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -11,7 +11,7 @@ export function GET(request: Request) {
   try {
     const budget = new URL(request.url).searchParams.get("budgetSyncId")?.trim();
     if (!budget) return NextResponse.json({ error: "budgetSyncId is required" }, { status: 400 });
-    return NextResponse.json({ plans: listCashflowPlans(getAppDb(), budget) });
+    return NextResponse.json(listCashflowPlansWithUnreadable(getAppDb(), budget));
   } catch (error) {
     return appDbErrorResponse(error);
   }

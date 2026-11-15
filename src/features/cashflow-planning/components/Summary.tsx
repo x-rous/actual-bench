@@ -29,18 +29,24 @@ export function SummaryStrip({ doc, computed, onGo }: { doc: PlanDocument; compu
   const { kpis } = computed;
   const minimum = doc.minimumCash;
   const lowest = kpis.lowest12;
+  // Every month of a plan that has ended is a past month: there is no next year to look at.
+  const ended = computed.kinds.length > 0 && computed.kinds.every((k) => k === "actual");
   const average = kpis.next12.months ? Math.round(kpis.next12.net / kpis.next12.months) : 0;
   return (
     <div className="flex shrink-0 border-b border-border bg-background" role="group" aria-label="Key figures">
       <Stat first label={doc.useActuals ? "Cash today" : "Opening cash"} value={money(kpis.cashNow)} detail={doc.useActuals ? "In the plan's cash accounts" : "Typed in Plan settings"} />
-      <Stat label="Lowest point, next 12 months" value={lowest ? money(lowest.amount) : "-"} detail={lowest ? `End of ${monthLabel(lowest.month)}` : undefined} tone={lowest && lowest.amount < (minimum ?? 0) ? "bad" : undefined} onClick={lowest ? () => onGo(lowest.month) : undefined} />
+      <Stat label="Lowest point, next 12 months" value={lowest ? money(lowest.amount) : "-"} detail={lowest ? `End of ${monthLabel(lowest.month)}` : ended ? "This plan has ended" : undefined} tone={lowest && lowest.amount < (minimum ?? 0) ? "bad" : undefined} onClick={lowest ? () => onGo(lowest.month) : undefined} />
       {minimum === null
         ? <Stat label="Minimum cash" value="Not set" detail="Set one in Plan settings" />
-        : kpis.firstBelow
+        : ended
+          ? <Stat label={`Minimum cash (${money(minimum)})`} value="-" detail="This plan has ended" />
+          : kpis.firstBelow
           ? <Stat label={`Below the minimum (${money(minimum)})`} value={monthLabel(kpis.firstBelow)} detail="First month it happens" tone="bad" onClick={() => onGo(kpis.firstBelow!)} />
           : <Stat label={`Minimum cash (${money(minimum)})`} value="Never below" detail="Through the whole plan" tone="good" />}
       {kpis.endOfYear && <Stat label={`End of ${kpis.endOfYear.month.slice(0, 4)}`} value={money(kpis.endOfYear.amount)} detail="Forecast closing balance" onClick={() => onGo(kpis.endOfYear!.month)} />}
-      <Stat label="Next 12 months, net" value={money(kpis.next12.net)} detail={`${money(average)} a month on average`} tone={kpis.next12.net < 0 ? "bad" : undefined} />
+      {ended
+        ? <Stat label="Next 12 months, net" value="-" detail="This plan has ended" />
+        : <Stat label="Next 12 months, net" value={money(kpis.next12.net)} detail={`${money(average)} a month on average`} tone={kpis.next12.net < 0 ? "bad" : undefined} />}
       <Stat label={`End of plan (${monthLabel(kpis.endOfPlan.month)})`} value={money(kpis.endOfPlan.amount)} detail={computed.savings ? `With savings ${money(kpis.endOfPlan.amount + computed.savings[computed.savings.length - 1])}` : undefined} />
     </div>
   );

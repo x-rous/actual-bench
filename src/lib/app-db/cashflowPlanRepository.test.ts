@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { createPlanDocument, createRow } from "@/lib/cashflow-planning/document";
 import { AppDbConflictError, AppDbValidationError } from "./errors";
 import { getAppDb, resetAppDbForTests } from "./connection";
-import { deleteCashflowPlan, listCashflowPlans, saveCashflowPlan } from "./cashflowPlanRepository";
+import { deleteCashflowPlan, listCashflowPlans, listCashflowPlansWithUnreadable, saveCashflowPlan } from "./cashflowPlanRepository";
 import type { SqliteDatabase } from "./types";
 
 function tempDb(): SqliteDatabase {
@@ -43,10 +43,23 @@ describe("cashflow plan repository", () => {
     expect(listCashflowPlans(db, "b2")).toHaveLength(1);
   });
 
+  it("does not bring back a deleted plan unless the save says to", () => {
+    const db = tempDb();
+    const created = saveCashflowPlan(db, { budgetSyncId: "b1", document: document() });
+    deleteCashflowPlan(db, "b1", created.id);
+    // Another tab's autosave still holds the plan at revision 1.
+    expect(() => saveCashflowPlan(db, { budgetSyncId: "b1", id: created.id, baseRevision: 1, document: document() })).toThrow(AppDbConflictError);
+    expect(listCashflowPlans(db, "b1")).toEqual([]);
+    // Choosing to keep it brings it back deliberately.
+    expect(saveCashflowPlan(db, { budgetSyncId: "b1", id: created.id, baseRevision: 1, force: true, document: document() })).toMatchObject({ id: created.id, revision: 1 });
+    expect(listCashflowPlans(db, "b1")).toHaveLength(1);
+  });
+
   it("skips a stored plan this version cannot read", () => {
     const db = tempDb();
     saveCashflowPlan(db, { budgetSyncId: "b1", document: document() });
     db.prepare("INSERT INTO cashflow_plans (budget_sync_id, id, name, revision, document, created_at, updated_at) VALUES ('b1','future','Future',1,'{\"schemaVersion\":99}','t','t')").run();
     expect(listCashflowPlans(db, "b1").map((p) => p.name)).toEqual(["Household"]);
+    expect(listCashflowPlansWithUnreadable(db, "b1").unreadable).toEqual([{ id: "future", name: "Future", why: expect.any(String) }]);
   });
 });
