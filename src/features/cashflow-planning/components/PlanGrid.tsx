@@ -617,8 +617,8 @@ function ContextMenu({ menu, lines, columns, kinds, onClose, onCommand, onRename
   return (
     <div
       ref={box} role="menu" aria-label={`Actions for ${labelOf(line)}`} onKeyDown={move}
-      className="fixed z-[80] min-w-56 rounded-lg bg-popover p-1 text-sm text-popover-foreground shadow-lg ring-1 ring-foreground/10"
-      style={{ left: Math.min(menu.x, window.innerWidth - 260), top: Math.min(menu.y, window.innerHeight - items.length * 30 - 16) }}
+      className="fixed z-[80] min-w-48 rounded-lg bg-popover p-1 text-xs text-popover-foreground shadow-lg ring-1 ring-foreground/10"
+      style={{ left: Math.min(menu.x, window.innerWidth - 220), top: Math.min(menu.y, window.innerHeight - items.length * 26 - 16) }}
     >
       {items.map((item, i) => item === "separator" ? <div key={i} role="separator" className="my-1 h-px bg-border" /> : (
         <button key={i} type="button" role="menuitem" onClick={() => { onClose(); item.run(); }} className={cn("flex w-full rounded-md px-2 py-1 text-left outline-none hover:bg-accent focus-visible:bg-accent", item.danger && "text-destructive")}>{item.label}</button>

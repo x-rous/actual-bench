@@ -354,12 +354,31 @@ function PlanView({ session, doc, data, today, planOptions, onNewPlan, onRetrySa
     }
   };
 
+  const divider = <div className="mx-1 h-5 w-px shrink-0 bg-border/60" aria-hidden="true" />;
   const header = (
     <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-border px-4 py-2">
       <h1 className="text-sm font-semibold">Cashflow Plan</h1>
       <Select size="sm" className="w-56" value={session.id} title="Open another plan" onValueChange={(id) => store.getState().select(id)} options={planOptions} />
       <SaveStatusBadge session={session} onRetry={onRetrySave} />
+      <div className="flex items-center gap-1.5">
+        <Button size="sm" variant="outline" onClick={() => setSettings(true)}><Settings2 className="size-3.5" aria-hidden />Plan settings</Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger render={<Button size="icon-sm" variant="outline" aria-label="More plan actions" />}><MoreHorizontal className="size-3.5" aria-hidden /></DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-48 text-xs">
+            <DropdownMenuItem className="text-xs" onClick={onNewPlan}>New plan…</DropdownMenuItem>
+            <DropdownMenuItem className="text-xs" onClick={() => void onCreate(duplicateDocument(doc, `${doc.name} copy`))}>Duplicate this plan</DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem className="text-xs" onClick={exportJson}>Export plan (JSON)</DropdownMenuItem>
+            <DropdownMenuItem className="text-xs" onClick={() => fileInput.current?.click()}>Import a plan (JSON)…</DropdownMenuItem>
+            <DropdownMenuItem className="text-xs" onClick={exportCsv} disabled={!computed}>Export figures (CSV)</DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" className="text-xs" onClick={() => setConfirm({ title: `Delete "${doc.name}"?`, message: "The plan is removed from Actual Bench for good. Export it first if you may want it back. Nothing in Actual changes.", destructive: true, destructiveLabel: "Delete plan", onConfirm: () => void onDelete() })}>Delete this plan…</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
       {view.mode === "months" && years.length > 0 && computed && (
+        <>
+        {divider}
         <div className="flex items-center gap-0.5" role="group" aria-label="Year navigation">
           <button type="button" onClick={() => goToWindow(`${years[0]}-01`)} disabled={fromYear <= years[0]} aria-label="First year" title="First year" className={navButton}><ChevronsLeft className="size-3.5" aria-hidden /></button>
           <button type="button" onClick={() => setFromYear(fromYear - 1)} disabled={fromYear <= years[0]} aria-label="Back 1 year" title="Back 1 year" className={navButton}><ChevronLeft className="size-3.5" aria-hidden /></button>
@@ -368,7 +387,9 @@ function PlanView({ session, doc, data, today, planOptions, onNewPlan, onRetrySa
           <button type="button" onClick={() => goToWindow(`${Math.max(years[0], years[years.length - 1] - span + 1)}-01`)} disabled={fromYear + span > years[years.length - 1]} aria-label="Last year" title="Last year" className={navButton}><ChevronsRight className="size-3.5" aria-hidden /></button>
           {doc.useActuals && computed.currentIndex >= 0 && <button type="button" onClick={goToToday} aria-label="Go to the current month" title="Go to the current month" className={cn(navButton, "ml-0.5")}><CalendarDays className="size-3.5" aria-hidden /></button>}
         </div>
+        </>
       )}
+      {divider}
       <PillGroup<ViewPrefs["mode"]> options={[{ value: "months", label: "Months" }, { value: "years", label: "Years" }]} value={view.mode} onChange={(mode) => setView((v) => ({ ...v, mode }))} />
       {doc.useActuals && (
         <div className="flex items-center gap-1.5">
@@ -383,6 +404,7 @@ function PlanView({ session, doc, data, today, planOptions, onNewPlan, onRetrySa
         </div>
       )}
       <div className="ml-auto flex flex-wrap items-center gap-1.5">
+        {divider}
         <Button size="icon-sm" variant="ghost" onClick={undo} disabled={session.past.length === 0} aria-label="Undo" title="Undo (Ctrl+Z)"><Undo2 className="size-3.5" aria-hidden /></Button>
         <Button size="icon-sm" variant="ghost" onClick={redo} disabled={session.future.length === 0} aria-label="Redo" title="Redo (Ctrl+Y)"><Redo2 className="size-3.5" aria-hidden /></Button>
         <Popover>
@@ -395,20 +417,6 @@ function PlanView({ session, doc, data, today, planOptions, onNewPlan, onRetrySa
             </section>
           </PopoverContent>
         </Popover>
-        <Button size="sm" variant="outline" onClick={() => setSettings(true)}><Settings2 className="size-3.5" aria-hidden />Plan settings</Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger render={<Button size="icon-sm" variant="outline" aria-label="More plan actions" />}><MoreHorizontal className="size-3.5" aria-hidden /></DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuItem onClick={onNewPlan}>New plan…</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => void onCreate(duplicateDocument(doc, `${doc.name} copy`))}>Duplicate this plan</DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={exportJson}>Export plan (JSON)</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => fileInput.current?.click()}>Import a plan (JSON)…</DropdownMenuItem>
-            <DropdownMenuItem onClick={exportCsv} disabled={!computed}>Export figures (CSV)</DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive" onClick={() => setConfirm({ title: `Delete "${doc.name}"?`, message: "The plan is removed from Actual Bench for good. Export it first if you may want it back. Nothing in Actual changes.", destructive: true, destructiveLabel: "Delete plan", onConfirm: () => void onDelete() })}>Delete this plan…</DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
         {doc.useActuals && data.state === "ready" && (
           <Button size="sm" variant="outline" onClick={data.refresh} disabled={data.refreshing} title={`Read from Actual at ${new Date(data.readAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}>
             <RefreshCw className={data.refreshing ? "size-3.5 animate-spin" : "size-3.5"} aria-hidden />Refresh
