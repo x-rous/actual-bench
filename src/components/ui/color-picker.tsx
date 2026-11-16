@@ -62,7 +62,8 @@ export function ColorPicker({ value, onChange, onClear, ariaLabel, fallback = "#
       >
         {children}
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-64 space-y-3 p-3">
+      {/* The popover is portalled, but React events still reach the grid it was opened from: arrows here are the picker's own. */}
+      <PopoverContent align="start" className="w-64 space-y-3 p-3" onKeyDown={(e) => { if (e.key.startsWith("Arrow")) e.stopPropagation(); }}>
         <div role="tablist" aria-label="Colour mode" className="grid grid-cols-2 gap-px rounded-md border border-border bg-muted/40 p-px text-xs">
           {(["palette", "custom"] as const).map((m) => (
             <button key={m} type="button" role="tab" aria-selected={mode === m} onClick={() => setMode(m)} className={cn("rounded px-2 py-1 font-medium", mode === m ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground")}>{m === "palette" ? "Palette" : "Custom"}</button>

@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 import { getTransport } from "@/lib/actual";
 import { runQuery } from "@/lib/api/query";
 import { selectActiveInstance, useConnectionStore } from "@/store/connection";
-import { transferOwner, type Placed, type Snapshot } from "@/lib/cashflow-planning/actuals";
+import { accountRole, counterpartSection, isBorrowing, transferOwner, unplannedTarget, type Placed, type Snapshot } from "@/lib/cashflow-planning/actuals";
 import { setMove } from "@/lib/cashflow-planning/document";
 import { addMonths, monthEnd, monthLabel } from "@/lib/cashflow-planning/months";
 import type { Month, PlanDocument } from "@/lib/cashflow-planning/types";
@@ -118,8 +118,17 @@ export function TransactionsDialog({ request, doc, snapshot, placed, onEdit, onC
     if (other) {
       if (placed.cashIds.has(other)) return false;
       // Money borrowed from a loan and its repayments belong to different rows: list only the direction this figure holds.
-      if (wantedTransfers.has(other)) { const owner = transferOwner(doc, snapshot, other, row.amount >= 0 ? "in" : "out"); return owner ? request.targets.includes(owner) : request.targets.some((t) => t.startsWith("unplanned:")); }
-      return !followed.has(other) && !!row.category && wantedCategories.has(row.category);
+      const direction = row.amount >= 0 ? "in" : "out";
+      const counterpart = snapshot.accounts.find((a) => a.id === other);
+      const counterpartRole = counterpart ? accountRole(doc, counterpart) : undefined;
+      const borrowed = direction === "in" && isBorrowing(counterpart, counterpartRole);
+      if (wantedTransfers.has(other)) {
+        const owner = transferOwner(doc, snapshot, other, direction);
+        // With no row to follow, the section it falls in: money borrowed is income, the rest by the account's kind.
+        return owner ? request.targets.includes(owner) : request.targets.includes(unplannedTarget(borrowed ? "income" : counterpartSection(counterpartRole, counterpart)));
+      }
+      // Money borrowed from a loan is never placed by its category.
+      return !borrowed && !followed.has(other) && !!row.category && wantedCategories.has(row.category);
     }
     if (row.category) return wantedCategories.has(row.category);
     // A "Not in plan" line holds only the money in or only the money out of an account's uncategorized entries, by its section.
@@ -127,7 +136,7 @@ export function TransactionsDialog({ request, doc, snapshot, placed, onEdit, onC
     if (unplannedOnly) return request.sign === 1 ? row.amount > 0 : row.amount < 0;
     // Rows that follow the account for money in and for money out each hold their own direction.
     const owner = transferOwner(doc, snapshot, row.account, row.amount >= 0 ? "in" : "out");
-    return owner ? request.targets.includes(owner) : true;
+    return owner ? request.targets.includes(owner) : request.targets.includes(unplannedTarget(row.amount >= 0 ? "income" : "expenses"));
   });
   // The search looks at everything shown in a line: date, account, payee, category, notes and amount.
   const needle = find.trim().toLowerCase();
@@ -167,15 +176,18 @@ export function TransactionsDialog({ request, doc, snapshot, placed, onEdit, onC
   // Uncategorized entries a row follows can be split by direction in ways this list does not repeat: no comparison then.
   const comparable = uncategorized.length === 0 || unplannedOnly;
 
+  const isInternal = (row: Row) => !!row["payee.transfer_acct"] && placed.cashIds.has(row["payee.transfer_acct"]);
+
   // Back to its own month: forget the plan's move, or, when its note carries a tag, say so explicitly so the tag no longer applies.
   const moveTo = (row: Row, month: Month): Month | null => { const dated = row.date.slice(0, 7); return month !== dated ? month : tagOf.get(row.id) && tagOf.get(row.id) !== dated ? dated : null; };
   const move = (row: Row, month: Month) => onEdit((d) => setMove(d, row.id, moveTo(row, month)));
   /** The chosen transactions counted in the month before or after their own, or back in it. A month that has not ended holds no actuals to join. */
   const moveSelected = (where: "before" | "own" | "after") => {
     const target = (row: Row) => (where === "own" ? row.date.slice(0, 7) : addMonths(row.date.slice(0, 7), where === "before" ? -1 : 1));
-    const movable = selectedRows.filter((row) => target(row) <= currentMonth);
+    // A transfer between two cash accounts moves no money in or out of the plan's cash: it stays in its own month.
+    const movable = selectedRows.filter((row) => !isInternal(row) && target(row) <= currentMonth);
     if (movable.length > 0) onEdit((d) => movable.reduce((doc, row) => setMove(doc, row.id, moveTo(row, target(row))), d));
-    if (movable.length < selectedRows.length) toast.message(`${selectedRows.length - movable.length} not moved: that month has not ended.`);
+    if (movable.length < selectedRows.length) toast.message(`${selectedRows.length - movable.length} not moved: that month has not ended, or it is a transfer between cash accounts.`);
     setSelected(new Set());
   };
 
@@ -257,11 +269,11 @@ export function TransactionsDialog({ request, doc, snapshot, placed, onEdit, onC
                               <td className="border-b border-border/40 px-3 text-right tabular-nums whitespace-nowrap">{money(row.amount * request.sign)}</td>
                               <td className="border-b border-border/40 px-3">
                                 <div className="flex items-center gap-1.5">
-                                  <div role="radiogroup" aria-label="Month this transaction counts in" title={shift?.byTag ? "Counted in the month its note's tag names" : undefined} className="flex gap-px rounded-md border border-border bg-muted/40 p-px">
+                                  {isInternal(row) ? <span className="whitespace-nowrap px-2 text-[11px] text-muted-foreground" title="A transfer between cash accounts is counted in its own month">{monthLabel(dated)}</span> : <div role="radiogroup" aria-label="Month this transaction counts in" title={shift?.byTag ? "Counted in the month its note's tag names" : undefined} className="flex gap-px rounded-md border border-border bg-muted/40 p-px">
                                     {choices.map((m) => (
                                       <button key={m} type="button" role="radio" aria-checked={m === counted} onClick={() => { if (m !== counted) move(row, m); }} className={cn("h-6 whitespace-nowrap rounded px-2 text-[11px]", m === counted ? "bg-background font-semibold text-foreground shadow-sm ring-1 ring-border" : "text-muted-foreground/70 hover:text-foreground")}>{monthLabel(m)}</button>
                                     ))}
-                                  </div>
+                                  </div>}
                                   {counted !== dated && <span title={shift?.byTag ? "Moved by the tag in its note" : "Moved in this plan"} className="text-muted-foreground"><ArrowLeftRight className="size-3.5" aria-hidden /><span className="sr-only">{shift?.byTag ? "Moved by the tag in its note" : "Moved in this plan"}</span></span>}
                                 </div>
                               </td>
@@ -275,6 +287,7 @@ export function TransactionsDialog({ request, doc, snapshot, placed, onEdit, onC
               </table>
             )}
         </div>
+        {listed.length === 0 && !listComplete && <div className="shrink-0 border-t border-border px-5 py-2 text-xs text-muted-foreground">Only the first {LIMIT} transactions are loaded, so a match may be missing.</div>}
         {listed.length > 0 && (
           <div className="flex shrink-0 flex-wrap items-center justify-between gap-x-6 gap-y-1 border-t border-border px-5 py-2 text-xs">
             <span className="text-muted-foreground">{listed.length} {listed.length === 1 ? "transaction" : "transactions"}{!listComplete && ` (the first ${LIMIT}; the total may be incomplete)`}</span>

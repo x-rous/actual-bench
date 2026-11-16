@@ -147,8 +147,13 @@ export function computePlan(doc: PlanDocument, snapshot: Snapshot | null, placed
             if (m.categoryId && m.transferAccountId === null && wanted.has(m.categoryId) && cards.has(m.accountId)) cardSpent.set(m.month, (cardSpent.get(m.month) ?? 0) + m.amountMinor * SECTION_SIGN[row.section]);
           }
         }
+        if (budget.unreadMonths) problems.push("Some budget months could not be read, so a month may repeat an earlier one");
+        // A month nobody budgeted repeats the nearest budgeted month before it; none before it means no amount.
+        const budgetedMonths = Object.keys(budget.months).sort();
         const budgeted = (month: Month): number | null => {
-          const values = budget.months[month] ?? budget.months[budget.lastMonth!];
+          let found: Month | undefined;
+          for (const m of budgetedMonths) { if (m <= month) found = m; else break; }
+          const values = found ? budget.months[found] : undefined;
           return values ? ids.reduce((sum, id) => sum + (values[id] ?? 0), 0) : null;
         };
         basis = (month) => {

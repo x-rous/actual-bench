@@ -300,14 +300,20 @@ export function PlanGrid({ doc, computed, lines, columns, cents, pastMode, selec
     const edits: CellEdit[] = [];
     // Ctrl+R inside a selection copies its first column; the fill handle repeats the whole selection outwards.
     const inside = to <= range.right;
-    const width = inside ? 1 : range.right - range.left + 1;
     const start = inside ? range.left + 1 : range.right + 1;
+    // Year totals hold no amount to repeat and take no place in the pattern: the fill runs over month columns only.
+    const sources: Extract<Column, { kind: "month" }>[] = [];
+    for (let c = range.left; c <= (inside ? range.left : range.right); c++) { const source = columns[c]; if (source?.kind === "month") sources.push(source); }
+    if (sources.length === 0) return;
     for (let r = range.top; r <= range.bottom; r++) {
       const line = lines[r];
       if (line.kind !== "row") continue;
+      let n = 0;
       for (let c = start; c <= to; c++) {
-        const column = columns[c], source = columns[range.left + ((c - start) % width)];
-        if (column?.kind !== "month" || source?.kind !== "month" || !isEditable(line, column, kinds)) continue;
+        const column = columns[c];
+        if (column?.kind !== "month") continue;
+        const source = sources[n++ % sources.length];
+        if (!isEditable(line, column, kinds)) continue;
         // The amount the source cell shows (the plan, in a past month of the Planned view); a cell showing none copies nothing.
         const shown = monthValue(line, source.index, kinds[source.index], pastMode, planTotals);
         if (shown !== null) edits.push({ rowId: line.row.id, month: column.month, amount: shown });
@@ -377,7 +383,8 @@ export function PlanGrid({ doc, computed, lines, columns, cents, pastMode, selec
       case "End": event.preventDefault(); if (at) go(mod ? lines.length - 1 : at.row, last, event.shiftKey); return;
       case "PageDown": event.preventDefault(); step(PAGE, 0, event.shiftKey); return;
       case "PageUp": event.preventDefault(); step(-PAGE, 0, event.shiftKey); return;
-      case "Tab": if (selection?.col) { event.preventDefault(); step(0, event.shiftKey ? -1 : 1, false); } return;
+      // Tab from the last column leaves the grid for the next control instead of stopping there.
+      case "Tab": if (selection?.col && !(selection.col === columns[last]?.key && !event.shiftKey)) { event.preventDefault(); step(0, event.shiftKey ? -1 : 1, false); } return;
       case " ": if (collapsible) { event.preventDefault(); onToggle(collapsible.key); } return;
       case "Enter": if (startEdit(null)) event.preventDefault(); else if (collapsible) { event.preventDefault(); onToggle(collapsible.key); } return;
       case "F2": event.preventDefault(); if (at?.col === null && line) startRename(line); else startEdit(null); return;

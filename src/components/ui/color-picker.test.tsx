@@ -30,6 +30,16 @@ describe("ColorPicker", () => {
     expect(onChange).toHaveBeenLastCalledWith("#00aaff");
   });
 
+  it("keeps arrow keys inside the picker, away from a grid it was opened from", () => {
+    const onKeyDown = jest.fn();
+    render(<div onKeyDown={onKeyDown}><ColorPicker ariaLabel="Colour" value="#3b82f6" onChange={jest.fn()} /></div>);
+    fireEvent.click(screen.getByRole("button", { name: "Colour" }));
+    fireEvent.keyDown(screen.getByRole("radio", { name: "#3b82f6" }), { key: "ArrowRight" });
+    fireEvent.click(screen.getByRole("tab", { name: "Custom" }));
+    fireEvent.keyDown(screen.getByRole("slider", { name: "Saturation and brightness" }), { key: "ArrowLeft" });
+    expect(onKeyDown).not.toHaveBeenCalled();
+  });
+
   it("offers Clear only when asked and a colour is set", () => {
     const onClear = jest.fn();
     open({ onClear });

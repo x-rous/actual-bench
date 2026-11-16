@@ -225,6 +225,19 @@ describe("a budget row paid after the spending (a card paid next month)", () => 
   });
 });
 
+describe("a budget row across a gap in the budget", () => {
+  it("repeats the nearest earlier budgeted month, not the last one, and says when months could not be read", () => {
+    const row = createRow({ name: "Food", section: "expenses", basis: { kind: "budget" }, links: { categories: ["groceries"] } });
+    const doc = plan((d) => ({ ...d, rows: [row] }));
+    const withBudget = (budget: Snapshot["budget"]) => run(doc, { ...household(), budget }).rows.get(row.id)!;
+    // March and May are budgeted, April is not: April repeats March, and months after May repeat May.
+    const gap = withBudget({ months: { "2026-03": { groceries: 110_000 }, "2026-05": { groceries: 150_000 } }, lastMonth: "2026-05" });
+    expect(gap.plan.slice(3, 7)).toEqual([110_000, 150_000, 150_000, 150_000]);
+    expect(gap.problem).toBeUndefined();
+    expect(withBudget({ months: { "2026-03": { groceries: 110_000 } }, lastMonth: "2026-03", unreadMonths: 1 }).problem).toContain("could not be read");
+  });
+});
+
 describe("key figures when today is outside the plan", () => {
   it("looks ahead over nothing once the plan has ended, and as usual when it starts later", () => {
     // Today is 15 Mar 2026: a plan of 2025 is over, a plan starting in 2027 has not begun.

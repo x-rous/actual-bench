@@ -8,8 +8,13 @@ export class PlanConflictError extends Error {}
 /** The app database is locked: nothing is wrong with the plan, and saving works again once it is unlocked. */
 export class PlanLockedError extends Error {}
 
+/** The error body of a failed response, read once: its message and its code. */
+async function failure(response: Response, fallback: string): Promise<{ text: string; code?: string }> {
+  try { const body = (await response.json()) as { error?: string; code?: string }; return { text: body.error ?? fallback, code: body.code }; } catch { return { text: fallback }; }
+}
+
 async function message(response: Response, fallback: string): Promise<string> {
-  try { return ((await response.json()) as { error?: string }).error ?? fallback; } catch { return fallback; }
+  return (await failure(response, fallback)).text;
 }
 
 export async function listPlans(budgetSyncId: string): Promise<{ plans: PlanRecord[]; unreadable: UnreadablePlan[] }> {
@@ -27,8 +32,7 @@ export async function savePlan(input: { budgetSyncId: string; id?: string; baseR
   const keepalive = options?.keepalive === true && new TextEncoder().encode(body).length < KEEPALIVE_MAX_BYTES;
   const response = await fetch("/api/cashflow-plans", { method: "PUT", headers: { "Content-Type": "application/json" }, body, keepalive });
   if (response.status === 409) {
-    const text = await message(response, "This plan was changed somewhere else");
-    const code = await response.clone().json().then((b: { code?: string }) => b.code, () => undefined);
+    const { text, code } = await failure(response, "This plan was changed somewhere else");
     throw code === "VAULT_LOCKED" ? new PlanLockedError(text) : new PlanConflictError(text);
   }
   if (!response.ok) throw new Error(await message(response, "Could not save the plan"));

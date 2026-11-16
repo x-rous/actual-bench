@@ -60,6 +60,8 @@ export type BudgetSnapshot = {
   months: Record<Month, Record<string, number>>;
   /** The last month read, whose values stand in for later months. */
   lastMonth: Month | null;
+  /** Months Actual has that could not be read: a gap between two budgeted months may be one of them. */
+  unreadMonths?: number;
 };
 
 /** The optional reads a plan can do without: a failure leaves what follows them empty, which is not the user's doing. */
@@ -111,7 +113,7 @@ export function accountRole(doc: Pick<PlanDocument, "accountRoles">, account: Sn
 }
 
 /** Where a transfer with an account outside cash is shown when no row is linked to it. */
-function counterpartSection(role: PlanAccountRole | undefined, account: SnapAccount | undefined): SectionId {
+export function counterpartSection(role: PlanAccountRole | undefined, account: SnapAccount | undefined): SectionId {
   if (role === "savings") return "savings";
   switch (account?.accountClass) {
     case "loan":

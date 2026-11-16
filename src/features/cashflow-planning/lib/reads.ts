@@ -171,6 +171,7 @@ export async function readBudget(connection: ConnectionInstance, queryClient: Qu
   const existing = new Set(await getTransport(connection).getBudgetMonths());
   const months: BudgetSnapshot["months"] = {};
   let lastMonth: Month | null = null;
+  let unreadMonths = 0;
   for (let k = 0; k < BUDGET_MONTHS_AHEAD; k++) {
     const month = addMonths(currentMonth, k);
     if (!existing.has(month)) continue;
@@ -188,8 +189,9 @@ export async function readBudget(connection: ConnectionInstance, queryClient: Qu
       months[month] = values;
       lastMonth = month;
     } catch {
-      // A month that cannot be read is treated as not budgeted.
+      // A month that cannot be read is treated as not budgeted, and counted so the rows that use the budget can say so.
+      unreadMonths++;
     }
   }
-  return { months, lastMonth };
+  return { months, lastMonth, ...(unreadMonths > 0 && { unreadMonths }) };
 }

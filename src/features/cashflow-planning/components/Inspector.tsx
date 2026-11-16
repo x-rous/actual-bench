@@ -498,6 +498,12 @@ function UnplannedPanel({ computed, snapshot, placed, section, column, onEdit, o
   );
 }
 
+/** Where the months still to come begin: after the current month, at the start of a plan not begun, and past the end of one that has ended. */
+function firstFutureIndex(computed: Props["computed"]): number {
+  if (computed.currentIndex >= 0) return computed.currentIndex + 1;
+  return computed.kinds.length > 0 && computed.kinds[computed.kinds.length - 1] === "actual" ? computed.months.length : 0;
+}
+
 // ─── Groups, sections, balances ──────────────────────────────────────────────
 
 /** The amounts of a group's figure for the selection: the month's breakdown, or (nothing selected) a summary of the group. */
@@ -525,7 +531,7 @@ function GroupFigures({ doc, computed, snapshot, placed, line, column, rows, onS
   }
   // Nothing selected but the group itself: what it adds up to.
   const all = computed.months.map((_, i) => i);
-  const from = computed.currentIndex >= 0 ? computed.currentIndex + 1 : 0;
+  const from = firstFutureIndex(computed);
   const next12 = all.slice(from, from + 12);
   return (
     <Block>
@@ -539,7 +545,7 @@ function GroupFigures({ doc, computed, snapshot, placed, line, column, rows, onS
 
 /** The group's rows with their amount for the selection, largest first. A name opens the row's details, an amount the transactions behind it. */
 function GroupRows({ doc, computed, snapshot, placed, rows, column, problems, linkNotes, onSelectLine, onShowTransactions }: Pick<Props, "doc" | "computed" | "snapshot" | "placed" | "problems" | "linkNotes" | "onSelectLine" | "onShowTransactions"> & { rows: PlanRow[]; column: Column | null }) {
-  const from = computed.currentIndex >= 0 ? computed.currentIndex + 1 : 0;
+  const from = firstFutureIndex(computed);
   const indexes = column ? (column.kind === "month" ? [column.index] : column.indexes) : computed.months.map((_, i) => i).slice(from, from + 12);
   const label = column ? columnLabel(column) : "Next 12 months";
   const items = rows.map((row) => ({ row, amount: indexes.reduce((acc, i) => acc + (computed.rows.get(row.id)?.values[i] ?? 0), 0) })).sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
