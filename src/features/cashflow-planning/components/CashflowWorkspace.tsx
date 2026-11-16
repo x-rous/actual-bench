@@ -570,7 +570,7 @@ function Overview({ doc, computed, data, problems, placed, onShowUnplanned, onSe
         <h3 className={heading}>How the grid works</h3>
         {([
           ["Reading it", [
-            ...(doc.useActuals ? ["Past months are what Actual recorded, in blue. The forecast starts from today’s real balance."] : []),
+            ...(doc.useActuals ? ["Past months are what Actual recorded, in blue; this month is in amber; the forecast is in black. The forecast starts from today’s real balance."] : []),
             "Amounts are positive in their section’s direction. A negative expense is a refund; a negative saving is a withdrawal.",
           ]],
           ["Typing amounts", [

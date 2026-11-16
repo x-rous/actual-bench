@@ -272,7 +272,7 @@ export function TransactionsDialog({ request, doc, snapshot, placed, onEdit, onC
                                   {isInternal(row) ? <span className="whitespace-nowrap px-2 text-[11px] text-muted-foreground" title="A transfer between cash accounts is counted in its own month">{monthLabel(dated)}</span> : <div role="radiogroup" aria-label="Month this transaction counts in" title={shift?.byTag ? "Counted in the month its note's tag names" : undefined}
                                     onKeyDown={(e) => {
                                       // Arrows choose the month before or after, as in any radio group; only the chosen one is a tab stop.
-                                      const d = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 }[e.key];
+                                      const d = ({ ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 } as Partial<Record<string, number>>)[e.key];
                                       const at = choices.indexOf(counted), next = d ? choices[at + d] : undefined;
                                       if (!d) return;
                                       e.preventDefault();

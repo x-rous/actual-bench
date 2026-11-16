@@ -41,7 +41,7 @@ export function CashflowGuide({ section, onSection, onClose, docsUrl }: { sectio
       </>}
 
       {section === "reading" && <>
-        <Para>Every month is a column, named with its year and a letter before it: <b>A</b> for a month Actual recorded, <b>C</b> for the current month, and <b>F</b> for a forecast month (<b>P</b> in a plan that does not use Actual). Every calendar year ends with a <b>Total</b> column. The columns tell you at a glance what is a fact and what is a guess.</Para>
+        <Para>Every month is a column, named with its year and coloured by what it is: <b>ink blue</b> for a month Actual recorded, <b>amber</b> for the current month (whose column is also tinted), and <b>black</b> for a forecast month, or any month of a plan that does not use Actual. Hover a month to see which it is. Every calendar year ends with a <b>Total</b> column. The columns tell you at a glance what is a fact and what is a guess.</Para>
         <GridSketch />
         <Grid cols={2}>
           <Card icon={Grid3x3} tone="value" title="Past months: recorded, in ink">Figures Actual recorded are in a dark ink blue on a light grey fill, as if written in ink: you cannot change them here. Balances chain from the real balance of the plan’s cash accounts, so the forecast always starts from today.</Card>

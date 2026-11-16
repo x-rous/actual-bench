@@ -8,13 +8,13 @@ import { Figure, Key } from "@/features/financial-insights/components/guide/guid
  * Nothing here reads data.
  */
 
-const INK = "text-[#1e3a8a] dark:text-blue-300";
+const INK = "text-[#1d4ed8] dark:text-blue-300";
 type Kind = "actual" | "current" | "forecast";
 const MONTHS: { name: string; year: number; kind: Kind }[] = [{ name: "Sep", year: 2026, kind: "actual" }, { name: "Oct", year: 2026, kind: "actual" }, { name: "Nov", year: 2026, kind: "current" }, { name: "Dec", year: 2026, kind: "forecast" }, { name: "Jan", year: 2027, kind: "forecast" }];
-const TAG: Record<Kind, { letter: string; className: string }> = {
-  actual: { letter: "A", className: "bg-[#1e3a8a]/10 text-[#1e3a8a] dark:bg-blue-300/15 dark:text-blue-300" },
-  current: { letter: "C", className: "bg-amber-500/20 text-amber-800 dark:text-amber-300" },
-  forecast: { letter: "F", className: "bg-foreground/[0.07] text-foreground" },
+const TAG: Record<Kind, string> = {
+  actual: "text-[#1d4ed8] dark:text-blue-300",
+  current: "text-amber-800 dark:text-amber-300",
+  forecast: "",
 };
 
 type SketchRow = { kind: "balance" | "section" | "group" | "row" | "net"; label: string; cells: (string | { v: string; typed: true })[] };
@@ -41,9 +41,9 @@ export function GridSketch() {
   const cols = "grid-cols-[8.5rem_repeat(5,minmax(0,1fr))]";
   return (
     <Figure wide label="A miniature of the plan grid" caption={<>
-      <Key colour="#1e3a8a">A: Actual, recorded by Actual, in ink blue</Key>
-      <Key colour="#f59e0b">C: this month, recorded so far plus what is still expected</Key>
-      <Key colour="#e5e7eb">F: forecast, in black (P in a plan that does not use Actual)</Key>
+      <Key colour="#1d4ed8">Blue: a month Actual recorded</Key>
+      <Key colour="#f59e0b">Amber: this month, recorded so far plus what is still expected</Key>
+      <Key colour="#e5e7eb">Black: forecast (every month of a plan that does not use Actual)</Key>
       <span className="inline-flex items-center gap-1.5"><span aria-hidden className="size-0 border-4 border-transparent border-r-foreground border-t-foreground" />A typed amount</span>
     </>}>
       <div className="overflow-hidden rounded-lg border text-xs">
@@ -51,7 +51,7 @@ export function GridSketch() {
           <span className="bg-muted px-2 py-1.5" />
           {MONTHS.map((m) => (
             <span key={m.name} className={cn("whitespace-nowrap bg-muted px-1.5 py-1.5 text-right text-[11px] font-semibold leading-tight", m.kind === "current" && "bg-amber-500/15")}>
-              <span className="flex items-center justify-between gap-1"><span className={cn("inline-flex size-4 items-center justify-center rounded-full text-[9px] font-bold leading-none", TAG[m.kind].className)}>{TAG[m.kind].letter}</span><span>{m.name} {m.year}</span></span>
+              <span className={TAG[m.kind]}>{m.name} {m.year}</span>
             </span>
           ))}
         </div>

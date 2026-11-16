@@ -74,13 +74,12 @@ type Props = {
 };
 
 const PAGE = 12;
-/** The tag at the left of a month's header: A for recorded months (ink blue), C for the current one (amber), F for forecast, or P in a plan that does not use Actual. */
-function statusTag(kind: MonthKind, usesActuals: boolean): { letter: string; word: string; className: string } {
-  const plain = "bg-foreground/[0.07] text-foreground";
-  if (!usesActuals) return { letter: "P", word: "Plan", className: plain };
-  if (kind === "actual") return { letter: "A", word: "Actual, recorded in Actual", className: "bg-[#1e3a8a]/10 text-[#1e3a8a] dark:bg-blue-300/15 dark:text-blue-300" };
-  if (kind === "current") return { letter: "C", word: "This month, recorded so far plus what is still expected", className: "bg-amber-500/20 text-amber-800 dark:text-amber-300" };
-  return { letter: "F", word: "Forecast", className: plain };
+/** How a month's header says what it is: recorded months in ink blue, the current one in amber, forecast (or plan) months in the normal colour. `word` is for hovering and screen readers. */
+function statusTag(kind: MonthKind, usesActuals: boolean): { word: string; className: string } {
+  if (!usesActuals) return { word: "Plan", className: "" };
+  if (kind === "actual") return { word: "Actual, recorded in Actual", className: "text-[#1d4ed8] dark:text-blue-300" };
+  if (kind === "current") return { word: "This month, recorded so far plus what is still expected", className: "text-amber-800 dark:text-amber-300" };
+  return { word: "Forecast", className: "" };
 }
 
 /** What a line shows in a month. `null` is "nothing to show" (never zero). */
@@ -530,11 +529,7 @@ export function PlanGrid({ doc, computed, lines, columns, cents, pastMode, selec
               const tag = statusTag(kind, doc.useActuals);
               return (
                 <th key={c.key} role="columnheader" scope="col" aria-selected={pickedColumn === c.key} data-month={c.month} data-now={kind === "current" || undefined} onClick={() => onPickColumn?.(c.key)} title={`${monthShort(c.month)} ${c.month.slice(0, 4)}: ${tag.word}. Show a summary of this month (S on a cell of this column)`} className={cn("h-8 cursor-pointer border-b-2 bg-muted px-1.5 text-right align-middle text-xs hover:brightness-95 dark:hover:brightness-125", kind === "current" ? "border-primary font-bold" : pickedColumn === c.key ? "border-primary/70 font-semibold" : "border-border font-semibold", kind === "current" && "bg-[color-mix(in_oklab,var(--color-amber-500)_12%,var(--background))]", kind === "forecast" && c.index > 0 && kinds[c.index - 1] === "actual" && "border-l border-l-primary/30", startsYear(columns, ci) && "border-l-2 border-l-border")}>
-                  <span className="flex items-center justify-between gap-1 whitespace-nowrap leading-tight">
-                    <span aria-hidden className={cn("inline-flex size-4 shrink-0 items-center justify-center rounded-full text-[9px] font-bold leading-none", tag.className)}>{tag.letter}</span>
-                    <span>{monthShort(c.month)} {c.month.slice(0, 4)}</span>
-                    <span className="sr-only">, {tag.word}</span>
-                  </span>
+                  <span className={cn("whitespace-nowrap leading-tight", tag.className)}>{monthShort(c.month)} {c.month.slice(0, 4)}<span className="sr-only">, {tag.word}</span></span>
                 </th>
               );
             })}
@@ -865,7 +860,7 @@ const GridLine = memo(function GridLine({ line, gridId, rowNumber, columns, kind
               "relative z-0 h-7 cursor-default border-b border-border/40 px-2 text-right tabular-nums whitespace-nowrap",
               pinned ? (kind === "current" ? "bg-[color-mix(in_oklab,var(--color-amber-500)_10%,var(--background))]" : kind === "actual" ? "bg-[color-mix(in_oklab,var(--muted)_30%,var(--background))]" : "bg-background") : cn(kind === "actual" && "bg-muted/30", kind === "current" && "bg-amber-500/10"),
               startsYear(columns, c) && "border-l-2 border-l-border", rowTone, line.kind === "section" && kind === "current" && "bg-[color-mix(in_oklab,var(--color-amber-500)_12%,var(--muted))]", sumLine && (kind === "actual" ? "bg-[color-mix(in_oklab,var(--muted)_70%,var(--background))]" : kind === "current" ? "bg-[color-mix(in_oklab,var(--color-amber-500)_12%,color-mix(in_oklab,var(--muted)_50%,var(--background)))]" : "bg-[color-mix(in_oklab,var(--muted)_50%,var(--background))]"), line.kind === "row" && kind === "forecast" && "bg-background", boundary && kind !== "current" && "border-l border-l-primary/30", strong && "font-semibold", line.kind === "group" && "font-semibold", (line.kind === "unplanned" || (line.kind === "memo" && !strong)) && "text-muted-foreground",
-ink && "text-[#1e3a8a] dark:text-blue-300",               below && "text-destructive",
+ink && "text-[#1d4ed8] dark:text-blue-300",               below && "text-destructive",
               diff && (better ? "text-emerald-700 dark:text-emerald-400" : "text-amber-700 dark:text-amber-400"),
               inRange && "bg-accent", inFill && "bg-accent/60 outline-dashed outline-1 -outline-offset-1 outline-primary/60", active && "outline outline-2 -outline-offset-2 outline-primary",
             )}
