@@ -35,7 +35,7 @@ Open an issue using the **Feature request** template. Check open issues first to
 
 ### Prerequisites
 
-- Node.js 22.23.1 recommended
+- Node.js 24.22.3 or later (see `.nvmrc`)
 - A running [actual-http-api](https://github.com/jhonderson/actual-http-api) server (or use a test budget)
 
 ### Setup
