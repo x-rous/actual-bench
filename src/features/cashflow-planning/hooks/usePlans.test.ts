@@ -46,6 +46,33 @@ describe("autosave when the page is left", () => {
   });
 });
 
+describe("leaving the page while a save is on its way", () => {
+  it("asks first even when the edit was undone back to the saved plan", async () => {
+    const base = { ...createPlanDocument({ name: "Plan", startMonth: "2026-01", years: 1 }), rows: [createRow({ name: "Salary", section: "income" })] };
+    useCashflowStore.setState({ budgetSyncId: null, sessions: {}, order: [], activeId: null, unreadable: [] });
+    useCashflowStore.getState().hydrate("b1", [record(1, base)]);
+    let finish!: (r: PlanRecord) => void;
+    mockSave.mockImplementationOnce(() => new Promise<PlanRecord>((resolve) => { finish = resolve; }));
+    mockSave.mockImplementation(async (input) => record(3, input.document));
+
+    const autosave = createAutosave("b1");
+    const { edit } = useCashflowStore.getState();
+    const saved = useCashflowStore.getState().sessions.p1.saved;
+    edit("p1", (d) => setCells(d, [{ rowId: d.rows[0].id, month: "2026-02", amount: 100 }]));
+    autosave.save("p1"); // the edit is on its way
+    const sent = useCashflowStore.getState().sessions.p1.doc;
+    edit("p1", () => saved); // undone: nothing differs from the saved plan, yet the edit will land
+
+    const event = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+
+    finish(record(2, sent));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    autosave.dispose();
+  });
+});
+
 describe("a page left and opened again while a save is on its way", () => {
   it("does not send the same plan a second time until the first save is done", async () => {
     const base = { ...createPlanDocument({ name: "Plan", startMonth: "2026-01", years: 1 }), rows: [createRow({ name: "Salary", section: "income" })] };

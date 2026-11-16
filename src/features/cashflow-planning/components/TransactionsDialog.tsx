@@ -206,7 +206,7 @@ export function TransactionsDialog({ request, doc, snapshot, placed, onEdit, onC
               <PillGroup<GroupBy> options={[{ value: "none", label: "None" }, { value: "month", label: "Month" }, { value: "category", label: "Category" }, { value: "payee", label: "Payee" }, { value: "account", label: "Account" }]} value={groupBy} onChange={(g) => { setGroupBy(g); setCollapsed(new Set()); }} />
             </div>
           )}
-          {matched.some((row) => placed.shifted.has(row.id)) && <Button size="xs" variant={movedOnly ? "secondary" : "outline"} aria-pressed={movedOnly} onClick={() => setMovedOnly((v) => !v)}><ArrowLeftRight className="size-3" aria-hidden />Moved only</Button>}
+          {(movedOnly || matched.some((row) => placed.shifted.has(row.id))) && <Button size="xs" variant={movedOnly ? "secondary" : "outline"} aria-pressed={movedOnly} onClick={() => setMovedOnly((v) => !v)}><ArrowLeftRight className="size-3" aria-hidden />Moved only</Button>}
         </div>
         {selectedRows.length > 0 && (
           <div role="status" className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-border bg-muted/50 px-5 py-1.5 text-xs">
@@ -269,9 +269,20 @@ export function TransactionsDialog({ request, doc, snapshot, placed, onEdit, onC
                               <td className="border-b border-border/40 px-3 text-right tabular-nums whitespace-nowrap">{money(row.amount * request.sign)}</td>
                               <td className="border-b border-border/40 px-3">
                                 <div className="flex items-center gap-1.5">
-                                  {isInternal(row) ? <span className="whitespace-nowrap px-2 text-[11px] text-muted-foreground" title="A transfer between cash accounts is counted in its own month">{monthLabel(dated)}</span> : <div role="radiogroup" aria-label="Month this transaction counts in" title={shift?.byTag ? "Counted in the month its note's tag names" : undefined} className="flex gap-px rounded-md border border-border bg-muted/40 p-px">
+                                  {isInternal(row) ? <span className="whitespace-nowrap px-2 text-[11px] text-muted-foreground" title="A transfer between cash accounts is counted in its own month">{monthLabel(dated)}</span> : <div role="radiogroup" aria-label="Month this transaction counts in" title={shift?.byTag ? "Counted in the month its note's tag names" : undefined}
+                                    onKeyDown={(e) => {
+                                      // Arrows choose the month before or after, as in any radio group; only the chosen one is a tab stop.
+                                      const d = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 }[e.key];
+                                      const at = choices.indexOf(counted), next = d ? choices[at + d] : undefined;
+                                      if (!d) return;
+                                      e.preventDefault();
+                                      if (next === undefined) return;
+                                      e.currentTarget.querySelectorAll<HTMLElement>('[role="radio"]')[at + d]?.focus();
+                                      move(row, next);
+                                    }}
+                                    className="flex gap-px rounded-md border border-border bg-muted/40 p-px">
                                     {choices.map((m) => (
-                                      <button key={m} type="button" role="radio" aria-checked={m === counted} onClick={() => { if (m !== counted) move(row, m); }} className={cn("h-6 whitespace-nowrap rounded px-2 text-[11px]", m === counted ? "bg-background font-semibold text-foreground shadow-sm ring-1 ring-border" : "text-muted-foreground/70 hover:text-foreground")}>{monthLabel(m)}</button>
+                                      <button key={m} type="button" role="radio" aria-checked={m === counted} tabIndex={m === counted ? 0 : -1} onClick={() => { if (m !== counted) move(row, m); }} className={cn("h-6 whitespace-nowrap rounded px-2 text-[11px]", m === counted ? "bg-background font-semibold text-foreground shadow-sm ring-1 ring-border" : "text-muted-foreground/70 hover:text-foreground")}>{monthLabel(m)}</button>
                                     ))}
                                   </div>}
                                   {counted !== dated && <span title={shift?.byTag ? "Moved by the tag in its note" : "Moved in this plan"} className="text-muted-foreground"><ArrowLeftRight className="size-3.5" aria-hidden /><span className="sr-only">{shift?.byTag ? "Moved by the tag in its note" : "Moved in this plan"}</span></span>}

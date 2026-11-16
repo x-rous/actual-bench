@@ -25,7 +25,9 @@ export function NewPlanDialog({ snapshot, today, existingNames, busy, loansPendi
   const [lastChosen, setLastChosen] = useState(false);
   const [template, setTemplate] = useState<Template>(snapshot ? "groups" : "blank");
   const [cards, setCards] = useState<"cash" | "outside">("cash");
-  const cardAccounts = (snapshot?.accounts ?? []).filter((a) => a.accountClass === "credit-card" && !a.excluded && !a.closed);
+  // Closed cards keep their history, so the choice covers them too; only the open ones are counted for the user.
+  const allCards = (snapshot?.accounts ?? []).filter((a) => a.accountClass === "credit-card" && !a.excluded);
+  const cardAccounts = allCards.filter((a) => !a.closed);
   const monthCount = monthsBetween(start, last) + 1;
   const lengthValid = monthCount >= MIN_MONTHS && monthCount <= MAX_MONTHS;
   // Text typed in a month field that is not a month leaves the month before it in place: creating then would not match what is shown.
@@ -38,7 +40,7 @@ export function NewPlanDialog({ snapshot, today, existingNames, busy, loansPendi
     if ((template === "groups" || template === "categories") && snapshot) onCreate(buildPlanFromActuals(snapshot, { name, startMonth: start, months: monthCount, detail: template, cards }));
     else {
       const doc = createPlanDocument({ name, startMonth: start, months: monthCount, useActuals: template !== "worksheet" });
-      onCreate(template === "blank" && cards === "outside" ? { ...doc, accountRoles: Object.fromEntries(cardAccounts.map((a) => [a.id, "outside" as const])) } : doc);
+      onCreate(template === "blank" && cards === "outside" ? { ...doc, accountRoles: Object.fromEntries(allCards.map((a) => [a.id, "outside" as const])) } : doc);
     }
   };
 

@@ -1,6 +1,6 @@
 import type { Basis, Month, PlanDocument, PlanGroup, PlanRow, SectionId } from "./types";
 import { accountRole, placeActuals, unplannedTarget, type Snapshot } from "./actuals";
-import { createPlanDocument, createRow } from "./document";
+import { MAX_GROUPS, MAX_ROWS, createPlanDocument, createRow } from "./document";
 import { addMonths, monthIndex } from "./months";
 import { generateId } from "@/lib/uuid";
 
@@ -117,5 +117,7 @@ export function buildPlanFromActuals(snapshot: Snapshot, options: BuildOptions):
     }
   }
 
+  // A plan this large could not be saved: fall back to the smaller template.
+  if (options.detail === "categories" && (rows.length > MAX_ROWS || groups.length > MAX_GROUPS)) return buildPlanFromActuals(snapshot, { ...options, detail: "groups" });
   return { ...doc, groups, rows };
 }

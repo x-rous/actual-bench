@@ -17,6 +17,8 @@ export function GoalCard({ result, computed }: { result: GoalResult; computed: C
   const from = Math.max(0, computed.currentIndex);
   const balance = (i: number) => computed.closing[i] + (goal.basis === "total" ? computed.savings?.[i] ?? 0 : 0);
   const outside = projected === null || end < 0;
+  // A goal month already behind us has no road from today to it to draw.
+  const past = !outside && end < from;
   const reached = !outside && !shortfall;
   // Today's cash, not this month's closing forecast; the savings estimate of the month before stands for today's savings.
   const today = computed.kpis.cashNow + (goal.basis === "total" ? computed.savings?.[Math.max(0, from - 1)] ?? 0 : 0);
@@ -48,7 +50,7 @@ export function GoalCard({ result, computed }: { result: GoalResult; computed: C
         </span>
       </div>
 
-      {!outside && (
+      {!outside && !past && (
         <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label={`${goal.name}: forecast balance from ${monthLabel(computed.months[from])} to ${monthLabel(goal.month)} against a target of ${money(goal.amount)}`}>
           <polygon points={area} className={fill} />
           <line x1={PAD.l} x2={W - PAD.r} y1={y(goal.amount)} y2={y(goal.amount)} className="stroke-foreground/50" strokeDasharray="4 3" strokeWidth={1} />

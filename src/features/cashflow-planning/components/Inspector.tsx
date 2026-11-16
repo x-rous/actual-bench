@@ -21,7 +21,7 @@ import type { CellSource, Computed } from "@/lib/cashflow-planning/engine";
 import { addMonths, monthLabel, monthRange } from "@/lib/cashflow-planning/months";
 import { AVERAGE_WINDOWS, SECTION_LABEL, type AverageWindow, type Basis, type BasisKind, type Month, type PlanDocument, type PlanRow, type RepeatRule, type SectionId } from "@/lib/cashflow-planning/types";
 import { money } from "@/features/financial-insights/format";
-import { aggregate, type Column, type Line } from "../lib/view";
+import { aggregate, lastTwelveMonths, type Column, type Line } from "../lib/view";
 import { requestFor, piecesOf, type TransactionsRequest } from "../lib/transactions";
 import { AmountField, MonthField, PercentField, TextField } from "./fields";
 
@@ -376,7 +376,8 @@ export function LinksBlock({ doc, snapshot, row, edit }: { doc: PlanDocument; sn
 }
 
 export function BasisBlock({ doc, snapshot, row, typical, problem, edit }: { doc: PlanDocument; snapshot: Snapshot | null; row: PlanRow; typical: number | null; problem?: string; edit: (change: (row: PlanRow) => PlanRow) => void }) {
-  const kinds: BasisKind[] = doc.useActuals ? ["manual", "average", "budget", "schedule", "loan"] : ["manual"];
+  // Loan repayments are money out: an income row cannot take them (one that already does keeps the option to change it).
+  const kinds: BasisKind[] = doc.useActuals ? ["manual", "average", "budget", "schedule", ...(row.section !== "income" || row.basis.kind === "loan" ? ["loan" as const] : [])] : ["manual"];
   const setBasis = (kind: BasisKind) => {
     const basis: Basis = kind === "average" ? { kind, months: 12 } : kind === "schedule" ? { kind, scheduleIds: [] } : { kind };
     edit((r) => ({ ...r, basis }));
@@ -467,8 +468,7 @@ function UnplannedPanel({ computed, snapshot, placed, section, column, onEdit, o
   // A month or a year when one is selected; otherwise the twelve months up to now.
   const months = useMemo(() => {
     if (column) return monthsOf(column, computed);
-    const end = computed.currentIndex >= 0 ? computed.months[computed.currentIndex] : computed.months[computed.months.length - 1];
-    return monthRange(addMonths(end, -11), 12);
+    return lastTwelveMonths(computed);
   }, [column, computed]);
   const pieces = useMemo(() => (placed && snapshot ? contributionsOf(placed, snapshot, unplannedTarget(section), new Set(months)) : []), [placed, snapshot, section, months]);
   const category = new Map((snapshot?.categories ?? []).map((c) => [c.id, c]));

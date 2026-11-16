@@ -3,6 +3,11 @@ import type { Computed, RowResult } from "@/lib/cashflow-planning/engine";
 import { yearOf } from "@/lib/cashflow-planning/months";
 import { SECTIONS, SECTION_LABEL, type Month, type PlanDocument, type PlanGroup, type PlanRow, type SectionId } from "@/lib/cashflow-planning/types";
 
+/** The twelve months before the current one: the window of the overview's "Not in plan" figures. None when today is outside the plan. */
+export function lastTwelveMonths(computed: Pick<Computed, "months" | "currentIndex">): Month[] {
+  return computed.currentIndex < 0 ? [] : computed.months.slice(Math.max(0, computed.currentIndex - 12), computed.currentIndex);
+}
+
 /** What the grid draws: its columns (months and year totals) and its lines, from a plan and its calculation. Pure. */
 
 export type Column =

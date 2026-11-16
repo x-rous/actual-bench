@@ -29,7 +29,7 @@ import { MonthJumpPopover } from "@/features/budget-management/components/MonthJ
 import { cn } from "@/lib/utils";
 import { useCashflowData } from "../hooks/useCashflowData";
 import { usePlanActions, usePlanAutosave, usePlans } from "../hooks/usePlans";
-import { buildColumns, buildLines, lineKey, planYears, type Column, type Line } from "../lib/view";
+import { buildColumns, buildLines, lastTwelveMonths, lineKey, planYears, type Column, type Line } from "../lib/view";
 import { useCashflowStore, type PlanSession } from "../store";
 import { AddRowDialog } from "./AddRowDialog";
 import { CashflowGuide, type CashflowGuideSection } from "./guide/CashflowGuide";
@@ -294,7 +294,7 @@ function PlanView({ session, doc, data, today, planOptions, onNewPlan, onRetrySa
   /** The "Not in plan" figure of the last 12 months, as the transactions behind it. */
   const showUnplanned = (section: SectionId) => {
     if (!computed || computed.currentIndex < 0) return;
-    const months = computed.months.slice(Math.max(0, computed.currentIndex - 12), computed.currentIndex);
+    const months = lastTwelveMonths(computed);
     const request = requestFor(doc, snapshot, placed, { kind: "unplanned", key: `unplanned:${section}`, section, label: SECTION_LABEL[section], values: [], aggregate: "sum" }, months, "last 12 months");
     if (request) setTransactions(request);
   };

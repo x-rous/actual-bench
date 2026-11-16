@@ -223,7 +223,8 @@ export function setCells(doc: PlanDocument, edits: readonly { rowId: string; mon
   const byRow = new Map<string, { month: Month; amount: number | null }[]>();
   for (const edit of edits) {
     if (edit.month < doc.startMonth || edit.month > end) continue;
-    byRow.set(edit.rowId, [...(byRow.get(edit.rowId) ?? []), edit]);
+    const list = byRow.get(edit.rowId);
+    if (list) list.push(edit); else byRow.set(edit.rowId, [edit]);
   }
   if (byRow.size === 0) return doc;
   let changed = false;

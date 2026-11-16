@@ -113,7 +113,9 @@ export function createAutosave(budgetSyncId: string) {
       if (now && now.doc !== before?.doc && now.doc !== now.saved && now.status !== "conflict") schedule(id);
     }
   });
-  const beforeUnload = (event: BeforeUnloadEvent) => { if (hasUnsavedPlans()) { leaving = true; flush(true); event.preventDefault(); } };
+  // A save still on its way counts too: undoing back to the saved text does not stop it from landing.
+  const writing = () => [...inFlight].some((key) => key.startsWith(`${budgetSyncId}|`));
+  const beforeUnload = (event: BeforeUnloadEvent) => { if (hasUnsavedPlans() || writing()) { leaving = true; flush(true); event.preventDefault(); } };
   const hidden = () => {
     leaving = document.visibilityState === "hidden";
     if (leaving) flush(true);

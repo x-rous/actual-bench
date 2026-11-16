@@ -206,6 +206,19 @@ describe("rows that follow what an earlier row follows", () => {
   });
 });
 
+describe("rows that follow the same link in different months", () => {
+  it("warns only when both rows expect something in the same month", () => {
+    const first = createRow({ name: "Food", section: "expenses", links: { categories: ["groceries"] } });
+    const later = createRow({ name: "Card", section: "expenses", links: { categories: ["groceries"] } });
+    const base = plan((d) => ({ ...d, rows: [first, later] }));
+    const notes = (doc: PlanDocument) => linkNotes(doc, run(doc), placeActuals(doc, household())).get(later.id)!;
+    const apart = setCells(base, [{ rowId: first.id, month: "2026-06", amount: 5_000 }, { rowId: later.id, month: "2026-07", amount: 5_000 }]);
+    expect(notes(apart).severity).toBe("note");
+    const together = setCells(base, [{ rowId: first.id, month: "2026-06", amount: 5_000 }, { rowId: later.id, month: "2026-06", amount: 5_000 }]);
+    expect(notes(together).severity).toBe("warning");
+  });
+});
+
 describe("a budget row paid after the spending (a card paid next month)", () => {
   it("takes the card's recorded purchases of a month that is over, then the month in progress, then the budget", () => {
     const withLag = (lag?: 1 | 2) => {

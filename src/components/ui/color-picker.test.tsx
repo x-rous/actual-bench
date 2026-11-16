@@ -22,7 +22,7 @@ describe("ColorPicker", () => {
 
   it("takes a typed hex in custom mode, short form included, and ignores partial text", () => {
     const onChange = open();
-    fireEvent.click(screen.getByRole("tab", { name: "Custom" }));
+    fireEvent.click(screen.getByRole("button", { name: "Custom" }));
     const hex = screen.getByLabelText("Hex colour");
     fireEvent.change(hex, { target: { value: "#12" } });
     expect(onChange).not.toHaveBeenCalled();
@@ -35,7 +35,7 @@ describe("ColorPicker", () => {
     render(<div onKeyDown={onKeyDown}><ColorPicker ariaLabel="Colour" value="#3b82f6" onChange={jest.fn()} /></div>);
     fireEvent.click(screen.getByRole("button", { name: "Colour" }));
     fireEvent.keyDown(screen.getByRole("radio", { name: "#3b82f6" }), { key: "ArrowRight" });
-    fireEvent.click(screen.getByRole("tab", { name: "Custom" }));
+    fireEvent.click(screen.getByRole("button", { name: "Custom" }));
     fireEvent.keyDown(screen.getByRole("slider", { name: "Saturation and brightness" }), { key: "ArrowLeft" });
     expect(onKeyDown).not.toHaveBeenCalled();
   });

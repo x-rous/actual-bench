@@ -17,10 +17,12 @@ export type LinkNote = {
   reason?: string;
 };
 
-/** Whether the row expects anything in a month still to come (a forecast month), from the plan as calculated. */
-function forecastsSomething(computed: Computed, row: PlanRow): boolean {
+/** The forecast months in which the row expects anything, from the plan as calculated. Two rows count a link twice only in a month both have. */
+function forecastMonths(computed: Computed, row: PlanRow): Set<number> {
   const plan = computed.rows.get(row.id)?.plan;
-  return !!plan && computed.kinds.some((kind, i) => kind === "forecast" && !!plan[i]);
+  const months = new Set<number>();
+  if (plan) computed.kinds.forEach((kind, i) => { if (kind === "forecast" && plan[i]) months.add(i); });
+  return months;
 }
 
 export function linkNotes(doc: PlanDocument, computed: Computed, placed: Placed | null): Map<string, LinkNote> {
@@ -37,7 +39,7 @@ export function linkNotes(doc: PlanDocument, computed: Computed, placed: Placed 
     const row = byId.get(rowId);
     const holders = note.items.map((i) => byId.get(i.heldBy.id)).filter((r): r is PlanRow => !!r);
     if (row?.basis.kind === "average") note.reason = "The earlier row holds their recorded history, so this row has none to average.";
-    else if (row && forecastsSomething(computed, row) && holders.some((h) => forecastsSomething(computed, h))) note.reason = "Both rows forecast them, so they are counted twice.";
+    else if (row && (() => { const mine = forecastMonths(computed, row); return holders.some((h) => [...forecastMonths(computed, h)].some((i) => mine.has(i))); })()) note.reason = "Both rows forecast them, so they are counted twice.";
     if (note.reason) note.severity = "warning";
     const first = note.items[0];
     const base = note.items.length === 1
