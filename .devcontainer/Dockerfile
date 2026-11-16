@@ -1,5 +1,5 @@
 # Keep the Node version in step with docker/Dockerfile.dev and .github/workflows/ci.yml.
-FROM node:24.21.0-bookworm
+FROM node:24.22.3-bookworm
 
 # Build tools for native modules (better-sqlite3), plus git/ssh and sudo for the
 # node user (the image's default non-root user, uid 1000).

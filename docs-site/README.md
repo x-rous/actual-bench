@@ -8,7 +8,7 @@ decoupled from the main Actual Bench application — it does not share the app's
 build, or runtime. Do not add Astro/Starlight dependencies to the root `package.json`, and do not
 import application code here.
 
-> **Node:** requires Node.js `>=22.12` (matches the app's recommended `22.23.1`).
+> **Node:** requires Node.js `>=22.23.4` (the version Astro 7 needs; the app itself runs on Node 24).
 
 ## Local development
 

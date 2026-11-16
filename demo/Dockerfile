@@ -1,5 +1,5 @@
 # Demo image. Build from the repository root.
-FROM node:24.22.2-alpine AS bench-build
+FROM node:24.22.3-alpine3.24 AS bench-build
 WORKDIR /app
 RUN apk add --no-cache python3 make g++
 COPY package*.json ./
@@ -18,7 +18,10 @@ RUN node demo/generate-metadata.cjs && npm run build
 
 FROM jhonderson/actual-http-api:26.11.0
 USER root
-RUN apk add --no-cache python3 make g++ \
+# Refresh Alpine's own packages (musl, openssl) rather than relying on the
+# snapshot the upstream image was built against.
+RUN apk upgrade --no-cache \
+ && apk add --no-cache python3 make g++ \
  && npm install -g @actual-app/sync-server@26.11.0
 # The API image uses Node 22. Bench and its native modules are built with Node
 # 24, so keep the two runtimes separate rather than mixing their ABIs.
