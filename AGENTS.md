@@ -39,6 +39,7 @@ Other planning and historical docs are context only; their status text is never 
 | Bank Reconciliation | Staged in session; written on **Apply** after a pre-flight re-read confirms rows are unchanged; never writes a category |
 | Sync flows, run history, FX registry, health metadata | App DB |
 | Credit cards | App DB; each explicit **Save** writes immediately as one guarded change set; never writes Actual |
+| Cashflow Planning | App DB; each plan edit is saved automatically a moment later with a revision check (a plan changed elsewhere is never overwritten silently); per-plan undo; reads Actual, never writes it, and never touches global staged Save |
 | Diagnostics, ActualQL | Read-only unless a named workflow applies changes |
 
 Never claim "nothing writes until Save" in code comments or docs; the exceptions above are intentional.
@@ -68,8 +69,9 @@ Never claim "nothing writes until Save" in code comments or docs; the exceptions
 | `src/store/budgetEdits.ts` | Budget-cell/hold edits, selection, inverse-patch undo/redo |
 | `src/store/connection.ts` | Active connection (memory-only) |
 | `src/store/savedServers.ts` | Non-secret server presets (`sessionStorage`) |
-| App DB | Sync flows/runs/mappings, vault records, FX registry/snapshots, reconciliation data, credit-card metadata |
+| App DB | Sync flows/runs/mappings, vault records, FX registry/snapshots, reconciliation data, credit-card metadata, cashflow plans |
 | `creditCardStore` | Credit-card cache per budget (loaded from the app DB), command-scoped undo |
+| `useCashflowStore` | Working copies of the budget's cashflow plans with per-plan undo/redo and save status (loaded from and autosaved to the app DB); Actual reads are TanStack Query snapshots laid over a plan, never stored in it |
 | Local React state | Ephemeral UI only |
 
 - **Queries** use infinite stale/cache time and no focus/reconnect refetch, because refetches clobber unsaved edits. New queries: key by connection, invalidate explicit keys after writes, preserve staged rows on refetch, no broad auto-refetch.

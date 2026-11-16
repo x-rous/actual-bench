@@ -68,7 +68,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // preload set while the user is on /overview. Other app routes keep the
   // existing eager-preload behavior.
   usePreloadEntities(pathname !== "/overview");
-  useKeyboardShortcuts();
+  // Undo and redo on the Cashflow Planning page belong to the open plan, not to the staged drafts.
+  const isCashflowPage = pathname === "/cashflow-planning" || pathname?.startsWith("/cashflow-planning/") === true;
+  useKeyboardShortcuts({ manageStagedHistory: !isCashflowPage });
   useBudgetPreferences();
 
   const hydrated = useIsHydrated();

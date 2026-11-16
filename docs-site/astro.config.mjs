@@ -101,6 +101,7 @@ export default defineConfig({
 					items: [
 						{ label: 'Financial Insights', link: '/user-guide/financial-insights/' },
 						{ label: 'Budget Cockpit', link: '/user-guide/budget-management/' },
+						{ label: 'Cashflow Planning', link: '/user-guide/cashflow-planning/' },
 						{ label: 'Credit Cards', link: '/user-guide/credit-cards/' },
 						{ label: 'Assets', link: '/user-guide/asset-registry/' },
 						{ label: 'Loans', link: '/user-guide/assets-debt/' },

@@ -1,5 +1,6 @@
 "use client";
 
+import { ColorPicker } from "@/components/ui/color-picker";
 import { useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Plus, Trash2, X } from "lucide-react";
 import { z } from "zod";
@@ -303,20 +304,12 @@ export function CardEditor({
           onClick={() => setColor(entry.name === "Default" ? null : entry.color)}
         />;
       })}
-      <label
-        className={"relative flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-dashed "
-          + "focus-within:outline-2 focus-within:outline-ring"}
-        style={color && !CARD_COLORS.some((entry) => entry.color === color) ? { backgroundColor: color } : undefined}
+      <ColorPicker
+        ariaLabel="Custom card color" value={color} fallback={CARD_COLORS[0].color} onChange={(hex) => setColor(hex.toLowerCase())}
+        className="flex size-6 shrink-0 items-center justify-center rounded-lg border border-dashed focus-visible:outline-2 focus-visible:outline-ring"
       >
-        <Plus className="size-3.5" aria-hidden />
-        <input
-          type="color"
-          aria-label="Custom card color"
-          className="absolute inset-0 size-full cursor-pointer opacity-0"
-          value={color ?? CARD_COLORS[0].color}
-          onChange={(event) => setColor(event.target.value.toLowerCase())}
-        />
-      </label>
+        <span className="flex size-full items-center justify-center rounded-lg" style={color && !CARD_COLORS.some((entry) => entry.color === color) ? { backgroundColor: color } : undefined}><Plus className="size-3.5" aria-hidden /></span>
+      </ColorPicker>
       <Button type="button" variant="ghost" size="xs" onClick={() => setColor(null)}>Clear</Button>
     </div>
   </div>;

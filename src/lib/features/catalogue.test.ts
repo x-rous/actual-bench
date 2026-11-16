@@ -2,13 +2,13 @@ import { FEATURES, FEATURE_SECTIONS, getFeatureForPath } from "./catalogue";
 
 describe("feature presentation contracts", () => {
   it("keeps implemented features complete and uniquely registered", () => {
-    expect(FEATURES).toHaveLength(21);
-    expect(new Set(FEATURES.map((feature) => feature.id)).size).toBe(21);
-    expect(new Set(FEATURES.map((feature) => feature.href)).size).toBe(21);
+    expect(FEATURES).toHaveLength(22);
+    expect(new Set(FEATURES.map((feature) => feature.id)).size).toBe(22);
+    expect(new Set(FEATURES.map((feature) => feature.href)).size).toBe(22);
     expect(FEATURE_SECTIONS.flatMap((section) => section.items)).toEqual(FEATURES);
-    expect(FEATURES.filter((feature) => feature.maturity === "experimental")).toHaveLength(6);
+    expect(FEATURES.filter((feature) => feature.maturity === "experimental")).toHaveLength(7);
     expect(FEATURES.filter((feature) => feature.groupId === "financial-management").map((feature) => feature.id)).toEqual([
-      "financial-insights", "budget-management", "reconciliation", "credit-cards", "assets", "loans",
+      "financial-insights", "budget-management", "cashflow-planning", "reconciliation", "credit-cards", "assets", "loans",
     ]);
     expect(FEATURES.filter((feature) => feature.groupId === "sync-automations").map((feature) => feature.id)).toEqual([
       "sync", "backups", "automations", "fx-rates",
@@ -49,8 +49,9 @@ describe("feature presentation contracts", () => {
     expect(getFeatureForPath("/budget-diagnostics")?.feedbackUrl).toBeUndefined();
     expect(getFeatureForPath("/rules")?.feedbackUrl).toBe(getFeatureForPath("/rules/diagnostics")?.feedbackUrl);
     expect(getFeatureForPath("/sync")?.feedbackUrl).toBe(getFeatureForPath("/fx-rates")?.feedbackUrl);
-    expect(new Set(FEATURES.flatMap((feature) => feature.feedbackUrl ? [feature.feedbackUrl] : [])).size).toBe(14);
+    expect(new Set(FEATURES.flatMap((feature) => feature.feedbackUrl ? [feature.feedbackUrl] : [])).size).toBe(15);
     expect(getFeatureForPath("/assets")?.feedbackUrl).toBe("https://github.com/x-rous/actual-bench/issues/417");
     expect(getFeatureForPath("/financial-insights")?.feedbackUrl).toBe("https://github.com/x-rous/actual-bench/issues/446");
+    expect(getFeatureForPath("/cashflow-planning")?.feedbackUrl).toBe("https://github.com/x-rous/actual-bench/issues/463");
   });
 });
