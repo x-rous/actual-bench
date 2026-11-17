@@ -35,6 +35,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * consumed and locked, so a module-level instance shared by these handlers
  * would fail on the second miss with `ReadableStream is locked`.
  */
+function idList(value: unknown): string[] {
+  if (!Array.isArray(value) || value.some((id) => typeof id !== "string")) {
+    throw new AppDbValidationError("Expected an array of item ids");
+  }
+  return value as string[];
+}
+
+const APPLY_OWNED_STATUSES = new Set(["applying", "partial", "completed"]);
+
 function notFound() {
   return NextResponse.json({ error: "Reconciliation session not found" }, { status: 404 });
 }
@@ -74,6 +83,16 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     // Only known keys are forwarded; the repository validates the status value.
     const patch: UpdateSessionInput = {};
+    // Apply outcomes have their own guarded actions (claim / finish / recover /
+    // complete on POST). Letting the generic update write them would let a
+    // client lock a session without a claim, or mark rows applied that were
+    // never written — `isAppliedItem` trusts `applyResults` as that proof.
+    if ("status" in body && APPLY_OWNED_STATUSES.has(String(body.status))) {
+      throw new AppDbValidationError("That status is set by Apply, not by a session update.");
+    }
+    if ("applyResults" in body && getReconciliationSession(getAppDb(), id)?.status !== "applying") {
+      throw new AppDbValidationError("Apply results can only be recorded while Apply is running.");
+    }
     if ("status" in body) patch.status = body.status as ReconciliationSessionStatus;
     if ("accountName" in body) patch.accountName = body.accountName as string | null;
     if ("profileId" in body) patch.profileId = body.profileId as string | null;
@@ -147,6 +166,8 @@ export async function POST(request: Request, context: RouteContext) {
       ...(body.statementRows !== undefined ? { statementRows: reconciliationRows(body.statementRows) } : {}),
       ...(body.items !== undefined ? { items: reconciliationItems(body.items) } : {}),
       itemPatches: patches,
+      ...(body.addedItems !== undefined ? { addedItems: reconciliationItems(body.addedItems) } : {}),
+      ...(body.removedItemIds !== undefined ? { removedItemIds: idList(body.removedItemIds) } : {}),
       patch: body.patch === undefined ? {} : reconciliationPatch(body.patch),
     }) });
   } catch (error) {

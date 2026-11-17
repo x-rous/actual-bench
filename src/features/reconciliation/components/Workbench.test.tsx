@@ -8,10 +8,13 @@ import type { ActualTransactionSnapshot, ReconciliationItem, StatementRow } from
 import { Workbench, type WorkbenchProps } from "./Workbench";
 import type { TransformDialogProps } from "./TransformDialog";
 
-jest.mock("./TransformDialog", () => ({ TransformDialog: (props: TransformDialogProps) => <>
-  <output aria-label="Transform rows">{props.items.map((item) => item.id).join(",")}</output>
-  <output aria-label="Transform selection">{[...props.selectedIds].join(",")}</output>
-</> }));
+jest.mock("./TransformDialog", () => {
+  const Stub = (props: TransformDialogProps) => <>
+    <output aria-label="Transform rows">{props.items.map((item) => item.id).join(",")}</output>
+    <output aria-label="Transform selection">{[...props.selectedIds].join(",")}</output>
+  </>;
+  return { TransformDialog: Stub, ConnectedTransformDialog: Stub };
+});
 
 const transaction: ActualTransactionSnapshot = {
   id: "t1", accountId: "account", date: "2026-07-04", amount: -900,
@@ -53,7 +56,7 @@ const mixed: ReconciliationItem[] = [
 it.each([
   ["Create in Actual 1", "create", ["statement"]],
   ["Keep 1", "keep", ["actual"]],
-  ["Delete from Actual 3", "delete", ["actual", "paired", "split"]],
+  ["Delete from Actual 1", "delete", ["actual"]],
   ["Ignore 8", "ignored", mixed.map((item) => item.id)],
 ] as const)("%s only sends eligible rows and clears the selection", (label, disposition, ids) => {
   const props = propsFor(mixed);

@@ -189,7 +189,7 @@ describe("bank provenance survives the write and is evidence next month", () => 
       payeeId: "payee-amazon",
       payeeName: CURATED_PAYEE,
       importedPayee: BANK_TEXT,
-      importedId: expect.stringMatching(/^recon:/),
+      importedId: expect.stringMatching(/^recon2:[0-9a-f]{16}$/),
     });
   });
 

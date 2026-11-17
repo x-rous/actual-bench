@@ -5,6 +5,7 @@ import type { LoadedCandidateWindow } from "@/lib/reconciliation/ports";
 import { createReconciliationTransport } from "@/lib/reconciliation/transportAdapter";
 import type { MatchConfig } from "@/lib/reconciliation/types";
 import type { ConnectionInstance } from "@/store/connection";
+import { balanceAsOf } from "@/lib/reconciliation/session/closingBalance";
 
 export type CandidateWindowInput = {
   accountId: string;
@@ -156,4 +157,28 @@ export async function refreshBudget(connection: ConnectionInstance): Promise<boo
   } catch {
     return false;
   }
+}
+
+/**
+ * The account's balance at the end of `asOf`, in integer minor units: today's
+ * balance less every transaction dated after it. Two ordinary reads, so no new
+ * transport operation is needed for a balance-as-of-date figure.
+ */
+export async function loadBalanceOn(
+  connection: ConnectionInstance,
+  accountId: string,
+  asOf: string
+): Promise<number> {
+  const transport = getTransport(connection);
+  const balances = await transport.getAccountBalances();
+  const current = balances.get(accountId);
+  if (current === undefined) throw new Error("The account's balance is not available.");
+  // Account balances arrive in decimal units (AGENTS §4); converted here, at the boundary.
+  const currentMinor = Math.round(current * 100);
+  const later = await createReconciliationTransport(transport).loadTransactions({
+    accountId,
+    startDate: shiftDate(asOf, 1),
+    endDate: "2999-12-31",
+  });
+  return balanceAsOf(currentMinor, later.transactions, asOf);
 }

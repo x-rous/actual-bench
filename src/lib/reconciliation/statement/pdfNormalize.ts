@@ -6,9 +6,10 @@ import {
   periodFor,
   totalsFor,
   type NormalizedStatement,
+  type StatementClosingBalance,
   type StatementRowError,
 } from "./normalize";
-import { parsePdfMoneyToMinorUnits, type PdfTransactionProposal } from "./pdf";
+import { parsePdfMoneyToMinorUnits, type PdfStatementParseResult, type PdfTransactionProposal } from "./pdf";
 
 export type ReviewedPdfTransaction = Pick<
   PdfTransactionProposal,
@@ -28,7 +29,15 @@ export type ReviewedPdfTransaction = Pick<
  */
 export function normalizeReviewedPdfStatement(
   transactions: ReviewedPdfTransaction[],
-  makeId: (index: number) => string
+  makeId: (index: number) => string,
+  /**
+   * The period the statement itself prints, when the parser found it or the
+   * user confirmed it. It is the bank saying "these are all the transactions
+   * between these dates", so an Actual transaction in the last days of it that
+   * the statement does not list is a real question — not padding to keep by
+   * default, which is what it was when the period stopped at the last row.
+   */
+  printedPeriod?: { start: string | null; end: string | null } | null
 ): NormalizedStatement {
   const rows: StatementRow[] = [];
   const errors: StatementRowError[] = [];
@@ -88,5 +97,83 @@ export function normalizeReviewedPdfStatement(
     });
   });
 
-  return { rows, errors, totals: totalsFor(rows), period: periodFor(rows) };
+  return { rows, errors, totals: totalsFor(rows), period: withPrintedPeriod(periodFor(rows), printedPeriod) };
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * The rows' own span widened to the printed period. Never narrowed: a row the
+ * parser dated outside the printed period is still on the statement.
+ */
+export function withPrintedPeriod(
+  rowsPeriod: { start: string; end: string } | null,
+  printed: { start: string | null; end: string | null } | null | undefined
+): { start: string; end: string } | null {
+  if (!rowsPeriod) return null;
+  // A printed period this far from the rows is a misread or a typo, and taking
+  // it would load (and ask about) months of unrelated transactions.
+  const near = (date: string, from: string) =>
+    Math.abs(Date.parse(date) - Date.parse(from)) <= MAX_WIDENING_DAYS * 86_400_000;
+  const start = printed?.start && ISO_DATE.test(printed.start) && printed.start < rowsPeriod.start &&
+    near(printed.start, rowsPeriod.start) ? printed.start : rowsPeriod.start;
+  const end = printed?.end && ISO_DATE.test(printed.end) && printed.end > rowsPeriod.end &&
+    near(printed.end, rowsPeriod.end) ? printed.end : rowsPeriod.end;
+  return { start, end };
+}
+
+const MAX_WIDENING_DAYS = 45;
+
+/**
+ * The balance a PDF statement closed at, in Actual's sign, or null when the
+ * statement does not settle it.
+ *
+ * A printed closing-balance line wins. Without one, the running balance printed
+ * on the chronologically last row is the same figure — nothing posted after it
+ * — but only when the balance column is a running balance and that row's
+ * balance agreed with its own arithmetic. Null when the parser could not tell a
+ * deposit account from a liability (the sign would be a guess), or when the
+ * figure carries more precision than Actual stores.
+ */
+export function closingBalanceFromPdf(
+  result: Pick<PdfStatementParseResult, "balanceCheckpoints" | "balancePolarity" | "balanceBehavior" | "transactions">,
+  asOf: string | null | undefined
+): StatementClosingBalance | null {
+  if (!asOf || !result.balancePolarity) return null;
+  const polarity = result.balancePolarity.direction;
+  const toActual = (minor: number) => (polarity === "liability" ? -minor : minor);
+  const base = { asOf, polarity, polarityDetected: result.balancePolarity.source === "detected-type" } as const;
+
+  const closing = [...(result.balanceCheckpoints ?? [])].reverse().find((checkpoint) => checkpoint.kind === "closing");
+  if (closing) {
+    const minor = minorUnitsOf(BigInt(closing.coefficient), closing.scale);
+    return minor === null ? null : { ...base, amount: toActual(minor), source: "closing-line" };
+  }
+
+  if (result.balanceBehavior !== "running") return null;
+  const dated = result.transactions.filter((transaction) => transaction.importDate && transaction.balance);
+  if (!dated.length) return null;
+  let ascending = 0;
+  let descending = 0;
+  dated.slice(1).forEach((transaction, index) => {
+    if (transaction.importDate! > dated[index].importDate!) ascending += 1;
+    if (transaction.importDate! < dated[index].importDate!) descending += 1;
+  });
+  const last = descending > ascending ? dated[0] : dated[dated.length - 1];
+  if (!last.confidence.balance?.reasons.includes("BALANCE_RECONCILED")) return null;
+  const minor = parsePdfMoneyToMinorUnits(last.balance!);
+  return minor === null ? null : { ...base, amount: toActual(minor), source: "last-row" };
+}
+
+/** Exact coefficient/scale to integer hundredths, or null when that would lose a digit. */
+function minorUnitsOf(coefficient: bigint, scale: number): number | null {
+  let value = coefficient;
+  if (scale < 2) value *= BigInt(10) ** BigInt(2 - scale);
+  else if (scale > 2) {
+    const divisor = BigInt(10) ** BigInt(scale - 2);
+    if (value % divisor !== BigInt(0)) return null;
+    value /= divisor;
+  }
+  const minor = Number(value);
+  return Number.isSafeInteger(minor) ? minor : null;
 }

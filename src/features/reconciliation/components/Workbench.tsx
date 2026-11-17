@@ -37,7 +37,7 @@ import { NewTransactionOptions } from "./NewTransactionOptions";
 import { Inspector } from "./Inspector";
 import { MatchOptions } from "./MatchOptions";
 import { ShortcutsHelp } from "./ShortcutsHelp";
-import { TransformDialog } from "./TransformDialog";
+import { ConnectedTransformDialog } from "./TransformDialog";
 import { WorkbenchRow } from "./WorkbenchRow";
 import { Select } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -512,6 +512,8 @@ export type WorkbenchProps = {
   /** From the session; null on one recorded before the format was stored. */
   statementFormat?: StatementFormat | null;
   onTransform: (changes: { itemId: string; patch: StagedPatch | undefined }[]) => void;
+  /** The statement's printed or inferred closing date; sets the default `{month}` for saved transforms. */
+  statementEnd?: string | null;
 };
 
 function FilterButton({
@@ -638,6 +640,7 @@ export function Workbench({
   onApplyConfigChange,
   statementFormat = null,
   onTransform,
+  statementEnd,
 }: WorkbenchProps) {
   const [filter, setFilter] = useState<FilterId>("all");
   const [reasonsOpen, setReasonsOpen] = useState(false);
@@ -690,6 +693,10 @@ export function Workbench({
     [items]
   );
   const [transformOpen, setTransformOpen] = useState(false);
+  const statementRowDates = useMemo(
+    () => [...statementRows.values()].map((row) => row.postedDate),
+    [statementRows]
+  );
 
   const counts = useMemo(() => {
     const result = {} as Record<FilterId, number>;
@@ -1115,7 +1122,8 @@ export function Workbench({
       }
 
       if (key === "d") {
-        if (!hasTransaction) return;
+        // Same rule as the Delete button: only a transaction the statement does not list.
+        if (!hasTransaction || hasStatementRow) return;
         if (!canStageDelete(item).allowed) return;
         onDisposition(item.id, "delete");
         advance();
@@ -1579,7 +1587,9 @@ export function Workbench({
       <ShortcutsHelp open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
 
       {transformOpen && (
-        <TransformDialog
+        <ConnectedTransformDialog
+          statementEnd={statementEnd}
+          rowDates={statementRowDates}
           items={editableItems}
           selectedIds={selectedEditableIds}
           contextFor={transformContextFor}

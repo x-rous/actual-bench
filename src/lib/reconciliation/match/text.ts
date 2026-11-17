@@ -34,6 +34,31 @@ import type {
  */
 export function normalizeForCompare(value: string | null | undefined): string {
   if (!value) return "";
+  const cached = normalizedCache.get(value);
+  if (cached !== undefined) return cached;
+  const normalized = normalizeUncached(value);
+  remember(normalizedCache, value, normalized);
+  return normalized;
+}
+
+/*
+ * Matching compares each statement row with every transaction in its window,
+ * and the leftover pass does so without an amount to narrow it — so the same
+ * few hundred strings were normalised, and their bigrams counted, again for
+ * every pair. Both are pure functions of the string, so they are remembered.
+ * Bounded, and simply cleared when full: a session's strings fit many times
+ * over, and nothing depends on what is evicted.
+ */
+const CACHE_LIMIT = 20_000;
+const normalizedCache = new Map<string, string>();
+const bigramCache = new Map<string, Map<string, number>>();
+
+function remember<V>(cache: Map<string, V>, key: string, value: V) {
+  if (cache.size >= CACHE_LIMIT) cache.clear();
+  cache.set(key, value);
+}
+
+function normalizeUncached(value: string): string {
   return value
     .normalize("NFKD")
     // Strip combining marks so "Café" and "Cafe" compare equal.
@@ -69,12 +94,15 @@ export function bigramDice(a: string, b: string): number {
 }
 
 function bigrams(value: string): Map<string, number> {
+  const cached = bigramCache.get(value);
+  if (cached) return cached;
   const grams = new Map<string, number>();
   const compact = value.replace(/\s+/g, "");
   for (let i = 0; i < compact.length - 1; i++) {
     const gram = compact.slice(i, i + 2);
     grams.set(gram, (grams.get(gram) ?? 0) + 1);
   }
+  remember(bigramCache, value, grams);
   return grams;
 }
 
@@ -135,27 +163,75 @@ export function symmetricSimilarity(a: string, b: string): number {
  * Falls back to the best token-overlap ratio when there is no contiguous hit,
  * so a reordered or partially-rewritten note still contributes proportionally.
  */
-export function containmentSimilarity(needle: string, haystack: string): number {
+export function containmentSimilarity(
+  needle: string,
+  haystack: string,
+  /**
+   * Guards the *shorter* side. Whichever string is contained in the other has to
+   * say something specific: a note of `card`, `fee` or `payment` sits inside a
+   * great many statement descriptions, and used to score a perfect 1.0 against
+   * all of them — enough to auto-match a transaction whose only link to the row
+   * was one generic word. A short merchant name (`Jeeny`, `Uber`) is specific,
+   * which is why this is judged by meaning and frequency, not by length.
+   */
+  shortSide: { corpus?: TextCorpus; maxCorpusFrequency?: number } = {}
+): number {
   const n = normalizeForCompare(needle);
   const h = normalizeForCompare(haystack);
   if (!n || !h) return 0;
 
-  // Pad so matching is token-aligned: "FEE" must not hit inside "COFFEE".
-  const paddedNeedle = ` ${n} `;
-  const paddedHaystack = ` ${h} `;
-  if (paddedHaystack.includes(paddedNeedle) || paddedNeedle.includes(paddedHaystack)) return 1;
-
   const needleTokens = new Set(tokenize(n));
   const haystackTokens = new Set(tokenize(h));
   if (needleTokens.size === 0 || haystackTokens.size === 0) return 0;
+
+  // Whichever side is shorter is the one being looked for in the other.
+  const shorter = n.length <= h.length ? needleTokens : haystackTokens;
+  const trusted = isSpecific([...shorter], shortSide.corpus, shortSide.maxCorpusFrequency);
+
+  // Pad so matching is token-aligned: "FEE" must not hit inside "COFFEE".
+  const paddedNeedle = ` ${n} `;
+  const paddedHaystack = ` ${h} `;
+  const contiguous = paddedHaystack.includes(paddedNeedle) || paddedNeedle.includes(paddedHaystack);
+  if (contiguous && trusted) return 1;
 
   let shared = 0;
   for (const token of needleTokens) {
     if (haystackTokens.has(token)) shared += 1;
   }
   // Divide by the smaller side: extra words on either side must not be read as
-  // evidence against the match.
-  return shared / Math.min(needleTokens.size, haystackTokens.size);
+  // evidence against the match. Unless the smaller side says nothing specific,
+  // in which case it is a share of the larger one — one generic word out of
+  // four is a quarter, not a whole.
+  const denominator = trusted
+    ? Math.min(needleTokens.size, haystackTokens.size)
+    : Math.max(needleTokens.size, haystackTokens.size);
+  return shared / denominator;
+}
+
+/**
+ * Words that describe *how* money moved, not *who* it went to, plus country and
+ * currency codes. A side made only of these carries no merchant evidence.
+ */
+const GENERIC_TOKENS = new Set([
+  "CARD", "CARDS", "PAYMENT", "PAYMENTS", "PAY", "PAID", "FEE", "FEES", "CHARGE", "CHARGES",
+  "TRANSFER", "TRANSFERS", "TRF", "TFR", "PURCHASE", "PURCHASES", "POS", "ATM", "CASH",
+  "DEPOSIT", "WITHDRAWAL", "REFUND", "REVERSAL", "ONLINE", "DEBIT", "CREDIT", "INTEREST",
+  "BANK", "BILL", "BILLS", "TAX", "VAT", "SERVICE", "SERVICES", "THANK", "YOU", "THE",
+  "AND", "FOR", "TO", "FROM", "OF", "IN", "ON", "AT", "BY", "MONTHLY", "ANNUAL", "INTL",
+  "INTERNATIONAL", "LOCAL", "TRANSACTION", "TXN", "REF", "NO", "ID", "AUTH", "VISA",
+  "MASTERCARD", "MC", "AMEX", "APPLE", "GOOGLE", "UAE", "AE", "SAU", "KSA", "SA", "USA",
+  "US", "UK", "GB", "AED", "SAR", "USD", "EUR", "GBP", "INR", "QAR", "KWD", "BHD", "OMR",
+]);
+
+function isSpecific(tokens: string[], corpus?: TextCorpus, maxCorpusFrequency = 0.3): boolean {
+  const meaningful = tokens.filter((token) => token.length > 2 && !GENERIC_TOKENS.has(token));
+  if (meaningful.length === 0) return false;
+  if (corpus && corpus.documentCount >= MIN_CORPUS_FOR_FREQUENCY) {
+    return meaningful.some(
+      (token) => (corpus.documentFrequency.get(token) ?? 0) / corpus.documentCount <= maxCorpusFrequency
+    );
+  }
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -255,10 +331,11 @@ function applyPreprocess(value: string, steps: TextPreprocessStep[]): string {
 function compare(
   statementText: string,
   targetValue: string,
-  mode: TextCompareMode
+  mode: TextCompareMode,
+  guard: { corpus?: TextCorpus; maxCorpusFrequency?: number }
 ): number {
   return mode === "containment"
-    ? containmentSimilarity(statementText, targetValue)
+    ? containmentSimilarity(statementText, targetValue, guard)
     : symmetricSimilarity(statementText, targetValue);
 }
 
@@ -305,7 +382,10 @@ export function evaluateTarget(
     };
   }
 
-  const similarity = compare(statementText, value, target.mode) * target.weight;
+  const similarity = compare(statementText, value, target.mode, {
+    corpus,
+    maxCorpusFrequency: floor.maxCorpusFrequency,
+  }) * target.weight;
   return {
     similarity,
     reasons: [

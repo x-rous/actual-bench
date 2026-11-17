@@ -104,12 +104,14 @@ const mockCacheSession = jest.fn((session: ReconciliationSessionRecord) => { Obj
 const mockMutations = { flushSaves: jest.fn(), loadSession: jest.fn(), retrySaves: jest.fn(), cacheSession: mockCacheSession,
   patchItems: { mutateAsync: jest.fn().mockResolvedValue({}) },
   replaceItems: { mutateAsync: jest.fn().mockResolvedValue({}) },
+  saveItemDiff: { mutateAsync: jest.fn().mockResolvedValue({}) },
   updateSession: { mutateAsync: jest.fn().mockResolvedValue({}) }, createSession: { isPending: false } };
 jest.mock("../hooks/useReconciliation", () => ({
   useReconciliationSessions: () => ({ data: [mockSession] }),
   useReconciliationSession: () => ({ data: mockData, refetch: jest.fn() }),
   useReconciliationProfiles: () => ({ data: [] }), usePdfStatementLayouts: () => ({ data: [] }),
   useReconciliationMutations: () => mockMutations,
+  useBalanceOnDate: () => ({ data: undefined, isLoading: false, isError: false }),
 }));
 beforeEach(() => {
   jest.clearAllMocks();
@@ -365,7 +367,14 @@ it("links only the two explicitly selected sides, saves once and clears the old 
   fireEvent.click(screen.getByRole("button", { name: "These are the same transaction 2" }));
   expect(stagedDecisions()).toHaveLength(1);
   expect(stagedDecisions()[0]).toEqual(expect.objectContaining({ id: "bank", disposition: "matched", actualTransactionIds: ["t1"] }));
-  expect(mockMutations.replaceItems.mutateAsync).toHaveBeenCalledTimes(1);
+  // Saved once, as a diff: the pair is patched and the Actual-only row removed.
+  expect(mockMutations.saveItemDiff.mutateAsync).toHaveBeenCalledTimes(1);
+  expect(mockMutations.saveItemDiff.mutateAsync).toHaveBeenCalledWith(expect.objectContaining({
+    itemPatches: [expect.objectContaining({ id: "bank", disposition: "matched" })],
+    addedItems: [],
+    removedItemIds: expect.arrayContaining([expect.any(String)]),
+  }));
+  expect(mockMutations.replaceItems.mutateAsync).not.toHaveBeenCalled();
   expect(screen.queryByRole("button", { name: "Undo that" })).not.toBeInTheDocument();
   expect(mockUpdate).not.toHaveBeenCalled();
 });

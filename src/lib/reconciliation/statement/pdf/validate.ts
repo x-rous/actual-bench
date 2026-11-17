@@ -183,8 +183,12 @@ function validateBalanceSequences(
   checkpoints: PdfBalanceCheckpoint[]
 ) {
   const liability = polarity.direction === "liability";
+  const order = chronologicalOrder(transactions);
+  // The opening balance comes before the chronologically first row, which on a
+  // newest-first statement is the last one printed. Checking the printed first
+  // row there flagged a correct statement as a balance mismatch.
   const opening = checkpoints.find((checkpoint) => checkpoint.kind === "opening");
-  const first = transactions[0];
+  const first = order === "descending" ? transactions.at(-1) : transactions[0];
   if (opening && first?.balance && first.exactAmount) {
     validateBalanceStep(
       first,
@@ -193,7 +197,6 @@ function validateBalanceSequences(
       liability
     );
   }
-  const order = chronologicalOrder(transactions);
   for (let index = 1; index < transactions.length; index += 1) {
     const previous = transactions[index - 1];
     const current = transactions[index];
@@ -208,17 +211,19 @@ function validateBalanceSequences(
       : before.coefficient - after.coefficient;
     validateBalanceDelta(transaction, chronologicalDelta, liability);
   }
-  validateBalanceCheckpoints(transactions, checkpoints);
+  validateBalanceCheckpoints(transactions, checkpoints, order);
 }
 
 function validateBalanceCheckpoints(
   transactions: PdfTransactionProposal[],
-  checkpoints: PdfBalanceCheckpoint[]
+  checkpoints: PdfBalanceCheckpoint[],
+  order: "ascending" | "descending" = "ascending"
 ) {
   const comparisons = checkpoints.flatMap((checkpoint) => {
     if (checkpoint.kind === "opening") return [];
+    // The closing balance follows the chronologically last row.
     const transaction = checkpoint.kind === "closing"
-      ? transactions.at(-1)
+      ? order === "descending" ? transactions[0] : transactions.at(-1)
       : [...transactions].reverse().find((candidate) => candidate.raw.pageNumber < checkpoint.pageNumber);
     return transaction?.balance && transaction.confidence.balance ? [{ checkpoint, transaction }] : [];
   });

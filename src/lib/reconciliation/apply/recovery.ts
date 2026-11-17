@@ -1,5 +1,5 @@
 import type { ActualTransactionSnapshot } from "../types";
-import type { ApplyPlan, OperationResult } from "./operations";
+import { markersOf, type ApplyPlan, type OperationResult } from "./operations";
 import { verifyApply } from "./verification";
 
 /** Read-back evidence for a stopped Apply. Never performs or guesses a write. */
@@ -14,7 +14,7 @@ export function recoverApply(input: {
     rows.push(row); byMarker.set(row.importedId, rows);
   }
   const expected: OperationResult[] = input.plan.operations.map((operation) => ({ operationId: operation.id, status: "applied",
-    transactionId: operation.kind === "create" ? byMarker.get(operation.marker)?.[0]?.id ?? null : operation.transactionId }));
+    transactionId: operation.kind === "create" ? markersOf(operation).map((marker) => byMarker.get(marker)?.[0]?.id).find(Boolean) ?? null : operation.transactionId }));
   const report = verifyApply({ ...input, results: expected });
   const issues = new Map<string, string[]>();
   for (const issue of report.issues) {

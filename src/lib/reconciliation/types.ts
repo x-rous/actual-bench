@@ -268,6 +268,16 @@ export type MatchConfig = {
   clusterDateToleranceDays: number;
   /** Text similarity required to consider two rows the same merchant. */
   clusterTextFloor: number;
+  /**
+   * Points taken off an exact-amount pair when both sides carry text and that
+   * text plainly disagrees (`NOON ORDER` against a `Careem Ride` payee).
+   *
+   * Actual's own importer matches on amount and date alone; Bench can see the
+   * text, and two populated descriptions with nothing in common are evidence
+   * *against* the pair. A same-day pair still clears the floor; a pair several
+   * days apart drops to review rather than matching silently. 0 turns it off.
+   */
+  textDisagreementPenalty: number;
 };
 
 /**
@@ -290,6 +300,8 @@ export type MatchReason =
       why: "empty" | "below-needle-floor" | "no-statement-text";
     }
   | { kind: "reference"; where: "importedId" | "notes" }
+  /** Both sides had text and it shared next to nothing; `penalty` points were withheld. */
+  | { kind: "text-disagrees"; similarity: number; penalty: number }
   | {
       kind: "amount-mismatch";
       statementAmount: MinorUnitAmount;

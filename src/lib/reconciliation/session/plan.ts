@@ -185,9 +185,30 @@ export function createMarker(input: {
   sessionId: string;
   fingerprint: string;
 }): string {
-  return `recon:${fnv1aHex(
-    `${input.budgetSyncId}|${input.accountId}|${input.sessionId}|${input.fingerprint}`
-  )}`;
+  // Two 32-bit FNV-1a digests over the identity and its reverse: 64 bits, so a
+  // marker colliding with another create's across an account's whole history
+  // is no longer a realistic way to skip a statement row as "already created".
+  const identity = markerIdentity(input);
+  return `recon2:${fnv1aHex(identity)}${fnv1aHex(`${[...identity].reverse().join("")}|2`)}`;
+}
+
+/** The marker sessions wrote before `createMarker` widened it. Looked for, never written. */
+export function createLegacyMarker(input: {
+  budgetSyncId: string;
+  accountId: string;
+  sessionId: string;
+  fingerprint: string;
+}): string {
+  return `recon:${fnv1aHex(markerIdentity(input))}`;
+}
+
+function markerIdentity(input: {
+  budgetSyncId: string;
+  accountId: string;
+  sessionId: string;
+  fingerprint: string;
+}): string {
+  return `${input.budgetSyncId}|${input.accountId}|${input.sessionId}|${input.fingerprint}`;
 }
 
 /**
@@ -201,6 +222,8 @@ export function createMarker(input: {
  */
 const MISSING_TRANSACTION =
   "This transaction is no longer in the session. It may have been deleted in Actual - re-run the match to see the account as it stands now.";
+const DELETE_ON_STATEMENT =
+  "This transaction is on the statement, so it is not deleted. If the pairing is wrong, mark it \"Not the same transaction\" first, then delete the transaction on its own row.";
 const MISSING_STATEMENT_ROW =
   "This statement row is no longer in the session, so there is nothing to create from.";
 
@@ -334,6 +357,18 @@ export function buildApplyPlan(input: PlanInput): ApplyPlan {
       }
 
       case "delete": {
+        // A decision saved before delete was limited to Actual-only rows can
+        // still name a statement row. Deleting its transaction would remove one
+        // the bank lists, so it is held back rather than carried out.
+        const undecided = canDecideOneTransaction(item);
+        if (!undecided.allowed) {
+          blocked.push({ itemId: item.id, reason: undecided.reason });
+          break;
+        }
+        if (item.statementRowIds.length > 0) {
+          blocked.push({ itemId: item.id, reason: DELETE_ON_STATEMENT });
+          break;
+        }
         const transaction = input.transactions.get(item.actualTransactionIds[0] ?? "");
         if (!transaction) {
           blocked.push({ itemId: item.id, reason: MISSING_TRANSACTION });
@@ -385,6 +420,12 @@ function createOperationFor(
   const config = input.applyConfig ?? DEFAULT_APPLY_CONFIG;
   const statementFormat = input.statementFormat ?? null;
   const importedPayee = row.importedPayee.trim() || null;
+  const markerInput = {
+    budgetSyncId: input.budgetSyncId,
+    accountId: input.accountId,
+    sessionId: input.sessionId,
+    fingerprint: row.fingerprint,
+  };
   return {
     id: operationId("create", item.id),
     kind: "create",
@@ -419,12 +460,8 @@ function createOperationFor(
       statementFormat,
     }).notes,
     cleared: config.clearedTarget !== "none",
-    marker: createMarker({
-      budgetSyncId: input.budgetSyncId,
-      accountId: input.accountId,
-      sessionId: input.sessionId,
-      fingerprint: row.fingerprint,
-    }),
+    marker: createMarker(markerInput),
+    legacyMarker: createLegacyMarker(markerInput),
   };
 }
 

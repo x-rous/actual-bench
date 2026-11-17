@@ -286,3 +286,93 @@ it("shows the proposed bank payee before explicitly clearing a new row's payee",
   fireEvent.click(screen.getByRole("button", { name: "Change 1 row" }));
   expect(onApply).toHaveBeenCalledWith([{ itemId: "i1", patch: { payeeId: { original: null, staged: null, source: "transform" } } }]);
 });
+
+describe("saved transforms", () => {
+  function renderWithSaved(onApply: jest.Mock, onCreate = jest.fn(async () => undefined)) {
+    const transaction = txn("#API DANUBE Makkah");
+    render(
+      <TransformDialog
+        items={[item]}
+        selectedIds={new Set()}
+        contextFor={() => ({
+          item,
+          statementRow,
+          transaction,
+          pending: prospectiveTransaction({ item, statementRow, transaction, applyConfig: DEFAULT_APPLY_CONFIG }),
+          payeeName: () => "Danube",
+          categoryName: () => "Groceries",
+        })}
+        payees={[{ id: "p1", name: "Danube" }]}
+        categories={[{ id: "c1", name: "Groceries" }]}
+        onClose={() => {}}
+        onApply={onApply}
+        saved={{
+          transforms: [{
+            id: "api", name: "API to month", position: 0, createdAt: "t", updatedAt: "t",
+            rule: {
+              conditions: [{ field: "notes", operator: "hasTag", value: "#API" }],
+              actions: [{ kind: "replaceTag", from: "#API", to: "#{month}" }],
+            },
+          }],
+          defaultMonth: "2026-11",
+          onCreate,
+          onUpdate: jest.fn(async () => undefined),
+          onDelete: jest.fn(async () => undefined),
+          onReorder: jest.fn(async () => undefined),
+        }}
+      />
+    );
+  }
+
+  beforeEach(() => window.localStorage.clear());
+
+  it("runs a ticked saved transform with {month} filled in from the statement", () => {
+    const onApply = jest.fn();
+    renderWithSaved(onApply);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Run API to month" }));
+    expect(screen.getByLabelText("Month")).toHaveValue("2026-11");
+    fireEvent.click(screen.getByRole("button", { name: "Change 1 row" }));
+
+    expect(onApply).toHaveBeenCalledWith([
+      expect.objectContaining({ itemId: "i1", patch: expect.objectContaining({
+        notes: expect.objectContaining({ staged: "#2026-11 DANUBE Makkah" }),
+      }) }),
+    ]);
+  });
+
+  it("uses the month the user types instead of the default", () => {
+    const onApply = jest.fn();
+    renderWithSaved(onApply);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Run API to month" }));
+    fireEvent.change(screen.getByLabelText("Month"), { target: { value: "2026-10" } });
+    fireEvent.click(screen.getByRole("button", { name: "Change 1 row" }));
+
+    expect(onApply.mock.calls[0][0][0].patch.notes.staged).toBe("#2026-10 DANUBE Makkah");
+  });
+
+  it("saves a new rule with the placeholder kept, not the month", async () => {
+    const onCreate = jest.fn(async () => undefined);
+    renderWithSaved(jest.fn(), onCreate);
+
+    fireEvent.click(screen.getByRole("tab", { name: "New rule" }));
+    fireEvent.change(screen.getByLabelText("Replacement tag"), { target: { value: "#{month}" } });
+    fireEvent.change(screen.getByLabelText("Saved transform name"), { target: { value: "Month tag" } });
+    const save = screen.getByRole("button", { name: "Save for later imports" });
+    const pick = async (label: string) => {
+      fireEvent.click(screen.getByLabelText(label));
+      fireEvent.click(await screen.findByRole("option", { name: "#API" }));
+    };
+    await pick("Tag to replace");
+    expect(save).toBeDisabled(); // the condition's tag is still empty
+    await pick("Value");
+    fireEvent.click(save);
+
+    expect(onCreate).toHaveBeenCalledWith("Month tag", {
+      conditions: [{ field: "notes", operator: "hasTag", value: "#API" }],
+      actions: [{ kind: "replaceTag", from: "#API", to: "#{month}" }],
+    });
+    expect(await screen.findByRole("status")).toHaveTextContent('Saved as "Month tag".');
+  });
+});

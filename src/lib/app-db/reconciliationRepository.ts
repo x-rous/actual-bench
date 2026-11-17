@@ -717,7 +717,8 @@ export function replaceReconciliationItems(
   assertReconciliationEditable(db, sessionId);
   const existingItems = listReconciliationItems(db, sessionId);
   const session = getReconciliationSession(db, sessionId);
-  const fixed = new Map(existingItems.filter((item) => isAppliedItem(session?.applyResults, item.id)).map((item) => [item.id, item]));
+  const applied = appliedItemIds(session?.applyResults);
+  const fixed = new Map(existingItems.filter((item) => applied.has(item.id)).map((item) => [item.id, item]));
   const incomingIds = new Set(items.map((item) => item.id));
   for (const id of fixed.keys()) if (!incomingIds.has(id)) {
     throw new AppDbValidationError("Already applied rows must be retained.");
@@ -779,7 +780,16 @@ export function updateReconciliationItem(
   if (isAppliedItem(getReconciliationSession(db, existing.session_id)?.applyResults, id)) {
     throw new AppDbValidationError("This row has already been applied.");
   }
+  return writeItemPatch(db, existing, input);
+}
 
+/** The column writes behind an item update, once its guards have been checked. */
+function writeItemPatch(
+  db: SqliteDatabase,
+  existing: ItemRow,
+  input: Partial<ItemInput>
+): ReconciliationItemRecord | null {
+  const id = existing.id;
   const assignments: string[] = [];
   const values: unknown[] = [];
   const set = (column: string, value: unknown) => {
@@ -810,12 +820,25 @@ export function updateReconciliationItem(
   return updated ? itemToRecord(updated) : null;
 }
 
-
 /** Uses existing result identities; never parses an Actual import marker. */
 export function isAppliedItem(results: unknown, itemId: string): boolean {
-  return Array.isArray(results) && results.some((entry) => entry &&
-    (entry.status === "applied" || entry.status === "skipped") &&
-    ["create", "update", "delete"].some((kind) => entry.operationId === `${kind}:${itemId}`));
+  return appliedItemIds(results).has(itemId);
+}
+
+/**
+ * Every item an earlier Apply wrote (or confirmed), in one pass over the results.
+ * Checking each item with its own scan of the results was items × results on
+ * every save.
+ */
+export function appliedItemIds(results: unknown): Set<string> {
+  const ids = new Set<string>();
+  if (!Array.isArray(results)) return ids;
+  for (const entry of results) {
+    if (!entry || (entry.status !== "applied" && entry.status !== "skipped")) continue;
+    const match = typeof entry.operationId === "string" ? /^(?:create|update|delete):(.+)$/.exec(entry.operationId) : null;
+    if (match) ids.add(match[1]);
+  }
+  return ids;
 }
 
 export function assertReconciliationEditable(db: SqliteDatabase, id: string): void {
@@ -824,10 +847,18 @@ export function assertReconciliationEditable(db: SqliteDatabase, id: string): vo
   }
 }
 
-/** One commit for the complete matched revision, or a set of ordinary edits. */
+/**
+ * One commit for the complete matched revision, or a set of ordinary edits.
+ *
+ * Ordinary edits can be a diff — patches to changed items, new items, removed
+ * items — so a decision that touches three rows writes three rows, not the
+ * whole session.
+ */
 export function saveReconciliationWork(db: SqliteDatabase, id: string, input: {
   statementRows?: StatementRowInput[]; items?: ItemInput[];
   itemPatches?: { id: string; patch: Partial<ItemInput> }[];
+  addedItems?: ItemInput[];
+  removedItemIds?: string[];
   patch?: UpdateSessionInput;
 }): ReconciliationSessionRecord {
   return db.transaction(() => {
@@ -836,10 +867,44 @@ export function saveReconciliationWork(db: SqliteDatabase, id: string, input: {
     assertReconciliationEditable(db, id);
     if (input.statementRows) replaceStatementRows(db, id, input.statementRows);
     if (input.items) replaceReconciliationItems(db, id, input.items);
+    // Read once for the whole save rather than once per patched item.
+    const applied = appliedItemIds(session.applyResults);
     for (const entry of input.itemPatches ?? []) {
-      const item = db.prepare("SELECT session_id FROM reconciliation_items WHERE id = ?").get<{ session_id: string }>(entry.id);
+      const item = db.prepare("SELECT * FROM reconciliation_items WHERE id = ?").get<ItemRow>(entry.id);
       if (item?.session_id !== id) throw new AppDbValidationError("Item does not belong to this reconciliation");
-      updateReconciliationItem(db, entry.id, entry.patch);
+      if (applied.has(entry.id)) throw new AppDbValidationError("This row has already been applied.");
+      writeItemPatch(db, item, entry.patch);
+    }
+    for (const removed of input.removedItemIds ?? []) {
+      if (applied.has(removed)) throw new AppDbValidationError("Already applied rows must be retained.");
+      db.prepare("DELETE FROM reconciliation_items WHERE id = ? AND session_id = ?").run(removed, id);
+    }
+    if (input.addedItems?.length) {
+      const insert = db.prepare(
+        `INSERT INTO reconciliation_items
+           (id, session_id, statement_row_ids_json, actual_transaction_ids_json, disposition,
+            reason_code, match_json, guards_json, actual_snapshot_json, staged_changes_json, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      );
+      const timestamp = nowIso();
+      for (const item of input.addedItems) {
+        const itemId = item.id ?? generateId();
+        const clash = db.prepare("SELECT session_id FROM reconciliation_items WHERE id = ?").get<{ session_id: string }>(itemId);
+        if (clash) throw new AppDbValidationError("An added item already exists.");
+        insert.run(
+          itemId,
+          id,
+          JSON.stringify(item.statementRowIds ?? []),
+          JSON.stringify(item.actualTransactionIds ?? []),
+          requireText(item.disposition, "disposition", 50),
+          item.reasonCode ?? null,
+          item.match === undefined ? null : JSON.stringify(item.match),
+          item.guards === undefined ? null : JSON.stringify(item.guards),
+          item.actualSnapshot === undefined ? null : JSON.stringify(item.actualSnapshot),
+          item.stagedChanges === undefined ? null : JSON.stringify(item.stagedChanges),
+          timestamp
+        );
+      }
     }
     return updateReconciliationSession(db, id, input.patch ?? {})!;
   })();

@@ -147,8 +147,8 @@ describe("app DB connection", () => {
       expect(flowTypeColumn.some((column) => column.name === "flow_type")).toBe(true);
       expect(mappingTable?.count).toBe(1);
       // Every later migration runs in the same chain, including reconciliation
-      // (profiles, sessions, statement rows, items).
-      expect(reconciliationTables?.count).toBe(4);
+      // (profiles, sessions, statement rows, items, saved transforms).
+      expect(reconciliationTables?.count).toBe(5);
     } finally {
       resetAppDbForTests();
       rmSync(root, { recursive: true, force: true });

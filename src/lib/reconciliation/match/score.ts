@@ -121,6 +121,33 @@ export function labelFor(score: number, tier: MatchTier): ConfidenceLabel {
 }
 
 /**
+ * Below this, two populated descriptions share next to nothing. Unrelated
+ * merchant names land around 0.0-0.15 on the blended Dice/overlap metric.
+ */
+const TEXT_DISAGREES_BELOW = 0.2;
+
+/** The configured text comparison for one pair. */
+export function textEvidence(
+  row: StatementRow,
+  transaction: ActualTransactionSnapshot,
+  config: MatchConfig,
+  index: ActualIndex
+): { similarity: number | null; reasons: MatchReason[] } {
+  const text = scoreText(
+    statementText(row),
+    {
+      payeeName: transaction.payeeName,
+      importedPayee: transaction.importedPayee,
+      notes: transaction.notes,
+    },
+    config.text,
+    config.needleFloor,
+    index.notesCorpus
+  );
+  return { similarity: text.similarity, reasons: text.reasons };
+}
+
+/**
  * True when the statement's bank reference appears verbatim inside the Actual
  * notes.
  *
@@ -175,17 +202,7 @@ export function scoreAmountMismatchCandidate(
   const gap = Math.abs(Math.abs(transaction.amount) - Math.abs(row.amount));
   if (gap / larger > config.amountMismatchMaxRatio) return null;
 
-  const text = scoreText(
-    statementText(row),
-    {
-      payeeName: transaction.payeeName,
-      importedPayee: transaction.importedPayee,
-      notes: transaction.notes,
-    },
-    config.text,
-    config.needleFloor,
-    index.notesCorpus
-  );
+  const text = textEvidence(row, transaction, config, index);
   if (text.similarity === null || text.similarity < config.amountMismatchTextFloor) return null;
 
   const delta = dayDelta(row.postedDate, transaction.date);
@@ -241,17 +258,7 @@ export function scoreSameMerchantCandidate(
   if (Math.abs(delta) > reviewDateWindow(config, config.clusterDateToleranceDays)) return null;
   if (Math.sign(transaction.amount) !== Math.sign(row.amount)) return null;
 
-  const text = scoreText(
-    statementText(row),
-    {
-      payeeName: transaction.payeeName,
-      importedPayee: transaction.importedPayee,
-      notes: transaction.notes,
-    },
-    config.text,
-    config.needleFloor,
-    index.notesCorpus
-  );
+  const text = textEvidence(row, transaction, config, index);
   if (text.similarity === null || text.similarity < config.clusterTextFloor) return null;
 
   /*
@@ -338,21 +345,26 @@ export function scoreCandidate(
     // the full text budget rather than competing with it.
     score += POINTS.text;
   } else {
-    const text = scoreText(
-      statementText(row),
-      {
-        payeeName: transaction.payeeName,
-        importedPayee: transaction.importedPayee,
-        notes: transaction.notes,
-      },
-      config.text,
-      config.needleFloor,
-      index.notesCorpus
-    );
+    const text = textEvidence(row, transaction, config, index);
     reasons.push(...text.reasons);
     if (text.similarity !== null) {
       score += text.similarity * POINTS.text;
       if (text.similarity >= STRONG_TEXT) tier = "amount-date-text";
+      // Both sides had text and it shared next to nothing. Not a refusal -
+      // Actual itself matches on amount and date - but evidence against, so a
+      // pair several days apart goes to review instead of matching silently.
+      if (
+        !viaOriginalAmount &&
+        config.textDisagreementPenalty > 0 &&
+        text.similarity < TEXT_DISAGREES_BELOW
+      ) {
+        score -= config.textDisagreementPenalty;
+        reasons.push({
+          kind: "text-disagrees",
+          similarity: Math.round(text.similarity * 100) / 100,
+          penalty: config.textDisagreementPenalty,
+        });
+      }
     }
   }
 
@@ -364,7 +376,7 @@ export function scoreCandidate(
     tier = "original-amount-text";
   }
 
-  const rounded = Math.round(score);
+  const rounded = Math.max(0, Math.round(score));
   return {
     statementRowId: row.id,
     actualTransactionId: transaction.id,

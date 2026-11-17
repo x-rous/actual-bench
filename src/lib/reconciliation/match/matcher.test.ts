@@ -748,3 +748,106 @@ it("offers repeated imported IDs for explicit review regardless of transport loa
   expect(graph.ambiguous[0].candidates.map((candidate) => candidate.actualTransactionId)).toEqual(["t1", "t2"]);
   expect(run(statementRows, [...actual].reverse())).toEqual(graph);
 });
+
+/** Regressions from the 2026-11-16 reconciliation review. */
+describe("review fixes (2026-11-16)", () => {
+  it("never auto-matches a transaction another row is still deciding about", () => {
+    // Row A is contested between t1 and t2; row B's text has nothing to do
+    // with either, and must not take t2 on amount and date alone.
+    const graph = run(
+      [
+        row({ id: "A", postedDate: "2026-03-10", amount: -2500, importedPayee: "CAREEM RIDE" }),
+        row({ id: "B", postedDate: "2026-03-13", amount: -2500, importedPayee: "NOON ORDER" }),
+      ],
+      [
+        txn({ id: "t1", date: "2026-03-10", amount: -2500, payeeName: "Careem Ride" }),
+        txn({ id: "t2", date: "2026-03-11", amount: -2500, payeeName: "Careem Ride" }),
+      ]
+    );
+
+    expect(graph.matched.map((entry) => entry.actualTransactionId)).not.toContain("t2");
+    const offered = graph.ambiguous.flatMap((entry) => entry.candidates.map((c) => c.actualTransactionId));
+    expect(offered).toContain("t2");
+  });
+
+  it("lets a bank reference found in the notes settle a match a similar payee would contest", () => {
+    const reference = row({ id: "s1", bankReference: "AUTH884512" });
+    for (const rival of ["Starbucks Mall of Emirates", "Starbucks"]) {
+      const graph = run(
+        [reference],
+        [txn({ id: "tRef", payeeName: null, notes: "AUTH884512 coffee" }), txn({ id: "tText", payeeName: rival })]
+      );
+      expect(graph.matched).toHaveLength(1);
+      expect(graph.matched[0]).toMatchObject({ actualTransactionId: "tRef", tier: "reference-in-notes" });
+      expect(graph.ambiguous).toHaveLength(0);
+    }
+  });
+
+  it("does not treat a generic one-word note as a perfect text match", () => {
+    const graph = run(
+      [row({ id: "s1", amount: 50000, importedPayee: "CARD PAYMENT THANK YOU" })],
+      [
+        txn({ id: "tGood", amount: 50000, payeeName: "Credit card payment" }),
+        txn({ id: "tNote", amount: 50000, payeeName: null, notes: "card" }),
+      ]
+    );
+    expect(graph.matched.map((entry) => entry.actualTransactionId)).toEqual(["tGood"]);
+  });
+
+  it("still trusts a short merchant name in the notes", () => {
+    const graph = run(
+      [row({ id: "s1", importedPayee: "JEENY JEDDAH SAU" })],
+      [txn({ id: "t1", payeeName: null, notes: "#API Jeeny" })]
+    );
+    expect(graph.matched[0].reasons).toContainEqual(expect.objectContaining({ kind: "text", similarity: 1 }));
+  });
+
+  it("sends a several-day pair whose text plainly disagrees to review instead of matching it", () => {
+    const graph = run(
+      [row({ id: "s1", postedDate: "2026-03-13", importedPayee: "NOON ORDER" })],
+      [txn({ id: "t1", date: "2026-03-10", payeeName: "Careem Ride" })]
+    );
+    expect(graph.matched).toHaveLength(0);
+    expect(graph.ambiguous[0]).toMatchObject({ statementRowId: "s1", why: "below-floor" });
+    expect(graph.ambiguous[0].candidates[0].reasons).toContainEqual(
+      expect.objectContaining({ kind: "text-disagrees" })
+    );
+  });
+
+  it("offers an exact amount a week out for review rather than leaving the row with nothing", () => {
+    const graph = run(
+      [row({ id: "s1", postedDate: "2026-03-10", importedPayee: "" })],
+      [txn({ id: "t1", date: "2026-03-16", payeeName: null })]
+    );
+    expect(graph.unmatchedStatementRowIds).toEqual([]);
+    expect(graph.ambiguous[0]).toMatchObject({ why: "below-floor" });
+  });
+
+  it("reviews a reference-column identity hit whose amount differs, and ignores one in the wrong direction", () => {
+    const mismatch = run(
+      [row({ id: "s1", bankReference: "1001", amount: -4250 })],
+      [txn({ id: "t1", importedId: "1001", amount: -4000 })]
+    );
+    expect(mismatch.matched).toHaveLength(0);
+    expect(mismatch.ambiguous[0]).toMatchObject({ statementRowId: "s1", why: "amount-mismatch" });
+
+    const wrongWay = run(
+      [row({ id: "s1", bankReference: "1001", amount: -4250 })],
+      [txn({ id: "t1", importedId: "1001", amount: 4250 })]
+    );
+    expect(wrongWay.matched.some((entry) => entry.tier === "reference-imported-id")).toBe(false);
+  });
+
+  it("asks when a third candidate is as good as the winner, even if the runner-up is not", () => {
+    const graph = run(
+      [row({ id: "s1", importedPayee: "STARBUCKS MALL OF EMIRATES" })],
+      [
+        txn({ id: "tA", payeeName: "Starbucks Mall of Emirates" }),
+        txn({ id: "tB", date: "2026-07-04", payeeName: "Unrelated" }),
+        txn({ id: "tC", date: "2026-07-04", payeeName: "Starbucks Mall of Emirates" }),
+      ]
+    );
+    expect(graph.matched).toHaveLength(0);
+    expect(graph.ambiguous[0].candidates.map((c) => c.actualTransactionId)).toEqual(expect.arrayContaining(["tA", "tC"]));
+  });
+});

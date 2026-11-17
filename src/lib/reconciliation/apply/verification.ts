@@ -17,7 +17,7 @@
  */
 
 import type { ActualTransactionSnapshot, StagedPatch } from "../types";
-import type { ApplyOperation, ApplyPlan, OperationResult } from "./operations";
+import { markersOf, type ApplyOperation, type ApplyPlan, type OperationResult } from "./operations";
 
 export type VerificationIssueKind =
   /** An applied create is nowhere in the account. */
@@ -115,7 +115,9 @@ function verifyOne(
   const issues: VerificationIssue[] = [];
 
   if (operation.kind === "create") {
-    const count = context.markerCounts.get(operation.marker) ?? 0;
+    const markers = markersOf(operation);
+    const count = markers.reduce((sum, marker) => sum + (context.markerCounts.get(marker) ?? 0), 0);
+    const created = markers.map((marker) => context.byMarker.get(marker)).find(Boolean);
     if (count === 0) {
       issues.push({
         operationId: operation.id,
@@ -132,7 +134,6 @@ function verifyOne(
       // Creates are the main provenance path, and `imported_payee` is the field
       // a transport can most plausibly accept and drop — so the row that was
       // just created is checked for it exactly as an updated row is.
-      const created = context.byMarker.get(operation.marker);
       if (created && (created.importedPayee ?? "").trim() !== operation.importedPayee.trim()) {
         issues.push({
           operationId: operation.id,
@@ -142,7 +143,6 @@ function verifyOne(
         });
       }
     }
-    const created = context.byMarker.get(operation.marker);
     if (count === 1 && created) {
       // Actual rules can rewrite payee and notes on creation. Those changes
       // must not turn a confirmed create into a failed retry or recovery.

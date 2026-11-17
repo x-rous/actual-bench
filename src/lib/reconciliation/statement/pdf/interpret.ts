@@ -1,5 +1,5 @@
 import { cellBelongsToColumn, columnAppliesToPage, columnBoundsForPage, rowValuesForColumn } from "./columns";
-import { CURRENCY_CANDIDATE, dateCandidates, formatExactDecimal, looksLikeMoney, moneyCandidates, parseExactDecimal, printedSignOf } from "./candidates";
+import { CURRENCY_CANDIDATE, dateCandidates, formatExactDecimal, inferDocumentNumberFormat, looksLikeDate, looksLikeMoney, moneyCandidates, parseExactDecimal, printedSignOf } from "./candidates";
 import { parsePdfDateCandidate, type PdfDateCandidateResult } from "./dates";
 import { diagnostic } from "./diagnostics";
 import type {
@@ -74,11 +74,17 @@ export function interpretPdfBlocks(
   guidance: PdfParserGuidance,
   dateFormatsByRole: DateFormatsByRole = {}
 ): PdfInterpretResult {
+  const index = createPdfPageIndex(pages);
+  // One decimal convention per statement: an unambiguous amount elsewhere in
+  // the document settles `1.234`, rather than every such value going to review.
+  if (guidance.numberFormat === "auto") {
+    const inferred = inferDocumentNumberFormat(blockMoneyValues(blocks, index));
+    if (inferred !== "auto") guidance = { ...guidance, numberFormat: inferred };
+  }
   const accountTypeConfirmed = guidance.accountType !== "auto";
   const accountType = accountTypeConfirmed
     ? guidance.accountType as PdfAccountType
     : detectAccountType(pages, guidance.regions);
-  const index = createPdfPageIndex(pages);
   const balanceBehavior = detectBalanceBehavior(pages, blocks, schema, index);
   const balanceCheckpoints = detectBalanceCheckpoints(pages, schema, guidance);
   // A single amount column that marks only its credits has told us what an
@@ -942,4 +948,13 @@ function balanceGroupFor(accountType: PdfAccountType) {
   if (LIABILITY_ACCOUNT_TYPES.includes(accountType)) return "liability";
   if (DEPOSIT_ACCOUNT_TYPES.includes(accountType)) return "deposit";
   return "other";
+}
+
+/** Every money-looking value in the statement's transaction rows, dates left out. */
+function blockMoneyValues(blocks: PdfTransactionBlock[], index: PdfPageIndex): string[] {
+  return blocks.filter((block) => !block.excluded).flatMap((block) => block.rowIds.flatMap((rowId) =>
+    (index.rowsById.get(rowId)?.cells ?? [])
+      .filter((cell) => !looksLikeDate(cell.text))
+      .flatMap((cell) => moneyCandidates(cell.text))
+  ));
 }

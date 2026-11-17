@@ -138,6 +138,8 @@ export function describeReason(reason: MatchReason): string {
       return reason.where === "importedId"
         ? "Bank reference matches the imported ID"
         : "Bank reference found in notes";
+    case "text-disagrees":
+      return `Text disagrees (${Math.round(reason.similarity * 100)}% similar, −${reason.penalty} points)`;
     case "amount-mismatch": {
       const difference = Math.abs(reason.difference);
       const ratio = amountRatio(reason.statementAmount, reason.actualAmount);

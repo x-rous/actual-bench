@@ -425,6 +425,8 @@ export type PdfStatementParseResult = {
   balanceBehavior: PdfBalanceBehavior;
   /** How the balance column was read, and how far that reading can be trusted. */
   balancePolarity: PdfBalancePolarity | null;
+  /** Opening, carried-forward and closing balance lines the statement printed. */
+  balanceCheckpoints?: PdfBalanceCheckpoint[];
   transactions: PdfTransactionProposal[];
   diagnostics: PdfDiagnosticEvent[];
   metrics: PdfParseMetrics;

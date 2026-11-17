@@ -16,7 +16,6 @@ import {
 import { match } from "@/lib/reconciliation/match/matcher";
 import {
   buildReconciliationItems,
-  REASON,
   applyDisposition,
   correctAmountFromStatement,
   linkManually,
@@ -57,6 +56,7 @@ import {
 import {
   DEFAULT_APPLY_CONFIG,
   buildApplyPlan,
+  createLegacyMarker,
   createMarker,
   normalizeApplyConfig,
   type ApplyConfig,
@@ -70,6 +70,7 @@ import {
 } from "../lib/writeSummary";
 import { applyConfigAfterLeavingReview } from "../lib/reviewSettings";
 import { executeApplyPlan, type ApplyRunResult } from "@/lib/reconciliation/apply/executor";
+import { checkEarlierCreates, retryMarkers } from "@/lib/reconciliation/apply/retry";
 import {
   driftTargets,
   reconcilePlanWithDrift,
@@ -88,7 +89,12 @@ import {
   invertStatementRows,
 } from "@/lib/reconciliation/session/invertedSigns";
 import { buildTextCorpus } from "@/lib/reconciliation/match/text";
+import { rediscoverStatementMatches } from "@/lib/reconciliation/session/rediscover";
+import { diffItems } from "../lib/itemDiff";
+import { checkClosingBalance, storedClosingBalance } from "@/lib/reconciliation/session/closingBalance";
+import { ClosingBalanceStrip } from "./ClosingBalanceStrip";
 import {
+  markersOf,
   mergeOperationResults,
   summarizeResults,
   type OperationResult,
@@ -101,6 +107,7 @@ import { ReviewPanel } from "./ReviewPanel";
 import { PhaseNav } from "./PhaseNav";
 import { SessionHeader, type SessionStep } from "./SessionHeader";
 import {
+  useBalanceOnDate,
   useReconciliationMutations,
   usePdfStatementLayouts,
   useReconciliationProfiles,
@@ -454,6 +461,23 @@ function ReconciliationSessionView() {
   setLoadedSessionId(data.session.id);
   }
 
+  // Saves that failed live only in this tab until retried. Closing or reloading
+  // it would lose them, so the browser asks first (F-237, first step; in-app
+  // navigation is not covered).
+  const hasFailedSaves = mutations.hasFailedSaves;
+  useEffect(() => {
+    if (!hasFailedSaves) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [hasFailedSaves]);
+
+  // Read by the resume effect below without making it re-run on every edit.
+  const resumeInputsRef = useRef({ parsedRows, matchConfig });
+  useEffect(() => {
+    resumeInputsRef.current = { parsedRows, matchConfig };
+  }, [parsedRows, matchConfig]);
+
   /**
    * Refresh the Actual side of a resumed session.
    *
@@ -498,9 +522,11 @@ function ReconciliationSessionView() {
       const previous = itemsRef.current;
       const represented = new Set(previous.flatMap((item) => item.actualTransactionIds));
       const fingerprints = new Map((sessionQuery.data?.statementRows ?? []).map((row) => [row.id, row.fingerprint]));
-      const ownMarkers = new Set(previous.filter((item) => item.disposition === "create").map((item) =>
-        createMarker({ budgetSyncId: session.budgetSyncId, accountId: session.accountId, sessionId: session.id,
-          fingerprint: fingerprints.get(item.statementRowIds[0]) ?? "" })));
+      const ownMarkers = new Set(previous.filter((item) => item.disposition === "create").flatMap((item) => {
+        const markerInput = { budgetSyncId: session.budgetSyncId, accountId: session.accountId, sessionId: session.id,
+          fingerprint: fingerprints.get(item.statementRowIds[0]) ?? "" };
+        return [createMarker(markerInput), createLegacyMarker(markerInput)];
+      }));
       const frozen = new Set((Array.isArray(session.applyResults) ? session.applyResults as OperationResult[] : [])
         .filter((result) => result.status === "applied" || result.status === "skipped").map((result) => result.operationId));
       const refreshed = previous.map((item) => {
@@ -512,12 +538,27 @@ function ReconciliationSessionView() {
       const added = session.status === "completed" || session.status === "applying" ? [] : window.transactions.filter((row) =>
         !represented.has(row.id) && !ownMarkers.has(row.importedId ?? "") &&
         row.date >= window.visible.start && row.date <= window.visible.end);
-      const next = [...refreshed, ...added.map((row): ReconciliationItem => ({ id: generateId(), statementRowIds: [],
-        actualTransactionIds: [row.id],
-        disposition: row.date < session.statementStart! || row.date > session.statementEnd! ? "keep" : "unresolved",
-        reasonCode: row.date < session.statementStart! || row.date > session.statementEnd! ? REASON.outsideStatementPeriod : REASON.notOnStatement,
-        guards: { protectedReconciled: row.reconciled, splitParent: row.isParent,
-          transfer: !window.transfersReported ? "unknown" : row.transferId ? "yes" : "no" } }))];
+      // New transactions are first offered to the statement rows still open, so
+      // one that arrived overnight is not left as "Actual only" beside its own
+      // row reading "not in Actual".
+      const frozenItems = new Set(previous.filter((item) =>
+        ["create", "update", "delete"].some((kind) => frozen.has(`${kind}:${item.id}`))).map((item) => item.id));
+      const rediscovered = rediscoverStatementMatches({
+        items: refreshed,
+        statementRows: new Map(resumeInputsRef.current.parsedRows.map((row) => [row.id, row])),
+        newTransactions: added,
+        config: resumeInputsRef.current.matchConfig,
+        transfersReported: window.transfersReported,
+        statementPeriod: session.statementStart && session.statementEnd
+          ? { start: session.statementStart, end: session.statementEnd } : null,
+        reconsider: new Set(["unresolved", "create"]),
+        frozenItemIds: frozenItems,
+        makeId: () => generateId(),
+      });
+      const next = rediscovered.items;
+      if (rediscovered.reopened > 0) {
+        setMatchError(`${rediscovered.reopened} statement ${rediscovered.reopened === 1 ? "row has" : "rows have"} a new candidate in Actual since this was matched. Review ${rediscovered.reopened === 1 ? "it" : "them"} before creating anything.`);
+      }
       if (added.length) {
         await saveWork(session.id, { items: next.map((item) => ({ ...item,
           actualSnapshot: baselines.get(item.actualTransactionIds[0]) ?? current.get(item.actualTransactionIds[0]) ?? null,
@@ -666,6 +707,35 @@ function ReconciliationSessionView() {
     ]
   );
 
+  /*
+   * The statement's printed closing balance against Actual's balance on the
+   * same date. Read once per session and closing date (and again after an
+   * Apply); the plan's effect is added locally, so deciding rows never re-reads.
+   */
+  const statementClosing = useMemo(
+    () => storedClosingBalance(sessionQuery.data?.session.totals),
+    [sessionQuery.data?.session.totals]
+  );
+  const closingAccountId = sessionQuery.data?.session.accountId ?? null;
+  const balanceOnClose = useBalanceOnDate({
+    connection: connection ?? null,
+    sessionBudgetSyncId: sessionQuery.data?.session.budgetSyncId ?? null,
+    accountId: closingAccountId,
+    asOf: statementClosing?.asOf ?? null,
+  });
+  const closingCheckFor = (plan: Pick<ApplyPlan, "operations">) =>
+    statementClosing && balanceOnClose.data !== undefined
+      ? checkClosingBalance({ statement: statementClosing, actualNow: balanceOnClose.data, plan })
+      : null;
+  const closingStrip = (plan: Pick<ApplyPlan, "operations">, pendingLabel: string) => statementClosing ? (
+    <ClosingBalanceStrip
+      check={closingCheckFor(plan)}
+      isLoading={balanceOnClose.isLoading}
+      failed={balanceOnClose.isError}
+      pendingLabel={pendingLabel}
+    />
+  ) : null;
+
   // A different set of decisions, apply settings or session starts the pre-flight check again: the plan that was checked, and the
   // conflicts already acknowledged, belonged to the old ones.
   const [planInputs, setPlanInputs] = useState({ items, applyConfig, sessionId });
@@ -809,8 +879,8 @@ function ReconciliationSessionView() {
    * dialog offers the same action from outside any one screen's render.
    *
    * Rows are removed as well as changed - the transaction's own row is
-   * absorbed into the pair - so the whole set is rewritten rather than
-   * patched, the same as resolving a candidate.
+   * absorbed into the pair - so the save carries the removal along with the
+   * patch, the same as resolving a candidate.
    */
   function handleManualMatch(statementItemId: string, actualItemId: string) {
     if (snapshotIsStored || applyRunning.current || sessionStatus === "applying" || sessionStatus === "completed" ||
@@ -835,21 +905,27 @@ function ReconciliationSessionView() {
     // then create a second copy of it. Same rule as hydration and re-matching:
     // when the rows change, the undo that referred to them is spent.
     setLastBulk(null);
+    const before = itemsRef.current;
     setItems(next);
-    void mutations.replaceItems
+    // The pair changes and the Actual-only row goes; nothing else is written.
+    const diff = diffItems(before, next);
+    const payload = (entry: ReconciliationItem) => ({
+      id: entry.id,
+      statementRowIds: entry.statementRowIds,
+      actualTransactionIds: entry.actualTransactionIds,
+      disposition: entry.disposition,
+      reasonCode: entry.reasonCode ?? null,
+      match: entry.match,
+      guards: entry.guards,
+      actualSnapshot: baselineFor(entry),
+      stagedChanges: entry.stagedChanges ?? null,
+    });
+    void mutations.saveItemDiff
       .mutateAsync({
         sessionId: sessionId ?? "",
-        items: next.map((entry) => ({
-          id: entry.id,
-          statementRowIds: entry.statementRowIds,
-          actualTransactionIds: entry.actualTransactionIds,
-          disposition: entry.disposition,
-          reasonCode: entry.reasonCode ?? null,
-          match: entry.match,
-          guards: entry.guards,
-          actualSnapshot: baselineFor(entry),
-          stagedChanges: entry.stagedChanges ?? null,
-        })),
+        itemPatches: diff.changed.map(payload),
+        addedItems: diff.added.map(payload),
+        removedItemIds: diff.removedIds,
       })
       .catch((error: unknown) => {
         setMatchError(error instanceof Error ? error.message : "Could not link those rows");
@@ -1256,10 +1332,26 @@ function ReconciliationSessionView() {
     function restoreItems(next: ReconciliationItem[]) {
       if (snapshotIsStored || applyRunning.current || sessionQuery.data?.session.status === "applying" || sessionQuery.data?.session.status === "completed") return;
       setLastBulk(null);
+      const before = itemsRef.current;
       setItems(next);
-      void mutations.replaceItems.mutateAsync({ sessionId: sessionId ?? "", items: next.map((item) => ({
-        ...item, actualSnapshot: baselineFor(item), stagedChanges: item.stagedChanges ?? null,
-      })) }).catch((error: unknown) => setMatchError(error instanceof Error ? error.message : "Could not save pairing"));
+      persistItemSet(before, next, "Could not save pairing");
+    }
+
+    /** Persist a change to the set of items as a diff, not a rewrite of all of them. */
+    function persistItemSet(before: ReconciliationItem[], next: ReconciliationItem[], failure: string) {
+      const diff = diffItems(before, next);
+      if (!diff.changed.length && !diff.added.length && !diff.removedIds.length) return;
+      const payload = (item: ReconciliationItem) => ({
+        id: item.id, statementRowIds: item.statementRowIds, actualTransactionIds: item.actualTransactionIds,
+        disposition: item.disposition, reasonCode: item.reasonCode ?? null, match: item.match ?? null,
+        guards: item.guards, actualSnapshot: baselineFor(item), stagedChanges: item.stagedChanges ?? null,
+      });
+      void mutations.saveItemDiff.mutateAsync({
+        sessionId: sessionId ?? "",
+        itemPatches: diff.changed.map(payload),
+        addedItems: diff.added.map(payload),
+        removedItemIds: diff.removedIds,
+      }).catch((error: unknown) => setMatchError(error instanceof Error ? error.message : failure));
     }
 
     function snapshotFor(item: ReconciliationItem): ActualTransactionSnapshot | undefined {
@@ -1315,27 +1407,10 @@ function ReconciliationSessionView() {
             })
           : entry
       );
+      const before = itemsRef.current;
       setItems(next);
-
-      // Rows were added, so the whole set is rewritten rather than patched.
-      void mutations.replaceItems
-        .mutateAsync({
-          sessionId: sessionId ?? "",
-          items: next.map((entry) => ({
-            id: entry.id,
-            statementRowIds: entry.statementRowIds,
-            actualTransactionIds: entry.actualTransactionIds,
-            disposition: entry.disposition,
-            reasonCode: entry.reasonCode ?? null,
-            match: entry.match,
-            guards: entry.guards,
-            actualSnapshot: baselineFor(entry),
-            stagedChanges: entry.stagedChanges ?? null,
-          })),
-        })
-        .catch((error: unknown) => {
-          setMatchError(error instanceof Error ? error.message : "Could not save that decision");
-        });
+      // Only the items this decision touched are written.
+      persistItemSet(before, next, "Could not save that decision");
     }
 
     /**
@@ -1589,52 +1664,47 @@ function ReconciliationSessionView() {
           .map((op) => ({ operationId: op.id, status: "skipped", transactionId: op.kind === "create" ? null : op.transactionId,
             skippedBecause: "Already matches the approved change in Actual." }));
         if (!plan.operations.length && !converged.length) return;
-        const retryMarkers = plan.operations.filter((op) => op.kind === "create" &&
-          previousResults.some((entry) => entry.operationId === op.id)).map((op) => op.kind === "create" ? op.marker : "");
-        const recoveredCreates = retryMarkers.length && transport.findCreatedTransactions
-          ? await transport.findCreatedTransactions({ accountId: session.accountId, markers: retryMarkers }) : [];
+        // A retried create may sit under the older, narrower marker; a first
+        // attempt is only ever looked for under its own.
+        const markersToRead = retryMarkers(plan, previousResults);
+        const recoveredCreates = markersToRead.length && transport.findCreatedTransactions
+          ? await transport.findCreatedTransactions({ accountId: session.accountId, markers: markersToRead }) : [];
         ensureConnection();
         const markerRows = [...new Map([...window.transactions, ...recoveredCreates].map((row) => [row.id, row])).values()];
-        const existingCreates = plan.operations.filter((op) => op.kind === "create" &&
-          markerRows.some((row) => row.importedId === op.marker));
-        const markerCheck = verifyApply({ plan: { ...plan, operations: existingCreates },
-          results: existingCreates.map((op) => ({ operationId: op.id, status: "applied" })),
-          latest: markerRows, snapshots: historicalTransactions });
+        const markerCheck = checkEarlierCreates({ plan, previousResults, rows: markerRows, snapshots: historicalTransactions });
         if (!markerCheck.ok) throw new Error("A previously created transaction differs from this plan or appears more than once. Review it in Actual before retrying.");
 
         // Newly appearing rows must be available for manual linking rather
         // than duplicating them from a saved Create decision.
         const known = new Set(itemsRef.current.flatMap((item) => item.actualTransactionIds));
-        const markers = new Set(plan.operations.flatMap((op) => op.kind === "create" ? [op.marker] : []));
+        const markers = new Set(plan.operations.flatMap((op) => op.kind === "create" ? markersOf(op) : []));
         const newRows = window.transactions.filter((row) => !known.has(row.id) && !markers.has(row.importedId ?? ""));
-        const createRows = plan.operations.flatMap((op) => op.kind === "create"
-          ? [statementRowsById.get(op.statementRowId)!].filter(Boolean) : []);
-        if (newRows.length && createRows.length) {
-          const graph = match({ statementRows: createRows, actualTransactions: newRows, config: matchConfig });
-          if (graph.matched.length || graph.ambiguous.length) {
-            const discovered = buildReconciliationItems({ statementRows: createRows, actualTransactions: newRows,
-              graph, transfersReported: window.transfersReported, makeId: () => generateId(),
-              statementPeriod: session.statementStart && session.statementEnd ? { start: session.statementStart, end: session.statementEnd } : null });
-            const candidates = new Map(discovered.filter((item) => item.statementRowIds.length && item.actualTransactionIds.length)
-              .map((item) => [item.statementRowIds[0], item]));
-            const next = itemsRef.current.map((item): ReconciliationItem => {
-              const candidate = item.disposition === "create" ? candidates.get(item.statementRowIds[0]) : undefined;
-              return candidate ? { ...item, actualTransactionIds: candidate.actualTransactionIds, guards: candidate.guards,
-                match: candidate.match, reasonCode: candidate.reasonCode, disposition: "unresolved" } : item;
-            }).concat(discovered.filter((item) => !item.statementRowIds.length));
-            setSnapshot(window.transactions); setTransfersReported(window.transfersReported);
-            setLastBulk(null);
-            setItems(next);
-            setCheckedPlan(null);
-            setMatchError("New Actual transactions may match rows marked Create. Review the new rows before applying.");
-            setScreen({ name: "workbench", sessionId: session.id });
-            const discoveredById = new Map(newRows.map((row) => [row.id, row]));
-            await mutations.replaceItems.mutateAsync({ sessionId: session.id, items: next.map((item) => ({
-              ...item, stagedChanges: item.stagedChanges ?? null,
-              actualSnapshot: baselineFor(item) ?? discoveredById.get(item.actualTransactionIds[0]) ?? null,
-            })) });
-            return;
-          }
+        const discovery = rediscoverStatementMatches({
+          items: itemsRef.current,
+          statementRows: statementRowsById,
+          newTransactions: newRows,
+          config: matchConfig,
+          transfersReported: window.transfersReported,
+          statementPeriod: session.statementStart && session.statementEnd ? { start: session.statementStart, end: session.statementEnd } : null,
+          // Only rows about to be created: an undecided row writes nothing.
+          reconsider: new Set(["create"]),
+          frozenItemIds: appliedItemIds,
+          makeId: () => generateId(),
+        });
+        if (discovery.reopened > 0) {
+          const next = discovery.items;
+          setSnapshot(window.transactions); setTransfersReported(window.transfersReported);
+          setLastBulk(null);
+          setItems(next);
+          setCheckedPlan(null);
+          setMatchError("New Actual transactions may match rows marked Create. Review the new rows before applying.");
+          setScreen({ name: "workbench", sessionId: session.id });
+          const discoveredById = new Map(newRows.map((row) => [row.id, row]));
+          await mutations.replaceItems.mutateAsync({ sessionId: session.id, items: next.map((item) => ({
+            ...item, stagedChanges: item.stagedChanges ?? null,
+            actualSnapshot: baselineFor(item) ?? discoveredById.get(item.actualTransactionIds[0]) ?? null,
+          })) });
+          return;
         }
 
         const itemPatches = plan.operations.flatMap((op) => {
@@ -1715,7 +1785,7 @@ function ReconciliationSessionView() {
           }
           setMatchError(error instanceof Error ? error.message : wrote ? "Apply was interrupted. Check Actual before recovering." : "Could not apply changes");
         },
-        onDone: () => { if (wrote) { void queryClient.invalidateQueries({ queryKey: ["financial-insights", "statements", connection.id, connection.budgetSyncId], refetchType: "none" }); void queryClient.invalidateQueries({ queryKey: ["financial-insights", "data", connection.id, connection.budgetSyncId], refetchType: "none" }); } applyRunning.current = false; setIsApplying(false); setIsCheckingDrift(false); setApplyProgress(null); },
+        onDone: () => { if (wrote) { void queryClient.invalidateQueries({ queryKey: ["financial-insights", "statements", connection.id, connection.budgetSyncId], refetchType: "none" }); void queryClient.invalidateQueries({ queryKey: ["financial-insights", "data", connection.id, connection.budgetSyncId], refetchType: "none" }); void queryClient.invalidateQueries({ queryKey: ["reconciliation", "balance-on", connection.id] }); } applyRunning.current = false; setIsApplying(false); setIsCheckingDrift(false); setApplyProgress(null); },
       });
     }
 
@@ -1740,7 +1810,7 @@ function ReconciliationSessionView() {
         ensureConnection();
         const rows = new Map(window.transactions.map((row) => [row.id, row]));
         for (const row of latest.values()) if (row) rows.set(row.id, row);
-        const markers = fullPlan.operations.flatMap((op) => op.kind === "create" ? [op.marker] : []);
+        const markers = fullPlan.operations.flatMap((op) => op.kind === "create" ? markersOf(op) : []);
         if (transport.findCreatedTransactions) for (const row of await transport.findCreatedTransactions({ accountId: session.accountId, markers })) rows.set(row.id, row);
         ensureConnection();
         const previous = Array.isArray(session.applyResults) ? session.applyResults as OperationResult[] : [];
@@ -2033,6 +2103,9 @@ function ReconciliationSessionView() {
         >
           {recoveryNotice}
           {errorNotice}
+          {screen.name === "review"
+            ? closingStrip(applicablePlan, "After Apply")
+            : closingStrip({ operations: [] }, "")}
           {/* Once applied, offer the linked card statement's review (never an automatic jump). */}
           {screen.name === "result" && (applyResult || session?.appliedAt) && (
             <ReviewCardStatementLink statementId={session?.cardStatementId} />
@@ -2144,6 +2217,7 @@ function ReconciliationSessionView() {
         >
           {recoveryNotice}
           {errorNotice}
+          {closingStrip(applyPlan, "With these decisions")}
           <Workbench
             items={items}
             statementRows={statementRowsById}
@@ -2177,6 +2251,7 @@ function ReconciliationSessionView() {
             onApplyConfigChange={handleApplyConfigChange}
             statementFormat={sessionQuery.data?.session.statementFormat ?? null}
             onTransform={handleTransform}
+            statementEnd={sessionQuery.data?.session.statementEnd ?? null}
             onViewResult={
               applyResult
                 ? () => setScreen({ name: "result", sessionId: screen.sessionId })

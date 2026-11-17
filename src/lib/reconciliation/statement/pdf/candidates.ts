@@ -3,10 +3,20 @@ import { normalizePdfText } from "./text";
 
 export const DATE_CANDIDATE = /\b(?:\d{8}|\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}(?:[-/.]\d{2,4})?|\d{1,2}(?:st|nd|rd|th)?[-\s][\p{L}]{3,}\.?(?:[-\s]\d{2,4})?|[\p{L}]{3,}\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+\d{2,4})?)\b/iu;
 export const CURRENCY_CANDIDATE = /\b(?:AED|AUD|BHD|CAD|CHF|CNY|DKK|EGP|EUR|GBP|HKD|INR|JPY|KWD|NOK|NZD|OMR|QAR|SAR|SEK|SGD|USD|ZAR)\b|[$£€¥₹]/iu;
+// Digit groups separated by a space must be exactly three digits: "12 45.00" is
+// a store number beside an amount, never twelve hundred and forty-five.
 // A trailing minus is a real negative notation in German, Nordic, and many
 // SAP-generated statements. It is only consumed when nothing numeric follows,
 // so a printed range such as 12-15 still reads as two separate values.
-export const MONEY_CANDIDATE = /(?:\(\s*)?[+-]?\s*(?:(?:AED|AUD|BHD|CAD|CHF|CNY|DKK|EGP|EUR|GBP|HKD|INR|JPY|KWD|NOK|NZD|OMR|QAR|SAR|SEK|SGD|USD|ZAR|[$£€¥₹])\s*)?[+-]?\s*(?:\d{1,3}(?:[\s,'’.,]\d{2,3})+|\d+)(?:[.,]\d{1,6})?(?:-(?!\d))?\s*(?:CR|DR)?\s*\)?/giu;
+export const MONEY_CANDIDATE = /(?:\(\s*)?[+-]?\s*(?:(?:AED|AUD|BHD|CAD|CHF|CNY|DKK|EGP|EUR|GBP|HKD|INR|JPY|KWD|NOK|NZD|OMR|QAR|SAR|SEK|SGD|USD|ZAR|[$£€¥₹])\s*)?[+-]?\s*(?:\d{1,3}(?:[,'’.]\d{2,3}|[   ]\d{3}(?!\d))+|\d+)(?:[.,]\d{1,6})?(?:-(?!\d))?\s*(?:CR|DR)?\s*\)?/giu;
+
+/**
+ * A currency code or symbol to strip from an amount, including one printed
+ * against the digits (`SAR129.00`, `AED1,234.00`). `CURRENCY_CANDIDATE` needs a
+ * word boundary on both sides, and there is none between a letter and a digit,
+ * so a glued code survived the strip and the amount failed to parse.
+ */
+const CURRENCY_STRIP = /(?<!\p{L})(?:AED|AUD|BHD|CAD|CHF|CNY|DKK|EGP|EUR|GBP|HKD|INR|JPY|KWD|NOK|NZD|OMR|QAR|SAR|SEK|SGD|USD|ZAR)(?!\p{L})|[$£€¥₹]/giu;
 
 export type ExactDecimal = {
   coefficient: bigint;
@@ -122,7 +132,7 @@ export function looksLikeMoney(value: string) {
  * is removed first so "EUR -9.00" and "-EUR 9.00" read the same way.
  */
 export function printedSignOf(value: string): "negative" | "positive" | null {
-  const text = normalizePdfText(value).replace(CURRENCY_CANDIDATE, "").trim();
+  const text = normalizePdfText(value).replace(CURRENCY_STRIP, "").trim();
   if (/^-|^\(|-\s*\)?\s*$/.test(text)) return "negative";
   if (/^\+/.test(text)) return "positive";
   return null;
@@ -133,7 +143,7 @@ export function parseExactDecimal(value: string, format: PdfNumberFormat): Exact
   const negative = printedSignOf(raw) === "negative"
     || /(?<!\p{L})DR(?!\p{L})/iu.test(raw);
   let numeric = raw
-    .replace(CURRENCY_CANDIDATE, "")
+    .replace(CURRENCY_STRIP, "")
     .replace(/(?<!\p{L})(?:CR|DR)(?!\p{L})/giu, "")
     .replace(/[()+-]/g, "")
     .replace(/[’']/g, "'")
@@ -142,7 +152,9 @@ export function parseExactDecimal(value: string, format: PdfNumberFormat): Exact
 
   const detected = format === "auto" ? detectNumberFormat(numeric) : { format, ambiguous: false };
   const decimal = decimalSeparator(detected.format, numeric);
-  const groupingPattern = decimal === "," ? /[.\s']/g : /[,\s']/g;
+  // In European notation a dot only ever groups, so `1.234` with no comma is
+  // one thousand two hundred and thirty-four.
+  const groupingPattern = decimal === "," || detected.format === "european" ? /[.\s']/g : /[,\s']/g;
   numeric = numeric.replace(groupingPattern, "");
   if (decimal === ",") numeric = numeric.replace(",", ".");
   if (!/^\d+(?:\.\d+)?$/.test(numeric)) return null;
@@ -164,7 +176,11 @@ function detectNumberFormat(value: string): { format: Exclude<PdfNumberFormat, "
     return { format: "indian", ambiguous: false };
   }
   if (/\d['’]\d{3}/.test(value)) return { format: "swiss", ambiguous: false };
-  if (/\d\s\d{3}/.test(value)) return { format: "space", ambiguous: false };
+  if (/\d\s\d{3}/.test(value)) {
+    // "1 234,56" is plainly space-grouped. "3 100.00" could equally be a
+    // quantity printed beside an amount, so it is read but flagged.
+    return { format: "space", ambiguous: !/,\d{1,2}$/.test(value) };
+  }
   const comma = value.lastIndexOf(",");
   const dot = value.lastIndexOf(".");
   if (comma >= 0 && dot >= 0) return { format: comma > dot ? "european" : "us", ambiguous: false };
@@ -191,4 +207,34 @@ function decimalSeparator(format: Exclude<PdfNumberFormat, "auto">, value: strin
     return value.includes(".") ? "." : null;
   }
   return null;
+}
+
+/**
+ * The decimal convention one statement uses, from the amounts that leave no
+ * doubt about it.
+ *
+ * Detection per value cannot tell `1.234` (one thousand, European) from `1.234`
+ * (a three-decimal amount), and flagged every such value for review. A document
+ * is consistent, though: one unambiguous `1.234,56` settles every `1.234` in it.
+ * Returns `auto` when the amounts disagree or none decides it.
+ */
+export function inferDocumentNumberFormat(values: string[]): PdfNumberFormat {
+  let commaDecimal = 0;
+  let dotDecimal = 0;
+  for (const value of values) {
+    const numeric = normalizePdfText(value)
+      .replace(CURRENCY_STRIP, "")
+      .replace(/(?<!\p{L})(?:CR|DR)(?!\p{L})/giu, "")
+      .replace(/[()+-]/g, "")
+      .trim();
+    if (!/\d/.test(numeric)) continue;
+    const detected = detectNumberFormat(numeric);
+    if (detected.ambiguous) continue;
+    if (detected.format === "european") commaDecimal += 1;
+    else if (/\.\d{1,2}$/.test(numeric)) dotDecimal += 1;
+    else if ((detected.format === "space" || detected.format === "swiss") && /,\d{1,2}$/.test(numeric)) commaDecimal += 1;
+  }
+  if (commaDecimal > 0 && dotDecimal === 0) return "european";
+  if (dotDecimal > 0 && commaDecimal === 0) return "us";
+  return "auto";
 }
