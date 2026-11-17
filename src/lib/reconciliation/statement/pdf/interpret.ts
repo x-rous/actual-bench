@@ -954,9 +954,10 @@ function balanceGroupFor(accountType: PdfAccountType) {
 const MONEY_ROLES: PdfColumnRole[] = ["amount", "debit", "credit", "balance", "original-amount", "fee", "vat"];
 
 /**
- * Money-shaped values for number-format inference. A date-shaped cell is left
- * out unless it sits in a mapped money column: `12.30` in an amount column is
- * an amount, and dropping it could leave a mixed document reading as European.
+ * Money-shaped values for number-format inference. With a column map, only
+ * cells in mapped money columns count, date-shaped ones included (`12.30` in
+ * an amount column is an amount). Without one, every cell that is not
+ * date-shaped counts.
  */
 function blockMoneyValues(blocks: PdfTransactionBlock[], schema: PdfTableSchema | null, index: PdfPageIndex): string[] {
   const columns = schema?.columns ?? [];
@@ -964,7 +965,9 @@ function blockMoneyValues(blocks: PdfTransactionBlock[], schema: PdfTableSchema 
     const cells = index.rowsById.get(rowId)?.cells ?? [];
     const moneyCells = new Set(MONEY_ROLES.flatMap((role) => cellsForRoleFromCells(cells, columns, role, index)));
     return cells
-      .filter((cell) => moneyCells.has(cell) || !looksLikeDate(cell.text))
+      // With a column map, only mapped money cells are evidence: an ignored
+      // column (an exchange rate, say) must not decide the convention.
+      .filter((cell) => (columns.length ? moneyCells.has(cell) : !looksLikeDate(cell.text)))
       .flatMap((cell) => moneyCandidates(cell.text));
   }));
 }
