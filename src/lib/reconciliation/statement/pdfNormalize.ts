@@ -162,13 +162,17 @@ export function closingBalanceFromPdf(
   // without one would report an earlier row's balance as the closing figure.
   const dated = result.transactions.filter((transaction) => transaction.importDate);
   if (!dated.length) return null;
+  // The latest date decides; printed order only breaks a tie between rows on
+  // that date (first printed for a newest-first statement, else last printed).
+  const latest = dated.reduce((max, transaction) => (transaction.importDate! > max ? transaction.importDate! : max), dated[0].importDate!);
   let ascending = 0;
   let descending = 0;
   dated.slice(1).forEach((transaction, index) => {
     if (transaction.importDate! > dated[index].importDate!) ascending += 1;
     if (transaction.importDate! < dated[index].importDate!) descending += 1;
   });
-  const last = descending > ascending ? dated[0] : dated[dated.length - 1];
+  const onLatest = dated.filter((transaction) => transaction.importDate === latest);
+  const last = descending > ascending ? onLatest[0] : onLatest[onLatest.length - 1];
   if (!last.balance || !last.confidence.balance?.reasons.includes("BALANCE_RECONCILED")) return null;
   const minor = parsePdfMoneyToMinorUnits(last.balance!);
   return minor === null ? null : { ...base, amount: toActual(minor), source: "last-row" };

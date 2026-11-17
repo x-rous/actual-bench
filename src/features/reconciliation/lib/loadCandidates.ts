@@ -170,11 +170,12 @@ export async function loadBalanceOn(
   asOf: string
 ): Promise<number> {
   const transport = getTransport(connection);
-  const balances = await transport.getAccountBalances();
-  const current = balances.get(accountId);
-  if (current === undefined) throw new Error("The account's balance is not available.");
-  // Account balances arrive in decimal units (AGENTS §4); converted here, at the boundary.
-  const currentMinor = Math.round(current * 100);
+  const readBalance = async () => {
+    const current = (await transport.getAccountBalances()).get(accountId);
+    if (current === undefined) throw new Error("The account's balance is not available.");
+    // Account balances arrive in decimal units (AGENTS §4); converted here, at the boundary.
+    return Math.round(current * 100);
+  };
   // The balance must be wound back over exactly the dates it covers. Direct
   // mode sums transactions dated up to today in local time (like Actual's own
   // `getAccountBalance`); the HTTP query sums every date, future ones included.
@@ -183,14 +184,22 @@ export async function loadBalanceOn(
     ? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`
     : "2999-12-31";
   const reader = createReconciliationTransport(transport);
-  if (asOf < coveredThrough) {
-    const later = await reader.loadTransactions({ accountId, startDate: shiftDate(asOf, 1), endDate: coveredThrough });
-    return balanceAsOf(currentMinor, later.transactions, asOf);
+  if (asOf === coveredThrough) return readBalance();
+  // Two separate reads: a transaction saved between them would be wound back
+  // from a balance that never included it. Accept the pair only when the
+  // balance is the same on both sides of the transaction read.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const before = await readBalance();
+    const result = asOf < coveredThrough
+      ? balanceAsOf(
+        before,
+        (await reader.loadTransactions({ accountId, startDate: shiftDate(asOf, 1), endDate: coveredThrough })).transactions,
+        asOf
+      )
+      // A closing date after today: add what is dated between today and then.
+      : (await reader.loadTransactions({ accountId, startDate: shiftDate(coveredThrough, 1), endDate: asOf }))
+        .transactions.reduce((sum, row) => (row.isChild ? sum : sum + row.amount), before);
+    if ((await readBalance()) === before) return result;
   }
-  if (asOf > coveredThrough) {
-    // A closing date after today: add what is dated between today and then.
-    const ahead = await reader.loadTransactions({ accountId, startDate: shiftDate(coveredThrough, 1), endDate: asOf });
-    return ahead.transactions.reduce((sum, row) => (row.isChild ? sum : sum + row.amount), currentMinor);
-  }
-  return currentMinor;
+  throw new Error("The account changed while its balance was being read. Try again.");
 }

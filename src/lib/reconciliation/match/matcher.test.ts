@@ -753,6 +753,15 @@ it("offers repeated imported IDs for explicit review regardless of transport loa
 
 /** Regressions from the 2026-11-16 reconciliation review. */
 describe("review fixes (2026-11-16)", () => {
+  it("keeps an original-currency pair whose bank reference sits in the notes, whatever the text says", () => {
+    const graph = run(
+      [row({ id: "s1", amount: -1000, originalAmount: -3670, originalCurrency: "AED", bankReference: "AUTH884512", importedPayee: "XYZ 0042" })],
+      [txn({ id: "t1", amount: -3670, payeeName: "Grocer", notes: "card AUTH884512" })]
+    );
+    const pairs = [...graph.matched, ...graph.ambiguous.flatMap((entry) => entry.candidates)];
+    expect(pairs.some((pair) => pair.actualTransactionId === "t1" && pair.tier === "reference-in-notes")).toBe(true);
+  });
+
   it("finds a short-token bank reference verbatim in the notes", () => {
     expect(referenceAppearsInNotes("12-34", "Paid ref 12-34")).toBe(true);
     expect(referenceAppearsInNotes("12-34", "Paid ref 12-345")).toBe(false);

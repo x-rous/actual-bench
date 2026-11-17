@@ -78,7 +78,7 @@ export function interpretPdfBlocks(
   // One decimal convention per statement: an unambiguous amount elsewhere in
   // the document settles `1.234`, rather than every such value going to review.
   if (guidance.numberFormat === "auto") {
-    const inferred = inferDocumentNumberFormat(blockMoneyValues(blocks, index));
+    const inferred = inferDocumentNumberFormat(blockMoneyValues(blocks, schema, index));
     if (inferred !== "auto") guidance = { ...guidance, numberFormat: inferred };
   }
   const accountTypeConfirmed = guidance.accountType !== "auto";
@@ -951,10 +951,20 @@ function balanceGroupFor(accountType: PdfAccountType) {
 }
 
 /** Every money-looking value in the statement's transaction rows, dates left out. */
-function blockMoneyValues(blocks: PdfTransactionBlock[], index: PdfPageIndex): string[] {
-  return blocks.filter((block) => !block.excluded).flatMap((block) => block.rowIds.flatMap((rowId) =>
-    (index.rowsById.get(rowId)?.cells ?? [])
-      .filter((cell) => !looksLikeDate(cell.text))
-      .flatMap((cell) => moneyCandidates(cell.text))
-  ));
+const MONEY_ROLES: PdfColumnRole[] = ["amount", "debit", "credit", "balance", "original-amount", "fee", "vat"];
+
+/**
+ * Money-shaped values for number-format inference. A date-shaped cell is left
+ * out unless it sits in a mapped money column: `12.30` in an amount column is
+ * an amount, and dropping it could leave a mixed document reading as European.
+ */
+function blockMoneyValues(blocks: PdfTransactionBlock[], schema: PdfTableSchema | null, index: PdfPageIndex): string[] {
+  const columns = schema?.columns ?? [];
+  return blocks.filter((block) => !block.excluded).flatMap((block) => block.rowIds.flatMap((rowId) => {
+    const cells = index.rowsById.get(rowId)?.cells ?? [];
+    const moneyCells = new Set(MONEY_ROLES.flatMap((role) => cellsForRoleFromCells(cells, columns, role, index)));
+    return cells
+      .filter((cell) => moneyCells.has(cell) || !looksLikeDate(cell.text))
+      .flatMap((cell) => moneyCandidates(cell.text));
+  }));
 }

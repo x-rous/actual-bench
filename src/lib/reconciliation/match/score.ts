@@ -376,7 +376,8 @@ export function scoreCandidate(
     }
   }
 
-  if (viaOriginalAmount) {
+  // A verbatim reference already ties the rows together more firmly than text.
+  if (viaOriginalAmount && tier !== "reference-in-notes") {
     // Text must corroborate: the posted amounts disagree, so the merchant text
     // is the only thing tying these two rows together. Without it the pair is
     // a coincidence of arithmetic and is discarded rather than ranked low.

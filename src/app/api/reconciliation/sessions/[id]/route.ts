@@ -172,7 +172,9 @@ export async function POST(request: Request, context: RouteContext) {
     }
     if (body.action !== "save") throw new AppDbValidationError("Unknown reconciliation action");
     const savePatch = body.patch === undefined ? {} : reconciliationPatch(body.patch);
-    assertNotApplyOwned(savePatch, current.status);
+    // Read again: an Apply may have finished while the body was arriving, and
+    // nothing awaits between this read and the save transaction.
+    assertNotApplyOwned(savePatch, getReconciliationSession(db, id)?.status);
     return NextResponse.json({ session: saveReconciliationWork(db, id, {
       ...(body.statementRows !== undefined ? { statementRows: reconciliationRows(body.statementRows) } : {}),
       ...(body.items !== undefined ? { items: reconciliationItems(body.items) } : {}),

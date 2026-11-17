@@ -250,7 +250,9 @@ export function inferDocumentNumberFormat(values: string[]): PdfNumberFormat {
     const detected = detectNumberFormat(numeric);
     if (detected.ambiguous) continue;
     if (detected.format === "european") commaDecimal += 1;
-    else if (/\.\d{1,2}$/.test(numeric)) dotDecimal += 1;
+    // Any precision counts: `1.2345` is never European grouping. (Three digits
+    // after the dot is the ambiguous case, already skipped above.)
+    else if (/\.\d+$/.test(numeric)) dotDecimal += 1;
     else if ((detected.format === "space" || detected.format === "swiss") && /,\d{1,2}$/.test(numeric)) commaDecimal += 1;
   }
   if (commaDecimal > 0 && dotDecimal === 0) return "european";

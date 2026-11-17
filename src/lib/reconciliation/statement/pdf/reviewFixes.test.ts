@@ -44,6 +44,8 @@ describe("money in PDF cells", () => {
     expect(inferDocumentNumberFormat(["1.234,56", "12,50", "1.234"])).toBe("european");
     expect(inferDocumentNumberFormat(["1,234.56", "12.50", "1,234"])).toBe("us");
     expect(inferDocumentNumberFormat(["1.234,56", "12.50"])).toBe("auto");
+    // A four-decimal rate is dot-decimal evidence too, so the document stays undecided.
+    expect(inferDocumentNumberFormat(["1,50", "1.2345"])).toBe("auto");
     expect(amount("1.234", "european")).toBe("1234e-0");
   });
 });
@@ -102,6 +104,14 @@ describe("the statement's closing balance", () => {
     const unbalanced = { importDate: "2026-01-31", balance: null, confidence: {} } as unknown as PdfStatementParseResult["transactions"][number];
     const result = { ...base, transactions: [...base.transactions, unbalanced] } as PdfStatementParseResult;
     expect(closingBalanceFromPdf(result, "2026-01-31")).toBeNull();
+  });
+
+  it("takes the latest-dated row even when printed order is mixed", () => {
+    const mixed = {
+      ...base,
+      transactions: [proposal("2026-01-01", "10.00"), proposal("2026-01-31", "310.00"), proposal("2026-01-15", "150.00")],
+    } as PdfStatementParseResult;
+    expect(closingBalanceFromPdf(mixed, "2026-01-31")).toMatchObject({ amount: -31000 });
   });
 
   it("falls back to the last row's reconciled running balance, in either printed order", () => {
