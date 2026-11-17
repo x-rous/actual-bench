@@ -1153,7 +1153,7 @@ export function Workbench({
     function onKeyDown(event: KeyboardEvent) {
       // Popovers are not dialogs, but their controls still sit above the grid.
       // Do not let row navigation or decision shortcuts act behind them.
-      if (optionsOpen || group) return;
+      if (optionsOpen || group || transformOpen) return;
 
       // Never act behind a dialog. The listener is on the window, so without
       // this an Enter meant for the transform dialog's button would also decide
@@ -1197,7 +1197,7 @@ export function Workbench({
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [step, goToNextUndecided, decideSelected, optionsOpen, group]);
+  }, [step, goToNextUndecided, decideSelected, optionsOpen, group, transformOpen]);
 
   if (group && onRestoreItems && !readOnly) return (
     <GroupMatchingView group={group} items={items} statementRows={statementRows} transactions={transactions}

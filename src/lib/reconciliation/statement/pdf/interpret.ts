@@ -1,5 +1,5 @@
 import { cellBelongsToColumn, columnAppliesToPage, columnBoundsForPage, rowValuesForColumn } from "./columns";
-import { CURRENCY_CANDIDATE, dateCandidates, formatExactDecimal, inferDocumentNumberFormat, looksLikeDate, looksLikeMoney, moneyCandidates, parseExactDecimal, printedSignOf } from "./candidates";
+import { dateCandidates, printedCurrencyOf, formatExactDecimal, inferDocumentNumberFormat, looksLikeDate, looksLikeMoney, moneyCandidates, parseExactDecimal, printedSignOf } from "./candidates";
 import { parsePdfDateCandidate, type PdfDateCandidateResult } from "./dates";
 import { diagnostic } from "./diagnostics";
 import type {
@@ -779,7 +779,7 @@ function fallbackDescription(text: string) {
 }
 
 function currencyFrom(value: string) {
-  const match = value.match(CURRENCY_CANDIDATE)?.[0]?.toUpperCase();
+  const match = printedCurrencyOf(value);
   return match && /^[A-Z]{3}$/.test(match) ? match : null;
 }
 

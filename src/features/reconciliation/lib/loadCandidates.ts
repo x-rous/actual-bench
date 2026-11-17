@@ -175,10 +175,22 @@ export async function loadBalanceOn(
   if (current === undefined) throw new Error("The account's balance is not available.");
   // Account balances arrive in decimal units (AGENTS §4); converted here, at the boundary.
   const currentMinor = Math.round(current * 100);
-  const later = await createReconciliationTransport(transport).loadTransactions({
-    accountId,
-    startDate: shiftDate(asOf, 1),
-    endDate: "2999-12-31",
-  });
-  return balanceAsOf(currentMinor, later.transactions, asOf);
+  // The balance must be wound back over exactly the dates it covers. Direct
+  // mode sums transactions dated up to today in local time (like Actual's own
+  // `getAccountBalance`); the HTTP query sums every date, future ones included.
+  const now = new Date();
+  const coveredThrough = transport.mode === "browser-api"
+    ? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`
+    : "2999-12-31";
+  const reader = createReconciliationTransport(transport);
+  if (asOf < coveredThrough) {
+    const later = await reader.loadTransactions({ accountId, startDate: shiftDate(asOf, 1), endDate: coveredThrough });
+    return balanceAsOf(currentMinor, later.transactions, asOf);
+  }
+  if (asOf > coveredThrough) {
+    // A closing date after today: add what is dated between today and then.
+    const ahead = await reader.loadTransactions({ accountId, startDate: shiftDate(coveredThrough, 1), endDate: asOf });
+    return ahead.transactions.reduce((sum, row) => (row.isChild ? sum : sum + row.amount), currentMinor);
+  }
+  return currentMinor;
 }

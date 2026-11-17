@@ -44,6 +44,21 @@ function idList(value: unknown): string[] {
 
 const APPLY_OWNED_STATUSES = new Set(["applying", "partial", "completed"]);
 
+/**
+ * Apply outcomes have their own guarded actions (claim / finish / recover /
+ * complete on POST). Letting an ordinary update or save write them would let a
+ * client lock a session without a claim, or mark rows applied that were never
+ * written — `isAppliedItem` trusts `applyResults` as that proof.
+ */
+function assertNotApplyOwned(patch: { status?: unknown; applyResults?: unknown }, currentStatus: string | undefined) {
+  if (patch.status !== undefined && APPLY_OWNED_STATUSES.has(String(patch.status))) {
+    throw new AppDbValidationError("That status is set by Apply, not by a session update.");
+  }
+  if (patch.applyResults !== undefined && currentStatus !== "applying") {
+    throw new AppDbValidationError("Apply results can only be recorded while Apply is running.");
+  }
+}
+
 function notFound() {
   return NextResponse.json({ error: "Reconciliation session not found" }, { status: 404 });
 }
@@ -83,15 +98,8 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     // Only known keys are forwarded; the repository validates the status value.
     const patch: UpdateSessionInput = {};
-    // Apply outcomes have their own guarded actions (claim / finish / recover /
-    // complete on POST). Letting the generic update write them would let a
-    // client lock a session without a claim, or mark rows applied that were
-    // never written — `isAppliedItem` trusts `applyResults` as that proof.
-    if ("status" in body && APPLY_OWNED_STATUSES.has(String(body.status))) {
-      throw new AppDbValidationError("That status is set by Apply, not by a session update.");
-    }
-    if ("applyResults" in body && getReconciliationSession(getAppDb(), id)?.status !== "applying") {
-      throw new AppDbValidationError("Apply results can only be recorded while Apply is running.");
+    if ("status" in body || "applyResults" in body) {
+      assertNotApplyOwned(body, getReconciliationSession(getAppDb(), id)?.status);
     }
     if ("status" in body) patch.status = body.status as ReconciliationSessionStatus;
     if ("accountName" in body) patch.accountName = body.accountName as string | null;
@@ -139,7 +147,8 @@ export async function POST(request: Request, context: RouteContext) {
   try {
     const { id } = await context.params;
     const db = getAppDb();
-    if (!getReconciliationSession(db, id)) return notFound();
+    const current = getReconciliationSession(db, id);
+    if (!current) return notFound();
     const body = reconciliationObject(await readJsonBody(request));
     const patches = body.itemPatches === undefined ? undefined : reconciliationItems(body.itemPatches)
       .map(({ id: itemId, ...patch }) => ({ id: itemId!, patch }));
@@ -162,13 +171,15 @@ export async function POST(request: Request, context: RouteContext) {
       }) });
     }
     if (body.action !== "save") throw new AppDbValidationError("Unknown reconciliation action");
+    const savePatch = body.patch === undefined ? {} : reconciliationPatch(body.patch);
+    assertNotApplyOwned(savePatch, current.status);
     return NextResponse.json({ session: saveReconciliationWork(db, id, {
       ...(body.statementRows !== undefined ? { statementRows: reconciliationRows(body.statementRows) } : {}),
       ...(body.items !== undefined ? { items: reconciliationItems(body.items) } : {}),
       itemPatches: patches,
       ...(body.addedItems !== undefined ? { addedItems: reconciliationItems(body.addedItems) } : {}),
       ...(body.removedItemIds !== undefined ? { removedItemIds: idList(body.removedItemIds) } : {}),
-      patch: body.patch === undefined ? {} : reconciliationPatch(body.patch),
+      patch: savePatch,
     }) });
   } catch (error) {
     return appDbErrorResponse(error);

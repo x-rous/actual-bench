@@ -574,7 +574,11 @@ export function ImportPanel({
     );
     // The bank's closing figure travels with the statement's totals, so the
     // session can check Actual closes there too.
-    const closingBalance = closingBalanceFromPdf(reviewedResult, reviewed.period?.end);
+    const closingBalance = closingBalanceFromPdf(
+      reviewedResult,
+      reviewed.period?.end,
+      reviewedResult.guidance.statementPeriod?.end
+    );
     const normalized = closingBalance
       ? { ...reviewed, totals: { ...reviewed.totals, closingBalance } }
       : reviewed;

@@ -223,9 +223,12 @@ export function previewTransformSequence(input: Omit<PreviewInput, "rule"> & {
     const fields = changesById.get(item.id);
     if (!fields) continue;
     const rowChanges = [...fields].map(([field, values]) => ({ field, ...values }));
-    // Rules that undid each other leave nothing to stage for that field.
-    if (rowChanges.every((change) => change.before === change.after)) continue;
-    changed.push({ itemId: item.id, changes: rowChanges, patch: patches.get(item.id) ?? {} });
+    const patch = patches.get(item.id) ?? {};
+    // Rules that undid each other leave nothing to stage. Judged on the patch,
+    // not on the values shown: clearing a new row's proposed payee shows as
+    // "none" to "none" but is a real change to stage.
+    if (JSON.stringify(patch) === JSON.stringify(item.stagedChanges ?? {})) continue;
+    changed.push({ itemId: item.id, changes: rowChanges, patch });
   }
   const changedIds = new Set(changed.map((row) => row.itemId));
   const skipped = [...lastSkip.values()].filter((skip) => !changedIds.has(skip.itemId));

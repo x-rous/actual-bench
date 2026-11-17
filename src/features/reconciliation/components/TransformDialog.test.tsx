@@ -8,7 +8,7 @@ import type {
   ReconciliationItem,
   StatementRow,
 } from "@/lib/reconciliation/types";
-import { TransformDialog } from "./TransformDialog";
+import { TransformDialog, type SavedTransformsSupport } from "./TransformDialog";
 import { chooseSelectOption } from "@/components/ui/select.testing";
 
 function txn(notes: string | null): ActualTransactionSnapshot {
@@ -374,5 +374,49 @@ describe("saved transforms", () => {
       actions: [{ kind: "replaceTag", from: "#API", to: "#{month}" }],
     });
     expect(await screen.findByRole("status")).toHaveTextContent('Saved as "Month tag".');
+  });
+});
+
+describe("saved transforms: failures", () => {
+  const transaction = txn("#API DANUBE Makkah");
+  const base = {
+    items: [item],
+    selectedIds: new Set<string>(),
+    contextFor: () => ({
+      item, statementRow, transaction,
+      pending: prospectiveTransaction({ item, statementRow, transaction, applyConfig: DEFAULT_APPLY_CONFIG }),
+      payeeName: () => "Danube", categoryName: () => "Groceries",
+    }),
+    payees: [{ id: "p1", name: "Danube" }],
+    categories: [{ id: "c1", name: "Groceries" }],
+    onClose: () => {},
+    onApply: () => {},
+  };
+  const saved = (overrides: Partial<SavedTransformsSupport> = {}): SavedTransformsSupport => ({
+    transforms: [{ id: "api", name: "API to month", position: 0, createdAt: "t", updatedAt: "t",
+      rule: { conditions: [], actions: [{ kind: "useStatementImportedPayee" }] } }],
+    defaultMonth: "2026-11",
+    onCreate: jest.fn(async () => undefined),
+    onUpdate: jest.fn(async () => undefined),
+    onDelete: jest.fn(async () => undefined),
+    onReorder: jest.fn(async () => undefined),
+    ...overrides,
+  });
+
+  it("says the list failed to load instead of showing an empty library, and offers a retry", () => {
+    const onRetryLoad = jest.fn();
+    render(<TransformDialog {...base} saved={saved({ transforms: [], loadError: "Server down", onRetryLoad })} />);
+    expect(screen.getByRole("alert")).toHaveTextContent("Saved transforms could not be loaded: Server down");
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(onRetryLoad).toHaveBeenCalled();
+  });
+
+  it("keeps the row and explains when a delete fails", async () => {
+    const onDelete = jest.fn(async () => { throw new Error("Database is locked"); });
+    render(<TransformDialog {...base} saved={saved({ onDelete })} />);
+    fireEvent.click(screen.getByRole("button", { name: "Delete API to month" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Database is locked");
+    expect(screen.getByRole("checkbox", { name: "Run API to month" })).toBeInTheDocument();
   });
 });

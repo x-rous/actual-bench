@@ -4,9 +4,11 @@
  * Amounts are integer minor units throughout.
  */
 
-import type { ActualTransactionSnapshot, MatchConfig, StatementRow } from "../types";
+import type { ActualTransactionSnapshot, MatchConfig, ScoredCandidate, StatementRow } from "../types";
 import { DEFAULT_MATCH_CONFIG, TEXT_TARGET_PRESETS } from "./config";
 import { match, shiftDate } from "./matcher";
+import { referenceAppearsInNotes } from "./score";
+import { assignMatches } from "./assign";
 
 function row(overrides: Partial<StatementRow> & Pick<StatementRow, "id">): StatementRow {
   return {
@@ -751,6 +753,12 @@ it("offers repeated imported IDs for explicit review regardless of transport loa
 
 /** Regressions from the 2026-11-16 reconciliation review. */
 describe("review fixes (2026-11-16)", () => {
+  it("finds a short-token bank reference verbatim in the notes", () => {
+    expect(referenceAppearsInNotes("12-34", "Paid ref 12-34")).toBe(true);
+    expect(referenceAppearsInNotes("12-34", "Paid ref 12-345")).toBe(false);
+    expect(referenceAppearsInNotes("AUTH884512", "card AUTH884512 ok")).toBe(true);
+  });
+
   it("never auto-matches a transaction another row is still deciding about", () => {
     // Row A is contested between t1 and t2; row B's text has nothing to do
     // with either, and must not take t2 on amount and date alone.
@@ -836,6 +844,28 @@ describe("review fixes (2026-11-16)", () => {
       [txn({ id: "t1", importedId: "1001", amount: 4250 })]
     );
     expect(wrongWay.matched.some((entry) => entry.tier === "reference-imported-id")).toBe(false);
+  });
+
+  it("asks when the runner-up is separated but a third contender is not", () => {
+    // tB scores second but its text is plainly worse, so on its own it would
+    // let tA through. tC scores lower than tB, yet its text is as good as tA's:
+    // only checking every contender, not just the runner-up, catches it.
+    const scored = (id: string, score: number, similarity: number): ScoredCandidate => ({
+      statementRowId: "s1", actualTransactionId: id, score, label: "high", tier: "amount-date-text",
+      reasons: [
+        { kind: "amount", verdict: "exact" },
+        { kind: "date", deltaDays: 0 },
+        { kind: "text", field: "notes", mode: "contains", similarity },
+      ] as ScoredCandidate["reasons"],
+    });
+    const result = assignMatches({
+      candidates: [scored("tA", 95, 1), scored("tB", 92, 0.5), scored("tC", 90, 0.95)],
+      statementRowIds: ["s1"],
+      actualTransactionIds: ["tA", "tB", "tC"],
+      config: DEFAULT_MATCH_CONFIG,
+    });
+    expect(result.matched).toHaveLength(0);
+    expect(result.ambiguous[0].candidates.map((c) => c.actualTransactionId)).toEqual(expect.arrayContaining(["tA", "tC"]));
   });
 
   it("asks when a third candidate is as good as the winner, even if the runner-up is not", () => {

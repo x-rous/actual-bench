@@ -338,6 +338,9 @@ export type SavedTransformsSupport = {
   onUpdate: (id: string, changes: { name?: string; rule?: SavedRule }) => Promise<unknown>;
   onDelete: (id: string) => Promise<unknown>;
   onReorder: (ids: string[]) => Promise<unknown>;
+  /** Set when the list could not be read, so an empty list is not mistaken for "none saved". */
+  loadError?: string | null;
+  onRetryLoad?: () => void;
 };
 
 export function TransformDialog({
@@ -412,7 +415,9 @@ export function TransformDialog({
   );
 
   const savedList = useMemo(() => saved?.transforms ?? [], [saved?.transforms]);
-  const [mode, setMode] = useState<"saved" | "new">(savedList.length > 0 ? "saved" : "new");
+  const [mode, setMode] = useState<"saved" | "new">(
+    savedList.length > 0 || saved?.loadError ? "saved" : "new"
+  );
   const [checked, setChecked] = useState<Set<string>>(() => {
     const known = new Set(savedList.map((entry) => entry.id));
     return new Set(readChecked().filter((id) => known.has(id)));
@@ -426,6 +431,7 @@ export function TransformDialog({
     error: false,
   });
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
 
   const knownPayeeIds = useMemo(() => new Set(payees.map((payee) => payee.id)), [payees]);
   const checkedTransforms = useMemo(
@@ -455,8 +461,15 @@ export function TransformDialog({
     () =>
       mode === "saved"
         ? null
-        : previewTransform({ rule: resolvePlaceholders(rule, month.trim()), items: scopedItems, contextFor, overrideManual }),
-    [mode, rule, month, scopedItems, contextFor, overrideManual]
+        : previewTransform({
+            // A rule loaded for editing can still name a payee that was deleted
+            // since it was saved; staging that id would write a dangling payee.
+            rule: { ...rule, ...resolvePlaceholders(withoutMissingPayees(rule, knownPayeeIds), month.trim()) },
+            items: scopedItems,
+            contextFor,
+            overrideManual,
+          }),
+    [mode, rule, month, scopedItems, contextFor, overrideManual, knownPayeeIds]
   );
   const preview = sequence ?? single!;
 
@@ -515,7 +528,23 @@ export function TransformDialog({
     const to = from + by;
     if (from < 0 || to < 0 || to >= ids.length) return;
     [ids[from], ids[to]] = [ids[to], ids[from]];
-    void saved.onReorder(ids);
+    setListError(null);
+    saved.onReorder(ids).catch((error: unknown) =>
+      setListError(error instanceof Error ? error.message : "Could not change the order. Try again.")
+    );
+  }
+
+  async function removeSaved(entry: SavedTransform) {
+    if (!saved) return;
+    setConfirmDeleteId(null);
+    setListError(null);
+    try {
+      await saved.onDelete(entry.id);
+      // Unticked only once it is gone, so a failed delete leaves the row as it was.
+      toggleChecked(entry.id, false);
+    } catch (error) {
+      setListError(error instanceof Error ? error.message : `Could not delete "${entry.name}". Try again.`);
+    }
   }
 
   const payeeNames = useMemo(() => new Map(payees.map((payee) => [payee.id, payee.name])), [payees]);
@@ -672,7 +701,19 @@ export function TransformDialog({
 
       {saved && mode === "saved" && (
         <section aria-label="Saved transforms" className="flex flex-col px-3 py-2">
-          {savedList.length === 0 ? (
+          {listError && (
+            <p role="alert" className="pb-1 text-xs text-destructive">{listError}</p>
+          )}
+          {saved.loadError && savedList.length === 0 ? (
+            <p role="alert" className="flex flex-wrap items-center gap-2 py-3 text-xs text-destructive">
+              Saved transforms could not be loaded: {saved.loadError}
+              {saved.onRetryLoad && (
+                <Button size="sm" variant="outline" className="h-6 text-xs" onClick={saved.onRetryLoad}>
+                  Try again
+                </Button>
+              )}
+            </p>
+          ) : savedList.length === 0 ? (
             <p className="py-3 text-xs text-muted-foreground">
               No saved transforms yet. Build one under New rule and save it to run it again on later imports.
             </p>
@@ -717,11 +758,7 @@ export function TransformDialog({
                     </Button>
                     {confirmDeleteId === entry.id ? (
                       <Button variant="destructive" size="sm" className="h-6 shrink-0 text-xs"
-                        onClick={() => {
-                          setConfirmDeleteId(null);
-                          toggleChecked(entry.id, false);
-                          void saved.onDelete(entry.id);
-                        }}>
+                        onClick={() => void removeSaved(entry)}>
                         Delete
                       </Button>
                     ) : (
@@ -1147,6 +1184,11 @@ export function TransformDialog({
           </div>
         ))}
 
+        {missingPayees({ conditions, actions }, knownPayeeIds).length > 0 && (
+          <p className="text-[11px] text-amber-600 dark:text-amber-400">
+            A payee this rule sets no longer exists. Choose another; until then that action is skipped.
+          </p>
+        )}
         {saved && (
           <p className="text-[11px] text-muted-foreground">
             Type <code className="rounded bg-muted px-1">{"{month}"}</code> in a tag or text, for example{" "}
@@ -1362,13 +1404,31 @@ export function ConnectedTransformDialog({
   const mutations = useSavedTransformMutations();
   const month = useMemo(() => defaultMonth({ statementEnd, rowDates }), [statementEnd, rowDates]);
 
-  if (query.isPending && query.fetchStatus !== "idle") return null;
+  if (query.isPending && query.fetchStatus !== "idle") {
+    // A dialog shell rather than nothing: the user sees the click landed, and
+    // the workbench's shortcuts stay paused behind it.
+    return (
+      <Dialog open onOpenChange={(next) => { if (!next) props.onClose(); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 font-sans text-sm font-semibold">
+              <Wand2 className="h-4 w-4" aria-hidden="true" />
+              Change many rows at once
+            </DialogTitle>
+            <DialogDescription role="status" className="text-xs">Loading saved transforms…</DialogDescription>
+          </DialogHeader>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   return (
     <TransformDialog
       {...props}
       saved={{
         transforms: query.data ?? [],
+        loadError: query.isError ? (query.error instanceof Error ? query.error.message : "Unknown error") : null,
+        onRetryLoad: () => void query.refetch(),
         defaultMonth: month,
         onCreate: (name, rule) => mutations.create.mutateAsync({ name, rule }),
         onUpdate: (id, changes) => mutations.update.mutateAsync({ id, ...changes }),

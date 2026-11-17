@@ -1,6 +1,6 @@
 /** Regressions from the 2026-11-16 reconciliation review (PDF parsing). */
 
-import { inferDocumentNumberFormat, moneyCandidates, parseExactDecimal } from "./candidates";
+import { inferDocumentNumberFormat, moneyCandidates, parseExactDecimal, printedCurrencyOf } from "./candidates";
 import { parsePdfDateCandidate } from "./dates";
 import { closingBalanceFromPdf, withPrintedPeriod } from "../pdfNormalize";
 import type { PdfStatementParseResult } from "./model";
@@ -11,6 +11,19 @@ const amount = (value: string, format: Parameters<typeof parseExactDecimal>[1] =
 };
 
 describe("money in PDF cells", () => {
+  it("reads a currency code glued to the digits, so a foreign amount keeps its currency", () => {
+    expect(printedCurrencyOf("EUR129.00")).toBe("EUR");
+    expect(printedCurrencyOf("129.00 SAR")).toBe("SAR");
+    expect(printedCurrencyOf("129.00")).toBeNull();
+  });
+
+  it("still flags a space-grouped amount once the document's format is known", () => {
+    expect(parseExactDecimal("3 100.00", "us")?.ambiguous).toBe(true);
+    expect(parseExactDecimal("3 100,00", "european")?.ambiguous).toBe(false);
+    expect(parseExactDecimal("3 100.00", "space")?.ambiguous).toBe(false);
+    expect(parseExactDecimal("1,234.00", "us")?.ambiguous).toBe(false);
+  });
+
   it("never joins two numbers separated by a space into one amount", () => {
     expect(moneyCandidates("12 45.00")).toEqual(["12", "45.00"]);
   });
@@ -74,9 +87,21 @@ describe("the statement's closing balance", () => {
 
   it("takes a printed closing line, in Actual's sign for a card", () => {
     const result = { ...base, balanceCheckpoints: [{ kind: "closing", pageNumber: 1, y: 0, coefficient: "123456", scale: 2, sourceIds: [] }] } as PdfStatementParseResult;
-    expect(closingBalanceFromPdf(result, "2026-01-31")).toEqual({
+    expect(closingBalanceFromPdf(result, "2026-01-31", "2026-01-31")).toEqual({
       amount: -123456, asOf: "2026-01-31", source: "closing-line", polarity: "liability", polarityDetected: false,
     });
+  });
+
+  it("does not date a closing line by the last row when no closing date was printed", () => {
+    const result = { ...base, balanceBehavior: "statement", balanceCheckpoints: [{ kind: "closing", pageNumber: 1, y: 0, coefficient: "123456", scale: 2, sourceIds: [] }] } as unknown as PdfStatementParseResult;
+    expect(closingBalanceFromPdf(result, "2026-01-20")).toBeNull();
+    expect(closingBalanceFromPdf(result, "2026-01-20", null)).toBeNull();
+  });
+
+  it("withholds the figure when the last row has no balance of its own", () => {
+    const unbalanced = { importDate: "2026-01-31", balance: null, confidence: {} } as unknown as PdfStatementParseResult["transactions"][number];
+    const result = { ...base, transactions: [...base.transactions, unbalanced] } as PdfStatementParseResult;
+    expect(closingBalanceFromPdf(result, "2026-01-31")).toBeNull();
   });
 
   it("falls back to the last row's reconciled running balance, in either printed order", () => {

@@ -18,7 +18,7 @@ import type {
 } from "../types";
 import { statementText } from "../statement/text";
 import type { ActualIndex } from "./actualIndex";
-import { containmentSimilarity, normalizeForCompare, scoreText } from "./text";
+import { normalizeForCompare, scoreText } from "./text";
 
 /**
  * Point budget, summing to 100.
@@ -164,7 +164,15 @@ export function referenceAppearsInNotes(
   const needle = normalizeForCompare(reference);
   // A very short reference is not evidence of anything.
   if (needle.replace(/\s/g, "").length < 4) return false;
-  return containmentSimilarity(reference, notes) === 1;
+  // Whole tokens in a contiguous run, and no merchant-text specificity filter:
+  // a reference such as `12-34` splits into short tokens that the filter would
+  // reject, yet appearing verbatim is exactly the evidence it is.
+  const wanted = needle.split(/\s+/).filter(Boolean);
+  const haystack = normalizeForCompare(notes).split(/\s+/).filter(Boolean);
+  for (let start = 0; start + wanted.length <= haystack.length; start += 1) {
+    if (wanted.every((token, offset) => haystack[start + offset] === token)) return true;
+  }
+  return false;
 }
 
 /**

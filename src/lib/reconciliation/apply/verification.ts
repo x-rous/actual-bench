@@ -59,6 +59,13 @@ export type VerificationInput = {
   latest: ActualTransactionSnapshot[];
   /** Snapshots as the session saw them, for the reconciled-row check. */
   snapshots: Map<string, ActualTransactionSnapshot>;
+  /**
+   * Results saved before this Apply ran. When given, a create's legacy marker
+   * counts only if that operation was attempted before — the executor's own
+   * rule — so a fresh create is not reported as a duplicate of an unrelated
+   * row that happens to carry the old marker. Absent, both markers count.
+   */
+  previousResults?: OperationResult[];
 };
 
 const FIELD_LABELS: Record<string, string> = {
@@ -97,7 +104,9 @@ export function verifyApply(input: VerificationInput): VerificationReport {
     const operation = operationById.get(operationId);
     if (!operation) continue;
     checked += 1;
-    issues.push(...verifyOne(operation, { byId, byMarker, markerCounts, snapshots: input.snapshots }));
+    const attemptedBefore = !input.previousResults ||
+      input.previousResults.some((result) => result.operationId === operation.id);
+    issues.push(...verifyOne(operation, { byId, byMarker, markerCounts, snapshots: input.snapshots, attemptedBefore }));
   }
 
   return { checked, issues, ok: issues.length === 0 };
@@ -110,12 +119,13 @@ function verifyOne(
     byMarker: Map<string, ActualTransactionSnapshot>;
     markerCounts: Map<string, number>;
     snapshots: Map<string, ActualTransactionSnapshot>;
+    attemptedBefore: boolean;
   }
 ): VerificationIssue[] {
   const issues: VerificationIssue[] = [];
 
   if (operation.kind === "create") {
-    const markers = markersOf(operation);
+    const markers = context.attemptedBefore ? markersOf(operation) : [operation.marker];
     const count = markers.reduce((sum, marker) => sum + (context.markerCounts.get(marker) ?? 0), 0);
     const created = markers.map((marker) => context.byMarker.get(marker)).find(Boolean);
     if (count === 0) {

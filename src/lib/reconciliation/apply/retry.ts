@@ -48,6 +48,7 @@ export function checkEarlierCreates(input: {
     results: existing.map((operation) => ({ operationId: operation.id, status: "applied" })),
     latest: input.rows,
     snapshots: input.snapshots,
+    previousResults: input.previousResults,
   });
   return { ok: report.ok };
 }

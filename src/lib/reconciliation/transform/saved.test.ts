@@ -84,6 +84,18 @@ describe("running several saved transforms in order", () => {
     id: `r${index}`, ...resolvePlaceholders(rule, "2026-11"),
   }));
 
+  it("keeps an explicit clear of a new row's proposed payee", () => {
+    const newItem = items[1];
+    expect(contextFor(newItem).pending.payeeName).not.toBeNull();
+    const preview = previewTransformSequence({
+      rules: [{ id: "clear", conditions: [], actions: [{ kind: "setPayee", payeeId: null }] }],
+      items: [newItem],
+      contextFor,
+    });
+    expect(preview.changed).toHaveLength(1);
+    expect(preview.changed[0].patch.payeeId).toMatchObject({ staged: null });
+  });
+
   it("lets each rule build on what the earlier ones left", () => {
     const preview = previewTransformSequence({ rules, items, contextFor });
     const notes = new Map(preview.changed.map((row) => [row.itemId, row.patch.notes?.staged]));

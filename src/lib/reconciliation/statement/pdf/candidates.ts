@@ -119,6 +119,15 @@ export function moneyCandidates(value: string) {
  * explicit currency. A bare integer such as a store or card number is not
  * money, and treating it as money used to hide the description column.
  */
+/**
+ * The currency printed on a value, including a code glued to the digits
+ * (`EUR129.00`), so a foreign amount is not taken for the statement's own.
+ */
+export function printedCurrencyOf(value: string): string | null {
+  const match = normalizePdfText(value).match(CURRENCY_STRIP)?.[0]?.toUpperCase();
+  return match ?? null;
+}
+
 export function looksLikeMoney(value: string) {
   const text = normalizePdfText(value);
   if (!moneyCandidates(text).length) return false;
@@ -150,7 +159,7 @@ export function parseExactDecimal(value: string, format: PdfNumberFormat): Exact
     .trim();
   if (!/\d/.test(numeric)) return null;
 
-  const detected = format === "auto" ? detectNumberFormat(numeric) : { format, ambiguous: false };
+  const detected = format === "auto" ? detectNumberFormat(numeric) : { format, ambiguous: spaceGroupingIsDoubtful(numeric, format) };
   const decimal = decimalSeparator(detected.format, numeric);
   // In European notation a dot only ever groups, so `1.234` with no comma is
   // one thousand two hundred and thirty-four.
@@ -193,6 +202,16 @@ function detectNumberFormat(value: string): { format: Exclude<PdfNumberFormat, "
     return { format: "us", ambiguous: tail === 3 };
   }
   return { format: "us", ambiguous: false };
+}
+
+/**
+ * "3 100.00" could be a quantity printed beside an amount whatever the
+ * statement's decimal convention, so a known format (chosen, or inferred from
+ * the rest of the document) still flags it. "1 234,56" is plainly grouped, and
+ * a statement read as space-grouped has said so.
+ */
+function spaceGroupingIsDoubtful(value: string, format: Exclude<PdfNumberFormat, "auto">): boolean {
+  return format !== "space" && /\d\s\d{3}/.test(value) && !/,\d{1,2}$/.test(value);
 }
 
 function decimalSeparator(format: Exclude<PdfNumberFormat, "auto">, value: string): "." | "," | null {

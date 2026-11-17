@@ -1638,6 +1638,9 @@ function ReconciliationSessionView() {
         if (session.budgetSyncId !== connection.budgetSyncId) throw new Error("This session belongs to a different budget.");
         if (!await refreshBudget(connection)) throw new Error("Could not refresh Actual before checking changes. Nothing was written.");
         ensureConnection();
+        // The closing check pairs this balance with the refreshed plan, so it
+        // is re-read too: one cached before an outside change would disagree.
+        void queryClient.invalidateQueries({ queryKey: ["reconciliation", "balance-on", connection.id] });
         const dates = [...snapshot.map((row) => row.date), ...applyPlan.operations.map((op) => op.date),
           session.statementStart ?? "", session.statementEnd ?? ""].filter(Boolean).sort();
         const window = await transport.loadTransactions({ accountId: session.accountId,
@@ -1767,7 +1770,7 @@ function ReconciliationSessionView() {
             const row = await transport.readTransaction({ accountId: session.accountId, transactionId: op.transactionId });
             if (row) fresh.transactions.push(row);
           }
-          setVerification(verifyApply({ plan, results: result.results, latest: fresh.transactions, snapshots: historicalTransactions }));
+          setVerification(verifyApply({ plan, results: result.results, latest: fresh.transactions, snapshots: historicalTransactions, previousResults }));
         }, {
           onError: () => setMatchError("Changes were applied, but the read-back check could not finish. Check Actual before retrying."),
           onDone: () => setIsVerifying(false),
@@ -1799,6 +1802,7 @@ function ReconciliationSessionView() {
         ensureConnection();
         if (!await refreshBudget(connection!)) throw new Error("Could not refresh Actual. The session remains locked.");
         ensureConnection();
+        void queryClient.invalidateQueries({ queryKey: ["reconciliation", "balance-on", connection!.id] });
         const transport = createReconciliationTransport(getTransport(connection!));
         const dates = [session.candidateStart, session.candidateEnd, session.statementStart, session.statementEnd,
           ...fullPlan.operations.flatMap((op) => op.kind === "update" ? [op.date, op.patch.date?.staged] : [op.date])]

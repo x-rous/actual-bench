@@ -137,7 +137,14 @@ const MAX_WIDENING_DAYS = 45;
  */
 export function closingBalanceFromPdf(
   result: Pick<PdfStatementParseResult, "balanceCheckpoints" | "balancePolarity" | "balanceBehavior" | "transactions">,
-  asOf: string | null | undefined
+  asOf: string | null | undefined,
+  /**
+   * The statement's printed closing date. A closing-balance line is the
+   * balance on that date, so without it (or when the period fell back to the
+   * last row's date) the line is not used: Actual transactions between the
+   * last row and the real closing date would be missed.
+   */
+  printedEnd?: string | null
 ): StatementClosingBalance | null {
   if (!asOf || !result.balancePolarity) return null;
   const polarity = result.balancePolarity.direction;
@@ -145,13 +152,15 @@ export function closingBalanceFromPdf(
   const base = { asOf, polarity, polarityDetected: result.balancePolarity.source === "detected-type" } as const;
 
   const closing = [...(result.balanceCheckpoints ?? [])].reverse().find((checkpoint) => checkpoint.kind === "closing");
-  if (closing) {
+  if (closing && printedEnd && printedEnd === asOf) {
     const minor = minorUnitsOf(BigInt(closing.coefficient), closing.scale);
     return minor === null ? null : { ...base, amount: toActual(minor), source: "closing-line" };
   }
 
   if (result.balanceBehavior !== "running") return null;
-  const dated = result.transactions.filter((transaction) => transaction.importDate && transaction.balance);
+  // The chronologically last row decides, balance or not: skipping a final row
+  // without one would report an earlier row's balance as the closing figure.
+  const dated = result.transactions.filter((transaction) => transaction.importDate);
   if (!dated.length) return null;
   let ascending = 0;
   let descending = 0;
@@ -160,7 +169,7 @@ export function closingBalanceFromPdf(
     if (transaction.importDate! < dated[index].importDate!) descending += 1;
   });
   const last = descending > ascending ? dated[0] : dated[dated.length - 1];
-  if (!last.confidence.balance?.reasons.includes("BALANCE_RECONCILED")) return null;
+  if (!last.balance || !last.confidence.balance?.reasons.includes("BALANCE_RECONCILED")) return null;
   const minor = parsePdfMoneyToMinorUnits(last.balance!);
   return minor === null ? null : { ...base, amount: toActual(minor), source: "last-row" };
 }

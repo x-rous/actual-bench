@@ -176,6 +176,9 @@ export async function extractPdfStatement(
     let result: PdfStatementParseResult;
     try {
       result = await parsing;
+      // A parse that finished while previews rendered still belongs to a read
+      // the user cancelled; returning it would replace the current draft.
+      throwIfAborted(options.signal);
     } catch (error) {
       for (const url of pagePreviews) if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
       throw error;
