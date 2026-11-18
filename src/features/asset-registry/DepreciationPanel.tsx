@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { InfoHint } from "@/components/ui/info-hint";
 import { DataTable, Text, type Column } from "@/features/credit-cards/components/primitives/DataTable";
 import { shortDate } from "@/features/credit-cards/components/primitives/format";
-import { UncertainAssetWrite, type ActionContext } from "@/lib/asset-registry/actions";
+import { UncertainAssetWrite, type ActionContext, type ActionResult } from "@/lib/asset-registry/actions";
 import { depreciationSchedule, forecastMonths, periodStatuses, type PeriodState, type PeriodStatus } from "@/lib/asset-registry/depreciation";
 import { typeFromNotes } from "@/lib/asset-registry/tags";
 import { DEPRECIATION_TAG, depreciationEvidence, depreciationMetadata, executeDepreciation, prepareDepreciation, type DepreciationPrepared } from "@/lib/asset-registry/depreciationActions";
@@ -30,7 +30,7 @@ export function DepreciationPanel({ asset, registry, snapshot, valueMinor, today
   const settings = registry.depreciation?.find((s) => s.assetId === asset.id);
   const [selected, setSelected] = useState<string[]>([]); const [review, setReview] = useState<DepreciationPrepared[] | null>(null);
   const [outcomes, setOutcomes] = useState<Record<string, Outcome>>({}); const [busy, setBusy] = useState(false); const [error, setError] = useState("");
-  const [retry, setRetry] = useState<{ prepared: DepreciationPrepared; result: { transactionId: string | null; deleted: boolean; noop: boolean } } | null>(null);
+  const [retry, setRetry] = useState<{ prepared: DepreciationPrepared; result: ActionResult } | null>(null);
   const actual = new Map(snapshot.source.map((r) => [r.id, r]));
   const rows = settings ? periodStatuses(depreciationSchedule(settings, forecastMonths(settings, today)), registry.metadata, asset.id, new Set(actual.keys()), today) : [];
   const posted = rows.filter((r) => r.state === "posted").length;
@@ -48,6 +48,9 @@ export function DepreciationPanel({ asset, registry, snapshot, valueMinor, today
     try {
       const plans: DepreciationPrepared[] = [];
       for (const period of [...selected].sort()) { const row = rows.find((r) => r.period === period)!; plans.push(prepareDepreciation(await fresh(row.postDate), period, today)); }
+      // The schedule does not know about value changes typed by hand (a write-down, a revaluation), so it can ask for more than is left.
+      const after = valueMinor === null ? null : valueMinor + plans.reduce((sum, p) => sum + p.amountMinor, 0);
+      if (settings && after !== null && after < settings.residualMinor) throw new Error(`Posting ${plans.length === 1 ? "this month" : "these months"} would take the recorded value from ${assetMoney(valueMinor)} to ${assetMoney(after)}, below the residual value ${assetMoney(settings.residualMinor)}. The value has probably been written down by hand: edit the schedule, or post fewer months.`);
       setReview(plans);
     } catch (e) { setError(e instanceof Error ? e.message : "Preview failed"); }
     finally { setBusy(false); }
@@ -62,10 +65,12 @@ export function DepreciationPanel({ asset, registry, snapshot, valueMinor, today
       if (stopped) { next[plan.period] = { status: "failed", message: "Not attempted" }; continue; }
       let result;
       try {
+        // One fresh read per month: it is taken immediately before the write, so it also serves as the write's guard read,
+        // and the write's own confirming read supplies the new row for the association.
         const context = await fresh(plan.date);
         const prepared = prepareDepreciation(context, plan.period, today);
-        result = await executeDepreciation(prepared, () => fresh(plan.date));
-        try { await saveMetadata(prepared, result, await fresh(plan.date)); next[plan.period] = { status: "posted", message: `Posted ${shortDate(plan.date, today)}` }; }
+        result = await executeDepreciation(prepared, async () => context);
+        try { await saveMetadata(prepared, result, context); next[plan.period] = { status: "posted", message: `Posted ${shortDate(plan.date, today)}` }; }
         catch (e) { setRetry({ prepared, result }); next[plan.period] = { status: "metadata", message: e instanceof Error ? e.message : "Metadata save failed" }; stopped = true; }
       } catch (e) {
         if (e instanceof UncertainAssetWrite) onUncertain();
@@ -75,8 +80,9 @@ export function DepreciationPanel({ asset, registry, snapshot, valueMinor, today
     setOutcomes((old) => ({ ...old, ...next })); setReview(null); setSelected([]); setBusy(false);
     await onSaved();
   }
-  const saveMetadata = async (prepared: DepreciationPrepared, result: { transactionId: string | null; deleted: boolean; noop: boolean }, context: ActionContext) => {
-    await registryRequest(asset.budgetSyncId, "PUT", { changes: depreciationMetadata(prepared, result, context), sources: depreciationEvidence(context) });
+  const saveMetadata = async (prepared: DepreciationPrepared, result: ActionResult, context: ActionContext) => {
+    const changes = depreciationMetadata(prepared, result, context);
+    await registryRequest(asset.budgetSyncId, "PUT", { changes, sources: depreciationEvidence(context, changes, result.row) });
   };
   async function retryMetadata() {
     if (!retry || busy) return;

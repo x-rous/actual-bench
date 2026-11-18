@@ -20,11 +20,17 @@ function parse<T>(schema: z.ZodType<T>, input: unknown): T {
 }
 export function readRegistry(db: SqliteDatabase, budget: string): Registry {
   parse(idSchema, budget);
+  // One query for every ownership period of the budget, grouped here, instead of one query per asset.
+  const periods = new Map<string, { effectiveFrom: string; ownershipBps: number }[]>();
+  for (const p of db.prepare(`SELECT o.asset_id AS assetId, o.effective_from AS effectiveFrom, o.ownership_bps AS ownershipBps FROM asset_ownership_periods o
+    JOIN assets a ON a.id=o.asset_id WHERE a.budget_sync_id=? ORDER BY o.asset_id, o.effective_from`).all<{ assetId: string; effectiveFrom: string; ownershipBps: number }>(budget)) {
+    const list = periods.get(p.assetId) ?? []; list.push({ effectiveFrom: p.effectiveFrom, ownershipBps: p.ownershipBps }); periods.set(p.assetId, list);
+  }
   const assets = db.prepare("SELECT * FROM assets WHERE budget_sync_id=? ORDER BY name,id").all<AssetRow>(budget).map((r): Asset => ({
     id: r.id, budgetSyncId: r.budget_sync_id, actualAccountId: r.actual_account_id,
     name: r.name, assetType: r.asset_type, assetTag: r.asset_tag, description: r.description, status: r.status,
     revision: r.revision, createdAt: r.created_at, updatedAt: r.updated_at, archivedAt: r.archived_at, incomeGenerating: r.income_generating === 1,
-    ownership: db.prepare("SELECT effective_from AS effectiveFrom, ownership_bps AS ownershipBps FROM asset_ownership_periods WHERE asset_id=? ORDER BY effective_from").all(r.id),
+    ownership: periods.get(r.id) ?? [],
   }));
   type MetadataRow = BookMetadata & { role: string; contextJson: string | null; depreciationPeriod: string | null };
   const rows = db.prepare(`SELECT actual_transaction_id AS actualTransactionId, actual_account_id AS actualAccountId,
@@ -44,18 +50,30 @@ export function readRegistry(db: SqliteDatabase, budget: string): Registry {
     .map((r): LinkRule => ({ ...r, conditions: JSON.parse(r.conditions) }));
   return { assets, metadata, ...(linkRules.length ? { linkRules } : {}), ...(cashflows.length ? { cashflows } : {}), ...(depreciation.length ? { depreciation } : {}), ...(debtLinks.length ? { debtLinks } : {}) };
 }
-const saveSchema = z.object({ budgetSyncId: idSchema, asset: assetInputSchema, accountDirectory: accountDirectorySchema }).strict();
+/**
+ * The rows of an account that one dedicated asset has held until now. When a second asset joins that account, attribution
+ * switches from "everything is the asset's" to hashtags and assignments, so the first asset's rows (which carry neither)
+ * are assigned to it in the same transaction that adds the second asset. Rows the client found carrying an asset hashtag
+ * are left out; a row already assigned keeps its assignment.
+ */
+const adoptSchema = z.object({ assetId: idSchema, transactionIds: z.array(idSchema).max(200000) }).strict();
+const saveSchema = z.object({ budgetSyncId: idSchema, asset: assetInputSchema, accountDirectory: accountDirectorySchema, adopt: adoptSchema.optional() }).strict();
 /** Directory is read by the active browser transport, as for Loans; classes are checked from the DB. */
 export function saveAsset(db: SqliteDatabase, input: unknown): Registry {
-  const { budgetSyncId: budget, asset, accountDirectory } = parse(saveSchema, input);
+  const { budgetSyncId: budget, asset, accountDirectory, adopt } = parse(saveSchema, input);
   return db.transaction(() => {
-    const current = readRegistry(db, budget).assets.find((a) => a.id === asset.id);
+    const all = readRegistry(db, budget).assets;
+    const current = all.find((a) => a.id === asset.id);
     if ((current?.revision ?? 0) !== asset.revision) throw new AppDbConflictError("Asset changed. Refresh before saving; your draft is preserved.");
     if (current && current.actualAccountId !== asset.actualAccountId) throw new AppDbValidationError("Settings cannot relink account history");
     if (current && asset.assetTag !== undefined && current.assetTag !== asset.assetTag) throw new AppDbValidationError("The saved asset hashtag cannot change");
-    const members = readRegistry(db, budget).assets.filter((a) => a.actualAccountId === asset.actualAccountId && a.id !== asset.id);
+    const members = all.filter((a) => a.actualAccountId === asset.actualAccountId && a.id !== asset.id);
     if (!current && members.length && !asset.assetTag) throw new AppDbValidationError("Choose Shared Asset Account and enter a hashtag for this account");
-    if (!current && asset.assetTag && readRegistry(db, budget).assets.some((a) => a.assetTag === asset.assetTag)) throw new AppDbValidationError("This hashtag is already used, including archived assets. Choose another.");
+    if (!current && asset.assetTag && all.some((a) => a.assetTag === asset.assetTag)) throw new AppDbValidationError("This hashtag is already used, including archived assets. Choose another.");
+    // The account's only asset has no hashtag: its rows are attributed to it only while it is alone, so they must be kept with it.
+    const dedicatedMember = !current && members.length === 1 && !members[0].assetTag ? members[0] : null;
+    if (dedicatedMember && adopt?.assetId !== dedicatedMember.id) throw new AppDbValidationError(`${dedicatedMember.name} has no hashtag, so its entries must be assigned to it before another asset shares its account. Refresh and try again.`);
+    if (adopt && !dedicatedMember) throw new AppDbValidationError("Only the entries of an account's single untagged asset can be assigned while sharing its account");
     const records = listAccountClasses(db, budget);
     const maps = { accounts: new Map(records.filter((c) => c.scope === "account").map((c) => [c.accountId, c.accountClass])), groups: new Map(records.filter((c) => c.scope === "group").map((c) => [c.accountId, c.accountClass])) };
     const reporting = new Map(listAccountReporting(db, budget).map((r) => [r.accountId, r.treatment]));
@@ -73,6 +91,12 @@ export function saveAsset(db: SqliteDatabase, input: unknown): Registry {
     db.prepare("DELETE FROM asset_ownership_periods WHERE asset_id=?").run(asset.id);
     const insert = db.prepare("INSERT INTO asset_ownership_periods(asset_id,effective_from,ownership_bps,created_at,updated_at) VALUES(?,?,?,?,?)");
     for (const p of asset.ownership) insert.run(asset.id, p.effectiveFrom, p.ownershipBps, now, now);
+    if (dedicatedMember && adopt) {
+      const assign = db.prepare(`INSERT INTO asset_transaction_metadata(budget_sync_id,actual_transaction_id,actual_account_id,role,asset_id,classification,revision,created_at,updated_at)
+        VALUES(?,?,?,'book',?,NULL,1,?,?) ON CONFLICT(budget_sync_id,actual_transaction_id) DO UPDATE SET asset_id=excluded.asset_id,revision=asset_transaction_metadata.revision+1,updated_at=excluded.updated_at
+        WHERE asset_transaction_metadata.asset_id IS NULL AND asset_transaction_metadata.role='book' AND asset_transaction_metadata.actual_account_id=excluded.actual_account_id`);
+      for (const id of new Set(adopt.transactionIds)) assign.run(budget, id, asset.actualAccountId, dedicatedMember.id, now, now);
+    }
     return readRegistry(db, budget);
   })();
 }

@@ -17,6 +17,7 @@ import type { ConnectionInstance } from "@/store/connection";
 import type { Account } from "@/types/entities";
 import { ASSET_TYPES, defaultIncomeGenerating, eligibility, type Asset, type AssetInput, type AssetType, type Registry } from "@/lib/asset-registry/models";
 import { bankToday } from "@/features/credit-cards/lib/cycles";
+import { assetHashtags, readBook } from "@/lib/asset-registry/ledger";
 import { registryRequest } from "./api";
 
 /**
@@ -52,6 +53,8 @@ export function useAssetSetup({ connection, asset, accounts, registry, onDiscard
   const accountOptions = buildAccountOptions(offered, [], { closed: "show" });
   const hiddenAccounts = accounts.length - offered.length;
   const shared = registry.assets.some((a) => a.actualAccountId === draft.actualAccountId && a.id !== draft.id);
+  /** The account's single asset without a hashtag, whose entries are assigned to it when this new asset shares its account. */
+  const adoptFrom = !asset && draft.actualAccountId ? (() => { const others = registry.assets.filter((a) => a.actualAccountId === draft.actualAccountId && a.id !== draft.id); return others.length === 1 && !others[0].assetTag ? others[0] : null; })() : null;
   const discard = useDiscardChanges(initial !== JSON.stringify(draft) || !!pendingId || hashtag !== (asset?.assetTag ?? ""), () => {
     if (pendingId && useStagedStore.getState().accounts[pendingId]?.isNew) useStagedStore.getState().stageDelete("accounts", pendingId);
     onDiscard();
@@ -131,14 +134,23 @@ export function useAssetSetup({ connection, asset, accounts, registry, onDiscard
       const directory = await getTransport(connection).getAccounts();
       const pending = useStagedStore.getState().accounts[actualAccountId ?? ""];
       if (pending && (pending.isNew || pending.isUpdated || pending.isDeleted || pending.pendingAccountClass !== undefined || pending.saveError)) throw new Error("Save pending changes to the selected account in Accounts first");
-      const saved = await registryRequest(connection.budgetSyncId, "POST", { asset: { ...draft, actualAccountId, assetTag: accountMode === "shared" ? hashtag : null }, accountDirectory: directory });
+      // Joining an account whose only asset has no hashtag: that asset's entries are assigned to it in the same save, or
+      // they would become Unassigned the moment the account is shared (attribution then follows hashtags and assignments).
+      const members = registry.assets.filter((a) => a.actualAccountId === actualAccountId && a.id !== draft.id);
+      let adopt: { assetId: string; transactionIds: string[] } | undefined;
+      if (!asset && members.length === 1 && !members[0].assetTag) {
+        const book = await readBook(getTransport(connection), actualAccountId, "9999-12-31");
+        if (book.balanceMinor === null || book.issues.length) throw new Error(`The account of ${members[0].name} could not be read completely, so its entries cannot be kept with it. Refresh and try again.`);
+        adopt = { assetId: members[0].id, transactionIds: book.rows.filter((r) => assetHashtags(r.notes ?? "").length === 0).map((r) => r.id) };
+      }
+      const saved = await registryRequest(connection.budgetSyncId, "POST", { asset: { ...draft, actualAccountId, assetTag: accountMode === "shared" ? hashtag : null }, accountDirectory: directory, ...(adopt ? { adopt } : {}) });
       return { registry: saved, assetId: draft.id };
     } catch (e) { setError(e instanceof Error ? e.message : "Asset Save failed"); return null; }
     finally { setBusy(false); }
   }
   return {
     draft, setDraft, accountMode, setAccountMode, hashtag, setHashtag, error, setError, errors, setErrors, incomeTouched, setIncomeTouched, busy,
-    accountOpen, setAccountOpen, createUncertain, pendingId, classes, groups, staged, initialAccount, accountOptions, hiddenAccounts, shared, unavailableReason,
+    accountOpen, setAccountOpen, createUncertain, pendingId, classes, groups, staged, initialAccount, accountOptions, hiddenAccounts, shared, adoptFrom, unavailableReason,
     discard, close, stageAccount, discardPending, save, validate,
   };
 }

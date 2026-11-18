@@ -34,13 +34,17 @@ export function performance(asset: Asset, registry: Registry, snapshot: BookSnap
   if (!book.available) gap("Dated asset values are unavailable");
   if (book.rows.some((r) => !r.assetId && inPeriod(r.date))) gap("Unassigned entries require review");
   const metadata = registry.metadata.filter((m) => m.actualAccountId === asset.actualAccountId);
-  const actual = (id: string, accountId: string) => [...all.rows, ...external.rows].find((r) => r.id === id && r.accountId === accountId);
+  // Indexed once per call: links and anchors look rows up by id, and a scan per lookup grows with links × rows.
+  const index = new Map([...all.rows, ...external.rows].map((r) => [r.id, r]));
+  const actual = (id: string, accountId: string) => { const row = index.get(id); return row && row.accountId === accountId ? row : undefined; };
   const operating: number[] = [], capital: number[] = [], proceeds: number[] = [];
   /** Every dated movement of money, for the annual (money-weighted) return. */
   const flows: DatedFlow[] = [];
   const companions = new Set([...metadata, ...links].flatMap((m) => m.context?.data.kind === "disposal" && m.context.data.bookAdjustmentTransactionId ? [m.context.data.bookAdjustmentTransactionId] : []));
+  const metadataById = new Map(metadata.map((m) => [m.actualTransactionId, m]));
+  const assetAccounts = new Set(registry.assets.map((a) => a.actualAccountId));
   for (const row of own.filter((r) => inPeriod(r.date))) {
-    const m = metadata.find((m) => m.actualTransactionId === row.id);
+    const m = metadataById.get(row.id);
     if (!Object.hasOwn(BOOK_TYPES, row.classification ?? "")) gap("Unclassified entries");
     if (CAPITAL_TYPES.includes(row.classification ?? "")) { capital.push(row.amountMinor); flows.push({ date: row.date, amountMinor: -row.amountMinor }); }
     if (row.classification === "disposal" && !m?.context && !companions.has(row.id)) gap("Disposal treatment is missing");
@@ -48,7 +52,7 @@ export function performance(asset: Asset, registry: Registry, snapshot: BookSnap
   for (const link of links) {
     const row = actual(link.actualTransactionId, link.actualAccountId);
     // A link to a transaction that is gone, a treatment's own rows and transfers or asset-account rows never count as operating.
-    if (!row || !inPeriod(row.date) || (link.classification && Object.hasOwn(CASHFLOW_TYPES, link.classification)) || link.context || row.transferId || registry.assets.some((a) => a.actualAccountId === row.accountId)) continue;
+    if (!row || !inPeriod(row.date) || (link.classification && Object.hasOwn(CASHFLOW_TYPES, link.classification)) || link.context || row.transferId || assetAccounts.has(row.accountId)) continue;
     if (row.amountMinor !== 0) { operating.push(row.amountMinor); flows.push({ date: row.date, amountMinor: row.amountMinor }); }
   }
   for (const anchor of [...metadata.filter((m) => m.assetId === asset.id), ...links].filter((m) => m.context?.data.kind === "disposal")) {

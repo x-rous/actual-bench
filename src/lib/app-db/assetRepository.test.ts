@@ -59,8 +59,13 @@ it("accepts manual unique hashtags and stores no hashtag for dedicated accounts"
   const dedicated = saveAsset(db, { ...payload, asset: { ...payload.asset, assetTag: null } }).assets[0];
   expect(dedicated.assetTag).toBeNull();
   expect(() => saveAsset(db, { ...payload, asset: { ...payload.asset, id: "other", assetTag: null } })).toThrow(/Shared/);
-  const shared = saveAsset(db, { ...payload, asset: { ...payload.asset, id: "other", assetTag: "#asset_family_car" } }).assets.find((a) => a.id === "other");
+  // The dedicated asset's rows carry no hashtag: sharing its account must assign them to it in the same save.
+  expect(() => saveAsset(db, { ...payload, asset: { ...payload.asset, id: "other", assetTag: "#asset_family_car" } })).toThrow(/must be assigned/);
+  saveBookMetadata(db, { budgetSyncId: "budget", changes: [{ actualTransactionId: "typed", actualAccountId: "vehicles", assetId: null, classification: "revaluation", revision: 0 }] });
+  const next = saveAsset(db, { ...payload, asset: { ...payload.asset, id: "other", assetTag: "#asset_family_car" }, adopt: { assetId: dedicated.id, transactionIds: ["typed", "opening"] } });
+  const shared = next.assets.find((a) => a.id === "other");
   expect(shared?.assetTag).toBe("#asset_family_car");
+  expect(next.metadata.map((m) => [m.actualTransactionId, m.assetId, m.classification])).toEqual([["opening", dedicated.id, null], ["typed", dedicated.id, "revaluation"]]);
   expect(() => saveAsset(db, { ...payload, asset: { ...payload.asset, id: "duplicate", assetTag: "#asset_family_car" } })).toThrow(/already used/);
 });
 

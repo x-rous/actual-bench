@@ -29,7 +29,7 @@ export default function AssetValueTimeline({ points, smooth = false, showCapital
         <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--border)" />
         {projected.length > 0 && <ReferenceArea x1={projected[0].label} x2={projected[projected.length - 1].label} fill="var(--muted)" fillOpacity={0.45} ifOverflow="visible" label={{ value: "Projected", position: "insideTopRight", fontSize: 10, fill: "var(--muted-foreground)" }} />}
         <XAxis dataKey="label" scale="band" interval={0} tick={AXIS} />
-        <YAxis domain={[0, (max: number) => Math.max(100, max)]} tickFormatter={compact} tick={AXIS} width={TIMELINE_AXIS_WIDTH} />
+        <YAxis domain={[0, (max: number) => Math.max(10000, max)]} allowDecimals={false} tickFormatter={compact} tick={AXIS} width={TIMELINE_AXIS_WIDTH} />
         <Tooltip filterNull={false} cursor={{ stroke: "var(--muted-foreground)", strokeDasharray: "3 3", strokeOpacity: 0.45 }} content={({ active, payload }) => {
           const p = payload?.[0]?.payload as (typeof data)[number] | undefined;
           if (!active || !p) return null;

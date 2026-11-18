@@ -1,4 +1,4 @@
-import { allocatedDebtMinor, allocationAt, changePair, checkLoanLimits, loanShares, trackedEquity, type AssetDebtLink } from "./financing";
+import { allocatedDebtMinor, allocatedInterest, allocationAt, changePair, checkLoanLimits, loanShares, trackedEquity, type AssetDebtLink } from "./financing";
 
 const link = (from: string, to: string | null, bps: number, assetId = "house", debtId = "loan"): AssetDebtLink => ({ assetId, debtId, allocationBps: bps, effectiveFrom: from, effectiveTo: to, note: null });
 const set = (rows: AssetDebtLink[], from: string, bps: number, extra: object = {}) => changePair(rows, { kind: "set", assetId: "house", debtId: "loan", effectiveFrom: from, allocationBps: bps, ...extra });
@@ -43,4 +43,19 @@ it("computes dated equity from same-date Actual evidence and never substitutes m
   expect(trackedEquity("house", "2026-07-31", links, null, d.july).equityMinor).toBeNull();
   expect(trackedEquity("house", "2025-12-31", links, 500000, []).equityMinor).toBe(500000); // before the first link no financing is known
   expect(allocatedDebtMinor(1, 5000)).toBe(0); expect(allocatedDebtMinor(3, 5000)).toBe(2); // half-even, once
+});
+
+describe("allocatedInterest", () => {
+  const link = (over: Partial<AssetDebtLink>): AssetDebtLink => ({ assetId: "a", debtId: "d", allocationBps: 10000, effectiveFrom: "2025-01-01", effectiveTo: null, note: null, ...over });
+  // The loan's cumulative interest through each date the calculation asks for: 100 a month during 2025.
+  const known: Record<string, number> = { "2024-12-31": 0, "2025-06-30": 600, "2025-12-31": 1200 };
+  const cumulative = (date: string) => known[date];
+  it("prices each allocation period at its own share and ignores other assets", () => {
+    const links = [link({ effectiveTo: "2025-07-01" }), link({ effectiveFrom: "2025-07-01", allocationBps: 5000 }), link({ assetId: "b" })];
+    expect(allocatedInterest("a", links, "2025-01-01", "2025-12-31", (_, d) => cumulative(d))).toBe(600 + 300);
+  });
+  it("is zero with no link in the period and unknown while a figure is missing", () => {
+    expect(allocatedInterest("a", [link({ effectiveFrom: "2026-01-01" })], "2025-01-01", "2025-12-31", () => 0)).toBe(0);
+    expect(allocatedInterest("a", [link({})], "2025-01-01", "2025-12-31", () => undefined)).toBeNull();
+  });
 });

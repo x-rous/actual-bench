@@ -40,7 +40,8 @@ export function CashflowPanel({ asset, registry, external, today, categories = [
   const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
   const [sort, setSort] = useState<SortState | null>({ key: "date", direction: "desc" });
   const assetAccounts = [...new Set(registry.assets.map((a) => a.actualAccountId))];
-  const linked = (registry.cashflows ?? []).filter((m) => m.assetId === asset.id).map((meta) => ({ meta, row: external.rows.find((r) => r.id === meta.actualTransactionId && r.accountId === meta.actualAccountId) }));
+  const externalById = new Map(external.rows.map((r) => [r.id, r]));
+  const linked = (registry.cashflows ?? []).filter((m) => m.assetId === asset.id).map((meta) => { const row = externalById.get(meta.actualTransactionId); return { meta, row: row?.accountId === meta.actualAccountId ? row : undefined }; });
   const categoryOf = (row: NonNullable<typeof linked[number]["row"]>) => row.categoryId ?? "uncategorized";
   const narrowed = rowFiltersActive(filters);
   const filtered = linked.filter(({ meta, row }) => (!row ? !narrowed : matchesIds(row.label, filters.payees) && matchesIds(categoryOf(row), filters.categories) && matchesIds(row.accountId, filters.accounts) && matchesAmount(row.amountMinor, filters.amount)) && (!row || (focus ? row.date >= focus.from && row.date <= focus.to : inRange(range, today, row.date)) || meta.context?.data.kind === "selling-cost") && (!focus?.type || meta.classification === focus.type) && `${row?.label ?? "missing"} ${row?.notes ?? ""} ${row?.categoryName ?? ""}`.toLocaleLowerCase().includes(search.toLocaleLowerCase()));
@@ -71,7 +72,7 @@ export function CashflowPanel({ asset, registry, external, today, categories = [
       const now = context.external.rows.find((r) => r.id === change.actualTransactionId);
       if (!was || !now || JSON.stringify(was) !== JSON.stringify(now)) throw new Error("Source changed. Refresh and review the link again.");
     }
-    await onSaved(await registryRequest(asset.budgetSyncId, "PUT", { changes, sources: sourceEvidence(capitalEvidence(context)) }));
+    await onSaved(await registryRequest(asset.budgetSyncId, "PUT", { changes, sources: sourceEvidence(capitalEvidence(context), changes) }));
     setSelected([]);
   }
   const unlinkChange = (m: CashflowMetadata): CashflowChange => ({ role: "cashflow", actualTransactionId: m.actualTransactionId, actualAccountId: m.actualAccountId, assetId: asset.id, classification: m.classification, revision: m.revision, remove: true });

@@ -16,7 +16,9 @@ export function capitalMovements(asset: Asset, registry: Registry, snapshot: Boo
   const own = book.rows.filter((r) => r.assetId === asset.id);
   const links = (registry.cashflows ?? []).filter((m) => m.assetId === asset.id);
   const metadata = registry.metadata.filter((m) => m.actualAccountId === asset.actualAccountId);
-  const actual = (id: string, accountId: string) => [...all.rows, ...external.rows].find((r) => r.id === id && r.accountId === accountId);
+  // Indexed once per call: links and anchors look rows up by id, and a scan per lookup grows with links × rows.
+  const index = new Map([...all.rows, ...external.rows].map((r) => [r.id, r]));
+  const actual = (id: string, accountId: string) => { const row = index.get(id); return row && row.accountId === accountId ? row : undefined; };
   const movements: CapitalMovement[] = [];
   for (const row of own) if ((row.classification === "acquisition" || row.classification === "added-capital") && row.transferId && row.amountMinor > 0) movements.push({ date: row.date, kind: "investment", amountMinor: -row.amountMinor, rowIds: [row.id] });
   for (const anchor of [...metadata.filter((m) => m.assetId === asset.id), ...links].filter((m) => m.context?.data.kind === "disposal")) {

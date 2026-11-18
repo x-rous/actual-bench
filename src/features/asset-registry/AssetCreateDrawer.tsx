@@ -20,6 +20,7 @@ import type { ConnectionInstance } from "@/store/connection";
 import type { Account } from "@/types/entities";
 import { AssetMark } from "./AssetPresentation";
 import { OWNERSHIP_FROM_START } from "./OwnershipTable";
+import { UncertainAssetWrite } from "@/lib/asset-registry/actions";
 import { recordStartingValue } from "./startingValue";
 import { ToggleRow } from "./ToggleRow";
 import { useAssetSetup } from "./useAssetSetup";
@@ -82,7 +83,13 @@ export function AssetCreateDrawer({ connection, accounts, registry, today, onSav
       onSaved(await recordStartingValue({ transport: getTransport(connection), budgetSyncId: connection.budgetSyncId, assetId: result.assetId, shared: accountMode === "shared", date: startDate || today, amountMinor: startMinor }));
       onOpenAsset(result.assetId);
     } catch (e) {
-      setCreated({ assetId: result.assetId, message: `The asset was created, but its opening value was not recorded: ${e instanceof Error ? e.message : "the write failed"}. Open the asset to check the Asset Ledger, then use Add Entry if it is missing.` });
+      // Say what is known about the opening value, so it is never entered twice.
+      const message = e instanceof Error && e.name === "StartingValueSavedError"
+        ? "The asset was created and its opening value is in Actual. Bench could not save the entry's type, but the #opening-balance hashtag in its Notes already marks it, so do not add it again. Open the asset to check the Asset Ledger."
+        : e instanceof UncertainAssetWrite
+          ? "The asset was created, but it is not certain whether its opening value reached Actual. Open the asset and check the Asset Ledger before adding it, so it is not entered twice."
+          : `The asset was created, but its opening value was not recorded: ${e instanceof Error ? e.message : "the write failed"}. Open the asset and use Update value or Add Entry to add it.`;
+      setCreated({ assetId: result.assetId, message });
     }
     } finally { setSubmitting(false); }
   }
@@ -115,6 +122,7 @@ export function AssetCreateDrawer({ connection, accounts, registry, today, onSav
                   : <SearchableCombobox allowNone={false} ariaLabel="Account" value={draft.actualAccountId} options={accountOptions} placeholder="Choose an account…" onChange={(value) => { setDraft({ ...draft, actualAccountId: value }); setErrors((e) => ({ ...e, account: undefined })); }} />}</FormField>
                 {picked && <div className="rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground"><p>Off-budget · {ASSET_TYPES[draft.assetType]?.label}</p>{balance !== undefined && <p className="mt-0.5 flex items-baseline justify-between text-sm"><span>Book value</span><span className="font-medium text-foreground tabular-nums">{formatAmount(balance, 2)}</span></p>}</div>}</div>}
             <ToggleRow id="asset-shared" label="Shared with other assets" hint="Use when multiple assets share one account." checked={accountMode === "shared"} onChange={(on) => { setup.setAccountMode(on ? "shared" : "dedicated"); if (on && !hashtag) setup.setHashtag(hashtagFrom(draft.name)); }} />
+            {accountMode === "shared" && setup.adoptFrom && <p role="note" className="rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">{setup.adoptFrom.name} has this account to itself today. Its existing entries are assigned to it when you create this asset, so its value stays the same. After that, give each new entry a hashtag in Notes or assign it in the Asset Ledger.</p>}
             {accountMode === "shared" && <FormField label="Asset hashtag" htmlFor="asset-tag" required note="Permanent once saved. Add it to the Notes of this asset's entries in Actual." error={errors.hashtag} errorId="asset-tag-error">
               <div className="flex items-center rounded-md border bg-background focus-within:ring-2 focus-within:ring-ring"><span className="pl-2.5 text-sm text-muted-foreground select-none">#asset_</span><Input id="asset-tag" className="border-0 pl-0 shadow-none focus-visible:ring-0" placeholder="family_car" aria-required="true" aria-invalid={!!errors.hashtag} aria-describedby={errors.hashtag ? "asset-tag-error" : undefined} maxLength={93} value={hashtag.replace(/^#asset_/, "")} onChange={(e) => { setup.setHashtag(hashtagFrom(e.target.value)); setErrors((x) => ({ ...x, hashtag: undefined })); }} /></div></FormField>}
           </section>

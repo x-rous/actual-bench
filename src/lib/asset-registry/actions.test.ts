@@ -20,7 +20,7 @@ it.each(["browser-api", "http-api"] as const)("guards and verifies standalone im
   const { transport, fresh, rows } = await setup(mode);
   const prepared = prepareAction(await fresh(), { kind: "set-value", date: "2026-10-24", amountMinor: 11500000, notes: "Appraisal", payeeId: null });
   expect(prepared.deltaMinor).toBe(500000); expect(prepared.afterMinor).toBe(11500000);
-  expect(await executeAction(prepared, fresh)).toEqual({ transactionId: "created", deleted: false, noop: false });
+  expect(await executeAction(prepared, fresh)).toMatchObject({ transactionId: "created", deleted: false, noop: false, row: { id: "created" } });
   expect(rows().find((r) => r.id === "toyota")?.amount).toBe(7500000);
   const edited = prepareAction(await fresh(), { kind: "edit", transactionId: "byd", date: "2026-10-24", amountMinor: 10000000, notes: "#asset_byd", payeeId: null });
   await executeAction(edited, fresh); expect(transport.updateTransactionForSync).toHaveBeenCalledTimes(1);
@@ -93,7 +93,7 @@ it.each(["browser-api", "http-api"] as const)("verifies dedicated Update value w
     return result;
   });
   const prepared = prepareAction(await fresh(), { kind: "set-value", date: "2026-10-24", amountMinor: 20000, notes: "", payeeId: null });
-  expect(await executeAction(prepared, fresh)).toEqual({ transactionId: "created", deleted: false, noop: false });
+  expect(await executeAction(prepared, fresh)).toMatchObject({ transactionId: "created", deleted: false, noop: false, row: { id: "created" } });
   expect(s.transport.createTransactionsForSync).toHaveBeenCalledTimes(1);
 });
 it("keeps materially changed nonempty Notes unverified", async () => {

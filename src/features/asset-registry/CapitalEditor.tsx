@@ -82,7 +82,8 @@ export function CapitalEditor({ kind, context, categories, fresh, onSaved, onClo
     try {
       const result = known ?? await executeCapital(prepared, () => fresh(date, touched)); setKnown(result); onPendingMetadata();
       const live = await fresh(date, touched);
-      await onSaved(await registryRequest(context.asset.budgetSyncId, "PUT", { changes: capitalMetadata(prepared, result), sources: sourceEvidence(capitalEvidence(live)) }));
+      const changes = capitalMetadata(prepared, result);
+      await onSaved(await registryRequest(context.asset.budgetSyncId, "PUT", { changes, sources: sourceEvidence(capitalEvidence(live), changes) }));
       setComplete(true);
     } catch (e) { if (e instanceof UncertainAssetWrite) { setUncertain(true); onUncertain(); } setError(e instanceof Error ? e.message : "Posting failed"); }
     finally { setBusy(false); }

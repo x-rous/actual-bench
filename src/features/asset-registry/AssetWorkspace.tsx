@@ -2,13 +2,15 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, BookOpen, Landmark, RefreshCw, Settings2, Plus } from "lucide-react";
+import { ArrowLeft, BookOpen, Landmark, MoreHorizontal, RefreshCw, Settings2, Plus } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { clearQuickAction, readQuickAction, setQuickAction, type QuickAction } from "./quickAction";
 import { FEATURES } from "@/lib/features/catalogue";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { isIsoDate } from "@/lib/financial-models/calendar/dates";
 import { linkedExternalAccountIds, readExternal } from "@/lib/asset-registry/cashflows";
-import { performance } from "@/lib/asset-registry/performance";
+import { attributedBook, attributedValueAt, cachedPerformance } from "./derivedCache";
 import { averageYearlyYield, yearsBetween } from "@/lib/asset-registry/yields";
 import { valueBridge } from "@/lib/asset-registry/valueBridge";
 import { IncomeExpensesTab } from "./IncomeExpensesTab";
@@ -38,7 +40,7 @@ import { useAccountClasses } from "@/features/accounts/hooks/useAccountClasses";
 import { useAccountReporting } from "@/features/accounts/hooks/useAccountReporting";
 import { getTransport } from "@/lib/actual";
 import { ASSET_TYPES, eligibility, ownershipAt, type Asset, type Registry } from "@/lib/asset-registry/models";
-import { attributeBook, readBook, sumMinor } from "@/lib/asset-registry/ledger";
+import { readBook, sumMinor } from "@/lib/asset-registry/ledger";
 import { freshActionContext } from "@/lib/asset-registry/actions";
 import { bankToday } from "@/features/credit-cards/lib/cycles";
 import type { AccountClass } from "@/lib/account-class";
@@ -70,7 +72,10 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("active");
   const [type, setType] = useState("");
-  const [tab, setTab] = useState("Overview");
+  /** A row action chosen on the registry list ("Update value…" and so on), carried over to this asset's page once. */
+  const [quick, setQuick] = useState(() => readQuickAction(assetId));
+  const quickDone = () => { clearQuickAction(); setQuick(null); };
+  const [tab, setTab] = useState(() => quick ? "Asset Ledger" : "Overview");
   /** A period (and types) chosen by clicking a chart event; the tables show a filter chip with Clear while it is set. */
   const [bookFocus, setBookFocus] = useState<BookFocus | null>(null); const [cashFocus, setCashFocus] = useState<CashflowFocus | null>(null);
   /** The Overview charts' choices (Monthly / Yearly, lines shown, smoothing), kept here so they survive switching tabs. */
@@ -108,10 +113,11 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
   const loansQuery = useQuery({ queryKey: ["assetLoans", connection.id, connection.budgetSyncId], queryFn: () => listDebts(connection.budgetSyncId, true), enabled: query.isSuccess });
   const loans = loansQuery.data ?? [];
   const linkedDebtIds = [...new Set((registry.debtLinks ?? []).map((l) => l.debtId))].sort();
+  const loanLedger = async (accountId: string) => { const read = await readAccountLedger(getTransport(connection), { accountId }); if (!read.ok) throw new Error(read.message); return read.transactions; };
   const ledgerQueries = useQueries({ queries: linkedDebtIds.map((debtId) => {
     const accountId = loans.find((d) => d.id === debtId)?.liabilityAccountId ?? null;
     return { queryKey: ["assetLoanLedger", connection.id, connection.budgetSyncId, accountId], enabled: loansQuery.isSuccess && !!accountId,
-      queryFn: async () => { const read = await readAccountLedger(getTransport(connection), { accountId: accountId! }); if (!read.ok) throw new Error(read.message); return read.transactions; } };
+      queryFn: () => loanLedger(accountId!) };
   }) });
   /** Each linked loan's regular repayment, from Loans, for the Linked Loans tab. */
   const summaryQueries = useQueries({ queries: linkedDebtIds.map((debtId) => ({
@@ -122,7 +128,7 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
   const asset = registry.assets.find((a) => a.id === assetId);
   const currentQuery = asset ? books.get(asset.actualAccountId) : undefined;
   const snapshot = currentQuery?.isSuccess ? currentQuery.data : undefined;
-  const book = snapshot ? attributeBook(snapshot, registry.assets, registry.metadata) : undefined;
+  const book = snapshot ? attributedBook(snapshot, registry) : undefined;
   const reason = asset ? eligibility(accounts.find((a) => a.id === asset.actualAccountId), asset.assetType, classes.maps, reporting.byAccount) : null;
   // The saved Financial Reporting choices matter only to Other Asset accounts (a Vehicle or Property is eligible by class alone),
   // so a failed read of them does not hide the values of a registry that holds none.
@@ -131,18 +137,15 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
   const available = dataReady && (reporting.available || !reportingNeeded);
   // The choices matter to an asset only when its account is an Other Asset: a Vehicle or Property keeps its value and state without them.
   const availableFor = (a: Asset) => dataReady && (reporting.available || ASSET_TYPES[a.assetType as keyof typeof ASSET_TYPES]?.accountClass !== "other-asset");
+  // Attribution and reports are cached per account read and registry (derivedCache), so cells, sorting and typing reuse them.
   const value = (a: Asset): number | null => {
     const q = books.get(a.actualAccountId);
-    if (!q?.isSuccess || !q.data || !availableFor(a)) return null;
-    const result = attributeBook(q.data, registry.assets, registry.metadata);
-    return result.available ? result.totals.get(a.id) ?? null : null;
+    return q?.isSuccess && q.data && availableFor(a) ? attributedValueAt(q.data, registry, a.id) : null;
   };
   /** Recorded owned value from this asset's Actual book rows on or before a date; null when unavailable. */
   const valueAt = (a: Asset, on: string): number | null => {
     const q = books.get(a.actualAccountId);
-    if (!q?.isSuccess || !q.data || !availableFor(a)) return null;
-    const result = attributeBook({ ...q.data, rows: q.data.rows.filter((r) => r.date <= on) }, registry.assets, registry.metadata);
-    return result.available ? result.totals.get(a.id) ?? null : null;
+    return q?.isSuccess && q.data && availableFor(a) ? attributedValueAt(q.data, registry, a.id, on) : null;
   };
   /** Positive Actual debt per linked loan on a date from its liability account's own ledger; never a loan forecast. */
   const debtsAt = (on: string): DatedDebt[] => linkedDebtIds.map((debtId, index) => {
@@ -151,15 +154,18 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
     const dated = datedBalanceFromTransactions(loan.liabilityAccountId, q.data, on);
     return { debtId, magnitudeMinor: toDebtMagnitude(dated.balanceMinor, loan.signConvention as "negative-is-debt" | "positive-is-debt") };
   });
-  /** Any loan's Actual debt (positive) on a date, read from its liability account; for the link dialog's preview. */
+  /** Any loan's Actual debt (positive) on a date, read from its liability account; for the link dialog's preview. The ledger is read once and cached under the same key as the linked loans' ledgers, so changing the date does not read it again. */
   const loanBalanceAt = async (debtId: string, on: string): Promise<number | null> => {
     const loan = loans.find((d) => d.id === debtId);
     if (!loan?.liabilityAccountId) return null;
-    const read = await readAccountLedger(getTransport(connection), { accountId: loan.liabilityAccountId });
-    if (!read.ok) return null;
-    return toDebtMagnitude(datedBalanceFromTransactions(loan.liabilityAccountId, read.transactions, on).balanceMinor, loan.signConvention as "negative-is-debt" | "positive-is-debt");
+    const accountId = loan.liabilityAccountId;
+    const transactions = await client.fetchQuery({ queryKey: ["assetLoanLedger", connection.id, connection.budgetSyncId, accountId], queryFn: () => loanLedger(accountId) }).catch(() => null);
+    if (!transactions) return null;
+    return toDebtMagnitude(datedBalanceFromTransactions(accountId, transactions, on).balanceMinor, loan.signConvention as "negative-is-debt" | "positive-is-debt");
   };
   const equityOf = (a: Asset, on: string) => trackedEquity(a.id, on, registry.debtLinks ?? [], valueAt(a, on), debtsAt(on));
+  /** A loan's calculated interest through a date (minor units), from Loans, for the Overview's after-interest rows. */
+  const interestToDate = async (debtId: string, on: string) => (await getLoanSummary(debtId, { today: on })).summary.interestToDateMinor;
   /** Worked out once per asset per render: it runs the attribution and the performance report. */
   const attentionCache = new Map<string, AssetAttention>();
   const attention = (a: Asset): AssetAttention => { let known = attentionCache.get(a.id); if (!known) { known = computeAttention(a); attentionCache.set(a.id, known); } return known; };
@@ -167,8 +173,9 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
     if (a.status === "archived") return { label: "Archived", tone: "neutral", detail: "Archived assets are not checked for attention" };
     const q = books.get(a.actualAccountId);
     if (!availableFor(a) || !q?.isSuccess || !q.data) return { label: "Unavailable", tone: "danger", detail: "Refresh to read the account book" };
-    const result = attributeBook(q.data, registry.assets, registry.metadata);
-    if (report(a)?.gaps.length) return { label: "Needs review", tone: "attention", detail: report(a)!.gaps[0] };
+    const result = attributedBook(q.data, registry);
+    const gap = report(a)?.gaps[0];
+    if (gap) return { label: "Needs review", tone: "attention", detail: gap };
     const invalid = eligibility(accounts.find((row) => row.id === a.actualAccountId), a.assetType, classes.maps, reporting.byAccount);
     if (invalid || result.issues.length) return { label: "Needs review", tone: "attention", detail: invalid ?? result.issues[0] };
     if (result.rows.some((r) => !r.assetId)) return { label: "Unassigned rows", tone: "attention", detail: "Some account rows need attribution" };
@@ -236,14 +243,14 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
   const firstDateOf = (a: Asset): string => {
     const known = firstDates.get(a.id); if (known) return known;
     const q = books.get(a.actualAccountId);
-    const ledger = q?.isSuccess && q.data && availableFor(a) ? attributeBook(q.data, registry.assets, registry.metadata).rows.filter((r) => r.assetId === a.id).map((r) => r.date).sort()[0] : undefined;
+    const ledger = q?.isSuccess && q.data && availableFor(a) ? attributedBook(q.data, registry).rows.filter((r) => r.assetId === a.id).map((r) => r.date).sort()[0] : undefined;
     const first = earliestDate(ledger, firstCashDate(a)) ?? date;
     firstDates.set(a.id, first); return first;
   };
   /** The performance report; the whole history up to today unless dates are given. */
   function report(a: Asset, start = firstDateOf(a), end = date) {
     const snapshot = books.get(a.actualAccountId)?.data;
-    return snapshot && externalQuery.data && isIsoDate(start) && isIsoDate(end) && start <= end && end <= date ? performance(a, registry, snapshot, externalQuery.data, start, end) : undefined;
+    return snapshot && externalQuery.data && isIsoDate(start) && isIsoDate(end) && start <= end && end <= date ? cachedPerformance(a, registry, snapshot, externalQuery.data, start, end) : undefined;
   }
   /** What the value rose by (revaluation and depreciation) against what was put in, over the whole history; null while the book is unavailable. */
   const gains = new Map<string, { gainMinor: number; capitalMinor: number } | null>();
@@ -251,7 +258,7 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
     if (gains.has(a.id)) return gains.get(a.id)!;
     const q = books.get(a.actualAccountId); let result: { gainMinor: number; capitalMinor: number } | null = null;
     if (q?.isSuccess && q.data && availableFor(a)) {
-      const book = attributeBook(q.data, registry.assets, registry.metadata);
+      const book = attributedBook(q.data, registry);
       if (book.available) { const b = valueBridge(book.rows.filter((r) => r.assetId === a.id), null, date); result = { gainMinor: b.revaluationMinor + b.depreciationMinor, capitalMinor: b.capitalMinor }; }
     }
     gains.set(a.id, result); return result;
@@ -267,7 +274,7 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
   const membersOf = (a: Asset) => registry.assets.filter((member) => member.actualAccountId === a.actualAccountId);
   const accountRows = accountIds.map((id) => {
     const q = books.get(id);
-    const result = q?.isSuccess && q.data ? attributeBook(q.data, registry.assets, registry.metadata) : null;
+    const result = q?.isSuccess && q.data ? attributedBook(q.data, registry) : null;
     return { id, name: accounts.find((a) => a.id === id)?.name ?? "Unavailable account", members: registry.assets.filter((a) => a.actualAccountId === id), snapshot: q?.isSuccess ? q.data : undefined, book: result };
   });
   const reading = externalQuery.isPending;
@@ -280,7 +287,8 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
     const evidence = buildPruneEvidence(connection.budgetSyncId, {
       books: accountIds.map((accountId, index) => { const read = reads[index]; return { accountId, complete: !!read && read.issues.length === 0 && read.balanceMinor !== null, ids: read ? [...new Set([...read.source.map((r) => r.id), ...normalizeActivity(read.source).rows.map((r) => r.id)])] : [] }; }),
       directory: external.accounts.map((a) => a.id),
-      external: { accountIds: external.readAccountIds ?? [], rows: external.rows, accountIssues: external.accountIssues ?? {} },
+      external: { accountIds: external.readAccountIds ?? [], rows: external.rows, accountIssues: external.accountIssues ?? {}, reconciled: external.reconciledAccountIds ?? [] },
+      readAt: [external.fetchedAt, ...reads.map((r) => r?.fetchedAt ?? external.fetchedAt)].sort()[0],
     });
     if (pruneSize(planPrune(query.data ?? { assets: [], metadata: [] }, evidence)) === 0) return;
     pruning.current = true;
@@ -293,7 +301,7 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
     { key: "type", header: "Type", width: 130, cell: (a) => <Text>{ASSET_TYPES[a.assetType as keyof typeof ASSET_TYPES]?.label ?? "Unknown type"}</Text> },
     { key: "account", header: "Linked Actual account", width: 190, cell: (a) => <div className="flex min-w-0 items-center gap-2"><Text>{accounts.find((r) => r.id === a.actualAccountId)?.name ?? "Unavailable"}</Text>{membersOf(a).length > 1 && <AttentionBadge status={{ label: "Shared", tone: "neutral", detail: `${membersOf(a).length} assets share this account` }} />}</div> },
     { key: "value", header: "Recorded value", width: 140, align: "right", sortable: true, cell: (a) => <Stack primary={assetMoney(value(a))} secondary={ownershipAt(a, date) === null ? undefined : `${ownershipAt(a, date)! / 100}% owned`} /> },
-    { key: "equity", header: "Equity", width: 140, align: "right", cell: (a) => hasLinks(a) ? <Stack primary={assetMoney(equityOf(a, date).equityMinor)} secondary={`Debt ${assetMoney(equityOf(a, date).allocatedDebtMinor)}`} /> : NA },
+    { key: "equity", header: "Equity", width: 140, align: "right", cell: (a) => { if (!hasLinks(a)) return NA; const e = equityOf(a, date); return <Stack primary={assetMoney(e.equityMinor)} secondary={`Debt ${assetMoney(e.allocatedDebtMinor)}`} />; } },
     { key: "change", header: "Value gain", width: 140, align: "right", sortable: true, cell: (a) => { const c = gainOf(a); return c ? <Stack primary={signed(c.gainMinor)} secondary={c.capitalMinor > 0 ? `${c.gainMinor > 0 ? "+" : ""}${((c.gainMinor / c.capitalMinor) * 100).toFixed(2)}% of capital` : undefined} /> : NA; } },
     { key: "income", header: "Net cash flow", width: 190, align: "right", cell: (a) => {
       if (!hasCashflows(a)) return NA;
@@ -302,7 +310,20 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
       return <Stack primary={assetMoney(p?.operatingMinor)} secondary={a.incomeGenerating ? `Yearly yield on cost ${percent(averageYearlyYield(p?.operatingYield, yearsBetween(firstDateOf(a), date)))}` : undefined} />;
     } },
     { key: "attention", header: "Attention", width: 150, cell: (a) => <AttentionBadge status={attention(a)} /> },
-    { key: "actions", header: "Actions", hiddenHeader: true, width: 44, align: "right", sticky: "end", cell: (a) => <Button variant="ghost" size="icon" className="size-7" aria-label={`Settings for ${a.name}`} onClick={() => setEditorAsset(a)}><Settings2 className="size-3.5" /></Button> },
+    { key: "actions", header: "Actions", hiddenHeader: true, width: 44, align: "right", sticky: "end", cell: (a) => {
+      const writable = a.status === "active" && availableFor(a);
+      const start = (action: QuickAction) => { setQuickAction({ assetId: a.id, action }); open(a); };
+      return <DropdownMenu><DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="size-7" aria-label={`Actions for ${a.name}`} />}><MoreHorizontal className="size-3.5" aria-hidden /></DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-52">
+          <DropdownMenuItem onClick={() => open(a)}>Open asset</DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem disabled={!writable} onClick={() => start("set-value")}>Update value…</DropdownMenuItem>
+          <DropdownMenuItem disabled={!writable} onClick={() => start("create")}>Value adjustment…</DropdownMenuItem>
+          <DropdownMenuItem disabled={!writable} onClick={() => start("payment")}>Add a payment…</DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => setEditorAsset(a)}><Settings2 className="size-3.5" aria-hidden />Settings</DropdownMenuItem>
+        </DropdownMenuContent></DropdownMenu>;
+    } },
   ];
   const totals = statusAssets.map(value);
   const total = available && totals.every((n) => n !== null) ? sumMinor(totals as number[]) : null;
@@ -337,6 +358,8 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
   const firstBookDate = asset && book ? book.rows.filter((r) => r.assetId === asset.id).map((r) => r.date).sort()[0] ?? date : date;
   const financingTimeline = asset ? financingEvents(links.filter((l) => l.assetId === asset.id), (id) => loans.find((d) => d.id === id)?.name ?? "Loan") : [];
   const capitalContext = asset && snapshot && externalQuery.data ? { asset, registry, snapshot, transport, external: externalQuery.data } : undefined;
+  // A payment chosen from the list opens once its source accounts are read; the ledger actions open with the Asset Ledger.
+  if (quick === "payment" && capitalContext && available) { quickDone(); if (!financialUnknown && asset?.status === "active") setCapitalKind("payment"); }
   const lastRead = accountRows.flatMap((r) => r.snapshot ? [r.snapshot.fetchedAt] : []).sort().at(-1);
   const openBook = (view: BookView = "asset") => { setBookFocus(null); setBookView(view); setTab("Asset Ledger"); };
   const tabs = ["Overview", "Asset Ledger", "Income & Expenses", "Linked Loans", "Depreciation Schedule"];
@@ -349,6 +372,11 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
     { key: "balance", header: "Account balance", width: 140, align: "right", cell: (r) => assetMoney(r.snapshot?.balanceMinor) },
     { key: "state", header: "State", width: 150, cell: (r) => <AttentionBadge status={!r.book?.available ? { label: "Unavailable", tone: "danger" } : r.book.issues.length ? { label: "Needs review", tone: "attention" } : r.book.rows.some((row) => !row.assetId) ? { label: "Review unassigned", tone: "attention" } : { label: "Reconciles", tone: "success" }} /> },
   ];
+  /** The asset left alone in the account if `a` is deleted, with its value now. */
+  const survivorOf = (a: Asset, row: typeof accountRows[number]) => {
+    const others = row.members.filter((m) => m.id !== a.id);
+    return others.length === 1 ? { name: others[0].name, valueMinor: row.book?.available ? row.book.totals.get(others[0].id) ?? null : null } : undefined;
+  };
   const needReview = accountRows.filter((r) => !r.book?.available || r.book.issues.length > 0 || r.book.rows.some((row) => !row.assetId)).length;
   const header = <header aria-label="Asset workspace" className="shrink-0 border-b border-border">
     <div className="flex items-center justify-between gap-3 px-4 py-2">
@@ -394,8 +422,9 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
         {Boolean(reason || book?.issues.length) && <div role="alert" className="border-b px-4 py-2 text-xs text-destructive">{reason ?? book?.issues[0]}<Button size="xs" variant="ghost" onClick={() => setEditorAsset(asset)}>Details</Button></div>}
         {currentQuery?.isError && <p role="alert" className="border-b p-3 text-sm text-destructive">Book read failed: {currentQuery.error.message}</p>}
         <TabsContent value="Overview" className="flex min-h-0 flex-col"><AssetOverview asset={asset} date={date} valueMinor={value(asset)} reading={externalQuery.isPending} reportFor={(start, end) => isIsoDate(start) && isIsoDate(end) && start <= end ? report(asset, start, end) : undefined} firstDate={historyStart} book={book} debtAt={debtAtDate} unposted={unpostedMonths} operating={operatingEntries} capital={capitalEntries} financing={financingTimeline} depreciationDue={depreciationDue} onBook={openBook} onTab={setTab} chartPrefs={chartPrefs} onChartPrefs={setChartPrefs}
+          debtLinks={registry.debtLinks} interestToDate={interestToDate} queryScope={["assetLoanInterestScope", connection.id, connection.budgetSyncId]}
           onFocusBook={(focus) => { setBookFocus(focus); setBookView("asset"); setTab("Asset Ledger"); }} onFocusCashflow={(focus) => { setCashFocus(focus); setTab("Income & Expenses"); }} /></TabsContent>
-        <TabsContent value="Asset Ledger" className="flex min-h-0 flex-col">{snapshot && available ? <BookPanel key={asset.id} payeeOptions={payeesQuery.data} onCapitalAction={(kind) => { if (!financialUnknown && capitalContext && asset.status === "active") setCapitalKind(kind); }} recordDisabled={financialUnknown || !capitalContext || asset.status !== "active"} asset={asset} registry={registry} snapshot={snapshot} fresh={fresh} onSaved={refresh} financialBlocked={financialUnknown} onUncertain={() => setFinancialUnknown(true)} accountName={accounts.find((a) => a.id === asset.actualAccountId)?.name} view={bookView} onViewChange={setBookView} focus={bookFocus} onClearFocus={() => setBookFocus(null)} /> : <p role="status" className="p-4 text-sm">Reading the Asset Ledger… Refresh to retry if unavailable.</p>}</TabsContent>
+        <TabsContent value="Asset Ledger" className="flex min-h-0 flex-col">{snapshot && available ? <BookPanel key={asset.id} initialAction={quick === "set-value" || quick === "create" ? quick : undefined} onInitialAction={quickDone} payeeOptions={payeesQuery.data} onCapitalAction={(kind) => { if (!financialUnknown && capitalContext && asset.status === "active") setCapitalKind(kind); }} recordDisabled={financialUnknown || !capitalContext || asset.status !== "active"} asset={asset} registry={registry} snapshot={snapshot} fresh={fresh} onSaved={refresh} financialBlocked={financialUnknown} onUncertain={() => setFinancialUnknown(true)} accountName={accounts.find((a) => a.id === asset.actualAccountId)?.name} view={bookView} onViewChange={setBookView} focus={bookFocus} onClearFocus={() => setBookFocus(null)} /> : <p role="status" className="p-4 text-sm">Reading the Asset Ledger… Refresh to retry if unavailable.</p>}</TabsContent>
         <TabsContent value="Income & Expenses" className="flex min-h-0 flex-col">{externalQuery.data ? <IncomeExpensesTab key={asset.id} asset={asset} registry={registry} external={externalQuery.data} categories={categoryQuery.data?.categories} firstDate={historyStart} operating={operatingEntries} reportFor={(start, end) => report(asset, start, end)} valueAt={(on) => valueAt(asset, on)} focus={cashFocus} onClearFocus={() => setCashFocus(null)} today={date} fresh={freshCapital} ensureExternal={ensureExternal} onSaved={refresh} /> : <p role="status" className="p-4 text-sm">Reading source accounts… Refresh to retry.</p>}</TabsContent>
         <TabsContent value="Depreciation Schedule" className="flex min-h-0 flex-col">{snapshot && available ? <div className="flex min-h-0 flex-1"><DepreciationPanel key={asset.id} asset={asset} registry={registry} snapshot={snapshot} valueMinor={value(asset)} today={date} fresh={fresh} onSaved={refresh} onEdit={() => setDepreciationEditing(true)} onOpenBook={() => openBook()} financialBlocked={financialUnknown} onUncertain={() => setFinancialUnknown(true)} />
           {depreciationEditing && <DepreciationEditor asset={asset} settings={registry.depreciation?.find((d) => d.assetId === asset.id)} recordedMinor={value(asset)} today={date} onSaved={async (next) => { await refresh(next); }} onClose={() => setDepreciationEditing(false)} />}</div> : <p role="status" className="p-4 text-sm">Reading the asset book… Refresh to retry if unavailable.</p>}</TabsContent>
@@ -405,7 +434,7 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
     <Dialog open={linkedAccountsOpen} onOpenChange={setLinkedAccountsOpen}><DialogContent className="sm:max-w-[min(94vw,68rem)]"><DialogHeader><DialogTitle>Linked accounts</DialogTitle><DialogDescription>Account balance equals attributed assets plus Unassigned. {accountRows.length} {accountRows.length === 1 ? "account" : "accounts"} · {needReview === 0 ? "all reconcile" : `${needReview} need review`}. Open a row to go to its asset.</DialogDescription></DialogHeader>
       <div className="flex min-h-32 flex-col overflow-hidden rounded-md border" style={{ height: Math.min(460, accountRows.length * 34 + 40) }}><DataTable label="Linked asset accounts" rows={accountRows} columns={accountColumns} rowKey={(r) => r.id} rowLabel={(r) => r.name} onOpen={(r) => { setLinkedAccountsOpen(false); open(r.members.find((a) => a.status === "active") ?? r.members[0]); }} dense={34} empty="No linked accounts yet." /></div>
     </DialogContent></Dialog>
-    {editorAsset && <AssetEditor connection={connection} asset={editorAsset} registry={registry} recordedValueMinor={value(editorAsset)} bookContext={editingContext ? { balanceMinor: editingContext.snapshot?.balanceMinor ?? null, assignedMinor: editingContext.book?.available ? sumMinor([...editingContext.book.totals.values()]) : null, unassignedMinor: editingContext.book?.available ? editingContext.book.unassignedMinor : null, memberCount: editingContext.members.length, issues: editingContext.book?.issues ?? [] } : undefined} accounts={accounts} onClose={() => setEditorAsset(undefined)} onSaved={(next) => { void refresh(next); }} onDeleted={() => { if (assetId) router.push("/assets"); }} />}
+    {editorAsset && <AssetEditor connection={connection} asset={editorAsset} registry={registry} recordedValueMinor={value(editorAsset)} bookContext={editingContext ? { balanceMinor: editingContext.snapshot?.balanceMinor ?? null, assignedMinor: editingContext.book?.available ? sumMinor([...editingContext.book.totals.values()]) : null, unassignedMinor: editingContext.book?.available ? editingContext.book.unassignedMinor : null, memberCount: editingContext.members.length, issues: editingContext.book?.issues ?? [], survivor: survivorOf(editorAsset, editingContext) } : undefined} accounts={accounts} onClose={() => setEditorAsset(undefined)} onSaved={(next) => { void refresh(next); }} onDeleted={() => { if (assetId) router.push("/assets"); }} />}
     {creating && <AssetCreateDrawer connection={connection} accounts={accounts} registry={registry} today={date} onSaved={(next) => { void refresh(next); }} onOpenAsset={(id) => { setCreating(false); router.push(`/assets/${encodeURIComponent(id)}`); }} onClose={() => setCreating(false)} />}
   </PageLayout>{guideDialog}</Tabs>;
 }
