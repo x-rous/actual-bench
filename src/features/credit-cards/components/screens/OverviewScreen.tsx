@@ -10,6 +10,7 @@ import { sumMinor } from "../../lib/statements";
 import { BalanceHistory } from "../BalanceHistory";
 import type { CardEntry } from "../cardEntry";
 import { cardAttention } from "../cardAttention";
+import { autoPayLine } from "../../lib/feeRenewal";
 import { StatusBadge } from "../primitives/StatusBadge";
 import { money, plural, shortDate } from "../primitives/format";
 
@@ -23,6 +24,8 @@ type Props = {
   onActivityCurrent: () => void;
   onPlans: () => void;
   onPayment: (id: string) => void;
+  /** Opens the card's settings (annual fee and auto-pay live there). */
+  onSettings?: () => void;
 };
 
 type Attention = { key: string; icon: "warning" | "danger" | "estimate"; text: ReactNode; action: string; run: () => void; rank: number };
@@ -49,7 +52,7 @@ const ICONS = { warning: TriangleAlert, danger: CircleAlert, estimate: CircleDas
 const ICON_TONES = { warning: "size-4 text-amber-700", danger: "size-4 text-red-700", estimate: "size-4 text-muted-foreground" };
 
 /** Overview (§9.6): what needs you, the next payment, Total owed, the balance chart and plans. */
-export function OverviewScreen({ entry, workspace, onStatement, onEnter, onReview, onActivityCurrent, onPlans, onPayment }: Props) {
+export function OverviewScreen({ entry, workspace, onStatement, onEnter, onReview, onActivityCurrent, onPlans, onPayment, onSettings }: Props) {
   const { card, view, snapshot, balance, owed, today, limitMinor } = entry;
   const bank = view.bank;
   const payment = view.nextPayment;
@@ -63,7 +66,8 @@ export function OverviewScreen({ entry, workspace, onStatement, onEnter, onRevie
         : `Activity starts on ${shortDate(snapshot.from, today)}. Refresh to read the full period.`
     : null;
   const plans = workspace.plans.filter((plan) => plan.cardId === card.id && plan.status === "active");
-  const ACTIONS = { statement: "Open", review: "Review", enter: "Enter", plans: "Plans" } as const;
+  const autoPay = autoPayLine(card);
+  const ACTIONS = { statement: "Open", review: "Review", enter: "Enter", plans: "Plans", settings: "Settings" } as const;
   const attention: Attention[] = cardAttention(entry, workspace).map((item) => ({
     ...item,
     action: item.key === "found" ? "Review" : item.target.kind === "plans" && (item.key === "unassigned" || item.key === "ambiguous") ? "Show"
@@ -73,6 +77,7 @@ export function OverviewScreen({ entry, workspace, onStatement, onEnter, onRevie
       if (target.kind === "statement") onStatement(target.statement.id);
       else if (target.kind === "review") onReview(target.statement);
       else if (target.kind === "enter") onEnter();
+      else if (target.kind === "settings") onSettings?.();
       else onPlans();
     },
   }));
@@ -132,7 +137,8 @@ export function OverviewScreen({ entry, workspace, onStatement, onEnter, onRevie
               {marker > 0 && <span aria-hidden className="absolute -top-1 h-4 w-0.5 bg-foreground" style={{ left: `min(calc(100% - 2px), ${marker}%)` }} />}
             </div>
             <p className="text-xs text-muted-foreground">{money(paid)} paid of {money(due)} amount due{minimumText ? ` · ${minimumText}` : ""}</p>
-            <p className="text-sm">Due {shortDate(bank.dueDate, today)}{payment?.pendingMinor ? ` · ${money(payment.pendingMinor)} pending` : ""}</p>
+            <p className="text-sm">Due {shortDate(bank.dueDate, today)}{payment?.pendingMinor ? ` · ${money(payment.pendingMinor)} pending` : ""}
+              {autoPay && !row?.status.paid ? <span className="text-muted-foreground"> · {autoPay}</span> : null}</p>
             <Button variant="link" size="xs" className="h-auto p-0" onClick={() => onStatement(bank.id)}>Open statement →</Button>
           </div> : <div className="space-y-2 text-sm text-muted-foreground">
             <p>Enter a bank statement to track what to pay.</p>

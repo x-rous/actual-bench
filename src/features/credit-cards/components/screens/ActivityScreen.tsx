@@ -14,7 +14,7 @@ import { formatCardDate } from "../../lib/displayDates";
 import { sourceLabels, typeChoices, typeLabel, typeLabels } from "../../lib/classifications";
 import { familyOf, isCreditKind } from "../../lib/derive/families";
 import { transactionType, type TypeResolution } from "../../lib/derive/types";
-import { statementReview } from "../../lib/statements";
+import { statementsByRow } from "../../lib/statements";
 import { creditCardStore } from "../../lib/store/store";
 import type { CardEntry } from "../cardEntry";
 import { TypeChip } from "../TypeChip";
@@ -87,13 +87,7 @@ export function ActivityScreen(props: Props) {
     const statements = workspace.statements
       .filter((item) => item.cardId === card.id && !item.estimate)
       .sort((a, b) => b.closingDate.localeCompare(a.closingDate));
-    const onStatement = new Map<string, Statement>();
-    for (const statement of statements) {
-      const review = statementReview(statement, workspace, snapshot);
-      review.rows.forEach((row, index) => {
-        if (review.memberships[index].decision === "included" && !onStatement.has(row.id)) onStatement.set(row.id, statement);
-      });
-    }
+    const onStatement = statementsByRow(card.id, workspace, snapshot);
     const latest = statements[0]?.closingDate ?? "";
     const views = snapshot.rows.map((row): View => {
       const type = transactionType(row, card, workspace, snapshot);

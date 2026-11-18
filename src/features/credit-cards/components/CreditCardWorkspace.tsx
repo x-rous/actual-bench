@@ -38,6 +38,7 @@ import { StatementReview } from "./StatementReview";
 import { GuideProvider, useGuide } from "./guide/CreditCardGuide";
 import type { GuideSection } from "../lib/vocabulary";
 import { SaveToast } from "./SaveToast";
+import { useCreditCardSync } from "../hooks/useCreditCardSync";
 import { money, ordinal, readTime } from "./primitives/format";
 import { StatementsScreen, type StatementAction, type StatementFilter } from "./screens/StatementsScreen";
 import { OverviewScreen } from "./screens/OverviewScreen";
@@ -76,6 +77,8 @@ function ConnectedWorkspace({ connection }: { connection: ConnectionInstance }) 
   const { url, go } = useWorkspaceUrl();
   const workspace = useStore(creditCardStore, (state) => state.workspaces[budget] ?? EMPTY_WORKSPACE);
   const notice = useStore(creditCardStore, (state) => state.notices[budget]);
+  const noticeTone = useStore(creditCardStore, (state) => state.noticeTones[budget]);
+  const unsupported = useStore(creditCardStore, (state) => state.status[budget]?.unsupported ?? 0);
   const canUndo = useStore(creditCardStore, (state) => Boolean(state.undoHistory[budget]?.length));
   const directory = useCreditCardDirectory(connection);
   const accountsData = directory.data?.accounts;
@@ -195,7 +198,10 @@ function ConnectedWorkspace({ connection }: { connection: ConnectionInstance }) 
         const done = kind === "reset"
           ? store.resetReview(budget, statement.id, statement.revision)
           : store.deleteStatement(budget, statement.id, statement.revision);
-        done.then(() => { if (kind === "delete") go({ statement: null }, "replace"); }, () => undefined);
+        done.then(
+          () => { if (kind === "delete") go({ statement: null }, "replace"); },
+          (error: unknown) => store.reportFailure(budget, error),
+        );
       },
     });
   }
@@ -321,6 +327,7 @@ function ConnectedWorkspace({ connection }: { connection: ConnectionInstance }) 
         onReview={(statement) => go({ review: statement.id })}
         onActivityCurrent={() => setTab("activity", { in: "current" })}
         onPlans={() => setTab("plans")}
+        onSettings={() => setEditor({ kind: "settings" })}
         onPayment={(id) => setTab("payments", { payment: id })}
       />}
       {url.tab === "statements" && <StatementsScreen
@@ -425,10 +432,14 @@ function ConnectedWorkspace({ connection }: { connection: ConnectionInstance }) 
   return <Tabs value={url.tab} onValueChange={(value) => setTab(value as WorkspaceTab)} className="min-h-0 flex-1 overflow-hidden">
     <PageLayout scrollManaged header={header}>
       {banner}
+      {unsupported > 0 && <p role="status" className="shrink-0 border-b border-amber-500/30 bg-amber-50 px-4 py-2 text-sm dark:bg-amber-950/30">
+        {unsupported === 1 ? "1 saved credit-card record was" : `${unsupported} saved credit-card records were`} written by a newer
+        version of Actual Bench and can&apos;t be shown here. They are kept unchanged; update Actual Bench to see them.
+      </p>}
       <div className="flex min-h-0 flex-1">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">{body}</div>
       </div>
-      <SaveToast notice={notice} stamp={workspace} canUndo={canUndo} onUndo={() => { void creditCardStore.getState().undo(budget); }} />
+      <SaveToast notice={notice} tone={noticeTone} stamp={workspace} canUndo={canUndo} onUndo={() => { void creditCardStore.getState().undo(budget); }} />
       <ConfirmDialog open={confirm !== null} onOpenChange={(open) => { if (!open) setConfirm(null); }} state={confirm} />
       {editor?.kind === "add" && <CardEditor
         budgetSyncId={budget}
@@ -508,6 +519,7 @@ function StoredWorkspace({ connection }: { connection: ConnectionInstance }) {
   const budget = connection.budgetSyncId;
   const status = useStore(creditCardStore, (state) => state.status[budget]);
   useEffect(() => { void creditCardStore.getState().load(budget); }, [budget]);
+  useCreditCardSync(budget);
   // Start the Actual directory and account-type reads now, beside the app-database load, not after it.
   useCreditCardDirectory(connection);
   useAccountClasses();

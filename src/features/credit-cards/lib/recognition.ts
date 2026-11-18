@@ -53,6 +53,13 @@ const RULES: readonly Rule[] = [
     pattern: /\b(?:CASHBACK|CASH BACK|REWARDS? CREDIT|POINTS REDEMPTION)\b/,
     reason: "Rewards wording",
   },
+  // Before payment wording: "PAYMENT REFUND" or "REFUND OF PAYMENT" is a refund, never a payment.
+  {
+    kind: "refund",
+    sign: "credit",
+    pattern: /\b(?:REFUND|CREDIT NOTE|RETURN CREDIT)\b/,
+    reason: "Refund wording",
+  },
   {
     kind: "payment",
     sign: "credit",
@@ -76,12 +83,6 @@ const RULES: readonly Rule[] = [
     sign: "any",
     pattern: /^(?:DISPUTE|CHARGEBACK|PROVISIONAL|GOODWILL)(?: CREDIT| ADJUSTMENT| REVERSAL)\b|\bBALANCE ADJUSTMENT\b/,
     reason: "Bank adjustment wording",
-  },
-  {
-    kind: "refund",
-    sign: "credit",
-    pattern: /\b(?:REFUND|CREDIT NOTE|RETURN CREDIT)\b/,
-    reason: "Refund wording",
   },
 ];
 

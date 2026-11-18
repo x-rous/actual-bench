@@ -216,10 +216,19 @@ export async function readCardActivity(
   };
 }
 
+const counterpartIndexes = new WeakMap<readonly ActivityRow[], Map<string, ActivityRow>>();
+
+/** The snapshot's counterparts by id, built once per snapshot. */
+function counterpartIndex(snapshot: ActivitySnapshot) {
+  let index = counterpartIndexes.get(snapshot.counterparts);
+  if (!index) counterpartIndexes.set(snapshot.counterparts, (index = new Map(snapshot.counterparts.map((entry) => [entry.id, entry]))));
+  return index;
+}
+
 /** Transfers between on-budget accounts have no expense category in Actual. */
 export function activityCategoryLabel(row: ActivityRow, snapshot: ActivitySnapshot) {
   if (row.categoryName || row.categoryId) return row.categoryName ?? row.categoryId!;
-  const peer = snapshot.counterparts.find((entry) => entry.id === row.transferId);
+  const peer = row.transferId ? counterpartIndex(snapshot).get(row.transferId) : undefined;
   const source = snapshot.accounts?.find((entry) => entry.id === row.accountId);
   const target = snapshot.accounts?.find((entry) => entry.id === peer?.accountId);
   const onBudgetTransfer = row.transferKnown && peer?.transferId === row.id && source && target

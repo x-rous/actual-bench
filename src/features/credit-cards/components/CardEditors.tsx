@@ -216,12 +216,11 @@ export function CardEditor({
         interestModel: extra.interestModel,
       };
       const actions = creditCardStore.getState();
-      if (initialCard) await actions.updateCard(budgetSyncId, initialCard.id, initialCard.revision, input, limits);
-      // Answering No never unregisters accounts: other cards may use them.
-      if (planAccounts && usesPlanAccount && planIds.join() !== planAccounts.registered.map((account) => account.id).join()) {
-        await actions.setPlanAccounts(budgetSyncId, planIds);
-      }
-      const savedId = initialCard?.id ?? (await actions.registerCard(input)).id;
+      // Answering No never unregisters accounts: other cards may use them. Card and plan accounts are one change.
+      const nextPlanAccounts = planAccounts && usesPlanAccount
+        && planIds.join() !== planAccounts.registered.map((account) => account.id).join() ? planIds : undefined;
+      if (initialCard) await actions.updateCard(budgetSyncId, initialCard.id, initialCard.revision, input, limits, nextPlanAccounts);
+      const savedId = initialCard?.id ?? (await actions.registerCard(input, nextPlanAccounts)).id;
       onSaved(savedId);
     } catch (cause) {
       setError(validationMessage(cause));

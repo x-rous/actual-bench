@@ -251,15 +251,15 @@ export function planProgress(plan: RepaymentPlan, card: Card, workspace: Workspa
   let billed: string[] = [];
   if (plan.recordedAs === "plan-account" && snapshot) {
     const ledger = planLedger(card, workspace, snapshot);
-    // A positive plan-account row whose peer is on the card is principal billed back (one per cycle).
+    // A positive plan-account row whose peer is on the card is principal billed back. Each transfer
+    // counts once: a short cycle can bill two instalments in one calendar month.
     billed = (ledger.rowsByPlan.get(plan.id) ?? [])
       .filter((row) => row.amountMinor > 0 && peerOf(row, snapshot)?.accountId === card.accountId)
-      .map((row) => row.date.slice(0, 7));
+      .map((row) => row.id);
   } else {
-    const index = snapshot ? rowIndex(snapshot).rows : new Map<string, ActivityRow>();
     billed = workspace.planEntries
       .filter((entry) => entry.planId === plan.id && entry.role === "instalment")
-      .map((entry) => index.get(entry.transactionId)?.date.slice(0, 7) ?? entry.transactionId);
+      .map((entry) => entry.transactionId);
   }
   const billedCount = Math.min(tracked.length || Infinity, new Set(billed).size);
   return {

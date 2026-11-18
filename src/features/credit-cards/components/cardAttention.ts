@@ -4,16 +4,17 @@ import { planStatus } from "../lib/plans";
 import { discoverPlans } from "../lib/derive/planDiscovery";
 import type { CardEntry } from "./cardEntry";
 import { money, plural, shortDate } from "./primitives/format";
+import { upcomingFeeRenewal } from "../lib/feeRenewal";
 
 export type AttentionItem = {
   key: string;
   icon: "warning" | "danger" | "estimate";
-  /** 0 = overdue, 1 = needs a decision, 2 = an estimate to enter. */
+  /** 0 = overdue, 1 = needs a decision, 2 = an estimate to enter or a reminder. */
   rank: number;
   text: string;
   /** How many things the item stands for (found plans), when more than one. */
   count?: number;
-  target: { kind: "statement"; statement: Statement } | { kind: "review"; statement: Statement } | { kind: "enter" } | { kind: "plans" };
+  target: { kind: "statement"; statement: Statement } | { kind: "review"; statement: Statement } | { kind: "enter" } | { kind: "plans" } | { kind: "settings" };
 };
 
 /**
@@ -30,6 +31,7 @@ export function cardAttention(entry: CardEntry, workspace: Workspace): Attention
   const tags = [...new Set(workspace.plans.filter((plan) => plan.planAccountTag
     && unassigned.some((row) => row.accountId === plan.planAccountId)).map((plan) => plan.planAccountTag!))];
   const plans = workspace.plans.filter((plan) => plan.cardId === card.id && plan.status === "active");
+  const renewal = upcomingFeeRenewal(card, today);
   return [
     ...view.rows.filter((item) => item.attention).map((item): AttentionItem => {
       const { statement, status, match } = item;
@@ -68,17 +70,23 @@ export function cardAttention(entry: CardEntry, workspace: Workspace): Attention
       const status = planStatus(plan, card, workspace, snapshot, today);
       return status.check ? [{ key: plan.id, icon: "warning", rank: 1, target: { kind: "plans" }, text: `Plan ${plan.name} · ${status.label}` }] : [];
     }),
+    ...(renewal ? [{
+      key: "renewal", icon: "estimate" as const, rank: 2, target: { kind: "settings" as const },
+      text: `Annual fee${renewal.feeMinor ? ` ${money(renewal.feeMinor)}` : ""} renews ${renewal.inDays === 0 ? "today" : shortDate(renewal.date, today)}`
+        + " · keep, downgrade or cancel before then",
+    }] : []),
   ].sort((a, b) => a.rank - b.rank);
 }
 
 /** The short one-line summary for a table cell: the most urgent item, plus how many more. */
 export function attentionSummary(items: AttentionItem[]) {
   if (!items.length) return null;
-  const counts = { statement: 0, estimate: 0, plan: 0, found: 0 };
+  const counts = { statement: 0, estimate: 0, plan: 0, found: 0, renewal: 0 };
   for (const item of items) {
     if (item.key === "found") counts.found += item.count ?? 1;
     else if (item.target.kind === "plans") counts.plan += 1;
     else if (item.target.kind === "enter") counts.estimate += 1;
+    else if (item.target.kind === "settings") counts.renewal += 1;
     else counts.statement += 1;
   }
   return [
@@ -86,5 +94,6 @@ export function attentionSummary(items: AttentionItem[]) {
     counts.estimate ? plural(counts.estimate, "statement") + " to enter" : null,
     counts.found ? `${plural(counts.found, "plan")} found` : null,
     counts.plan ? plural(counts.plan, "plan item") : null,
+    counts.renewal ? "Annual fee renews soon" : null,
   ].filter(Boolean).join(" · ");
 }

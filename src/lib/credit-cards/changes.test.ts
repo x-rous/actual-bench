@@ -6,7 +6,18 @@ it("diffs nothing for equal workspaces and applies a diff back to the target", (
   const { workspace } = laptopPlanScenario();
   const after = workspace();
   expect(isEmptyChangeSet(diffWorkspaces(after, after))).toBe(true);
-  expect(applyChangeSet(EMPTY_WORKSPACE, diffWorkspaces(EMPTY_WORKSPACE, after), BUDGET)).toEqual(after);
+  const restores = [...after.cards, ...after.statements, ...after.plans].map((row) => row.id);
+  expect(applyChangeSet(EMPTY_WORKSPACE, { ...diffWorkspaces(EMPTY_WORKSPACE, after), restores }, BUDGET)).toEqual(after);
+});
+
+it("refuses a stale edit of a row deleted elsewhere instead of recreating it", async () => {
+  const { store, workspace } = setup({}, [facts("2026-02-10", 0), facts("2026-03-10", 500)]);
+  const before = workspace();
+  const target = before.statements.find((row) => row.closingDate === "2026-03-10")!;
+  const edited = { ...before, statements: before.statements.map((row) => (row.id === target.id ? { ...row, revision: row.revision + 1, balanceMinor: 900 } : row)) };
+  const stale = diffWorkspaces(before, edited);
+  await store.getState().deleteStatement(BUDGET, target.id, target.revision);
+  expect(() => applyChangeSet(workspace(), stale, BUDGET)).toThrow(CreditCardConflictError);
 });
 
 it("undoes a committed change and raises restored revisions so old editors stay stale (ABA)", () => {
