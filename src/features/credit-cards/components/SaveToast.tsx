@@ -35,7 +35,7 @@ export function SaveToast({ notice, tone = "success", stamp, canUndo, onUndo }: 
         ? <CircleAlert className="size-4 text-destructive" aria-hidden />
         : <CircleCheck className="size-4 text-green-700 dark:text-green-400" aria-hidden />}
       <span>{failed && <span className="sr-only">Error: </span>}{notice}</span>
-      {canUndo && <Button size="xs" variant="outline" onClick={onUndo}>Undo</Button>}
+      {canUndo && !failed && <Button size="xs" variant="outline" onClick={onUndo}>Undo</Button>}
       <Button size="icon-xs" variant="ghost" aria-label="Dismiss" onClick={() => setHidden({ notice, stamp })}><X className="size-3.5" aria-hidden /></Button>
     </div>}
   </div>;

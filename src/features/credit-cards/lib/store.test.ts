@@ -2,7 +2,7 @@ import { createCreditCardStore } from "./store/store";
 import { CreditCardUnavailableError, httpPersistence, memoryPersistence } from "./store/persistence";
 import { CreditCardConflictError } from "@/lib/credit-cards/changes";
 import { projectCardMinimums } from "./financialAdapter";
-import { NEW_CARD_DEFAULTS, cardSchema, statementFactsSchema } from "./models";
+import { NEW_CARD_DEFAULTS, cardSchema, statementFactsSchema, type Workspace } from "./models";
 import { parsePercentBps, formatPercentBps } from "./percent";
 import { statementReview } from "./statements";
 import { addStatement, addCard, BUDGET, CARD_INPUT, facts, row, setup, snapshot } from "./fixtures/testKit";
@@ -160,10 +160,35 @@ it("keeps the records on screen when a refresh fails, and ignores a read overtak
   mode = "hold";
   const older = store.getState().load(BUDGET, true);
   const newer = store.getState().load(BUDGET, true);
-  pending[1](memory.read(BUDGET));
+  const saved = memory.read(BUDGET) as Workspace;
+  const limit = () => store.getState().workspaces[BUDGET].cards.map((card) => card.creditLimitMinor);
+  pending[1]({ ...saved, cards: saved.cards.map((card) => ({ ...card, creditLimitMinor: 777_700 })) });
   await newer;
-  pending[0]({ ...memory.read(BUDGET), cards: [] });
+  expect(limit()).toEqual([777_700]);
+  pending[0]({ ...saved, cards: [] });
   await older;
+  expect(limit()).toEqual([777_700]);
+});
+
+it("runs a refresh asked for during the first read after it, and a failed refresh keeps that read", async () => {
+  const memory = memoryPersistence();
+  createCreditCardStore(memory).getState().registerCard(CARD_INPUT);
+  const pending: ((value: ReturnType<typeof memory.read>) => void)[] = [];
+  const failing: ((error: Error) => void)[] = [];
+  const store = createCreditCardStore({
+    read: () => new Promise((resolve, reject) => { pending.push(resolve); failing.push(reject); }),
+    commit: memory.commit,
+  });
+  const first = store.getState().load(BUDGET);
+  const refresh = store.getState().load(BUDGET, true);
+  expect(pending).toHaveLength(1);
+  pending[0](memory.read(BUDGET));
+  await first;
+  await Promise.resolve();
+  expect(pending).toHaveLength(2);
+  failing[1](new Error("App database locked"));
+  await refresh;
+  expect(store.getState().status[BUDGET]).toEqual({ state: "ready" });
   expect(store.getState().workspaces[BUDGET].cards).toHaveLength(1);
 });
 

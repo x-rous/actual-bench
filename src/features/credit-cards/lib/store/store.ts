@@ -181,6 +181,19 @@ export function createCreditCardStore(persistence: CreditCardPersistence = memor
     /** Bumped when a read starts or a commit settles; a read that finishes after a newer one is ignored. */
     const sequence: Record<string, number> = {};
     const nextSequence = (budget: string) => (sequence[budget] = (sequence[budget] ?? 0) + 1);
+    /** The first read of a budget, while it loads; a refresh asked for meanwhile waits for it. */
+    const firstReads: Record<string, Promise<void> | undefined> = {};
+    const queuedRefresh: Record<string, boolean> = {};
+    /**
+     * Applies a commit's response. When a read started or another commit settled while it was in flight,
+     * the response may be older than what is on screen: apply it, then read again to reconcile.
+     */
+    const settleCommitted = (budget: string, committed: Workspace, started: number) => {
+      const overlapped = (sequence[budget] ?? 0) !== started;
+      nextSequence(budget);
+      settle(budget, committed);
+      if (overlapped) void get().load(budget, true);
+    };
     /** Keeps unchanged rows (and tables) as the same objects, so per-row caches survive a save. */
     const settle = (budget: string, workspace: Workspace, unsupported?: number) => set((state) => {
       const skipped = unsupported ?? state.status[budget]?.unsupported ?? 0;
@@ -196,9 +209,9 @@ export function createCreditCardStore(persistence: CreditCardPersistence = memor
       const changes = diffWorkspaces(before, after);
       if (isEmptyChangeSet(changes)) return Promise.resolve();
       const undo = inverseChanges(before, after);
+      const started = sequence[budget] ?? 0;
       return then(commit(budget, changes), (committed) => {
-        nextSequence(budget);
-        settle(budget, committed);
+        settleCommitted(budget, committed, started);
         set((state) => ({
           undoHistory: { ...state.undoHistory, [budget]: [...(state.undoHistory[budget] ?? []).slice(-19), { changes: undo }] },
         }));
@@ -235,6 +248,16 @@ export function createCreditCardStore(persistence: CreditCardPersistence = memor
       load(budget, force = false) {
         const current = get().status[budget]?.state;
         if (!force && (current === "ready" || current === "loading")) return Promise.resolve();
+        // A refresh during the first read waits for it, so a failed refresh cannot discard a good first read.
+        const pending = firstReads[budget];
+        if (current === "loading" && pending) {
+          if (queuedRefresh[budget]) return pending;
+          queuedRefresh[budget] = true;
+          return (firstReads[budget] = pending.then(() => {
+            queuedRefresh[budget] = false;
+            return get().load(budget, true);
+          }));
+        }
         const ticket = nextSequence(budget);
         if (current !== "ready") set((state) => ({ status: { ...state.status, [budget]: { state: "loading" } } }));
         let result: ReturnType<CreditCardPersistence["read"]>;
@@ -243,7 +266,7 @@ export function createCreditCardStore(persistence: CreditCardPersistence = memor
         } catch (error) {
           result = Promise.reject(error);
         }
-        return then(result, (loaded) => {
+        const read = then(result, (loaded) => {
           if (sequence[budget] !== ticket) return;
           const { workspace, unsupported } = loadedWorkspace(loaded);
           settle(budget, workspace, unsupported);
@@ -261,6 +284,8 @@ export function createCreditCardStore(persistence: CreditCardPersistence = memor
             },
           }));
         });
+        if (current !== "ready") firstReads[budget] = read;
+        return read;
       },
 
       undo(budget) {
@@ -269,9 +294,9 @@ export function createCreditCardStore(persistence: CreditCardPersistence = memor
         if (!entry) return Promise.resolve();
         const rest = history.slice(0, -1);
         set((state) => ({ undoHistory: { ...state.undoHistory, [budget]: rest } }));
+        const started = sequence[budget] ?? 0;
         return then(commit(budget, entry.changes), (committed) => {
-          nextSequence(budget);
-          settle(budget, committed);
+          settleCommitted(budget, committed, started);
           notify(budget, "Last change undone");
         }).catch((error: unknown) => {
           const conflict = error instanceof CreditCardConflictError;

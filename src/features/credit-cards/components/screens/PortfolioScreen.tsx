@@ -14,6 +14,7 @@ import { statementPaymentTotals, netActivitySinceStatement } from "../../lib/ins
 import { observedChargeTotals, observedInterestTotals } from "../../lib/history";
 import { commonCoverage, coverageWindow, portfolioInterestTrend, portfolioStatementTrend, withStatements } from "../../lib/portfolioView";
 import { trackedDebtPoints } from "../../lib/derive/planAccounts";
+import { planTermsRemaining } from "../../lib/plans";
 import { formatPercentBps } from "../../lib/percent";
 import { CardMark } from "../CardIdentity";
 import { HistoryChart } from "../HistoryChart";
@@ -245,7 +246,11 @@ export function PortfolioScreen({ entries, workspace, focusCardId, sort, onSort,
   const filtered = Boolean(needle) || status !== "all";
   const payoffUnknown = entries.filter((entry) => entry.card.status === "active" && !entry.balance).map((entry) => entry.name);
   const payoffDebts = entries.flatMap((entry): PayoffDebt[] => {
-    const debt = entry.balance?.debtMinor ?? 0;
+    // A plan kept in the card balance repays on its own terms, not at the purchase APR: leave its principal out.
+    const planned = sumMinor(workspace.plans
+      .filter((plan) => plan.cardId === entry.card.id && plan.status === "active" && plan.recordedAs === "card-balance")
+      .map((plan) => planTermsRemaining(plan, entry.card, entry.today) ?? 0));
+    const debt = Math.max(0, (entry.balance?.debtMinor ?? 0) - planned);
     return entry.card.status === "active" && debt > 0
       ? [{ id: entry.card.id, name: entry.name, balanceMinor: debt, aprBps: entry.card.purchaseAprBps, card: entry.card }]
       : [];
