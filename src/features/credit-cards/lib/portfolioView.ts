@@ -72,6 +72,32 @@ export function portfolioInterestTrend(cards: Card[], workspace: Workspace, sour
  * The date range every card has activity for (CA-15), so a portfolio total never implies
  * coverage some cards don't have. Null when the cards share no loaded period.
  */
+const statementViews = new WeakMap<Workspace, { statements: readonly Statement[]; view: Workspace }>();
+
+/**
+ * The workspace with the portfolio's statements (saved plus estimates), kept as the same object while
+ * the workspace and every statement are unchanged, so the payment caches keyed on it keep working.
+ */
+export function withStatements(workspace: Workspace, statements: Statement[]): Workspace {
+  const hit = statementViews.get(workspace);
+  if (hit && hit.statements.length === statements.length && hit.statements.every((row, index) => row === statements[index])) return hit.view;
+  const view = { ...workspace, statements };
+  statementViews.set(workspace, { statements, view });
+  return view;
+}
+
+const windows = new WeakMap<ActivitySnapshot, Map<string, ActivitySnapshot>>();
+
+/** The snapshot narrowed to a shared coverage window, one object per snapshot and window. */
+export function coverageWindow(snapshot: ActivitySnapshot, coverage: { from: string; to: string }): ActivitySnapshot {
+  let bySpan = windows.get(snapshot);
+  if (!bySpan) windows.set(snapshot, (bySpan = new Map()));
+  const key = `${coverage.from}|${coverage.to}`;
+  let window = bySpan.get(key);
+  if (!window) bySpan.set(key, (window = { ...snapshot, ...coverage }));
+  return window;
+}
+
 export function commonCoverage(sources: (ActivitySnapshot | undefined)[], todays: string[]) {
   if (!sources.length || sources.some((source) => !source || source.issues.length)) return null;
   const from = sources.map((source) => source!.from).sort().at(-1)!;

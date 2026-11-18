@@ -33,6 +33,41 @@ function tagsOf(row: ActivityRow) {
   return tags;
 }
 
+const afterIndexes = new WeakMap<readonly ActivityRow[], { keys: string[]; amounts: number[]; suffixMinor: number[]; exact: boolean }>();
+
+/**
+ * Σ amounts of rows that fall after `closingDate`. A single non-transfer tag (YYYY-MM) moves a row
+ * across the cutoff; conflicting tags keep the date. A row counts when `closingDate < key`, where the
+ * key is its tag or its date ("2026-03-10" < "2026-04" holds; "2026-04-10" < "2026-04" does not), so
+ * one sorted index per snapshot answers every cycle by binary search.
+ */
+function activityAfter(rows: readonly ActivityRow[], closingDate: string) {
+  let index = afterIndexes.get(rows);
+  if (!index) {
+    const keyed = rows.map((row) => {
+      const tags = tagsOf(row);
+      return { key: tags.length === 1 ? tags[0] : row.date, amountMinor: row.amountMinor };
+    }).sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+    const suffixMinor = new Array<number>(keyed.length + 1).fill(0);
+    let exact = true;
+    for (let at = keyed.length - 1; at >= 0; at -= 1) {
+      suffixMinor[at] = suffixMinor[at + 1] + keyed[at].amountMinor;
+      if (!Number.isSafeInteger(suffixMinor[at])) exact = false;
+    }
+    // A running total past the safe range would round: those snapshots sum exactly per query instead.
+    index = { keys: keyed.map((entry) => entry.key), amounts: keyed.map((entry) => entry.amountMinor), suffixMinor, exact };
+    afterIndexes.set(rows, index);
+  }
+  let low = 0;
+  let high = index.keys.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (index.keys[middle] <= closingDate) low = middle + 1;
+    else high = middle;
+  }
+  return index.exact ? index.suffixMinor[low] : sumMinor(index.amounts.slice(low));
+}
+
 /**
  * Estimated statements for closed cycles with no saved statement (§7.1 #20):
  * `−balance today + Σ rows after close` (tag-aware). Never stored unless the user saves one.
@@ -58,12 +93,7 @@ export function statementDrafts(
       .sort((a, b) => b.closingDate.localeCompare(a.closingDate))[0];
     if (priorException) dates.periodStart = addDays(priorException.closingDate, 1);
     if (dates.periodStart < snapshot.from || closingDate > snapshot.to || snapshot.issues.length) return [];
-    // A single non-transfer tag moves activity across the cutoff; conflicting tags keep the date.
-    const subsequent = snapshot.rows.filter((row) => {
-      const tags = tagsOf(row);
-      return tags.length === 1 ? tags[0] > closingDate.slice(0, 7) : row.date > closingDate;
-    });
-    const owed = sumMinor([-signedCurrentMinor, snapshot.futureDeltaMinor ?? 0, sumMinor(subsequent.map((row) => row.amountMinor))]);
+    const owed = sumMinor([-signedCurrentMinor, snapshot.futureDeltaMinor ?? 0, activityAfter(snapshot.rows, closingDate)]);
     if (card.openedDate && closingDate < card.openedDate) return [];
     // Keep genuine zero cycles inside known history without inventing empty ones before it.
     if (closingDate !== firstTracked && owed === 0 && (!firstEvidence || closingDate < firstEvidence)) return [];

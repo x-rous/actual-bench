@@ -33,7 +33,8 @@ import {
   isEmptyChangeSet,
   type ChangeSet,
 } from "@/lib/credit-cards/changes";
-import { httpPersistence, memoryPersistence, type CreditCardPersistence } from "./persistence";
+import { httpPersistence, loadedWorkspace, memoryPersistence, type CreditCardPersistence } from "./persistence";
+import { shareWorkspace } from "./share";
 import { draftDecisions, statementReview, sumMinor, type StatementMove } from "../statements";
 import { bankMatchFor } from "../derive/status";
 
@@ -48,8 +49,14 @@ export type ReviewAnswer = {
 /** A type change: a kind sets the user's correction; null returns the row to its suggestion (FR-3). */
 export type TypeChange = { transactionId: string; kind: TransactionType | null; note?: string | null };
 
-/** Loading state of one budget's metadata. `unavailable` is never shown as an empty workspace. */
-export type StorageStatus = { state: "loading" | "ready" | "unavailable"; error?: string };
+/**
+ * Loading state of one budget's metadata. `unavailable` is never shown as an empty workspace.
+ * `unsupported` counts stored rows this build cannot read (written by a newer version); they are kept.
+ */
+export type StorageStatus = { state: "loading" | "ready" | "unavailable"; error?: string; unsupported?: number };
+
+/** Whether the budget's latest notice reports an outcome that went wrong. */
+export type NoticeTone = "success" | "error";
 
 /** One committed command and the change set that undoes it, guarded against what it wrote. */
 type UndoEntry = { changes: ChangeSet };
@@ -58,16 +65,25 @@ export type CreditCardState = {
   workspaces: Readonly<Record<string, Workspace>>;
   status: Readonly<Record<string, StorageStatus>>;
   notices: Readonly<Record<string, string>>;
+  noticeTones: Readonly<Record<string, NoticeTone>>;
+  /** Changes with every notice, so the same message reported again shows again. */
+  noticeIds: Readonly<Record<string, number>>;
   /** Command-scoped Undo, kept for this session only (never persisted). */
   undoHistory: Readonly<Record<string, readonly UndoEntry[]>>;
   persistence: CreditCardPersistence;
   /** Reads the budget's metadata once; `force` re-reads (Retry, or after a conflict). */
   load: (budget: string, force?: boolean) => Promise<void>;
   undo: (budget: string) => Promise<void>;
-  registerCard: (input: unknown) => Promise<Card>;
-  /** `limitChanges` (effective date and limit) replaces the card's limit history when given; otherwise it is kept. */
+  /** Shows a failed command's message in the save toast. */
+  reportFailure: (budget: string, error: unknown) => void;
+  /** `planAccounts`, when given, replaces the budget's plan-account list in the same change. */
+  registerCard: (input: unknown, planAccounts?: string[]) => Promise<Card>;
+  /**
+   * `limitChanges` (effective date and limit) replaces the card's limit history when given; otherwise it
+   * is kept. `planAccounts`, when given, replaces the plan-account list in the same change (one Save, one Undo).
+   */
   updateCard: (budget: string, cardId: string, expectedRevision: number, input: unknown,
-    limitChanges?: { effectiveDate: string; limitMinor: number }[]) => Promise<void>;
+    limitChanges?: { effectiveDate: string; limitMinor: number }[], planAccounts?: string[]) => Promise<void>;
   deleteCard: (budget: string, cardId: string, expectedRevision: number) => Promise<void>;
   recordStatement: (budget: string, cardId: string, input: unknown) => Promise<Statement>;
   correctStatement: (budget: string, statementId: string, expectedRevision: number, input: unknown) => Promise<void>;
@@ -157,11 +173,35 @@ function then<T, R>(value: T | Promise<T>, next: (result: T) => R): Promise<R> {
 export function createCreditCardStore(persistence: CreditCardPersistence = memoryPersistence()) {
   return createStore<CreditCardState>((set, get) => {
     const read = (budget: string) => get().workspaces[budget] ?? EMPTY_WORKSPACE;
-    const notify = (budget: string, notice: string) => set((state) => ({ notices: { ...state.notices, [budget]: notice } }));
-    const settle = (budget: string, workspace: Workspace) => set((state) => ({
-      workspaces: { ...state.workspaces, [budget]: workspace },
-      status: { ...state.status, [budget]: { state: "ready" } },
+    const notify = (budget: string, notice: string, tone: NoticeTone = "success") => set((state) => ({
+      notices: { ...state.notices, [budget]: notice },
+      noticeTones: { ...state.noticeTones, [budget]: tone },
+      noticeIds: { ...state.noticeIds, [budget]: (state.noticeIds[budget] ?? 0) + 1 },
     }));
+    /** Bumped when a read starts or a commit settles; a read that finishes after a newer one is ignored. */
+    const sequence: Record<string, number> = {};
+    const nextSequence = (budget: string) => (sequence[budget] = (sequence[budget] ?? 0) + 1);
+    /** The first read of a budget, while it loads; a refresh asked for meanwhile waits for it. */
+    const firstReads: Record<string, Promise<void> | undefined> = {};
+    const queuedRefresh: Record<string, boolean> = {};
+    /**
+     * Applies a commit's response. When a read started or another commit settled while it was in flight,
+     * the response may be older than what is on screen: apply it, then read again to reconcile.
+     */
+    const settleCommitted = (budget: string, committed: Workspace, started: number) => {
+      const overlapped = (sequence[budget] ?? 0) !== started;
+      nextSequence(budget);
+      settle(budget, committed);
+      if (overlapped) void get().load(budget, true);
+    };
+    /** Keeps unchanged rows (and tables) as the same objects, so per-row caches survive a save. */
+    const settle = (budget: string, workspace: Workspace, unsupported?: number) => set((state) => {
+      const skipped = unsupported ?? state.status[budget]?.unsupported ?? 0;
+      return {
+        workspaces: { ...state.workspaces, [budget]: shareWorkspace(state.workspaces[budget], workspace) },
+        status: { ...state.status, [budget]: skipped > 0 ? { state: "ready", unsupported: skipped } : { state: "ready" } },
+      };
+    });
 
     /** Commits `after` (computed from the current workspace) and records how to undo it. */
     const write = (budget: string, after: Workspace, notice = "Changes saved"): Promise<void> => {
@@ -169,13 +209,13 @@ export function createCreditCardStore(persistence: CreditCardPersistence = memor
       const changes = diffWorkspaces(before, after);
       if (isEmptyChangeSet(changes)) return Promise.resolve();
       const undo = inverseChanges(before, after);
+      const started = sequence[budget] ?? 0;
       return then(commit(budget, changes), (committed) => {
+        settleCommitted(budget, committed, started);
         set((state) => ({
-          workspaces: { ...state.workspaces, [budget]: committed },
-          status: { ...state.status, [budget]: { state: "ready" } },
           undoHistory: { ...state.undoHistory, [budget]: [...(state.undoHistory[budget] ?? []).slice(-19), { changes: undo }] },
-          notices: { ...state.notices, [budget]: notice },
         }));
+        notify(budget, notice);
       });
     };
 
@@ -200,20 +240,43 @@ export function createCreditCardStore(persistence: CreditCardPersistence = memor
       workspaces: {},
       status: {},
       notices: {},
+      noticeTones: {},
+      noticeIds: {},
       undoHistory: {},
       persistence,
 
       load(budget, force = false) {
         const current = get().status[budget]?.state;
         if (!force && (current === "ready" || current === "loading")) return Promise.resolve();
-        set((state) => ({ status: { ...state.status, [budget]: { state: current === "ready" ? "ready" : "loading" } } }));
-        let result: Workspace | Promise<Workspace>;
+        // A refresh during the first read waits for it, so a failed refresh cannot discard a good first read.
+        const pending = firstReads[budget];
+        if (current === "loading" && pending) {
+          if (queuedRefresh[budget]) return pending;
+          queuedRefresh[budget] = true;
+          return (firstReads[budget] = pending.then(() => {
+            queuedRefresh[budget] = false;
+            return get().load(budget, true);
+          }));
+        }
+        const ticket = nextSequence(budget);
+        if (current !== "ready") set((state) => ({ status: { ...state.status, [budget]: { state: "loading" } } }));
+        let result: ReturnType<CreditCardPersistence["read"]>;
         try {
           result = get().persistence.read(budget);
         } catch (error) {
           result = Promise.reject(error);
         }
-        return then(result, (workspace) => settle(budget, workspace)).catch((error: unknown) => {
+        const read = then(result, (loaded) => {
+          if (sequence[budget] !== ticket) return;
+          const { workspace, unsupported } = loadedWorkspace(loaded);
+          settle(budget, workspace, unsupported);
+        }).catch((error: unknown) => {
+          if (sequence[budget] !== ticket) return;
+          // A failed refresh keeps the records on screen (and any open draft); only a first read fails the page.
+          if (get().status[budget]?.state === "ready") {
+            get().reportFailure(budget, error);
+            return;
+          }
           set((state) => ({
             status: {
               ...state.status,
@@ -221,6 +284,8 @@ export function createCreditCardStore(persistence: CreditCardPersistence = memor
             },
           }));
         });
+        if (current !== "ready") firstReads[budget] = read;
+        return read;
       },
 
       undo(budget) {
@@ -229,8 +294,9 @@ export function createCreditCardStore(persistence: CreditCardPersistence = memor
         if (!entry) return Promise.resolve();
         const rest = history.slice(0, -1);
         set((state) => ({ undoHistory: { ...state.undoHistory, [budget]: rest } }));
+        const started = sequence[budget] ?? 0;
         return then(commit(budget, entry.changes), (committed) => {
-          settle(budget, committed);
+          settleCommitted(budget, committed, started);
           notify(budget, "Last change undone");
         }).catch((error: unknown) => {
           const conflict = error instanceof CreditCardConflictError;
@@ -239,19 +305,27 @@ export function createCreditCardStore(persistence: CreditCardPersistence = memor
           if (!conflict) set((state) => (state.undoHistory[budget] === rest ? { undoHistory: { ...state.undoHistory, [budget]: history } } : {}));
           notify(budget, conflict
             ? "Can't undo; this changed since. Your current records were kept."
-            : "Undo failed; your current records were kept. Try again.");
+            : "Undo failed; your current records were kept. Try again.", "error");
         });
       },
 
-      registerCard(raw) {
+      reportFailure(budget, error) {
+        notify(budget, error instanceof Error && error.message ? error.message : "Couldn't save this change. Try again.", "error");
+      },
+
+      registerCard(raw, planAccounts) {
         const input = cardInputSchema.parse(raw);
         const workspace = read(input.budgetSyncId);
         if (workspace.cards.some((card) => card.accountId === input.accountId)) throw new Error("This account is already registered");
         const card = cardSchema.parse({ ...input, id: generateId(), revision: 1 });
-        return write(input.budgetSyncId, { ...workspace, cards: [...workspace.cards, card] }, "Card added").then(() => card);
+        return write(input.budgetSyncId, {
+          ...workspace,
+          cards: [...workspace.cards, card],
+          planAccounts: planAccounts ? checkedPlanAccounts(workspace, planAccounts) : workspace.planAccounts,
+        }, "Card added").then(() => card);
       },
 
-      updateCard(budget, cardId, expected, raw, limits) {
+      updateCard(budget, cardId, expected, raw, limits, planAccounts) {
         const workspace = read(budget);
         const current = workspace.cards.find((card) => card.id === cardId);
         requireRevision(current, expected);
@@ -276,8 +350,12 @@ export function createCreditCardStore(persistence: CreditCardPersistence = memor
           ...workspace.limitChanges.filter((entry) => entry.cardId !== cardId),
           ...limits.map((entry) => limitChangeSchema.parse({ cardId, ...entry })),
         ];
-        return write(budget, { ...workspace, cards: workspace.cards.map((card) => (card.id === cardId ? updated : card)), limitChanges },
-          "Card settings saved");
+        return write(budget, {
+          ...workspace,
+          cards: workspace.cards.map((card) => (card.id === cardId ? updated : card)),
+          limitChanges,
+          planAccounts: planAccounts ? checkedPlanAccounts(workspace, planAccounts) : workspace.planAccounts,
+        }, "Card settings saved");
       },
 
       deleteCard(budget, cardId, expected) {
@@ -420,8 +498,9 @@ export function createCreditCardStore(persistence: CreditCardPersistence = memor
         let decisions = draftDecisions(statement, workspace, snapshot, decided, moves);
         let review = statementReview(statement, workspace, snapshot, decisions);
         if (review.duplicate) throw new Error("A transaction cannot belong to two statements");
-        // D26: a complete review whose balance matches is verified automatically.
-        const verified = bankMatchFor(statement, review).key === "matches" && review.varianceMinor !== null;
+        // D26: a complete review whose balance matches is verified automatically. The saved
+        // signature is about to be replaced, so judge the new decisions as a fresh review.
+        const verified = bankMatchFor({ ...statement, reviewState: "not_reviewed" }, review).key === "matches";
         if (verified) {
           // Freeze the bill, including suggested inclusions at close.
           const frozen = review.rows.flatMap((row, index): Decision[] => {
@@ -510,13 +589,18 @@ export function createCreditCardStore(persistence: CreditCardPersistence = memor
 
       setPlanAccounts(budget, accountIds) {
         const workspace = read(budget);
-        const ids = [...new Set(accountIds.map((value) => value.trim()).filter(Boolean))];
-        const used = workspace.plans.flatMap((plan) => (plan.planAccountId ? [plan.planAccountId] : []));
-        if (used.some((accountId) => !ids.includes(accountId))) throw new Error("A plan still uses this plan account");
-        return write(budget, { ...workspace, planAccounts: ids }, "Plan accounts saved");
+        return write(budget, { ...workspace, planAccounts: checkedPlanAccounts(workspace, accountIds) }, "Plan accounts saved");
       },
     };
   });
+}
+
+/** The plan-account list to store: trimmed, unique, and still holding every account a plan uses. */
+function checkedPlanAccounts(workspace: Workspace, accountIds: string[]) {
+  const ids = [...new Set(accountIds.map((value) => value.trim()).filter(Boolean))];
+  const used = workspace.plans.flatMap((plan) => (plan.planAccountId ? [plan.planAccountId] : []));
+  if (used.some((accountId) => !ids.includes(accountId))) throw new Error("A plan still uses this plan account");
+  return ids;
 }
 
 /** §12.3: own-account and shared-tag plans never mix in one account; tags are unique. */

@@ -98,3 +98,18 @@ it("adds plan-account principal to the calculated balance when the bank includes
   const without = { ...context.workspace(), cards: context.workspace().cards.map((card) => ({ ...card, statementsIncludePlanBalances: false })) };
   expect(statementReview(statement, without, source).signature).not.toBe(review.signature);
 });
+
+it("verifies a statement once a re-decided row clears its difference (D26)", () => {
+  const context = setup({}, [
+    facts("2026-02-10", 0, { periodStart: "2026-01-11", previousBalanceMinor: 0 }),
+    facts("2026-03-10", 50000),
+  ]);
+  const bill = context.saved[1];
+  const source = snapshot([row(base), row({ id: "gift", date: "2026-03-02", amount: -10000, payeeName: "Gift shop", cleared: false })]);
+  const statement = () => context.workspace().statements.find((entry) => entry.id === bill.id)!;
+  context.store.getState().saveReview("budget", bill.id, 1, source, []);
+  expect(statement().reviewState).toBe("reviewed");
+  context.store.getState().saveReview("budget", bill.id, 2, source, [{ transactionId: "gift", decision: "excluded", bankPostingDate: null, note: null }]);
+  expect(statement().reviewState).toBe("verified");
+  expect(bankMatch(statement(), context.workspace(), source).key).toBe("matches");
+});

@@ -105,7 +105,8 @@ export function paymentStatus(
     return { ...known, key: "pending", label: "Pending", tone: "info", line: payment.pendingByDue ? "Paid on time · clearing" : "Clearing" };
   }
   if (until < 0) {
-    if (payment.minimumLeftMinor === 0) {
+    // A bill with no minimum is only "minimum paid" once something was actually paid.
+    if (payment.minimumLeftMinor === 0 && (statement.minimumDueMinor > 0 || payment.paidMinor > 0)) {
       const late = Boolean(payment.minimumPaidDate && payment.minimumPaidDate > statement.dueDate);
       return {
         ...known, key: "minimum-paid", label: "Minimum paid", tone: "attention",

@@ -47,6 +47,18 @@ export type CreditCardRead = {
 const bool = (value: unknown) => value === 1;
 const flag = (value: boolean) => (value ? 1 : 0);
 
+type Prepared = ReturnType<SqliteDatabase["prepare"]>;
+const preparedByDb = new WeakMap<SqliteDatabase, Map<string, Prepared>>();
+
+/** Compiles each SQL text once per connection; writes run these per row. */
+function prepared(db: SqliteDatabase, sql: string): Prepared {
+  let cache = preparedByDb.get(db);
+  if (!cache) preparedByDb.set(db, (cache = new Map()));
+  let statement = cache.get(sql);
+  if (!statement) cache.set(sql, (statement = db.prepare(sql)));
+  return statement;
+}
+
 function cardFrom(row: Row): unknown {
   return {
     id: row.id, budgetSyncId: row.budget_sync_id, accountId: row.account_id, revision: row.revision,
@@ -126,7 +138,7 @@ function readable<T>(rows: Row[], map: (row: Row) => unknown, schema: z.ZodType<
 
 /** All credit-card metadata for one budget (it is small). */
 export function readCreditCardWorkspace(db: SqliteDatabase, budgetSyncId: string): CreditCardRead {
-  const all = (sql: string) => db.prepare(sql).all(budgetSyncId) as Row[];
+  const all = (sql: string) => prepared(db, sql).all(budgetSyncId) as Row[];
   const cards = readable(all("SELECT * FROM credit_cards WHERE budget_sync_id = ? ORDER BY created_at, id"), cardFrom, cardSchema);
   const cardIds = new Set(cards.parsed.map((card) => card.id));
   const byCard = <T extends { cardId: string }>(rows: T[]) => rows.filter((row) => cardIds.has(row.cardId));
@@ -171,7 +183,7 @@ function parseRequest(input: unknown): { budgetSyncId: string; changes: ChangeSe
 }
 
 function writeCard(db: SqliteDatabase, card: Card, now: string) {
-  db.prepare(`INSERT INTO credit_cards (
+  prepared(db, `INSERT INTO credit_cards (
       id, budget_sync_id, account_id, status, network, color, bank_time_zone, credit_limit_minor, purchase_apr_bps,
       interest_model, closing_day, due_rule_kind, due_rule_value, billing_days_source, minimum_percent_bps,
       minimum_floor_minor, interest_category_id, fee_category_id, cashback_category_id, statements_include_plan_balances,
@@ -199,7 +211,7 @@ function writeCard(db: SqliteDatabase, card: Card, now: string) {
 }
 
 function writeStatement(db: SqliteDatabase, statement: Statement, now: string) {
-  db.prepare(`INSERT INTO credit_card_statements (
+  prepared(db, `INSERT INTO credit_card_statements (
       id, card_id, period_start, closing_date, due_date, balance_minor, minimum_due_minor, amount_due_minor,
       previous_balance_minor, review_state, review_hash, reviewed_at, scope_accepted_difference_minor, revision,
       created_at, updated_at)
@@ -218,7 +230,7 @@ function writeStatement(db: SqliteDatabase, statement: Statement, now: string) {
 }
 
 function writePlan(db: SqliteDatabase, plan: RepaymentPlan, budgetSyncId: string, now: string) {
-  db.prepare(`INSERT INTO credit_card_plans (
+  prepared(db, `INSERT INTO credit_card_plans (
       id, card_id, budget_sync_id, name, recorded_as, plan_account_id, plan_account_tag, status, original_amount_minor,
       start_date, opening_date, opening_principal_minor, schedule_kind, first_due_date, instalment_count,
       instalment_minor, apr_bps, upfront_fee_minor, monthly_fee_minor, instalment_includes_costs, minimum_percent_bps,
@@ -244,7 +256,7 @@ function writePlan(db: SqliteDatabase, plan: RepaymentPlan, budgetSyncId: string
 }
 
 function writeDecision(db: SqliteDatabase, decision: Decision, now: string) {
-  db.prepare(`INSERT INTO credit_card_statement_decisions
+  prepared(db, `INSERT INTO credit_card_statement_decisions
       (statement_id, card_id, transaction_id, decision, bank_posting_date, origin, source_hash, note, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(decision.statementId, decision.cardId, decision.transactionId, decision.decision, decision.bankPostingDate,
@@ -252,7 +264,7 @@ function writeDecision(db: SqliteDatabase, decision: Decision, now: string) {
 }
 
 function writeType(db: SqliteDatabase, correction: TypeCorrection, now: string) {
-  db.prepare(`INSERT INTO credit_card_transaction_types (card_id, transaction_id, kind, identity_hash, source_hash, note, updated_at)
+  prepared(db, `INSERT INTO credit_card_transaction_types (card_id, transaction_id, kind, identity_hash, source_hash, note, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(card_id, transaction_id) DO UPDATE SET
       kind = excluded.kind, identity_hash = excluded.identity_hash, source_hash = excluded.source_hash,
@@ -262,7 +274,7 @@ function writeType(db: SqliteDatabase, correction: TypeCorrection, now: string) 
 }
 
 function writeEntry(db: SqliteDatabase, entry: PlanEntry, budgetSyncId: string, now: string) {
-  db.prepare(`INSERT INTO credit_card_plan_entries
+  prepared(db, `INSERT INTO credit_card_plan_entries
       (plan_id, budget_sync_id, transaction_id, role, instalment_number, transfer_pair_key, identity_hash, source_hash, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(entry.planId, budgetSyncId, entry.transactionId, entry.role, entry.instalmentNumber, entry.transferPairKey,
@@ -274,14 +286,14 @@ function writeDifference(db: SqliteDatabase, budgetSyncId: string, current: Work
   const now = new Date().toISOString();
   const changes = diffWorkspaces(current, next);
   for (const guard of changes.plans.remove) {
-    db.prepare("DELETE FROM credit_card_plans WHERE id = ? AND budget_sync_id = ?").run(guard.id, budgetSyncId);
+    prepared(db, "DELETE FROM credit_card_plans WHERE id = ? AND budget_sync_id = ?").run(guard.id, budgetSyncId);
   }
   for (const guard of changes.statements.remove) {
-    db.prepare(`DELETE FROM credit_card_statements WHERE id = ?
+    prepared(db, `DELETE FROM credit_card_statements WHERE id = ?
       AND card_id IN (SELECT id FROM credit_cards WHERE budget_sync_id = ?)`).run(guard.id, budgetSyncId);
   }
   for (const guard of changes.cards.remove) {
-    db.prepare("DELETE FROM credit_cards WHERE id = ? AND budget_sync_id = ?").run(guard.id, budgetSyncId);
+    prepared(db, "DELETE FROM credit_cards WHERE id = ? AND budget_sync_id = ?").run(guard.id, budgetSyncId);
   }
   for (const card of changes.cards.put) writeCard(db, card, now);
   // Statements are written in closing order so period checks see final neighbours.
@@ -291,23 +303,23 @@ function writeDifference(db: SqliteDatabase, budgetSyncId: string, current: Work
   for (const plan of changes.plans.put) writePlan(db, plan, budgetSyncId, now);
   for (const change of changes.typeCorrections) {
     if (change.next) writeType(db, change.next, now);
-    else db.prepare("DELETE FROM credit_card_transaction_types WHERE card_id = ? AND transaction_id = ?").run(change.cardId, change.transactionId);
+    else prepared(db, "DELETE FROM credit_card_transaction_types WHERE card_id = ? AND transaction_id = ?").run(change.cardId, change.transactionId);
   }
   // Budget-wide unique indexes (one included bill per transaction, one plan per transaction or pair): delete
   // every replaced parent's rows before inserting any, so a move between parents never meets its own old row.
   for (const entry of changes.decisions) {
-    db.prepare("DELETE FROM credit_card_statement_decisions WHERE statement_id = ?").run(entry.statementId);
+    prepared(db, "DELETE FROM credit_card_statement_decisions WHERE statement_id = ?").run(entry.statementId);
   }
   for (const entry of changes.planEntries) {
-    db.prepare("DELETE FROM credit_card_plan_entries WHERE plan_id = ? AND budget_sync_id = ?").run(entry.planId, budgetSyncId);
+    prepared(db, "DELETE FROM credit_card_plan_entries WHERE plan_id = ? AND budget_sync_id = ?").run(entry.planId, budgetSyncId);
   }
   for (const entry of changes.decisions) {
     for (const decision of entry.rows) writeDecision(db, decision, now);
   }
   for (const entry of changes.limitChanges) {
-    db.prepare("DELETE FROM credit_card_limit_changes WHERE card_id = ?").run(entry.cardId);
+    prepared(db, "DELETE FROM credit_card_limit_changes WHERE card_id = ?").run(entry.cardId);
     for (const row of entry.rows) {
-      db.prepare("INSERT INTO credit_card_limit_changes (card_id, effective_date, limit_minor, created_at) VALUES (?, ?, ?, ?)")
+      prepared(db, "INSERT INTO credit_card_limit_changes (card_id, effective_date, limit_minor, created_at) VALUES (?, ?, ?, ?)")
         .run(row.cardId, row.effectiveDate, row.limitMinor, now);
     }
   }
@@ -318,11 +330,11 @@ function writeDifference(db: SqliteDatabase, budgetSyncId: string, current: Work
     const keep = new Set(changes.planAccounts.next);
     for (const accountId of changes.planAccounts.expected) {
       if (!keep.has(accountId)) {
-        db.prepare("DELETE FROM credit_card_plan_accounts WHERE budget_sync_id = ? AND account_id = ?").run(budgetSyncId, accountId);
+        prepared(db, "DELETE FROM credit_card_plan_accounts WHERE budget_sync_id = ? AND account_id = ?").run(budgetSyncId, accountId);
       }
     }
     for (const accountId of keep) {
-      db.prepare("INSERT OR IGNORE INTO credit_card_plan_accounts (budget_sync_id, account_id, created_at) VALUES (?, ?, ?)")
+      prepared(db, "INSERT OR IGNORE INTO credit_card_plan_accounts (budget_sync_id, account_id, created_at) VALUES (?, ?, ?)")
         .run(budgetSyncId, accountId, now);
     }
   }
