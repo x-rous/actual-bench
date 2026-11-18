@@ -50,6 +50,7 @@ import {
   type PdfStatementParseResult,
 } from "@/lib/reconciliation/statement/pdf";
 import {
+  closingBalanceFromPdf,
   normalizeReviewedPdfStatement,
   type ReviewedPdfTransaction,
 } from "@/lib/reconciliation/statement/pdfNormalize";
@@ -468,7 +469,8 @@ export function ImportPanel({
     }
     if (isPdf) {
       pdfAbortRef.current?.abort();
-      releasePdfStatementPreviews(pdfDraft);
+      // The current draft's previews are released only once a new draft has
+      // replaced it: a read that fails or is cancelled leaves it on screen.
       const controller = new AbortController();
       pdfAbortRef.current = controller;
       setIsReadingPdf(true);
@@ -526,6 +528,8 @@ export function ImportPanel({
             }
           }
         }
+        const replaced = pdfDraftRef.current;
+        if (replaced && replaced !== draft) releasePdfStatementPreviews(replaced);
         setPdfDraft(draft);
         setAppliedPdfProfileId(initialPdfProfileId);
         setPdfDraftName(file.name);
@@ -563,7 +567,21 @@ export function ImportPanel({
     rows: ReviewedPdfTransaction[],
     reviewedResult: PdfStatementParseResult
   ) {
-    const normalized = normalizeReviewedPdfStatement(rows, () => generateId());
+    const reviewed = normalizeReviewedPdfStatement(
+      rows,
+      () => generateId(),
+      reviewedResult.guidance.statementPeriod
+    );
+    // The bank's closing figure travels with the statement's totals, so the
+    // session can check Actual closes there too.
+    const closingBalance = closingBalanceFromPdf(
+      reviewedResult,
+      reviewed.period?.end,
+      reviewedResult.guidance.statementPeriod?.end
+    );
+    const normalized = closingBalance
+      ? { ...reviewed, totals: { ...reviewed.totals, closingBalance } }
+      : reviewed;
     // The dialog prevents invalid rows. Keep the boundary result defensive in
     // case a future caller bypasses it, rather than replacing a working import
     // with an unusable statement.

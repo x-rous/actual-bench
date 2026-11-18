@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Plus, Trash2, Wand2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Pencil, Plus, Trash2, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -11,7 +11,19 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { generateId } from "@/lib/uuid";
-import { previewTransform } from "@/lib/reconciliation/transform/preview";
+import { previewTransform, previewTransformSequence } from "@/lib/reconciliation/transform/preview";
+import { useSavedTransformMutations, useSavedTransforms } from "../hooks/useReconciliation";
+import {
+  defaultMonth,
+  hasFixedDate,
+  isMonthValue,
+  missingPayees,
+  resolvePlaceholders,
+  usesMonth,
+  withoutMissingPayees,
+  type SavedRule,
+  type SavedTransform,
+} from "@/lib/reconciliation/transform/saved";
 import type {
   Condition,
   ConditionField,
@@ -207,10 +219,75 @@ function TagField({
         placeholder="- choose -"
         value={value}
         onChange={onChange}
-        options={tags.map((tag) => ({ id: tag.name, name: tag.name }))}
+        options={withValue(tags.map((tag) => ({ id: tag.name, name: tag.name })), value)}
       />
     </div>
   );
+}
+
+/**
+ * The options, plus the current value when it is not among them.
+ *
+ * A saved transform can name a tag these rows do not carry yet, or `#{month}`;
+ * without this the picker would show it as unanswered.
+ */
+function withValue(options: ComboboxOption[], value: string): ComboboxOption[] {
+  if (!value || options.some((option) => option.id === value)) return options;
+  return [...options, { id: value, name: value }];
+}
+
+const DECISION_LABELS = new Map(DECISION_VALUES.map((entry) => [entry.id, entry.label]));
+
+/** One line saying what a saved rule does, for the saved list. */
+function describeRule(rule: SavedRule, payeeName: (id: string) => string | undefined): string {
+  const field = (id: ConditionField) => FIELDS.find((entry) => entry.id === id)?.label ?? id;
+  const conditions = rule.conditions.map((entry) => {
+    const value = entry.field === "matchStatus" ? DECISION_LABELS.get(entry.value) ?? entry.value : entry.value;
+    const upper = entry.operator === "between" ? ` and ${entry.value2 ?? ""}` : "";
+    return `${field(entry.field)} ${operatorLabel(entry.field, entry.operator)} ${value}${upper}`;
+  });
+  const actions = rule.actions.map((entry) => {
+    switch (entry.kind) {
+      case "replaceTag":
+        return `replace ${entry.from} with ${entry.to}`;
+      case "addTag":
+        return `add ${entry.tag} at the ${entry.position ?? "end"}`;
+      case "removeTag":
+        return `remove ${entry.tag}`;
+      case "replaceNoteText":
+        return `replace "${entry.from}" with "${entry.to}"`;
+      case "appendNote":
+        return `append "${entry.text}"`;
+      case "prependNote":
+        return `put "${entry.text}" first`;
+      case "setPayee":
+        return `set payee ${entry.payeeId ? payeeName(entry.payeeId) ?? "(deleted payee)" : "none"}`;
+      case "useStatementImportedPayee":
+        return "use the statement's full payee";
+    }
+  });
+  const when = conditions.length > 0 ? `If ${conditions.join(" and ")}` : "All rows";
+  return `${when}: ${actions.join(", ")}`;
+}
+
+const CHECKED_KEY = "actual-bench.reconciliation.saved-transforms.checked";
+
+/** The saved transforms ticked last time. Browser storage only; losing it just unticks them. */
+function readChecked(): string[] {
+  try {
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(CHECKED_KEY) ?? "[]");
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeChecked(ids: string[]) {
+  try {
+    window.localStorage.setItem(CHECKED_KEY, JSON.stringify(ids));
+  } catch {
+    // Remembering the selection is a convenience; nothing depends on it.
+  }
 }
 
 function emptyAction(kind: ActionKind): TransformAction {
@@ -249,6 +326,21 @@ export type TransformDialogProps = {
   categories: Option[];
   onClose: () => void;
   onApply: (changes: { itemId: string; patch: ReconciliationItem["stagedChanges"] }[]) => void;
+  /** Saved transforms for this budget. Absent, the dialog offers only a one-off rule. */
+  saved?: SavedTransformsSupport;
+};
+
+export type SavedTransformsSupport = {
+  transforms: SavedTransform[];
+  /** What `{month}` becomes unless the user changes it: the statement's closing month. */
+  defaultMonth: string;
+  onCreate: (name: string, rule: SavedRule) => Promise<unknown>;
+  onUpdate: (id: string, changes: { name?: string; rule?: SavedRule }) => Promise<unknown>;
+  onDelete: (id: string) => Promise<unknown>;
+  onReorder: (ids: string[]) => Promise<unknown>;
+  /** Set when the list could not be read, so an empty list is not mistaken for "none saved". */
+  loadError?: string | null;
+  onRetryLoad?: () => void;
 };
 
 export function TransformDialog({
@@ -259,6 +351,7 @@ export function TransformDialog({
   categories,
   onClose,
   onApply,
+  saved,
 }: TransformDialogProps) {
   /**
    * The tags actually present on the rows this rule can reach.
@@ -321,12 +414,138 @@ export function TransformDialog({
     [conditions, actions]
   );
 
-  // Recomputed as the rule is edited, with the same code that will apply it, so
-  // the preview cannot disagree with the outcome.
-  const preview = useMemo(
-    () => previewTransform({ rule, items: scopedItems, contextFor, overrideManual }),
-    [rule, scopedItems, contextFor, overrideManual]
+  const savedList = useMemo(() => saved?.transforms ?? [], [saved?.transforms]);
+  const [mode, setMode] = useState<"saved" | "new">(
+    savedList.length > 0 || saved?.loadError ? "saved" : "new"
   );
+  const [checked, setChecked] = useState<Set<string>>(() => {
+    const known = new Set(savedList.map((entry) => entry.id));
+    return new Set(readChecked().filter((id) => known.has(id)));
+  });
+  const [month, setMonth] = useState(saved?.defaultMonth ?? "");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [saveName, setSaveName] = useState("");
+  const [saveState, setSaveState] = useState<{ busy: boolean; message: string | null; error: boolean }>({
+    busy: false,
+    message: null,
+    error: false,
+  });
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
+
+  const knownPayeeIds = useMemo(() => new Set(payees.map((payee) => payee.id)), [payees]);
+  const checkedTransforms = useMemo(
+    () => savedList.filter((entry) => checked.has(entry.id)),
+    [savedList, checked]
+  );
+  const needsMonth =
+    mode === "saved" ? checkedTransforms.some((entry) => usesMonth(entry.rule)) : usesMonth(rule);
+  const monthReady = !needsMonth || isMonthValue(month);
+
+  // Recomputed as the rule is edited, with the same code that will apply it, so
+  // the preview cannot disagree with the outcome. `{month}` is filled in on a
+  // copy here; what is saved keeps the placeholder.
+  const sequence = useMemo(() => {
+    if (mode !== "saved") return null;
+    return previewTransformSequence({
+      rules: checkedTransforms.map((entry) => ({
+        id: entry.id,
+        ...resolvePlaceholders(withoutMissingPayees(entry.rule, knownPayeeIds), month.trim()),
+      })),
+      items: scopedItems,
+      contextFor,
+      overrideManual,
+    });
+  }, [mode, checkedTransforms, knownPayeeIds, month, scopedItems, contextFor, overrideManual]);
+  const single = useMemo(
+    () =>
+      mode === "saved"
+        ? null
+        : previewTransform({
+            // A rule loaded for editing can still name a payee that was deleted
+            // since it was saved; staging that id would write a dangling payee.
+            rule: { ...rule, ...resolvePlaceholders(withoutMissingPayees(rule, knownPayeeIds), month.trim()) },
+            items: scopedItems,
+            contextFor,
+            overrideManual,
+          }),
+    [mode, rule, month, scopedItems, contextFor, overrideManual, knownPayeeIds]
+  );
+  const preview = sequence ?? single!;
+
+  function toggleChecked(id: string, on: boolean) {
+    setChecked((previous) => {
+      const next = new Set(previous);
+      if (on) next.add(id);
+      else next.delete(id);
+      writeChecked([...next]);
+      return next;
+    });
+  }
+
+  function editSaved(entry: SavedTransform) {
+    setConditions(entry.rule.conditions);
+    setActions(entry.rule.actions);
+    setEditingId(entry.id);
+    setSaveName(entry.name);
+    setSaveState({ busy: false, message: null, error: false });
+    setMode("new");
+  }
+
+  function stopEditing() {
+    setEditingId(null);
+    setSaveName("");
+    setSaveState({ busy: false, message: null, error: false });
+  }
+
+  async function runSave(asNew: boolean) {
+    if (!saved) return;
+    const name = saveName.trim();
+    const stored: SavedRule = { conditions, actions };
+    setSaveState({ busy: true, message: null, error: false });
+    try {
+      if (editingId && !asNew) {
+        await saved.onUpdate(editingId, { name, rule: stored });
+        setSaveState({ busy: false, message: `Saved changes to "${name}".`, error: false });
+      } else {
+        await saved.onCreate(name, stored);
+        setEditingId(null);
+        setSaveState({ busy: false, message: `Saved as "${name}".`, error: false });
+      }
+    } catch (error) {
+      setSaveState({
+        busy: false,
+        message: error instanceof Error ? error.message : "Could not save this transform.",
+        error: true,
+      });
+    }
+  }
+
+  function move(id: string, by: -1 | 1) {
+    if (!saved) return;
+    const ids = savedList.map((entry) => entry.id);
+    const from = ids.indexOf(id);
+    const to = from + by;
+    if (from < 0 || to < 0 || to >= ids.length) return;
+    [ids[from], ids[to]] = [ids[to], ids[from]];
+    setListError(null);
+    saved.onReorder(ids).catch((error: unknown) =>
+      setListError(error instanceof Error ? error.message : "Could not change the order. Try again.")
+    );
+  }
+
+  async function removeSaved(entry: SavedTransform) {
+    if (!saved) return;
+    setConfirmDeleteId(null);
+    setListError(null);
+    try {
+      await saved.onDelete(entry.id);
+      // Unticked only once it is gone, so a failed delete leaves the row as it was.
+      toggleChecked(entry.id, false);
+    } catch (error) {
+      setListError(error instanceof Error ? error.message : `Could not delete "${entry.name}". Try again.`);
+    }
+  }
 
   const payeeNames = useMemo(() => new Map(payees.map((payee) => [payee.id, payee.name])), [payees]);
   // Only format rows actually displayed. Payee IDs remain unchanged in the staged patch.
@@ -357,7 +576,7 @@ export function TransformDialog({
     return payeeNames.get(value) || (row?.payeeId === value ? row.payeeName : null) || "Unavailable payee";
   }
 
-  const ready =
+  const ruleComplete =
     actions.length > 0 &&
     actions.every((action) => {
       if (action.kind === "replaceTag") return action.from.trim() && action.to.trim();
@@ -380,7 +599,21 @@ export function TransformDialog({
       return true;
     });
 
-  const emptyMessage = !ready
+  // A saved rule runs unseen next month, so an unanswered condition is refused
+  // there rather than saved to match nothing (or everything).
+  const conditionsComplete = conditions.every(
+    (entry) => entry.value.trim() !== "" && (entry.operator !== "between" || (entry.value2 ?? "").trim() !== "")
+  );
+  const canSave = Boolean(ruleComplete) && conditionsComplete && saveName.trim() !== "" && !saveState.busy;
+
+  const ready =
+    monthReady && (mode === "saved" ? checkedTransforms.length > 0 : Boolean(ruleComplete));
+
+  const emptyMessage = mode === "saved" && checkedTransforms.length === 0
+    ? "Tick the saved transforms to run."
+    : !monthReady
+    ? "Enter the month as YYYY-MM to see what it would change."
+    : !ready
     ? "Fill in the rule above to see what it would change."
     : preview.matched === 0
       ? "Nothing matches this rule yet."
@@ -440,6 +673,114 @@ export function TransformDialog({
         </div>
       )}
 
+      {saved && (
+        <div role="tablist" aria-label="Rule source" className="flex items-center gap-1 border-b border-border/50 px-3 pt-2">
+          {(
+            [
+              ["saved", `Saved (${savedList.length})`],
+              ["new", editingId ? "Edit saved rule" : "New rule"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              role="tab"
+              aria-selected={mode === value}
+              className={`-mb-px border-b-2 px-2 pb-1.5 text-xs font-medium ${
+                mode === value
+                  ? "border-foreground text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+              onClick={() => setMode(value)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {saved && mode === "saved" && (
+        <section aria-label="Saved transforms" className="flex flex-col px-3 py-2">
+          {listError && (
+            <p role="alert" className="pb-1 text-xs text-destructive">{listError}</p>
+          )}
+          {saved.loadError && savedList.length === 0 ? (
+            <p role="alert" className="flex flex-wrap items-center gap-2 py-3 text-xs text-destructive">
+              Saved transforms could not be loaded: {saved.loadError}
+              {saved.onRetryLoad && (
+                <Button size="sm" variant="outline" className="h-6 text-xs" onClick={saved.onRetryLoad}>
+                  Try again
+                </Button>
+              )}
+            </p>
+          ) : savedList.length === 0 ? (
+            <p className="py-3 text-xs text-muted-foreground">
+              No saved transforms yet. Build one under New rule and save it to run it again on later imports.
+            </p>
+          ) : (
+            <ul className="flex flex-col">
+              {savedList.map((entry, index) => {
+                const checkedIndex = checkedTransforms.findIndex((candidate) => candidate.id === entry.id);
+                const changedCount = checkedIndex >= 0 ? sequence?.changedByRule[checkedIndex] : undefined;
+                const missing = missingPayees(entry.rule, knownPayeeIds);
+                return (
+                  <li key={entry.id} className="flex items-center gap-2 border-b border-border/30 py-1 text-xs last:border-b-0">
+                    <Checkbox
+                      aria-label={`Run ${entry.name}`}
+                      checked={checked.has(entry.id)}
+                      onCheckedChange={(on) => toggleChecked(entry.id, on)}
+                    />
+                    <span className="shrink-0 font-medium">{entry.name}</span>
+                    <span className="min-w-0 flex-1 truncate text-muted-foreground" title={describeRule(entry.rule, (id) => payeeNames.get(id))}>
+                      {describeRule(entry.rule, (id) => payeeNames.get(id))}
+                    </span>
+                    {missing.length > 0 && (
+                      <span className="shrink-0 text-amber-600 dark:text-amber-400">
+                        Payee deleted; that action is skipped
+                      </span>
+                    )}
+                    {changedCount !== undefined && (
+                      <span className="shrink-0 tabular-nums text-muted-foreground">
+                        {changedCount} row{changedCount === 1 ? "" : "s"}
+                      </span>
+                    )}
+                    <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" aria-label={`Move ${entry.name} up`}
+                      disabled={index === 0} onClick={() => move(entry.id, -1)}>
+                      <ArrowUp className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" aria-label={`Move ${entry.name} down`}
+                      disabled={index === savedList.length - 1} onClick={() => move(entry.id, 1)}>
+                      <ArrowDown className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" aria-label={`Edit ${entry.name}`}
+                      onClick={() => editSaved(entry)}>
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    {confirmDeleteId === entry.id ? (
+                      <Button variant="destructive" size="sm" className="h-6 shrink-0 text-xs"
+                        onClick={() => void removeSaved(entry)}>
+                        Delete
+                      </Button>
+                    ) : (
+                      <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0 text-muted-foreground hover:text-destructive"
+                        aria-label={`Delete ${entry.name}`} onClick={() => setConfirmDeleteId(entry.id)}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          {savedList.length > 1 && (
+            <p className="pt-1 text-[11px] text-muted-foreground">
+              Ticked transforms run top to bottom, each on what the one before it left.
+            </p>
+          )}
+        </section>
+      )}
+
+      {(!saved || mode === "new") && (<>
       <section aria-labelledby="transform-if-heading" className="flex flex-col gap-2 px-3 py-2">
         <div className="flex items-center justify-between gap-2">
           <h3 id="transform-if-heading" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">If</h3>
@@ -538,7 +879,7 @@ export function TransformDialog({
                       previous.map((entry, i) => (i === index ? { ...entry, value } : entry))
                     )
                   }
-                  options={pickerFor(condition, { payees, categories, tags: tagOptions })!}
+                  options={withValue(pickerFor(condition, { payees, categories, tags: tagOptions })!, condition.value)}
                 />
               </div>
             ) : condition.field === "date" ? (
@@ -843,7 +1184,82 @@ export function TransformDialog({
           </div>
         ))}
 
+        {missingPayees({ conditions, actions }, knownPayeeIds).length > 0 && (
+          <p className="text-[11px] text-amber-600 dark:text-amber-400">
+            A payee this rule sets no longer exists. Choose another; until then that action is skipped.
+          </p>
+        )}
+        {saved && (
+          <p className="text-[11px] text-muted-foreground">
+            Type <code className="rounded bg-muted px-1">{"{month}"}</code> in a tag or text, for example{" "}
+            <code className="rounded bg-muted px-1">{"#{month}"}</code>, and it becomes the month you choose each time the rule runs.
+          </p>
+        )}
       </section>
+
+      {saved && (
+        <div className="flex flex-wrap items-center gap-2 border-t border-border/50 px-3 py-2 text-xs">
+          <Input
+            size="sm"
+            className="w-56"
+            value={saveName}
+            placeholder="Name, e.g. API to month"
+            aria-label="Saved transform name"
+            onChange={(event) => setSaveName(event.target.value)}
+          />
+          {editingId ? (
+            <>
+              <Button size="sm" variant="outline" className="h-7 text-xs"
+                disabled={!canSave} onClick={() => void runSave(false)}>
+                Save changes
+              </Button>
+              <Button size="sm" variant="ghost" className="h-7 text-xs"
+                disabled={!canSave} onClick={() => void runSave(true)}>
+                Save as new
+              </Button>
+              <Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground" onClick={stopEditing}>
+                Stop editing
+              </Button>
+            </>
+          ) : (
+            <Button size="sm" variant="outline" className="h-7 text-xs"
+              disabled={!canSave} onClick={() => void runSave(true)}>
+              Save for later imports
+            </Button>
+          )}
+          {saveState.message && (
+            <span role="status" className={saveState.error ? "text-destructive" : "text-muted-foreground"}>
+              {saveState.message}
+            </span>
+          )}
+          {hasFixedDate({ conditions, actions }) && (
+            <span className="text-amber-600 dark:text-amber-400">
+              This rule checks a fixed date, so on a later statement it may match nothing.
+            </span>
+          )}
+        </div>
+      )}
+      </>)}
+
+      {needsMonth && (
+        <div className="flex flex-wrap items-center gap-2 border-t border-border/50 px-3 py-2 text-xs">
+          <label htmlFor="transform-month" className="font-medium">Month</label>
+          <Input
+            id="transform-month"
+            size="sm"
+            className="w-28 tabular-nums"
+            value={month}
+            placeholder="YYYY-MM"
+            aria-invalid={!monthReady}
+            onChange={(event) => setMonth(event.target.value)}
+          />
+          <span className="text-muted-foreground">
+            {monthReady
+              ? <>Replaces <code className="rounded bg-muted px-1">{"{month}"}</code>, so <code className="rounded bg-muted px-1">{"#{month}"}</code> becomes <code className="rounded bg-muted px-1">#{month.trim()}</code>. Defaults to the statement&apos;s closing month.</>
+              : "Enter the month as YYYY-MM."}
+          </span>
+        </div>
+      )}
 
       <label className="flex items-start gap-2 border-t border-border/50 bg-muted/20 px-3 py-2 text-xs">
         <Checkbox className="mt-0.5"
@@ -968,4 +1384,57 @@ export function TransformDialog({
 /** A fresh rule id, for when transformations are saved with the session. */
 export function newRuleId(): string {
   return generateId();
+}
+
+/**
+ * The dialog with this budget's saved transforms.
+ *
+ * Waits for the list on first open, so the dialog starts on the Saved tab when
+ * there is something saved; after that the list is cached.
+ */
+export function ConnectedTransformDialog({
+  statementEnd,
+  rowDates,
+  ...props
+}: Omit<TransformDialogProps, "saved"> & {
+  statementEnd?: string | null;
+  rowDates: (string | null | undefined)[];
+}) {
+  const query = useSavedTransforms();
+  const mutations = useSavedTransformMutations();
+  const month = useMemo(() => defaultMonth({ statementEnd, rowDates }), [statementEnd, rowDates]);
+
+  if (query.isPending && query.fetchStatus !== "idle") {
+    // A dialog shell rather than nothing: the user sees the click landed, and
+    // the workbench's shortcuts stay paused behind it.
+    return (
+      <Dialog open onOpenChange={(next) => { if (!next) props.onClose(); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 font-sans text-sm font-semibold">
+              <Wand2 className="h-4 w-4" aria-hidden="true" />
+              Change many rows at once
+            </DialogTitle>
+            <DialogDescription role="status" className="text-xs">Loading saved transforms…</DialogDescription>
+          </DialogHeader>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  return (
+    <TransformDialog
+      {...props}
+      saved={{
+        transforms: query.data ?? [],
+        loadError: query.isError ? (query.error instanceof Error ? query.error.message : "Unknown error") : null,
+        onRetryLoad: () => void query.refetch(),
+        defaultMonth: month,
+        onCreate: (name, rule) => mutations.create.mutateAsync({ name, rule }),
+        onUpdate: (id, changes) => mutations.update.mutateAsync({ id, ...changes }),
+        onDelete: (id) => mutations.remove.mutateAsync(id),
+        onReorder: (ids) => mutations.reorder.mutateAsync(ids),
+      }}
+    />
+  );
 }

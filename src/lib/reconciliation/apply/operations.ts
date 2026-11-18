@@ -50,7 +50,22 @@ export type CreateOperation = OperationBase & {
    * Opaque equality key — never parsed, following the Cross Budget Sync rule.
    */
   marker: string;
+  /**
+   * The narrower 32-bit marker sessions wrote before the wider one. Only ever
+   * *looked for*, never written: a retry of an older session's create may find
+   * it under this marker, and a fresh create checks for it only when this
+   * operation was attempted before, so its collision risk no longer applies to
+   * ordinary applies.
+   */
+  legacyMarker?: string;
 };
+
+/** Every marker a create may have been written under, newest first. */
+export function markersOf(operation: { marker: string; legacyMarker?: string }): string[] {
+  return operation.legacyMarker && operation.legacyMarker !== operation.marker
+    ? [operation.marker, operation.legacyMarker]
+    : [operation.marker];
+}
 
 export type UpdateOperation = OperationBase & {
   kind: "update";

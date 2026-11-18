@@ -18,6 +18,8 @@ import type {
   PdfStatementLayoutCatalog,
   PdfStatementLayoutRecord,
 } from "@/lib/app-db/pdfStatementLayoutRepository";
+import type { SavedTransformRecord } from "@/lib/app-db/reconciliationTransformRepository";
+import type { SavedRule } from "@/lib/reconciliation/transform/saved";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
@@ -97,6 +99,7 @@ export function deleteSession(id: string) {
 
 export function saveWork(id: string, payload: {
   statementRows?: unknown[]; items?: unknown[]; itemPatches?: unknown[];
+  addedItems?: unknown[]; removedItemIds?: string[];
   patch?: Parameters<typeof updateSession>[1];
 }) {
   return sessionCommand(id, { action: "save", ...payload });
@@ -105,6 +108,7 @@ export function saveWork(id: string, payload: {
 export function sessionCommand(id: string, payload: {
   action: "save" | "claim" | "finish" | "recover" | "complete";
   expected?: string; itemPatches?: unknown[]; statementRows?: unknown[]; items?: unknown[];
+  addedItems?: unknown[]; removedItemIds?: string[];
   patch?: Parameters<typeof updateSession>[1];
 }) {
   return request<{ session: ReconciliationSessionRecord }>(`/api/reconciliation/sessions/${encodeURIComponent(id)}`, {
@@ -218,7 +222,48 @@ export function deletePdfStatementLayout(layoutId: string) {
   });
 }
 
+const TRANSFORMS_URL = "/api/reconciliation/transforms";
+
+export function listSavedTransforms(budgetSyncId: string) {
+  return request<{ transforms: SavedTransformRecord[] }>(
+    `${TRANSFORMS_URL}?${new URLSearchParams({ budgetSyncId }).toString()}`
+  );
+}
+
+export function createSavedTransform(payload: { budgetSyncId: string; name: string; rule: SavedRule }) {
+  return request<{ transform: SavedTransformRecord }>(TRANSFORMS_URL, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateSavedTransform(payload: {
+  budgetSyncId: string;
+  id: string;
+  name?: string;
+  rule?: SavedRule;
+}) {
+  return request<{ transform: SavedTransformRecord }>(TRANSFORMS_URL, {
+    method: "PATCH",
+    body: JSON.stringify({ action: "update", ...payload }),
+  });
+}
+
+export function reorderSavedTransforms(payload: { budgetSyncId: string; ids: string[] }) {
+  return request<{ transforms: SavedTransformRecord[] }>(TRANSFORMS_URL, {
+    method: "PATCH",
+    body: JSON.stringify({ action: "reorder", ...payload }),
+  });
+}
+
+export function deleteSavedTransform(payload: { budgetSyncId: string; id: string }) {
+  return request<void>(`${TRANSFORMS_URL}?${new URLSearchParams(payload).toString()}`, {
+    method: "DELETE",
+  });
+}
+
 export type {
+  SavedTransformRecord,
   PdfStatementLayoutCatalog,
   PdfStatementLayoutRecord,
   ReconciliationItemRecord,

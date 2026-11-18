@@ -331,7 +331,11 @@ export function ItemActions({
 
       </div>}
       <div className={cn("flex flex-wrap gap-1.5", hasPrimaryActions && "border-t border-border/50 pt-2")}>
-        {hasTransaction && (
+        {/* Only a transaction the statement does not list can go. Deleting one
+            side of a pair removes a transaction the bank says happened and leaves
+            its statement row accounted for by nothing; a wrong pairing is undone
+            with "Not the same transaction" first. */}
+        {hasTransaction && !hasStatementRow && (
           <GuardedButton
             size="sm"
             variant={item.disposition === "delete" ? "destructive" : "outline"}

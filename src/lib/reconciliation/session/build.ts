@@ -68,6 +68,11 @@ export const REASON = {
   sameMerchantDate: "same-merchant-date",
   /** Several rows left on both sides; the pairing is the user's to make. */
   merchantCluster: "merchant-cluster",
+  /**
+   * A transaction that appeared in Actual after the session was matched, and
+   * which matching now relates to a statement row the user had not settled.
+   */
+  newInActual: "new-in-actual",
 } as const;
 
 const REVIEW_REASON_BY_WHY: Record<string, string> = {
@@ -724,6 +729,7 @@ export const REVIEW_REASONS = new Set<string>([
   REASON.sameMerchantDate,
   REASON.merchantCluster,
   REASON.likelyDuplicate,
+  REASON.newInActual,
 ]);
 
 export function summarizeCoverage(

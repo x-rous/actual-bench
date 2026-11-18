@@ -154,8 +154,10 @@ export function BulkDecisionBar({
   }
   const contested = (item: ReconciliationItem) => ownedElsewhere(item) ||
     item.actualTransactionIds.some((id) => (selectedOwners.get(id) ?? 0) > 1);
+  // Actual-only rows, as in `ItemActions`: deleting one side of a pair removes a
+  // transaction the statement lists.
   const deletable = selected.filter(
-    (item) => item.actualTransactionIds.length > 0 &&
+    (item) => isActualOnly(item) &&
       !contested(item) &&
       !groupTransactionIds?.has(item.actualTransactionIds[0]) && canStageDelete(item).allowed
   );
@@ -230,7 +232,7 @@ export function BulkDecisionBar({
       eligible: deletable,
       excludedReason:
         deletable.length < selected.length
-          ? `${selected.length - deletable.length} are protected, need a match, or are not in Actual`
+          ? `${selected.length - deletable.length} are on the statement, protected, or not in Actual`
           : null,
       run: () => onBulkDisposition(deletable.map((item) => item.id), "delete"),
     },

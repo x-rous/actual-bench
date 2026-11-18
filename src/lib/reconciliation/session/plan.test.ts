@@ -1077,23 +1077,27 @@ describe("a decision on a row that is still a question", () => {
     ]);
   });
 
-  it("plans the row normally once one candidate is left", () => {
+  it("plans a delete normally once one candidate is left and the statement does not list it", () => {
     const result = plan(
-      [
-        item({
-          id: "i1",
-          disposition: "delete",
-          statementRowIds: ["s1"],
-          actualTransactionIds: ["t1"],
-        }),
-      ],
-      [row({ id: "s1" })],
+      [item({ id: "i1", disposition: "delete", statementRowIds: [], actualTransactionIds: ["t1"] })],
+      [],
       transactions
     );
 
     expect(result.blocked).toEqual([]);
     expect(result.operations).toHaveLength(1);
     expect(result.operations[0]).toMatchObject({ kind: "delete", transactionId: "t1" });
+  });
+
+  it("never deletes a transaction the statement lists", () => {
+    const result = plan(
+      [item({ id: "i1", disposition: "delete", statementRowIds: ["s1"], actualTransactionIds: ["t1"] })],
+      [row({ id: "s1" })],
+      transactions
+    );
+
+    expect(result.operations).toEqual([]);
+    expect(result.blocked).toEqual([{ itemId: "i1", reason: expect.stringContaining("on the statement") }]);
   });
 
   it("leaves keep and ignore alone, because they name no transaction", () => {

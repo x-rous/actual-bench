@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { ReconciliationSaveQueue } from "../lib/saveQueue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useConnectionStore } from "@/store/connection";
 import * as api from "../lib/reconciliationApi";
+import { loadBalanceOn } from "../lib/loadCandidates";
+import type { ConnectionInstance } from "@/store/connection";
 
 /**
  * Reconciliation sessions are scoped to a budget, so every key carries the
@@ -51,6 +53,46 @@ export function useReconciliationProfiles(accountId?: string) {
   });
 }
 
+const savedTransformsKey = (budgetSyncId: string) =>
+  ["reconciliation", "saved-transforms", budgetSyncId] as const;
+
+/** The budget's saved transforms, in the order they run. */
+export function useSavedTransforms() {
+  const budgetSyncId = useActiveBudgetSyncId();
+  return useQuery({
+    queryKey: savedTransformsKey(budgetSyncId ?? ""),
+    queryFn: async () => (await api.listSavedTransforms(budgetSyncId!)).transforms,
+    enabled: Boolean(budgetSyncId),
+  });
+}
+
+/** Create, update, reorder and delete saved transforms for the active budget. */
+export function useSavedTransformMutations() {
+  const budgetSyncId = useActiveBudgetSyncId();
+  const queryClient = useQueryClient();
+  const refresh = () => queryClient.invalidateQueries({ queryKey: savedTransformsKey(budgetSyncId ?? "") });
+  return {
+    create: useMutation({
+      mutationFn: (payload: Omit<Parameters<typeof api.createSavedTransform>[0], "budgetSyncId">) =>
+        api.createSavedTransform({ budgetSyncId: budgetSyncId!, ...payload }),
+      onSuccess: refresh,
+    }),
+    update: useMutation({
+      mutationFn: (payload: Omit<Parameters<typeof api.updateSavedTransform>[0], "budgetSyncId">) =>
+        api.updateSavedTransform({ budgetSyncId: budgetSyncId!, ...payload }),
+      onSuccess: refresh,
+    }),
+    reorder: useMutation({
+      mutationFn: (ids: string[]) => api.reorderSavedTransforms({ budgetSyncId: budgetSyncId!, ids }),
+      onSuccess: refresh,
+    }),
+    remove: useMutation({
+      mutationFn: (id: string) => api.deleteSavedTransform({ budgetSyncId: budgetSyncId!, id }),
+      onSuccess: refresh,
+    }),
+  };
+}
+
 export function usePdfStatementLayouts(accountId?: string) {
   const budgetSyncId = useActiveBudgetSyncId();
   return useQuery({
@@ -60,15 +102,55 @@ export function usePdfStatementLayouts(accountId?: string) {
   });
 }
 
+/**
+ * An account's balance at the end of a date, for the statement's closing
+ * balance check. Read once per account and date; invalidated after an Apply
+ * (`["reconciliation", "balance-on", connectionId]`).
+ */
+export function useBalanceOnDate(input: {
+  connection: ConnectionInstance | null;
+  sessionBudgetSyncId: string | null;
+  accountId: string | null;
+  asOf: string | null;
+}) {
+  const { connection, sessionBudgetSyncId, accountId, asOf } = input;
+  return useQuery({
+    queryKey: ["reconciliation", "balance-on", connection?.id ?? "", connection?.budgetSyncId ?? "", accountId ?? "", asOf ?? ""],
+    queryFn: () => loadBalanceOn(connection!, accountId!, asOf!),
+    enabled: Boolean(connection && accountId && asOf && sessionBudgetSyncId === connection.budgetSyncId),
+    retry: false,
+  });
+}
+
 export function useReconciliationMutations() {
   const queryClient = useQueryClient();
   const [queue] = useState(() => new ReconciliationSaveQueue());
+  const hasFailedSaves = useSyncExternalStore(queue.subscribe, () => queue.hasFailures, () => false);
   const budgetSyncId = useActiveBudgetSyncId();
 
   const invalidateSessions = () =>
     queryClient.invalidateQueries({ queryKey: sessionsKey(budgetSyncId ?? "") });
   const invalidateSession = (id: string) =>
     queryClient.invalidateQueries({ queryKey: sessionKey(id) });
+
+  /*
+   * After an ordinary save: take the session record the server returned and
+   * mark the rest stale without refetching it.
+   *
+   * Every decision used to refetch the whole session — every statement row with
+   * its raw source and every item with its Actual snapshot — although the page
+   * already holds what was saved. On a large statement that was megabytes per
+   * click, queued behind the next save. A later open reads it fresh anyway
+   * (`loadSession` uses `staleTime: 0`).
+   */
+  const settleSave = (id: string, response: unknown) => {
+    const session = (response as { session?: Awaited<ReturnType<typeof api.getSession>>["session"] } | null)?.session;
+    if (session) {
+      queryClient.setQueryData<Awaited<ReturnType<typeof api.getSession>>>(sessionKey(id), (current) =>
+        current ? { ...current, session } : current);
+    }
+    return queryClient.invalidateQueries({ queryKey: sessionKey(id), refetchType: "none" });
+  };
 
   const createSession = useMutation({
     mutationFn: (payload: {
@@ -84,9 +166,9 @@ export function useReconciliationMutations() {
   const updateSession = useMutation({
     mutationFn: ({ id, payload }: { id: string; payload: Parameters<typeof api.updateSession>[1] }) =>
       queue.enqueue(() => api.updateSession(id, payload)),
-    onSuccess: (_result, variables) => {
+    onSuccess: (result, variables) => {
       invalidateSessions();
-      void invalidateSession(variables.id);
+      void settleSave(variables.id, result);
     },
   });
 
@@ -163,19 +245,27 @@ export function useReconciliationMutations() {
   const replaceItems = useMutation({
     mutationFn: ({ sessionId, items }: { sessionId: string; items: unknown[] }) =>
       queue.enqueue(() => api.saveWork(sessionId, { items })),
-    onSuccess: (_result, variables) => invalidateSession(variables.sessionId),
+    onSuccess: (result, variables) => settleSave(variables.sessionId, result),
   });
 
   const patchItems = useMutation({
     mutationFn: ({ sessionId, items }: { sessionId: string; items: unknown[] }) =>
       queue.enqueue(() => api.saveWork(sessionId, { itemPatches: items })),
-    onSuccess: (_result, variables) => invalidateSession(variables.sessionId),
+    onSuccess: (result, variables) => settleSave(variables.sessionId, result),
+  });
+
+  /** Only what changed: patched, added and removed items (see `diffItems`). */
+  const saveItemDiff = useMutation({
+    mutationFn: ({ sessionId, itemPatches, addedItems, removedItemIds }: {
+      sessionId: string; itemPatches: unknown[]; addedItems: unknown[]; removedItemIds: string[];
+    }) => queue.enqueue(() => api.saveWork(sessionId, { itemPatches, addedItems, removedItemIds })),
+    onSuccess: (result, variables) => settleSave(variables.sessionId, result),
   });
 
   const patchItem = useMutation({
     mutationFn: ({ id, payload }: { id: string; payload: unknown; sessionId: string }) =>
       queue.enqueue(() => api.patchItem(id, payload)),
-    onSuccess: (_result, variables) => invalidateSession(variables.sessionId),
+    onSuccess: (_result, variables) => settleSave(variables.sessionId, null),
   });
 
   return {
@@ -183,7 +273,7 @@ export function useReconciliationMutations() {
     /** Puts a session the server has just returned into the cache, so the screen follows it without waiting for a read. */
     cacheSession: (session: Awaited<ReturnType<typeof api.getSession>>["session"]) =>
       queryClient.setQueryData<Awaited<ReturnType<typeof api.getSession>>>(sessionKey(session.id), (current) => (current ? { ...current, session } : current)),
-    hasFailedSaves: queue.hasFailures,
+    hasFailedSaves,
     flushSaves: () => queue.flush(),
     retrySaves: async (id?: string | null) => {
       await queue.retry();
@@ -204,5 +294,6 @@ export function useReconciliationMutations() {
     patchItem,
     patchItems,
     replaceItems,
+    saveItemDiff,
   };
 }

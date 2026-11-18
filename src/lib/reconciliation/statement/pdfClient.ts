@@ -2,6 +2,7 @@
 
 import type { PdfParseOptions, PdfStatementDocument, PdfStatementParseResult, PdfTextItem } from "./pdf";
 import { parsePdfStatementDocument } from "./pdf";
+import type { PdfParserResponse } from "./pdfParser.worker";
 import type { PDFPageProxy } from "pdfjs-dist";
 
 /** Large enough for ordinary multi-page statements, bounded for browser memory. */
@@ -107,7 +108,9 @@ export async function extractPdfStatement(
       throw new PdfExtractionError(`The PDF has ${document.numPages} pages; the limit is ${PDF_MAX_PAGES}.`, "too-many-pages");
     }
     const pages = [];
-    const pagePreviews: (string | null)[] = [];
+    // Page proxies kept for their previews, which are drawn while the parser
+    // works rather than before it starts.
+    const proxies: (PDFPageProxy | null)[] = [];
     const failedPages: number[] = [];
     let textItemCount = 0;
     for (let index = 1; index <= document.numPages; index += 1) {
@@ -146,21 +149,40 @@ export async function extractPdfStatement(
           viewportTransform: [...viewport.transform],
           items,
         });
-        pagePreviews.push(await renderPdfPagePreview(page, startedAt));
-        page.cleanup();
+        proxies.push(page);
       } catch (error) {
         if (options.signal?.aborted) throw abortError();
         if (error instanceof PdfExtractionError) throw error;
         failedPages.push(index);
         pages.push({ pageNumber: index, width: 612, height: 792, items: [] });
-        pagePreviews.push(null);
+        proxies.push(null);
       }
       options.onProgress?.({ phase: "extracting", completedPages: index, totalPages: document.numPages });
     }
     throwIfAborted(options.signal);
     options.onProgress?.({ phase: "parsing", completedPages: document.numPages, totalPages: document.numPages });
     const extractedAt = Date.now();
-    const result = await parsePdfStatementOffMainThread({ version: 2, pages }, {}, options.signal, startedAt);
+    const parsing = Promise.resolve(parsePdfStatementOffMainThread({ version: 2, pages }, {}, options.signal, startedAt));
+    // Handled below, after the previews; marked now so an early failure is not
+    // reported as unhandled while they render.
+    parsing.catch(() => undefined);
+    // Previews render on this thread while the worker parses on its own.
+    const pagePreviews: (string | null)[] = [];
+    for (const proxy of proxies) {
+      if (options.signal?.aborted) break;
+      pagePreviews.push(proxy ? await renderPdfPagePreview(proxy, startedAt) : null);
+      proxy?.cleanup();
+    }
+    let result: PdfStatementParseResult;
+    try {
+      result = await parsing;
+      // A parse that finished while previews rendered still belongs to a read
+      // the user cancelled; returning it would replace the current draft.
+      throwIfAborted(options.signal);
+    } catch (error) {
+      for (const url of pagePreviews) if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
+      throw error;
+    }
     result.extraction = {
       pdfjsVersion: pdfjs.version,
       extractMs: extractedAt - startedAt,
@@ -286,6 +308,95 @@ export function releasePdfStatementPreviews(result: PdfStatementParseResult | nu
   });
 }
 
+type PendingParse = {
+  document: PdfStatementDocument;
+  documentId: string;
+  options: PdfParseOptions;
+  resolve: (result: PdfStatementParseResult) => void;
+  reject: (error: Error) => void;
+  /** Set once the document has been resent after a worker restart. */
+  resent: boolean;
+};
+
+let parserWorker: Worker | null = null;
+let heldDocumentId: string | null = null;
+let nextRequestId = 1;
+let nextDocumentId = 1;
+const pendingParses = new Map<number, PendingParse>();
+const documentIds = new WeakMap<PdfStatementDocument, string>();
+
+function documentIdFor(document: PdfStatementDocument): string {
+  let id = documentIds.get(document);
+  if (!id) {
+    id = `pdf-${nextDocumentId++}`;
+    documentIds.set(document, id);
+  }
+  return id;
+}
+
+/** The document as the parser sees it: page previews are display-only. */
+function parserCopy(document: PdfStatementDocument): PdfStatementDocument {
+  return {
+    ...document,
+    pages: document.pages.map((page) => {
+      const parserPage = { ...page };
+      delete parserPage.previewDataUrl;
+      return parserPage;
+    }),
+  };
+}
+
+function stopParserWorker(reason: Error | null) {
+  parserWorker?.terminate();
+  parserWorker = null;
+  heldDocumentId = null;
+  if (reason) {
+    for (const pending of pendingParses.values()) pending.reject(reason);
+    pendingParses.clear();
+  }
+}
+
+function sendParse(requestId: number, pending: PendingParse, includeDocument: boolean) {
+  const worker = parserWorkerInstance();
+  worker.postMessage({
+    requestId,
+    documentId: pending.documentId,
+    options: pending.options,
+    ...(includeDocument ? { document: parserCopy(pending.document) } : {}),
+  });
+  if (includeDocument) heldDocumentId = pending.documentId;
+}
+
+function parserWorkerInstance(): Worker {
+  if (parserWorker) return parserWorker;
+  const worker = new Worker(new URL("./pdfParser.worker.ts", import.meta.url), { type: "module" });
+  worker.onmessage = (event: MessageEvent<PdfParserResponse>) => {
+    const { requestId, result, error, missingDocument } = event.data;
+    const pending = pendingParses.get(requestId);
+    if (!pending) return;
+    if (missingDocument && !pending.resent) {
+      pending.resent = true;
+      sendParse(requestId, pending, true);
+      return;
+    }
+    pendingParses.delete(requestId);
+    if (error) pending.reject(new Error(error));
+    else if (result) pending.resolve({ ...result, document: pending.document } as PdfStatementParseResult);
+    else pending.reject(new Error("The PDF parser returned no result."));
+  };
+  worker.onerror = (event) => {
+    stopParserWorker(new Error(event.message || "The PDF parser worker failed."));
+  };
+  parserWorker = worker;
+  return worker;
+}
+
+/**
+ * Parse a statement off the main thread.
+ *
+ * The result's `document` is the very object passed in, so its page previews
+ * stay attached without being copied to the worker and back.
+ */
 export function parsePdfStatementOffMainThread(
   document: PdfStatementDocument,
   options: PdfParseOptions = {},
@@ -298,48 +409,42 @@ export function parsePdfStatementOffMainThread(
     throwIfTimedOut(startedAt);
     return result;
   }
-  const previews = document.pages.map((page) => page.previewDataUrl ?? null);
-  const parserDocument: PdfStatementDocument = {
-    ...document,
-    pages: document.pages.map((page) => {
-      const parserPage = { ...page };
-      delete parserPage.previewDataUrl;
-      return parserPage;
-    }),
-  };
+  throwIfAborted(signal);
   return new Promise((resolve, reject) => {
-    const worker = new Worker(new URL("./pdfParser.worker.ts", import.meta.url), { type: "module" });
+    const requestId = nextRequestId++;
+    const documentId = documentIdFor(document);
     const remainingMs = Math.max(1, PDF_MAX_PROCESSING_MS - (Date.now() - startedAt));
+    const settle = () => {
+      window.clearTimeout(timeout);
+      signal?.removeEventListener("abort", abort);
+    };
     const timeout = window.setTimeout(() => {
-      worker.terminate();
+      // A parse that overran is still running in the worker; only a restart stops it.
+      pendingParses.delete(requestId);
+      stopParserWorker(null);
       reject(new Error(`PDF processing exceeded the ${PDF_MAX_PROCESSING_MS / 1000}-second time limit.`));
+      for (const [id, other] of pendingParses) {
+        pendingParses.delete(id);
+        other.reject(new Error("The PDF parser was restarted. Try again."));
+      }
     }, remainingMs);
     const abort = () => {
-      window.clearTimeout(timeout);
-      worker.terminate();
+      settle();
+      pendingParses.delete(requestId);
+      // Nothing else waiting on the worker: stop the abandoned parse outright.
+      if (pendingParses.size === 0) stopParserWorker(null);
       reject(abortError());
     };
     signal?.addEventListener("abort", abort, { once: true });
-    worker.onmessage = (event: MessageEvent<{ result?: PdfStatementParseResult; error?: string }>) => {
-      window.clearTimeout(timeout);
-      signal?.removeEventListener("abort", abort);
-      worker.terminate();
-      if (event.data.error) reject(new Error(event.data.error));
-      else if (event.data.result) {
-        event.data.result.document.pages.forEach((page, index) => {
-          const previewDataUrl = previews[index];
-          if (previewDataUrl) page.previewDataUrl = previewDataUrl;
-        });
-        resolve(event.data.result);
-      }
-      else reject(new Error("The PDF parser returned no result."));
+    const pending: PendingParse = {
+      document,
+      documentId,
+      options,
+      resent: false,
+      resolve: (result) => { settle(); resolve(result); },
+      reject: (error) => { settle(); reject(error); },
     };
-    worker.onerror = (event) => {
-      window.clearTimeout(timeout);
-      signal?.removeEventListener("abort", abort);
-      worker.terminate();
-      reject(new Error(event.message || "The PDF parser worker failed."));
-    };
-    worker.postMessage({ document: parserDocument, options });
+    pendingParses.set(requestId, pending);
+    sendParse(requestId, pending, heldDocumentId !== documentId);
   });
 }

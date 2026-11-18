@@ -632,3 +632,40 @@ describe("credit-card statement link on a session (PR-128)", () => {
     expect(updateReconciliationSession(db, session.id, { tag: "October" })?.cardStatementId).toBe("statement-1");
   });
 });
+
+describe("saving a decision as a diff (2026-11-16 review)", () => {
+  afterEach(() => resetAppDbForTests());
+
+  it("patches, adds and removes items without rewriting the rest", () => {
+    const db = tempDb();
+    const session = newSession(db);
+    replaceReconciliationItems(db, session.id, [
+      { id: "keep", disposition: "unresolved", statementRowIds: ["s1"] },
+      { id: "pair", disposition: "unresolved", statementRowIds: ["s2"], actualTransactionIds: ["t1", "t2"] },
+      { id: "gone", disposition: "unresolved", actualTransactionIds: ["t3"] },
+    ]);
+    const untouched = listReconciliationItems(db, session.id).find((item) => item.id === "keep")!.updatedAt;
+
+    saveReconciliationWork(db, session.id, {
+      itemPatches: [{ id: "pair", patch: { disposition: "matched", actualTransactionIds: ["t1"] } }],
+      addedItems: [{ id: "released", disposition: "unresolved", actualTransactionIds: ["t2"] }],
+      removedItemIds: ["gone"],
+    });
+
+    const items = listReconciliationItems(db, session.id);
+    expect(items.map((item) => item.id).sort()).toEqual(["keep", "pair", "released"]);
+    expect(items.find((item) => item.id === "pair")).toMatchObject({ disposition: "matched", actualTransactionIds: ["t1"] });
+    expect(items.find((item) => item.id === "keep")!.updatedAt).toBe(untouched);
+  });
+
+  it("refuses to remove or patch an applied row", () => {
+    const db = tempDb();
+    const session = newSession(db);
+    replaceReconciliationItems(db, session.id, [{ id: "done", disposition: "create", statementRowIds: ["s1"] }]);
+    updateReconciliationSession(db, session.id, { status: "partial", applyResults: [{ operationId: "create:done", status: "applied" }] });
+
+    expect(() => saveReconciliationWork(db, session.id, { removedItemIds: ["done"] })).toThrow(AppDbValidationError);
+    expect(() => saveReconciliationWork(db, session.id, { itemPatches: [{ id: "done", patch: { disposition: "ignored" } }] }))
+      .toThrow(AppDbValidationError);
+  });
+});
