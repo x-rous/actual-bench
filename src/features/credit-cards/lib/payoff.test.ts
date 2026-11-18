@@ -19,5 +19,8 @@ it("pays the highest APR first with avalanche and the smallest balance first wit
 it("refuses a monthly amount below the minimums and one that never pays down", () => {
   expect(payoffPlan(debts, 10_000, "avalanche")).toMatchObject({ feasible: false, reason: "below-minimums" });
   const noMinimum = [{ ...debts[1], card: { minimumPercentBps: null, minimumFloorMinor: null } }];
-  expect(payoffPlan(noMinimum, 5_000, "avalanche")).toMatchObject({ feasible: false, reason: "too-long" });
+  expect(payoffPlan(noMinimum, 5_000, "avalanche")).toMatchObject({ feasible: false, reason: "never" });
+  // Repaid, but only after 601 months: past the horizon, not "never".
+  const slow = [{ id: "c", name: "Interest-free", balanceMinor: 60_001, aprBps: 0, card: { minimumPercentBps: null, minimumFloorMinor: null } }];
+  expect(payoffPlan(slow, 100, "avalanche")).toMatchObject({ feasible: false, reason: "too-long" });
 });

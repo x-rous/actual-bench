@@ -1,5 +1,5 @@
 "use client";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { CircleDashed, TriangleAlert, CircleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Statement, Workspace } from "../../lib/models";
@@ -54,6 +54,7 @@ const ICON_TONES = { warning: "size-4 text-amber-700", danger: "size-4 text-red-
 /** Overview (§9.6): what needs you, the next payment, Total owed, the balance chart and plans. */
 export function OverviewScreen({ entry, workspace, onStatement, onEnter, onReview, onActivityCurrent, onPlans, onPayment, onSettings }: Props) {
   const { card, view, snapshot, balance, owed, today, limitMinor } = entry;
+  const [showAll, setShowAll] = useState(false);
   const bank = view.bank;
   const payment = view.nextPayment;
   const row = view.rows.find((item) => item.statement.id === bank?.id);
@@ -103,7 +104,7 @@ export function OverviewScreen({ entry, workspace, onStatement, onEnter, onRevie
         <h2 className="rounded-t-lg border-b border-amber-500/30 bg-amber-50 px-4 py-2.5 text-sm font-semibold dark:bg-amber-950/30">
           Needs your attention ({attention.length})
         </h2>
-        <ul className="divide-y px-4">{attention.slice(0, 5).map((item) => {
+        <ul className="divide-y px-4">{(showAll ? attention : attention.slice(0, 5)).map((item) => {
           const Icon = ICONS[item.icon];
           return <li key={item.key} className="flex items-center gap-3 py-2 text-sm">
             <Icon className={ICON_TONES[item.icon]} aria-hidden />
@@ -111,6 +112,11 @@ export function OverviewScreen({ entry, workspace, onStatement, onEnter, onRevie
             <Button size="xs" variant="outline" onClick={item.run}>{item.action}</Button>
           </li>;
         })}</ul>
+        {attention.length > 5 && <div className="border-t px-4 py-1.5">
+          <Button size="xs" variant="ghost" aria-expanded={showAll} onClick={() => setShowAll(!showAll)}>
+            {showAll ? "Show fewer" : `Show ${attention.length - 5} more`}
+          </Button>
+        </div>}
       </section>}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">

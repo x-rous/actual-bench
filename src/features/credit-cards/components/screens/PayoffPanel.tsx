@@ -5,7 +5,7 @@ import { addMonths } from "@/lib/financial-models/calendar/dates";
 import { minorToMajorText, parseMajorToMinor } from "@/features/assets-debt/lib/money";
 import { Input } from "@/components/ui/input";
 import { formatCardMonth } from "../../lib/displayDates";
-import { payoffPlan, type PayoffDebt, type PayoffResult, type PayoffStrategy } from "../../lib/payoff";
+import { MAX_PAYOFF_MONTHS, payoffPlan, type PayoffDebt, type PayoffResult, type PayoffStrategy } from "../../lib/payoff";
 import { formatPercentBps } from "../../lib/percent";
 import { money, plural } from "../primitives/format";
 
@@ -19,14 +19,20 @@ const months = (count: number) => (count < 12 ? plural(count, "month")
 
 function outcome(result: PayoffResult) {
   if (result.feasible) return `${months(result.months)} · ${money(result.interestMinor)} interest`;
-  return result.reason === "below-minimums" ? `Below the minimums (${money(result.minimumsMinor)})` : "Never paid off at this amount";
+  if (result.reason === "below-minimums") return `Below the minimums (${money(result.minimumsMinor)})`;
+  return result.reason === "never" ? "Never paid off at this amount" : `Not paid off within ${MAX_PAYOFF_MONTHS / 12} years`;
 }
 
 /**
  * What-if across all cards: one monthly amount, minimums on every card, the rest to one card at a time.
  * Uses each card's balance today, purchase APR and minimum rule; plan instalments are not included.
  */
-export function PayoffPanel({ debts, today }: { debts: PayoffDebt[]; today: string }) {
+export function PayoffPanel({ debts, unknown = [], today }: {
+  debts: PayoffDebt[];
+  /** Active cards whose balance is not loaded: left out, and named so the estimate is not read as complete. */
+  unknown?: string[];
+  today: string;
+}) {
   const id = useId();
   const owed = debts.reduce((sum, debt) => sum + debt.balanceMinor, 0);
   // Start from roughly 5% of what is owed, rounded up to a whole hundred.
@@ -35,7 +41,8 @@ export function PayoffPanel({ debts, today }: { debts: PayoffDebt[]; today: stri
   const parsed = parseMajorToMinor(text, 2);
   const monthly = parsed.ok ? parsed.value : null;
   const missingApr = debts.filter((debt) => debt.aprBps === null);
-  if (!debts.length) return <p className="p-4 text-sm text-muted-foreground">No card balances to pay off.</p>;
+  const unknownNote = unknown.length ? `Balance not loaded for ${unknown.join(", ")}, so it is not included.` : "";
+  if (!debts.length) return <p className="p-4 text-sm text-muted-foreground">{unknownNote || "No card balances to pay off."}</p>;
   const results = monthly && monthly > 0
     ? Object.fromEntries(STRATEGIES.map(({ value }) => [value, payoffPlan(debts, monthly, value)])) as Record<PayoffStrategy, PayoffResult>
     : null;
@@ -80,6 +87,7 @@ export function PayoffPanel({ debts, today }: { debts: PayoffDebt[]; today: stri
     <p className="text-xs text-muted-foreground">
       An estimate: interest is the purchase APR monthly on today&apos;s balance, with no new spending; instalment plans are not included.
       {missingApr.length ? ` No APR set for ${missingApr.map((debt) => debt.name).join(", ")}, so it counts as 0%.` : ""}
+      {unknownNote && <span className="block font-medium text-foreground">{unknownNote}</span>}
     </p>
   </div>;
 }

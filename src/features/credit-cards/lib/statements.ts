@@ -33,7 +33,7 @@ function tagsOf(row: ActivityRow) {
   return tags;
 }
 
-const afterIndexes = new WeakMap<readonly ActivityRow[], { keys: string[]; suffixMinor: number[] }>();
+const afterIndexes = new WeakMap<readonly ActivityRow[], { keys: string[]; amounts: number[]; suffixMinor: number[]; exact: boolean }>();
 
 /**
  * Σ amounts of rows that fall after `closingDate`. A single non-transfer tag (YYYY-MM) moves a row
@@ -49,8 +49,13 @@ function activityAfter(rows: readonly ActivityRow[], closingDate: string) {
       return { key: tags.length === 1 ? tags[0] : row.date, amountMinor: row.amountMinor };
     }).sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
     const suffixMinor = new Array<number>(keyed.length + 1).fill(0);
-    for (let at = keyed.length - 1; at >= 0; at -= 1) suffixMinor[at] = suffixMinor[at + 1] + keyed[at].amountMinor;
-    index = { keys: keyed.map((entry) => entry.key), suffixMinor };
+    let exact = true;
+    for (let at = keyed.length - 1; at >= 0; at -= 1) {
+      suffixMinor[at] = suffixMinor[at + 1] + keyed[at].amountMinor;
+      if (!Number.isSafeInteger(suffixMinor[at])) exact = false;
+    }
+    // A running total past the safe range would round: those snapshots sum exactly per query instead.
+    index = { keys: keyed.map((entry) => entry.key), amounts: keyed.map((entry) => entry.amountMinor), suffixMinor, exact };
     afterIndexes.set(rows, index);
   }
   let low = 0;
@@ -60,7 +65,7 @@ function activityAfter(rows: readonly ActivityRow[], closingDate: string) {
     if (index.keys[middle] <= closingDate) low = middle + 1;
     else high = middle;
   }
-  return index.suffixMinor[low];
+  return index.exact ? index.suffixMinor[low] : sumMinor(index.amounts.slice(low));
 }
 
 /**

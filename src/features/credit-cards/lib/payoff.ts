@@ -20,7 +20,10 @@ export type PayoffDebt = {
 
 export type PayoffResult =
   | { feasible: false; reason: "below-minimums"; minimumsMinor: number }
+  /** Not repaid within MAX_PAYOFF_MONTHS. */
   | { feasible: false; reason: "too-long"; months: number }
+  /** Interest outgrows the payment: the balance never falls. */
+  | { feasible: false; reason: "never" }
   | {
     feasible: true;
     months: number;
@@ -89,7 +92,7 @@ export function payoffPlan(debts: PayoffDebt[], monthlyMinor: number, strategy: 
     }
     // Interest outgrows the payment: the balance never falls.
     if (month === 1 && left === 0 && owing.every((debt) => balances.get(debt.id)! >= debt.balanceMinor)) {
-      return { feasible: false, reason: "too-long", months: MAX_PAYOFF_MONTHS };
+      return { feasible: false, reason: "never" };
     }
   }
   return { feasible: true, months: month, interestMinor: [...interest.values()].reduce((sum, value) => sum + value, 0), order };

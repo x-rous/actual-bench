@@ -159,6 +159,7 @@ export function CardEditor({
   const [limits, setLimits] = useState<LimitChangeDraft[]>(() => limitChanges.map(({ effectiveDate, limitMinor }) => ({ effectiveDate, limitMinor })));
   const [recordingLimit, setRecordingLimit] = useState(false);
   const [planIds, setPlanIds] = useState(() => planAccounts?.registered.map((account) => account.id) ?? []);
+  const [initialPlanIds] = useState(planIds);
   // "Do you keep plan principal in a separate account in Actual?" Yes when this card already moves
   // money to a plan account, or its statements are set to include plan balances.
   const [usesPlanAccount, setUsesPlanAccount] = useState(() => Boolean(card?.statementsIncludePlanBalances
@@ -217,8 +218,12 @@ export function CardEditor({
       };
       const actions = creditCardStore.getState();
       // Answering No never unregisters accounts: other cards may use them. Card and plan accounts are one change.
-      const nextPlanAccounts = planAccounts && usesPlanAccount
-        && planIds.join() !== planAccounts.registered.map((account) => account.id).join() ? planIds : undefined;
+      // Only the user's additions and removals are applied, to the latest list, so accounts registered elsewhere stay.
+      const added = planIds.filter((id) => !initialPlanIds.includes(id));
+      const removed = new Set(initialPlanIds.filter((id) => !planIds.includes(id)));
+      const nextPlanAccounts = planAccounts && usesPlanAccount && (added.length > 0 || removed.size > 0)
+        ? [...planAccounts.registered.map((account) => account.id).filter((id) => !removed.has(id) && !added.includes(id)), ...added]
+        : undefined;
       if (initialCard) await actions.updateCard(budgetSyncId, initialCard.id, initialCard.revision, input, limits, nextPlanAccounts);
       const savedId = initialCard?.id ?? (await actions.registerCard(input, nextPlanAccounts)).id;
       onSaved(savedId);

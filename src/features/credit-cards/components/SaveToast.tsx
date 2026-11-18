@@ -7,7 +7,7 @@ type Props = {
   notice: string | undefined;
   /** "error" when the notice reports a failure; failures always show. */
   tone?: "success" | "error";
-  /** Changes with every commit (the committed workspace), so a repeated message shows again. */
+  /** Changes with every notice, so a repeated message shows again. */
   stamp: unknown;
   canUndo: boolean;
   onUndo: () => void;

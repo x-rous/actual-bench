@@ -78,6 +78,7 @@ function ConnectedWorkspace({ connection }: { connection: ConnectionInstance }) 
   const workspace = useStore(creditCardStore, (state) => state.workspaces[budget] ?? EMPTY_WORKSPACE);
   const notice = useStore(creditCardStore, (state) => state.notices[budget]);
   const noticeTone = useStore(creditCardStore, (state) => state.noticeTones[budget]);
+  const noticeId = useStore(creditCardStore, (state) => state.noticeIds[budget]);
   const unsupported = useStore(creditCardStore, (state) => state.status[budget]?.unsupported ?? 0);
   const canUndo = useStore(creditCardStore, (state) => Boolean(state.undoHistory[budget]?.length));
   const directory = useCreditCardDirectory(connection);
@@ -195,9 +196,15 @@ function ConnectedWorkspace({ connection }: { connection: ConnectionInstance }) 
       destructive: kind === "delete",
       onConfirm: () => {
         const store = creditCardStore.getState();
-        const done = kind === "reset"
-          ? store.resetReview(budget, statement.id, statement.revision)
-          : store.deleteStatement(budget, statement.id, statement.revision);
+        let done: Promise<void>;
+        try {
+          done = kind === "reset"
+            ? store.resetReview(budget, statement.id, statement.revision)
+            : store.deleteStatement(budget, statement.id, statement.revision);
+        } catch (error: unknown) {
+          store.reportFailure(budget, error);
+          return;
+        }
         done.then(
           () => { if (kind === "delete") go({ statement: null }, "replace"); },
           (error: unknown) => store.reportFailure(budget, error),
@@ -439,7 +446,7 @@ function ConnectedWorkspace({ connection }: { connection: ConnectionInstance }) 
       <div className="flex min-h-0 flex-1">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">{body}</div>
       </div>
-      <SaveToast notice={notice} tone={noticeTone} stamp={workspace} canUndo={canUndo} onUndo={() => { void creditCardStore.getState().undo(budget); }} />
+      <SaveToast notice={notice} tone={noticeTone} stamp={noticeId} canUndo={canUndo} onUndo={() => { void creditCardStore.getState().undo(budget); }} />
       <ConfirmDialog open={confirm !== null} onOpenChange={(open) => { if (!open) setConfirm(null); }} state={confirm} />
       {editor?.kind === "add" && <CardEditor
         budgetSyncId={budget}

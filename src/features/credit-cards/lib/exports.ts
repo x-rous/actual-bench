@@ -14,13 +14,13 @@ export function exportFileName(cardName: string, what: string, today: string) {
 /** One row per statement (saved and estimated), newest first, with its payment outcome and bank match. */
 export function statementsCsv(rows: readonly StatementRow[]): string[][] {
   const header = ["Period start", "Closing date", "Due date", "Statement balance", "Minimum due", "Amount due",
-    "Paid", "Left to pay", "Minimum left", "Payment status", "Bank match", "Estimate"];
+    "Paid", "Pending", "Left to pay", "Minimum left", "Payment status", "Bank match", "Estimate"];
   const lines = [...rows]
     .sort((a, b) => b.statement.closingDate.localeCompare(a.statement.closingDate))
     .map(({ statement, payment, status, match }) => [
       statement.periodStart, statement.closingDate, statement.dueDate,
       amount(statement.balanceMinor), amount(statement.minimumDueMinor), amount(payment?.amountDueMinor),
-      payment?.known ? amount(payment.paidMinor) : "", amount(payment?.leftToPayMinor), amount(payment?.minimumLeftMinor),
+      payment?.known ? amount(payment.paidMinor) : "", payment?.known ? amount(payment.pendingMinor) : "", amount(payment?.leftToPayMinor), amount(payment?.minimumLeftMinor),
       status.label, statement.estimate ? "" : match.label, statement.estimate ? "Yes" : "No",
     ]);
   return [header, ...lines];

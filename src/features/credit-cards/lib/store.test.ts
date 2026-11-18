@@ -137,6 +137,36 @@ it("shows storage as unavailable and recovers on retry", async () => {
   expect(store.getState().status[BUDGET]).toEqual({ state: "ready" });
 });
 
+it("keeps the records on screen when a refresh fails, and ignores a read overtaken by a newer one", async () => {
+  const memory = memoryPersistence();
+  const pending: ((value: ReturnType<typeof memory.read>) => void)[] = [];
+  let mode: "memory" | "fail" | "hold" = "memory";
+  const store = createCreditCardStore({
+    read: (budget) => {
+      if (mode === "fail") throw new Error("App database locked");
+      if (mode === "hold") return new Promise((resolve) => pending.push(resolve));
+      return memory.read(budget);
+    },
+    commit: memory.commit,
+  });
+  await store.getState().load(BUDGET);
+  store.getState().registerCard(CARD_INPUT);
+  mode = "fail";
+  await store.getState().load(BUDGET, true);
+  expect(store.getState().status[BUDGET]).toEqual({ state: "ready" });
+  expect(store.getState().workspaces[BUDGET].cards).toHaveLength(1);
+  expect(store.getState().noticeTones[BUDGET]).toBe("error");
+
+  mode = "hold";
+  const older = store.getState().load(BUDGET, true);
+  const newer = store.getState().load(BUDGET, true);
+  pending[1](memory.read(BUDGET));
+  await newer;
+  pending[0]({ ...memory.read(BUDGET), cards: [] });
+  await older;
+  expect(store.getState().workspaces[BUDGET].cards).toHaveLength(1);
+});
+
 it("deletes one card with all its records and supports Undo", () => {
   const { store, card, workspace } = setup({}, [facts("2026-02-10", 0)]);
   store.getState().deleteCard(BUDGET, card().id, card().revision);

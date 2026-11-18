@@ -66,6 +66,8 @@ export type CreditCardState = {
   status: Readonly<Record<string, StorageStatus>>;
   notices: Readonly<Record<string, string>>;
   noticeTones: Readonly<Record<string, NoticeTone>>;
+  /** Changes with every notice, so the same message reported again shows again. */
+  noticeIds: Readonly<Record<string, number>>;
   /** Command-scoped Undo, kept for this session only (never persisted). */
   undoHistory: Readonly<Record<string, readonly UndoEntry[]>>;
   persistence: CreditCardPersistence;
@@ -174,7 +176,11 @@ export function createCreditCardStore(persistence: CreditCardPersistence = memor
     const notify = (budget: string, notice: string, tone: NoticeTone = "success") => set((state) => ({
       notices: { ...state.notices, [budget]: notice },
       noticeTones: { ...state.noticeTones, [budget]: tone },
+      noticeIds: { ...state.noticeIds, [budget]: (state.noticeIds[budget] ?? 0) + 1 },
     }));
+    /** Bumped when a read starts or a commit settles; a read that finishes after a newer one is ignored. */
+    const sequence: Record<string, number> = {};
+    const nextSequence = (budget: string) => (sequence[budget] = (sequence[budget] ?? 0) + 1);
     /** Keeps unchanged rows (and tables) as the same objects, so per-row caches survive a save. */
     const settle = (budget: string, workspace: Workspace, unsupported?: number) => set((state) => {
       const skipped = unsupported ?? state.status[budget]?.unsupported ?? 0;
@@ -191,6 +197,7 @@ export function createCreditCardStore(persistence: CreditCardPersistence = memor
       if (isEmptyChangeSet(changes)) return Promise.resolve();
       const undo = inverseChanges(before, after);
       return then(commit(budget, changes), (committed) => {
+        nextSequence(budget);
         settle(budget, committed);
         set((state) => ({
           undoHistory: { ...state.undoHistory, [budget]: [...(state.undoHistory[budget] ?? []).slice(-19), { changes: undo }] },
@@ -221,13 +228,15 @@ export function createCreditCardStore(persistence: CreditCardPersistence = memor
       status: {},
       notices: {},
       noticeTones: {},
+      noticeIds: {},
       undoHistory: {},
       persistence,
 
       load(budget, force = false) {
         const current = get().status[budget]?.state;
         if (!force && (current === "ready" || current === "loading")) return Promise.resolve();
-        set((state) => ({ status: { ...state.status, [budget]: { state: current === "ready" ? "ready" : "loading" } } }));
+        const ticket = nextSequence(budget);
+        if (current !== "ready") set((state) => ({ status: { ...state.status, [budget]: { state: "loading" } } }));
         let result: ReturnType<CreditCardPersistence["read"]>;
         try {
           result = get().persistence.read(budget);
@@ -235,9 +244,16 @@ export function createCreditCardStore(persistence: CreditCardPersistence = memor
           result = Promise.reject(error);
         }
         return then(result, (loaded) => {
+          if (sequence[budget] !== ticket) return;
           const { workspace, unsupported } = loadedWorkspace(loaded);
           settle(budget, workspace, unsupported);
         }).catch((error: unknown) => {
+          if (sequence[budget] !== ticket) return;
+          // A failed refresh keeps the records on screen (and any open draft); only a first read fails the page.
+          if (get().status[budget]?.state === "ready") {
+            get().reportFailure(budget, error);
+            return;
+          }
           set((state) => ({
             status: {
               ...state.status,
@@ -254,6 +270,7 @@ export function createCreditCardStore(persistence: CreditCardPersistence = memor
         const rest = history.slice(0, -1);
         set((state) => ({ undoHistory: { ...state.undoHistory, [budget]: rest } }));
         return then(commit(budget, entry.changes), (committed) => {
+          nextSequence(budget);
           settle(budget, committed);
           notify(budget, "Last change undone");
         }).catch((error: unknown) => {

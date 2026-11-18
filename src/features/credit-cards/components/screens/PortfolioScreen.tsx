@@ -243,6 +243,7 @@ export function PortfolioScreen({ entries, workspace, focusCardId, sort, onSort,
     },
   ];
   const filtered = Boolean(needle) || status !== "all";
+  const payoffUnknown = entries.filter((entry) => entry.card.status === "active" && !entry.balance).map((entry) => entry.name);
   const payoffDebts = entries.flatMap((entry): PayoffDebt[] => {
     const debt = entry.balance?.debtMinor ?? 0;
     return entry.card.status === "active" && debt > 0
@@ -301,7 +302,7 @@ export function PortfolioScreen({ entries, workspace, focusCardId, sort, onSort,
       />
       {panel === "payoff" && <SidePanel title="Payoff plan" description="All cards" headerHeight={HEADER_ROW_HEIGHT}
         onClose={() => setPanel(null)} className="w-[520px]">
-        <PayoffPanel debts={todays.length ? payoffDebts : []} today={[...todays].sort().at(-1) ?? ""} />
+        <PayoffPanel debts={todays.length ? payoffDebts : []} unknown={payoffUnknown} today={[...todays].sort().at(-1) ?? ""} />
       </SidePanel>}
       {trends && <SidePanel title="Trends" description="All cards" headerHeight={HEADER_ROW_HEIGHT} onClose={() => setTrends(false)} className="w-[520px]">
         <div className="space-y-4 p-4">

@@ -11,7 +11,9 @@ import { CHANGE_CHANNEL } from "../lib/store/persistence";
 export function useCreditCardSync(budget: string) {
   useEffect(() => {
     const reload = () => {
-      if (creditCardStore.getState().status[budget]?.state === "ready") void creditCardStore.getState().load(budget, true);
+      // A read still loading may have started before this change: a forced read supersedes it.
+      const state = creditCardStore.getState().status[budget]?.state;
+      if (state === "ready" || state === "loading") void creditCardStore.getState().load(budget, true);
     };
     const visible = () => { if (document.visibilityState === "visible") reload(); };
     document.addEventListener("visibilitychange", visible);

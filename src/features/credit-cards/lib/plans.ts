@@ -257,9 +257,10 @@ export function planProgress(plan: RepaymentPlan, card: Card, workspace: Workspa
       .filter((row) => row.amountMinor > 0 && peerOf(row, snapshot)?.accountId === card.accountId)
       .map((row) => row.id);
   } else {
+    // Rows linked to one instalment number (a split billing) count as that one instalment.
     billed = workspace.planEntries
       .filter((entry) => entry.planId === plan.id && entry.role === "instalment")
-      .map((entry) => entry.transactionId);
+      .map((entry) => (entry.instalmentNumber != null ? `number:${entry.instalmentNumber}` : `row:${entry.transactionId}`));
   }
   const billedCount = Math.min(tracked.length || Infinity, new Set(billed).size);
   return {
