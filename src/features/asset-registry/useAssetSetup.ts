@@ -37,6 +37,8 @@ export function useAssetSetup({ connection, asset, accounts, registry, onDiscard
   const [accountOpen, setAccountOpen] = useState(false);
   const [createUncertain, setCreateUncertain] = useState(false);
   const [pendingId, setPendingId] = useState<string | null>(null);
+  /** The hashtagged-entries warning the user has already seen, so a second Save goes ahead. */
+  const [taggedSeen, setTaggedSeen] = useState("");
   const classes = useAccountClasses();
   const reporting = useAccountReporting();
   const accountsQuery = useAccounts();
@@ -142,6 +144,19 @@ export function useAssetSetup({ connection, asset, accounts, registry, onDiscard
         const book = await readBook(getTransport(connection), actualAccountId, "9999-12-31");
         if (book.balanceMinor === null || book.issues.length) throw new Error(`The account of ${members[0].name} could not be read completely, so its entries cannot be kept with it. Refresh and try again.`);
         adopt = { assetId: members[0].id, transactionIds: book.rows.filter((r) => assetHashtags(r.notes ?? "").length === 0).map((r) => r.id) };
+        // Entries that already carry an asset hashtag are attributed by it once the account is shared, so they leave the
+        // existing asset: to this asset when it is this hashtag, otherwise to Unassigned. Say so once before saving.
+        const tagged = book.rows.map((r) => assetHashtags(r.notes ?? "")).filter((tags) => tags.length > 0);
+        const moving = tagged.filter((tags) => tags.length === 1 && tags[0] === hashtag).length;
+        const unassigned = tagged.length - moving;
+        const notice = [
+          moving ? `${moving} ${moving === 1 ? "entry" : "entries"} in Notes already ${moving === 1 ? "carries" : "carry"} ${hashtag}, so ${moving === 1 ? "it moves" : "they move"} from ${members[0].name} to this asset.` : "",
+          unassigned ? `${unassigned} ${unassigned === 1 ? "entry carries" : "entries carry"} another asset hashtag, so ${unassigned === 1 ? "it becomes" : "they become"} Unassigned.` : "",
+        ].filter(Boolean).join(" ");
+        if (notice && taggedSeen !== `${hashtag}|${moving}|${unassigned}`) {
+          setTaggedSeen(`${hashtag}|${moving}|${unassigned}`);
+          throw new Error(`${notice} Save again to continue, or change those Notes in Actual first.`);
+        }
       }
       const saved = await registryRequest(connection.budgetSyncId, "POST", { asset: { ...draft, actualAccountId, assetTag: accountMode === "shared" ? hashtag : null }, accountDirectory: directory, ...(adopt ? { adopt } : {}) });
       return { registry: saved, assetId: draft.id };

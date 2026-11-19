@@ -288,7 +288,8 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
       books: accountIds.map((accountId, index) => { const read = reads[index]; return { accountId, complete: !!read && read.issues.length === 0 && read.balanceMinor !== null, ids: read ? [...new Set([...read.source.map((r) => r.id), ...normalizeActivity(read.source).rows.map((r) => r.id)])] : [] }; }),
       directory: external.accounts.map((a) => a.id),
       external: { accountIds: external.readAccountIds ?? [], rows: external.rows, accountIssues: external.accountIssues ?? {}, reconciled: external.reconciledAccountIds ?? [] },
-      readAt: [external.fetchedAt, ...reads.map((r) => r?.fetchedAt ?? external.fetchedAt)].sort()[0],
+      // When the oldest read began: a link saved after that may be missing from the rows it listed, so it is kept.
+      readAt: [external, ...reads].map((r) => r ? r.startedAt ?? r.fetchedAt : external.startedAt ?? external.fetchedAt).sort()[0],
     });
     if (pruneSize(planPrune(query.data ?? { assets: [], metadata: [] }, evidence)) === 0) return;
     pruning.current = true;

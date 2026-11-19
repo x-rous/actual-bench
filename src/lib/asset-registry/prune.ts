@@ -29,10 +29,11 @@ export function planPrune(registry: Registry, evidence: Pick<PruneEvidence, "dir
   const book = registry.metadata; const links = registry.cashflows ?? [];
   const removeBook = new Set(book.filter(gone).map((m) => m.actualTransactionId));
   const removeCashflow = new Set(links.filter(gone).map((m) => m.actualTransactionId));
-  // A selling cost belongs to its sale; without the sale it is not a cost of anything.
+  // A selling cost belongs to its sale; without the sale it is not a cost of anything. This holds for a cost saved after the
+  // reads began too: keeping it would leave it anchored to a sale that is removed here.
   for (const link of links) {
     const anchor = link.context?.data.kind === "selling-cost" ? link.context.data.disposalTransactionId : null;
-    if (anchor && !keep.has(link.actualTransactionId) && !book.some((m) => m.actualTransactionId === anchor && !removeBook.has(anchor)) && !links.some((m) => m.actualTransactionId === anchor && !removeCashflow.has(anchor))) removeCashflow.add(link.actualTransactionId);
+    if (anchor && !book.some((m) => m.actualTransactionId === anchor && !removeBook.has(anchor)) && !links.some((m) => m.actualTransactionId === anchor && !removeCashflow.has(anchor))) removeCashflow.add(link.actualTransactionId);
   }
   return { removeBook: [...removeBook], removeCashflow: [...removeCashflow] };
 }

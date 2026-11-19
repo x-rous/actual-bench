@@ -115,6 +115,7 @@ export function BookPanel({ asset, registry, snapshot, fresh, onSaved, view, onV
     try {
       const context = await fresh(snapshot.date);
       const current = attributeBook(context.snapshot, context.registry.assets, context.registry.metadata);
+      const canEditNotes = context.transport.getSyncCapabilities().capabilities.updateTransaction;
       const changes: MetadataChange[] = ids.map((id) => {
         const old = book.rows.find((r) => r.id === id);
         const row = current.rows.find((r) => r.id === id);
@@ -124,8 +125,8 @@ export function BookPanel({ asset, registry, snapshot, fresh, onSaved, view, onV
         if (bound && (nextType || null) !== bound) throw new Error("A selected row belongs to a capital or disposal treatment; its type cannot be changed here.");
         if (nextType && nextType !== bound && !bookTypeChoices(row.amountMinor).includes(nextType as BookType)) throw new Error("Choose a type allowed for every selected amount.");
         // A type hashtag someone typed into Notes in Actual is read as the type whenever Bench has none saved, and Bench never edits
-        // a transaction it did not create, so clearing the type here would not stick.
-        if (!nextType && typeFromNotes(row.notes) && !taggable(row)) throw new Error(`The type of ${row.label} on ${row.date} comes from a hashtag in its Notes in Actual. Remove the hashtag there to clear it.`);
+        // a transaction it did not create (nor any transaction when the connection cannot edit one), so clearing the type here would not stick.
+        if (!nextType && typeFromNotes(row.notes) && !(canEditNotes && taggable(row))) throw new Error(`The type of ${row.label} on ${row.date} comes from a hashtag in its Notes in Actual. Remove the hashtag there to clear it.`);
         return { actualTransactionId: id, actualAccountId: row.accountId, assetId: meta?.assetId ?? null, classification: (nextType || null) as MetadataChange["classification"], revision: meta?.revision ?? 0 };
       });
       // Tag the Notes in Actual first: if the metadata save then fails, the tag still carries the type.

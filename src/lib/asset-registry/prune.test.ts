@@ -22,4 +22,7 @@ it("drops a selling cost whose sale is gone, and anything in an account that no 
 it("keeps metadata saved after the reads began, even when the reads did not see its transaction", () => {
   const read = { directory: ["vehicles", "bank"], accounts: [{ accountId: "vehicles", ids: [] }, { accountId: "bank", ids: [] }] };
   expect(planPrune(registry, read, new Set(["typed", "rent"]))).toEqual({ removeBook: [], removeCashflow: ["sale", "fee"] });
+  // A newer selling cost still goes with its sale when the sale itself is removed; with the sale kept, it stays.
+  expect(planPrune(registry, read, new Set(["fee"])).removeCashflow.sort()).toEqual(["fee", "rent", "sale"]);
+  expect(planPrune(registry, read, new Set(["fee", "sale"])).removeCashflow).toEqual(["rent"]);
 });

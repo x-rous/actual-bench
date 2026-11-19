@@ -39,6 +39,7 @@ export function sourceEvidence(rows: ActivityRow[], changes?: readonly Pick<Cash
 }
 /** `accountIssues` scopes each read problem to its source account, so reporting is limited to assets linked to it. */
 export type ExternalSnapshot = { rows: ActivityRow[]; issues: string[]; accountIssues?: Record<string, string[]>; accounts: Account[]; fetchedAt: string;
+  /** ISO time the read started, before any account was listed (cleanup cutoffs use it). */ startedAt?: string;
   /** The accounts whose rows were read; absent when every external account was read. */
   readAccountIds?: string[];
   /** Accounts whose rows add up to Actual's own balance, so the read is known to be complete (used before cleaning up links). */
@@ -49,12 +50,13 @@ export type ExternalSnapshot = { rows: ActivityRow[]; issues: string[]; accountI
  * touches. `accountIds` omitted keeps the old read-everything behaviour for callers that truly need it.
  */
 export async function readExternal(transport: ActualBenchTransport, bookAccountIds: string[], accountIds?: readonly string[]): Promise<ExternalSnapshot> {
+  const startedAt = new Date().toISOString();
   const accounts = await transport.getAccounts();
   const rows: ActivityRow[] = []; const issues: string[] = []; const accountIssues: Record<string, string[]> = {};
   const wanted = accountIds ? new Set(accountIds) : null;
   const targets = accounts.filter((a) => !bookAccountIds.includes(a.id) && (!wanted || wanted.has(a.id)));
   const readAccountIds = accountIds ? targets.map((a) => a.id) : undefined;
-  if (targets.length === 0) return { rows, issues, accountIssues, accounts, fetchedAt: new Date().toISOString(), readAccountIds };
+  if (targets.length === 0) return { rows, issues, accountIssues, accounts, fetchedAt: new Date().toISOString(), startedAt, readAccountIds };
   const caps = transport.getSyncCapabilities().capabilities;
   if (!caps.listTransactions || !caps.readSplitLines) throw new Error("Complete cashflow reads are unsupported by this connection");
   // One read session shares the payee and category lookups across every account instead of reloading them per account.
@@ -70,7 +72,7 @@ export async function readExternal(transport: ActualBenchTransport, bookAccountI
     if (local.length) { accountIssues[account.id] = local; issues.push(...local); }
   } };
   if (transport.withTransactionReadSession) await transport.withTransactionReadSession(readAll); else await readAll(transport);
-  return { rows, issues, accountIssues, accounts, fetchedAt: new Date().toISOString(), readAccountIds, reconciledAccountIds: await reconcile(transport, targets.map((a) => a.id).filter((id) => !accountIssues[id]), rows) };
+  return { rows, issues, accountIssues, accounts, fetchedAt: new Date().toISOString(), startedAt, readAccountIds, reconciledAccountIds: await reconcile(transport, targets.map((a) => a.id).filter((id) => !accountIssues[id]), rows) };
 }
 /**
  * The accounts whose rows sum to Actual's own balance (whole units, converted once). Direct balances leave out future-dated

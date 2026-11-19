@@ -95,7 +95,14 @@ export function saveAsset(db: SqliteDatabase, input: unknown): Registry {
       const assign = db.prepare(`INSERT INTO asset_transaction_metadata(budget_sync_id,actual_transaction_id,actual_account_id,role,asset_id,classification,revision,created_at,updated_at)
         VALUES(?,?,?,'book',?,NULL,1,?,?) ON CONFLICT(budget_sync_id,actual_transaction_id) DO UPDATE SET asset_id=excluded.asset_id,revision=asset_transaction_metadata.revision+1,updated_at=excluded.updated_at
         WHERE asset_transaction_metadata.asset_id IS NULL AND asset_transaction_metadata.role='book' AND asset_transaction_metadata.actual_account_id=excluded.actual_account_id`);
-      for (const id of new Set(adopt.transactionIds)) assign.run(budget, id, asset.actualAccountId, dedicatedMember.id, now, now);
+      const saved = db.prepare("SELECT actual_account_id AS accountId, asset_id AS assetId FROM asset_transaction_metadata WHERE budget_sync_id=? AND actual_transaction_id=?");
+      for (const id of new Set(adopt.transactionIds)) {
+        if (assign.run(budget, id, asset.actualAccountId, dedicatedMember.id, now, now).changes) continue;
+        // Skipped: the entry's saved details belong elsewhere, usually an account it was moved from. Sharing now would leave
+        // it Unassigned, so the save stops until a complete read of the ledger clears those details.
+        const row = saved.get<{ accountId: string; assetId: string | null }>(budget, id);
+        if (!row || row.accountId !== asset.actualAccountId || row.assetId !== dedicatedMember.id) throw new AppDbConflictError(`Some entries of ${dedicatedMember.name} still have saved details from another account. Open ${dedicatedMember.name}'s ledger to refresh it, then try again.`);
+      }
     }
     return readRegistry(db, budget);
   })();
