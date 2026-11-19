@@ -57,6 +57,11 @@ it("withholds total returns while a row is unclassified, and ignores a link whos
   const h = calculate();
   h.external.rows = [...h.external.rows, { ...h.external.rows.find((r) => r.id === "rent")!, accountId: "savings" }];
   expect(h.run()).toMatchObject({ operatingMinor: -200 });
+  // The book read reconciles to the asset's own account, so its copy stays counted even when another read also lists it.
+  const k = calculate();
+  const before = k.run();
+  k.external.rows = [...k.external.rows, { ...k.snapshot.rows.find((r) => r.id === "capital")!, accountId: "bank" }];
+  expect(k.run()).toMatchObject({ closingMinor: before.closingMinor, capitalAddedMinor: before.capitalAddedMinor });
 });
 it("does not flag a moved source; a hand-picked Disposal with no sale recorded is a gap, and a nonpositive base withholds returns", () => {
   const f = calculate();

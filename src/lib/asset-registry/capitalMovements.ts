@@ -17,11 +17,12 @@ export function capitalMovements(asset: Asset, registry: Registry, snapshot: Boo
   const links = (registry.cashflows ?? []).filter((m) => m.assetId === asset.id);
   const metadata = registry.metadata.filter((m) => m.actualAccountId === asset.actualAccountId);
   // Indexed once per call: links and anchors look rows up by id, and a scan per lookup grows with links × rows.
-  // A transaction moved between the book and external reads can appear under two accounts: Actual's current account is
-  // unknown then, so it counts in neither (it is a moved transaction until a fresh read agrees).
+  // A transaction moved between the book and external reads can appear under two accounts. The book read reconciles to
+  // Actual's balance for the asset's own account, so its rows stay counted (closing value, capital added, anchors saved for
+  // that account); a link saved for another account whose transaction the book also holds is not counted until a read agrees.
   const index = new Map<string, (typeof all.rows)[number]>(); const moved = new Set<string>();
   for (const r of [...all.rows, ...external.rows]) { const seen = index.get(r.id); if (!seen) index.set(r.id, r); else if (seen.accountId !== r.accountId) moved.add(r.id); }
-  const actual = (id: string, accountId: string) => { const row = index.get(id); return row && row.accountId === accountId && !moved.has(id) ? row : undefined; };
+  const actual = (id: string, accountId: string) => { const row = index.get(id); return row && row.accountId === accountId && (accountId === snapshot.accountId || !moved.has(id)) ? row : undefined; };
   const movements: CapitalMovement[] = [];
   for (const row of own) if ((row.classification === "acquisition" || row.classification === "added-capital") && row.transferId && row.amountMinor > 0) movements.push({ date: row.date, kind: "investment", amountMinor: -row.amountMinor, rowIds: [row.id] });
   for (const anchor of [...metadata.filter((m) => m.assetId === asset.id), ...links].filter((m) => m.context?.data.kind === "disposal")) {
