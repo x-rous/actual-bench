@@ -365,6 +365,19 @@ describe("account groups", () => {
     expect(only()).toMatchObject({ method: "POST", body: { account_group: { name: "Savings" } } });
   });
 
+  it("creates an account and keeps the id the server answers with as a plain string", async () => {
+    respond = () => ({ json: { data: "acct-new" } });
+    await expect(transport().createAccount({ name: "House", offBudget: true, closed: false })).resolves.toMatchObject({
+      id: "acct-new", name: "House", offBudget: true,
+    });
+    expect(only()).toMatchObject({ method: "POST", body: { account: { name: "House", offbudget: true } } });
+  });
+
+  it("refuses a create answer without an id instead of returning an account with no id", async () => {
+    respond = () => ({ json: { message: "Account created" } });
+    await expect(transport().createAccount({ name: "House", offBudget: true, closed: false })).rejects.toThrow(/did not return its id/);
+  });
+
   it("renames and deletes a group by id", async () => {
     await transport().updateAccountGroup!("g1", { name: "Renamed" });
     await transport().deleteAccountGroup!("g1");

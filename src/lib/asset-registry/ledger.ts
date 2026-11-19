@@ -18,10 +18,12 @@ export type BookSnapshot = {
   accountId: string; date: string; source: SyncSourceTransaction[]; rows: ActivityRow[];
   /** Signed integer minor units; null means incomplete/unavailable. */
   balanceMinor: number | null; issues: string[]; fetchedAt: string; transferKnown: boolean;
+  /** ISO time the read started, before any row was listed (cleanup cutoffs use it). */ startedAt?: string;
 };
 /** Full account read, never a per-asset window or a capped query. Balances independently check completeness. */
 export async function readBook(transport: ActualBenchTransport, accountId: string, date: string): Promise<BookSnapshot> {
   if (!isIsoDate(date)) throw new Error("Invalid book date");
+  const startedAt = new Date().toISOString();
   const caps = transport.getSyncCapabilities().capabilities;
   if (!caps.listTransactions || !caps.readSplitLines) throw new Error("This connection cannot read a complete asset book");
   const source = await transport.listTransactionsForSync({ accountId });
@@ -53,7 +55,7 @@ export async function readBook(transport: ActualBenchTransport, accountId: strin
     }
   }
   const transferKnown = transport.canVerifyTransferLinks ? await transport.canVerifyTransferLinks({ accountId, sinceDate: "0001-01-01" }) : transport.mode === "browser-api";
-  return { accountId, date, source, rows, balanceMinor, issues, transferKnown, fetchedAt: new Date().toISOString() };
+  return { accountId, date, source, rows, balanceMinor, issues, transferKnown, fetchedAt: new Date().toISOString(), startedAt };
 }
 /** Extract complete hashtag tokens so a Unicode suffix cannot match a shorter asset tag. */
 export function assetHashtags(notes: string): string[] {

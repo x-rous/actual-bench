@@ -2,6 +2,7 @@ import { z } from "zod";
 import { idSchema, dateSchema, CASHFLOW_TYPES, BOOK_TYPES } from "./models";
 import type { ActivityRow } from "@/features/credit-cards/lib/activity";
 import { normalizeActivity } from "@/features/credit-cards/lib/activity";
+import { bankToday } from "@/features/credit-cards/lib/cycles";
 import type { ActualBenchTransport } from "@/lib/actual/transport";
 import type { Account } from "@/types/entities";
 
@@ -19,39 +20,77 @@ export const cashflowChangeSchema = z.object({
 }).strict().refine((v) => v.classification === null || Object.hasOwn(v.role === "book" ? BOOK_TYPES : CASHFLOW_TYPES, v.classification), "Unknown transaction classification");
 export const cashflowSaveSchema = z.object({ budgetSyncId: idSchema, changes: z.array(cashflowChangeSchema).min(1).max(500), sources: z.array(sourceEvidenceSchema).max(100000) }).strict();
 export type CashflowChange = z.infer<typeof cashflowChangeSchema>;
-export function sourceEvidence(rows: ActivityRow[]) {
-  return rows.map(({ id, accountId, date, amountMinor, parentId, transferId, categoryId, notes }) => ({ id, accountId, date, amountMinor, parentId, transferId, categoryId, notes }));
+/**
+ * The live Actual rows the server needs to check a metadata save. With `changes`, only the rows those changes name (and a
+ * disposal's companion book row) are sent, so a save never carries a whole account history; without it, every row is sent.
+ */
+export function sourceEvidence(rows: ActivityRow[], changes?: readonly Pick<CashflowChange, "actualTransactionId" | "context">[]) {
+  let picked = rows;
+  if (changes) {
+    const ids = new Set<string>();
+    for (const change of changes) {
+      ids.add(change.actualTransactionId);
+      const data = change.context?.data;
+      if (data?.kind === "disposal" && data.bookAdjustmentTransactionId) ids.add(data.bookAdjustmentTransactionId);
+    }
+    picked = rows.filter((row) => ids.has(row.id));
+  }
+  return picked.map(({ id, accountId, date, amountMinor, parentId, transferId, categoryId, notes }) => ({ id, accountId, date, amountMinor, parentId, transferId, categoryId, notes }));
 }
 /** `accountIssues` scopes each read problem to its source account, so reporting is limited to assets linked to it. */
 export type ExternalSnapshot = { rows: ActivityRow[]; issues: string[]; accountIssues?: Record<string, string[]>; accounts: Account[]; fetchedAt: string;
+  /** ISO time the read started, before any account was listed (cleanup cutoffs use it). */ startedAt?: string;
   /** The accounts whose rows were read; absent when every external account was read. */
-  readAccountIds?: string[] };
+  readAccountIds?: string[];
+  /** Accounts whose rows add up to Actual's own balance, so the read is known to be complete (used before cleaning up links). */
+  reconciledAccountIds?: string[] };
 /**
  * Complete reads of the named external accounts only (never the whole budget). Each account read has a fixed cost,
  * so the registry reads just the accounts that hold links, and an action reads just the accounts of the rows it
  * touches. `accountIds` omitted keeps the old read-everything behaviour for callers that truly need it.
  */
 export async function readExternal(transport: ActualBenchTransport, bookAccountIds: string[], accountIds?: readonly string[]): Promise<ExternalSnapshot> {
+  const startedAt = new Date().toISOString();
   const accounts = await transport.getAccounts();
   const rows: ActivityRow[] = []; const issues: string[] = []; const accountIssues: Record<string, string[]> = {};
   const wanted = accountIds ? new Set(accountIds) : null;
   const targets = accounts.filter((a) => !bookAccountIds.includes(a.id) && (!wanted || wanted.has(a.id)));
   const readAccountIds = accountIds ? targets.map((a) => a.id) : undefined;
-  if (targets.length === 0) return { rows, issues, accountIssues, accounts, fetchedAt: new Date().toISOString(), readAccountIds };
+  if (targets.length === 0) return { rows, issues, accountIssues, accounts, fetchedAt: new Date().toISOString(), startedAt, readAccountIds };
   const caps = transport.getSyncCapabilities().capabilities;
   if (!caps.listTransactions || !caps.readSplitLines) throw new Error("Complete cashflow reads are unsupported by this connection");
-  for (const account of targets) {
+  // One read session shares the payee and category lookups across every account instead of reloading them per account.
+  const readAll = async (reader: Pick<ActualBenchTransport, "listTransactionsForSync">) => { for (const account of targets) {
     const local: string[] = [];
     try {
-      const normalized = normalizeActivity(await transport.listTransactionsForSync({ accountId: account.id }));
+      const normalized = normalizeActivity(await reader.listTransactionsForSync({ accountId: account.id }));
       if (normalized.rows.some((row) => row.accountId !== account.id)) throw new Error("Account read included another account");
       const linksKnown = transport.canVerifyTransferLinks ? await transport.canVerifyTransferLinks({ accountId: account.id, sinceDate: "0001-01-01" }) : transport.mode === "browser-api";
       if (!linksKnown) local.push(`Transfer identities are unavailable for ${account.name}`);
       rows.push(...normalized.rows.map((row) => ({ ...row, transferKnown: row.transferKnown && linksKnown }))); local.push(...normalized.issues.map((issue) => `${account.name}: ${issue}`));
     } catch { local.push(`Could not read ${account.name}. Refresh before linking or posting.`); }
     if (local.length) { accountIssues[account.id] = local; issues.push(...local); }
-  }
-  return { rows, issues, accountIssues, accounts, fetchedAt: new Date().toISOString(), readAccountIds };
+  } };
+  if (transport.withTransactionReadSession) await transport.withTransactionReadSession(readAll); else await readAll(transport);
+  return { rows, issues, accountIssues, accounts, fetchedAt: new Date().toISOString(), startedAt, readAccountIds, reconciledAccountIds: await reconcile(transport, targets.map((a) => a.id).filter((id) => !accountIssues[id]), rows) };
+}
+/**
+ * The accounts whose rows sum to Actual's own balance (whole units, converted once). Direct balances leave out future-dated
+ * rows, as in the asset ledger read. A failed balance read reconciles nothing; it never adds a read issue to the figures.
+ */
+async function reconcile(transport: ActualBenchTransport, accountIds: string[], rows: ActivityRow[]): Promise<string[]> {
+  if (!accountIds.length) return [];
+  let balances: Map<string, number>;
+  try { balances = await transport.getAccountBalances(); } catch { return []; }
+  const today = bankToday(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  const sums = new Map<string, number>();
+  for (const row of rows) if (transport.mode !== "browser-api" || row.date <= today) sums.set(row.accountId, (sums.get(row.accountId) ?? 0) + row.amountMinor);
+  return accountIds.filter((id) => {
+    const whole = balances.get(id);
+    // HTTP's grouped balance query omits an account with no rows.
+    if (whole === undefined) return !sums.has(id) && transport.mode === "http-api";
+    return Number.isFinite(whole) && Math.round(whole * 100) === (sums.get(id) ?? 0);
+  });
 }
 /** The external accounts the registry must read: those holding a linked cashflow. */
 export const linkedExternalAccountIds = (registry: { cashflows?: { actualAccountId: string }[] }, bookAccountIds: string[]): string[] =>

@@ -14,5 +14,13 @@ export async function recordStartingValue(args: { transport: ActualBenchTranspor
   const base = await context();
   const prepared = prepareAction(base, { kind: "create", date, amountMinor, notes: withTypeTag("", "opening-balance"), payeeId: null });
   const result = await executeAction(prepared, context);
-  return registryRequest(budgetSyncId, "PATCH", { changes: [{ actualTransactionId: result.transactionId!, actualAccountId: base.asset.actualAccountId, assetId: shared ? assetId : null, classification: "opening-balance", revision: 0 }] });
+  try {
+    return await registryRequest(budgetSyncId, "PATCH", { changes: [{ actualTransactionId: result.transactionId!, actualAccountId: base.asset.actualAccountId, assetId: shared ? assetId : null, classification: "opening-balance", revision: 0 }] });
+  } catch (e) { throw new StartingValueSavedError(e instanceof Error ? e.message : "the save failed"); }
 }
+/**
+ * The opening value is in Actual, but Bench's own record of its type was not saved. The row's Notes carry the
+ * #opening-balance hashtag (and the asset hashtag in a shared account), so it still reads as this asset's opening balance:
+ * it must not be entered again.
+ */
+export class StartingValueSavedError extends Error { override name = "StartingValueSavedError"; }

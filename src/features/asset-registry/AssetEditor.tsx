@@ -24,13 +24,20 @@ import { useAssetSetup } from "./useAssetSetup";
  */
 export function AssetEditor({ connection, asset, accounts, registry, recordedValueMinor, bookContext, onClose, onSaved, onDeleted }: {
   connection: ConnectionInstance; asset: Asset; accounts: Account[]; registry: Registry; recordedValueMinor?: number | null;
-  bookContext?: { balanceMinor: number | null; assignedMinor: number | null; unassignedMinor: number | null; memberCount: number; issues: string[] };
+  bookContext?: { balanceMinor: number | null; assignedMinor: number | null; unassignedMinor: number | null; memberCount: number; issues: string[];
+    /** The one asset left in the account after a delete, with its value now (minor units). It then holds every row of the account. */
+    survivor?: { name: string; valueMinor: number | null } };
   onClose: () => void; onSaved: (registry: Registry) => void; /** Called after the asset was deleted permanently. */ onDeleted?: () => void;
 }) {
   const setup = useAssetSetup({ connection, asset, accounts, registry, onDiscard: onClose });
   const { draft, setDraft, errors, setErrors, error, busy, classes, createUncertain, shared, discard } = setup;
   const account = accounts.find((a) => a.id === asset.actualAccountId);
   const money = (minor: number | null | undefined) => typeof minor === "number" ? formatAmount(minor, 2) : "Unavailable";
+  // With one asset left, the account is no longer shared: every row in it, this asset's and any Unassigned ones included, then counts toward that asset.
+  const survivor = bookContext?.survivor;
+  const survivorNote = survivor && bookContext && survivor.valueMinor !== bookContext.balanceMinor
+    ? ` ${survivor.name} will then be the only asset in this account, so its value becomes the whole account balance: ${money(survivor.valueMinor)} now, ${money(bookContext.balanceMinor)} after. This asset's entries and any Unassigned entries will count toward it. Move them out of the account in Actual first if they should not.`
+    : "";
   const [confirmDelete, setConfirmDelete] = useState(false); const [deleteError, setDeleteError] = useState("");
   /** Permanently deletes an archived asset's Bench records; Actual is not touched. */
   async function remove() {
@@ -44,7 +51,7 @@ export function AssetEditor({ connection, asset, accounts, registry, recordedVal
   }
   return <>
     {discard.discardDialog}
-    <ConfirmDialog open={confirmDelete} onOpenChange={setConfirmDelete} state={{ title: `Delete ${asset.name}?`, message: "This permanently removes the asset and what Bench saved for it. The Actual account and its transactions are not changed, and Bench can no longer show this asset.", destructiveLabel: "Delete asset", onConfirm: () => void remove() }} />
+    <ConfirmDialog open={confirmDelete} onOpenChange={setConfirmDelete} state={{ title: `Delete ${asset.name}?`, message: `This permanently removes the asset and what Bench saved for it. The Actual account and its transactions are not changed, and Bench can no longer show this asset.${survivorNote}`, destructiveLabel: "Delete asset", onConfirm: () => void remove() }} />
     <Sheet open onOpenChange={(open) => { if (!open) setup.close(); }}>
       <SheetContent className="gap-0 overflow-hidden data-[side=right]:w-full data-[side=right]:sm:w-[min(calc(40rem+40px),95vw)] data-[side=right]:sm:max-w-none" side="right">
         <SheetHeader className="shrink-0 border-b p-4 pr-12"><div className="flex items-center gap-3"><AssetMark type={asset.assetType} header /><div className="min-w-0"><SheetTitle className="text-base">Asset settings</SheetTitle><SheetDescription className="truncate">{asset.name}</SheetDescription></div></div></SheetHeader>

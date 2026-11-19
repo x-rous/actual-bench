@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Landmark, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DateInput } from "@/components/ui/date-input";
@@ -14,10 +14,11 @@ import { EmptyState, NA, SummaryStrip } from "@/features/asset-registry/AssetPre
 import { FinancingEditor } from "@/features/asset-registry/FinancingEditor";
 import { registryRequest } from "@/features/asset-registry/api";
 import { getTransport } from "@/lib/actual";
-import { actualUnitsToMinor } from "@/lib/assets-debt/actual/ledgerPort";
+import { attributedValueAt } from "@/features/asset-registry/derivedCache";
+import { readBook } from "@/lib/asset-registry/ledger";
 import type { DebtDetail } from "@/lib/assets-debt/services/debtConfigService";
 import { allocatedDebtMinor, loanShares, type AssetDebtLink } from "@/lib/asset-registry/financing";
-import { ASSET_TYPES, ownershipAt, type Asset } from "@/lib/asset-registry/models";
+import { ASSET_TYPES, type Asset } from "@/lib/asset-registry/models";
 import { selectActiveInstance, useConnectionStore } from "@/store/connection";
 import { formatAmount } from "../../lib/money";
 import { listDebts } from "../../lib/debtsApi";
@@ -39,7 +40,20 @@ export function LinkedAssetsTab({ detail, digits, today, owedMinor }: { detail: 
   const enabled = !!connection && connection.budgetSyncId === budget;
   const registry = useQuery({ queryKey: ["assetRegistry", connection?.id, budget], queryFn: () => registryRequest(budget), enabled });
   const loans = useQuery({ queryKey: ["assets-debt", "debts", budget], queryFn: () => listDebts(budget), enabled });
-  const balances = useQuery({ queryKey: ["assets-debt", "balances", connection?.id], queryFn: () => getTransport(connection!).getAccountBalances(), enabled, staleTime: 60_000 });
+  // The linked assets' own account reads, under the Assets page's keys, so both pages show one value for an asset. The
+  // page's own date keeps the key steady past midnight and agrees with the As of default.
+  const bookDate = today;
+  const linkedAccountIds = [...new Set((registry.data?.debtLinks ?? []).filter((l) => l.debtId === detail.debt.id)
+    .flatMap((l) => registry.data?.assets.find((a) => a.id === l.assetId)?.actualAccountId ?? []))].sort();
+  const bookQueries = useQueries({ queries: linkedAccountIds.map((accountId) => ({
+    queryKey: ["assetBook", connection?.id, budget, accountId, bookDate],
+    queryFn: () => readBook(getTransport(connection!), accountId, bookDate), enabled: enabled && registry.isSuccess,
+  })) });
+  const books = new Map(linkedAccountIds.map((id, index) => [id, bookQueries[index]?.data]));
+  /** Why an account's read gives no value: the failed read's error, or the first problem the read found. */
+  const bookProblem = new Map(linkedAccountIds.flatMap((id, index) => { const q = bookQueries[index];
+    const problem = q?.isError ? (q.error instanceof Error ? q.error.message : "The account could not be read.") : q?.data && (q.data.issues[0] ?? (q.data.balanceMinor === null ? "Actual account balance is unavailable" : null));
+    return problem ? [[id, problem] as const] : []; }));
   const [asOf, setAsOf] = useState(today);
   const [sort, setSort] = useState<SortState | null>({ key: "period", direction: "desc" });
   const [editing, setEditing] = useState<{ asset: Asset; preset?: AssetDebtLink; mode?: "set" | "end" } | null>(null);
@@ -52,13 +66,11 @@ export function LinkedAssetsTab({ detail, digits, today, owedMinor }: { detail: 
   const reg = registry.data;
   const links = (reg.debtLinks ?? []).filter((l) => l.debtId === detail.debt.id);
   const assetOf = (id: string) => reg.assets.find((a) => a.id === id) ?? null;
-  // An asset's owned value on the report date: its Actual account balance today, times the owner's share.
+  // The asset's recorded value on the report date, as the Assets page shows it: its own entries in its Actual account (in a
+  // shared account, only the rows attributed to it). Ownership never scales it: the account already holds the owner's share.
   const ownedValue = (asset: Asset | null): number | null => {
-    if (!asset || asOf !== today) return null;
-    const whole = balances.data?.get(asset.actualAccountId);
-    if (typeof whole !== "number") return null;
-    const bps = ownershipAt(asset, asOf) ?? 10000;
-    return Math.round((actualUnitsToMinor(whole) * bps) / 10000);
+    const snapshot = asset ? books.get(asset.actualAccountId) : undefined;
+    return asset && snapshot && asOf <= bookDate ? attributedValueAt(snapshot, reg, asset.id, asOf) : null;
   };
   const debt = asOf === today ? owedMinor : null;
   const applies = links.filter((l) => covers(l, asOf));
@@ -98,9 +110,11 @@ export function LinkedAssetsTab({ detail, digits, today, owedMinor }: { detail: 
             { label: "Debt today", value: money(debt), detail: asOf === today ? "Owed in Actual · the loan account" : "Only today's figures are shown", wrap: true },
             { label: "Allocated to assets", value: money(allocated), detail: `${applies.length} asset${applies.length === 1 ? "" : "s"}`, wrap: true },
             { label: "Unallocated", value: debt === null ? NA : money(allocatedDebtMinor(debt, unallocatedBps)), detail: `${(unallocatedBps / 100).toFixed(2)}% of the loan`, wrap: true },
-            { label: "Combined loan-to-value", value: ltv === null ? NA : `${ltv.toFixed(1)}%`, detail: "Allocated debt ÷ owned value", wrap: true },
-            { label: "Equity in linked assets", value: allocated !== null && valueSum !== null ? money(valueSum - allocated) : NA, detail: "Owned value − allocated debt", wrap: true },
+            { label: "Combined loan-to-value", value: ltv === null ? NA : `${ltv.toFixed(1)}%`, detail: "Allocated debt ÷ recorded asset value", wrap: true },
+            { label: "Equity in linked assets", value: allocated !== null && valueSum !== null ? money(valueSum - allocated) : NA, detail: "Recorded asset value − allocated debt", wrap: true },
           ]} />
+          {(() => { const missing = [...new Set(applies.map((l) => assetOf(l.assetId)).filter((a): a is Asset => !!a && bookProblem.has(a.actualAccountId)))];
+            return missing.length ? <div role="alert" className="border-b px-4 py-2 text-xs text-destructive">{missing.map((a) => <p key={a.id}>{a.name}: value unavailable. {bookProblem.get(a.actualAccountId)}</p>)}</div> : null; })()}
           <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-1.5">
             <h2 className="text-sm font-semibold">Linked assets</h2>
             <p className="text-xs text-muted-foreground">Allocation history from the Asset Registry · changes here change the same data</p>

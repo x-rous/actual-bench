@@ -1,4 +1,5 @@
 import { normalizeActivity } from "@/features/credit-cards/lib/activity";
+import type { SyncSourceTransaction } from "@/lib/actual/transport";
 import { executeAction, prepareAction, type ActionContext, type ActionResult, type PreparedAction } from "./actions";
 import { depreciationSchedule, forecastMonths, type ScheduleRow } from "./depreciation";
 import { sourceEvidence, type CashflowChange } from "./cashflows";
@@ -39,4 +40,8 @@ export function depreciationMetadata(prepared: DepreciationPrepared, result: Act
   changes.push({ role: "book", actualTransactionId: result.transactionId!, actualAccountId: asset.actualAccountId, assetId: asset.id, classification: "depreciation", depreciationPeriod: prepared.period, revision: 0 });
   return changes;
 }
-export const depreciationEvidence = (context: ActionContext) => sourceEvidence(normalizeActivity(context.snapshot.source).rows);
+/** Evidence for just these changes. `written` is the row the write's own confirming read returned, so no further full read is needed. */
+export function depreciationEvidence(context: ActionContext, changes: CashflowChange[], written?: SyncSourceTransaction) {
+  const source = written ? [...context.snapshot.source.filter((r) => r.id !== written.id), written] : context.snapshot.source;
+  return sourceEvidence(normalizeActivity(source).rows, changes);
+}

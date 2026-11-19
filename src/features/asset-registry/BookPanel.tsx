@@ -13,8 +13,8 @@ import { AmountChip, DateChip, FacetChip } from "@/components/transactions/filte
 import { resolveDateRange } from "@/components/transactions/transactionPickerQuery";
 import { BOOK_TYPES, type Asset, type BookType, type MetadataChange, type Registry } from "@/lib/asset-registry/models";
 import { attributeBook, type AttributedRow, type BookSnapshot } from "@/lib/asset-registry/ledger";
-import { boundTreatment, protectedReason, writeTypeTags, type ActionContext, type BookEdit } from "@/lib/asset-registry/actions";
-import { isBenchCreated } from "@/lib/asset-registry/tags";
+import { boundTreatment, protectedReason, UncertainAssetWrite, writeTypeTags, type ActionContext, type BookEdit } from "@/lib/asset-registry/actions";
+import { isBenchCreated, typeFromNotes } from "@/lib/asset-registry/tags";
 import { valueBridge } from "@/lib/asset-registry/valueBridge";
 import { cn } from "@/lib/utils";
 import { assetMoney, AttentionBadge, bookNotes, bookTypeLabel, NA, SummaryStrip } from "./AssetPresentation";
@@ -32,7 +32,9 @@ const VALUE_UPDATES = ["opening-balance", "revaluation", "impairment", "other-ad
 export type BookView = "asset" | "unclassified" | "unassigned" | "all";
 /** Every other filter cleared, and only the entries that have no type. */
 const unclassifiedOnly = () => ({ ...emptyRowFilters(), types: { ids: ["unclassified"], not: false } });
-export function BookPanel({ asset, registry, snapshot, fresh, onSaved, view, onViewChange, accountName, financialBlocked = false, onUncertain, focus, onClearFocus, onCapitalAction, recordDisabled = false, payeeOptions }: {
+export function BookPanel({ asset, registry, snapshot, fresh, onSaved, view, onViewChange, accountName, financialBlocked = false, onUncertain, focus, onClearFocus, onCapitalAction, recordDisabled = false, payeeOptions, initialAction, onInitialAction }: {
+  /** An entry editor to open as the panel opens (a row action chosen on the registry list); `onInitialAction` reports it was used. */
+  initialAction?: "set-value" | "create"; onInitialAction?: () => void;
   /** Opens a financial entry from the Add Entry menu: a payment into the asset, or a sale or write-off. */ onCapitalAction?: (kind: "dispose" | "payment") => void; recordDisabled?: boolean;
   /** Payees loaded by the workspace for the entry editor's payee picker. */ payeeOptions?: { id: string; name: string; transferAccountId?: string | null }[];
   financialBlocked?: boolean; onUncertain?: () => void;
@@ -58,7 +60,8 @@ export function BookPanel({ asset, registry, snapshot, fresh, onSaved, view, onV
   const [error, setError] = useState("");
   const [uncertainAt, setUncertainAt] = useState<string | null>(null);
   const unknownWrite = uncertainAt === snapshot.fetchedAt;
-  const [action, setAction] = useState<{ kind: BookEdit["kind"]; rowId?: string } | null>(null);
+  const [action, setAction] = useState<{ kind: BookEdit["kind"]; rowId?: string } | null>(() => initialAction ? { kind: initialAction } : null);
+  useEffect(() => { if (initialAction) onInitialAction?.(); }, []); // eslint-disable-line react-hooks/exhaustive-deps -- only the action the panel opened with
   const navigationGuard = useRef<((action: () => void) => void) | null>(null);
   const registerNavigationGuard = useCallback((guard: ((action: () => void) => void) | null) => { navigationGuard.current = guard; }, []);
   function openAction(next: NonNullable<typeof action>) {
@@ -112,6 +115,7 @@ export function BookPanel({ asset, registry, snapshot, fresh, onSaved, view, onV
     try {
       const context = await fresh(snapshot.date);
       const current = attributeBook(context.snapshot, context.registry.assets, context.registry.metadata);
+      const canEditNotes = context.transport.getSyncCapabilities().capabilities.updateTransaction;
       const changes: MetadataChange[] = ids.map((id) => {
         const old = book.rows.find((r) => r.id === id);
         const row = current.rows.find((r) => r.id === id);
@@ -120,13 +124,20 @@ export function BookPanel({ asset, registry, snapshot, fresh, onSaved, view, onV
         const bound = boundTreatment(context.registry, id);
         if (bound && (nextType || null) !== bound) throw new Error("A selected row belongs to a capital or disposal treatment; its type cannot be changed here.");
         if (nextType && nextType !== bound && !bookTypeChoices(row.amountMinor).includes(nextType as BookType)) throw new Error("Choose a type allowed for every selected amount.");
+        // A type hashtag someone typed into Notes in Actual is read as the type whenever Bench has none saved, and Bench never edits
+        // a transaction it did not create (nor any transaction when the connection cannot edit one), so clearing the type here would not stick.
+        if (!nextType && typeFromNotes(row.notes) && !(canEditNotes && taggable(row))) throw new Error(`The type of ${row.label} on ${row.date} comes from a hashtag in its Notes in Actual. Remove the hashtag there to clear it.`);
         return { actualTransactionId: id, actualAccountId: row.accountId, assetId: meta?.assetId ?? null, classification: (nextType || null) as MetadataChange["classification"], revision: meta?.revision ?? 0 };
       });
       // Tag the Notes in Actual first: if the metadata save then fails, the tag still carries the type.
       await writeTypeTags(context, ids, (nextType || null) as BookType | null);
       await onSaved(await registryRequest(asset.budgetSyncId, "PATCH", { changes }));
       setSelected([]);
-    } catch (e) { if (typeMenu) throw e; setError(e instanceof Error ? e.message : "Classification failed"); }
+    } catch (e) {
+      // Tagging Notes in Actual may have partly happened: block further writes until the account is inspected, as other writes do.
+      if (e instanceof UncertainAssetWrite) { setUncertainAt(snapshot.fetchedAt); onUncertain?.(); }
+      if (typeMenu) throw e; setError(e instanceof Error ? e.message : "Classification failed");
+    }
     finally { setBusy(false); }
   }
   const panelOpen = !!action && (action.kind === "edit" || action.kind === "delete");
@@ -174,7 +185,7 @@ export function BookPanel({ asset, registry, snapshot, fresh, onSaved, view, onV
     {selected.length > 0 && <div role="region" aria-label="Selected entries" className="flex shrink-0 items-center gap-2 border-b bg-accent/40 px-4 py-1.5 text-xs"><strong>{selected.length} selected</strong><span className="mr-2 text-muted-foreground">Visible rows</span><Button size="xs" variant="outline" disabled={busy} onClick={(event) => openBulk(event.currentTarget)}>Classify…</Button><Button size="xs" variant="ghost" className="ml-auto" onClick={() => setSelected([])}>Clear selection</Button></div>}
     {error && <p role="alert" className="border-b p-3 text-sm text-destructive">{error}</p>}
     {unknownWrite && <p role="alert" className="border-b p-3 text-sm text-destructive">A previous Actual write has an uncertain outcome. Refresh and inspect the account before starting another financial action.</p>}
-    <DataTable label="Asset Ledger" activeKey={action?.rowId} columns={members.length > 1 || unassigned.length > 0 ? columns : columns.filter((c) => c.key !== "assignment")} rows={sorted} sort={sort} onSort={setSort} rowKey={(r) => r.id} rowLabel={(r) => `${r.label} · ${r.date} · ${assetMoney(r.amountMinor)}`} rowClassName={(r) => selected.includes(r.id) ? "bg-accent/40" : undefined} onRowKeys={(e, r) => { if (e.key === " ") { selectRow(r.id); return true; } if (e.key.toLowerCase() === "t" && !e.ctrlKey && !e.metaKey && !e.altKey) { if (selected.length > 1) openBulk(e.currentTarget); else setTypeMenu({ row: book.rows.find((row) => row.id === selected[0]) ?? r, anchor: e.currentTarget }); return true; } return false; }} rowHeight={30} dense empty="No matching entries. Clear filters or refresh the linked account." />
+    <DataTable label="Asset Ledger" activeKey={action?.rowId} columns={members.length > 1 || unassigned.length > 0 ? columns : columns.filter((c) => c.key !== "assignment")} rows={sorted} sort={sort} onSort={setSort} rowKey={(r) => r.id} rowLabel={(r) => `${r.label} · ${r.date} · ${assetMoney(r.amountMinor)}`} rowClassName={(r) => selected.includes(r.id) ? "bg-accent/40" : undefined} onRowKeys={(e, r) => { if (e.key === " ") { selectRow(r.id); return true; } if (e.key.toLowerCase() === "t" && !e.ctrlKey && !e.metaKey && !e.altKey) { if (selected.length > 1) openBulk(e.currentTarget); else setTypeMenu({ row: book.rows.find((row) => row.id === selected[0]) ?? r, anchor: e.currentTarget }); return true; } return false; }} rowHeight={30} dense empty={book.rows.length === 0 ? "No entries yet. Use Update value or Add Entry to record this asset's value." : "No matching entries. Clear filters or refresh the linked account."} />
     {bulkAnchor && <BookTypeMenu key="bulk" taggable={selected.filter((id) => { const r = book.rows.find((x) => x.id === id); return r && taggable(r); }).length} rows={selected.map((id) => book.rows.find((r) => r.id === id)).filter((r): r is AttributedRow => !!r)} anchor={bulkAnchor} onClose={() => setBulkAnchor(null)} onSave={async (type) => { await saveClassification(selected, type); }} />}
     {typeMenu && <BookTypeMenu key={typeMenu.row.id} taggable={taggable(typeMenu.row) ? 1 : 0} rows={[typeMenu.row]} anchor={typeMenu.anchor} onClose={() => setTypeMenu(null)} onSave={async (type) => { await saveClassification([typeMenu.row.id], type); }} />}
     </div>

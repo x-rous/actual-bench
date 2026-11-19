@@ -10,7 +10,9 @@ export function saveAssetCashflows(db: SqliteDatabase, input: unknown) {
   if (!parsed.success) throw new AppDbValidationError(parsed.error.issues.map((issue) => issue.message).join("; "));
   const { budgetSyncId: budget, changes, sources } = parsed.data;
   if (new Set(changes.map((c) => c.actualTransactionId)).size !== changes.length) throw new AppDbValidationError("Duplicate transaction in batch");
-  if (new Set(sources.map((s) => s.id)).size !== sources.length || sources.some((s) => s.parentId && sources.some((p) => p.id === s.parentId))) throw new AppDbValidationError("Duplicate or overlapping parent/child source rows");
+  // Indexed once: the evidence can be large, and nested scans here would block the server thread.
+  const byId = new Map(sources.map((s) => [s.id, s]));
+  if (byId.size !== sources.length || sources.some((s) => s.parentId && byId.has(s.parentId))) throw new AppDbValidationError("Duplicate or overlapping parent/child source rows");
   return db.transaction(() => {
     const registry = readRegistry(db, budget);
     type Entry = BookMetadata & { role: "book" | "cashflow" };
@@ -24,7 +26,8 @@ export function saveAssetCashflows(db: SqliteDatabase, input: unknown) {
       if (old && old.actualAccountId !== change.actualAccountId) fail("Source account changed. Unlink the moved association before linking again.");
       const asset = registry.assets.find((a) => a.id === change.assetId) ?? fail("Asset is unavailable in this budget");
       if (change.remove) { final.delete(change.actualTransactionId); continue; }
-      const source = sources.find((s) => s.id === change.actualTransactionId && s.accountId === change.actualAccountId) ?? fail("Source transaction is missing or moved");
+      const found = byId.get(change.actualTransactionId);
+      const source = found && found.accountId === change.actualAccountId ? found : fail("Source transaction is missing or moved");
       if (change.role === "book" ? asset.actualAccountId !== source.accountId : registry.assets.some((a) => a.actualAccountId === source.accountId)) fail("Source is in the wrong account for its role");
       if (change.role === "cashflow" && source.transferId) fail("A transfer belongs in the asset ledger, not in income and expenses");
       final.set(change.actualTransactionId, { ...old, ...change, revision: change.revision + 1 });
@@ -32,7 +35,7 @@ export function saveAssetCashflows(db: SqliteDatabase, input: unknown) {
     if (sources.some((row) => row.parentId && final.has(row.id) && final.has(row.parentId))) fail("Parent and child transactions cannot both be linked");
     for (const change of changes.filter((c) => !c.remove)) {
       const entry = final.get(change.actualTransactionId)!;
-      const row = sources.find((r) => r.id === entry.actualTransactionId)!;
+      const row = byId.get(entry.actualTransactionId)!;
       if (entry.depreciationPeriod) {
         if (entry.role !== "book" || entry.classification !== "depreciation" || row.amountMinor >= 0) fail("A scheduled depreciation month needs one negative depreciation book row");
         if ([...final.values()].some((m) => m.actualTransactionId !== entry.actualTransactionId && m.assetId === entry.assetId && m.depreciationPeriod === entry.depreciationPeriod)) fail("This depreciation month is already posted");
@@ -50,7 +53,7 @@ export function saveAssetCashflows(db: SqliteDatabase, input: unknown) {
         if (context.representation !== "write-off") {
           if (delta === 0 ? context.bookAdjustmentTransactionId !== null : !context.bookAdjustmentTransactionId) fail("Disposal adjustment identity is inconsistent");
           if (context.bookAdjustmentTransactionId) {
-            const pair = final.get(context.bookAdjustmentTransactionId); const actual = sources.find((r) => r.id === context.bookAdjustmentTransactionId);
+            const pair = final.get(context.bookAdjustmentTransactionId); const actual = byId.get(context.bookAdjustmentTransactionId);
             if (pair?.role !== "book" || pair.assetId !== entry.assetId || pair.classification !== "disposal" || pair.context || actual?.amountMinor !== delta || actual.date !== row.date) fail("Disposal companion is missing or inconsistent");
             if ([...final.values()].some((m) => m.actualTransactionId !== entry.actualTransactionId && m.context?.data.kind === "disposal" && m.context.data.bookAdjustmentTransactionId === context.bookAdjustmentTransactionId)) fail("Disposal companion is already used");
           }
