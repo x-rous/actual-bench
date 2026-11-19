@@ -35,10 +35,11 @@ export function performance(asset: Asset, registry: Registry, snapshot: BookSnap
   if (book.rows.some((r) => !r.assetId && inPeriod(r.date))) gap("Unassigned entries require review");
   const metadata = registry.metadata.filter((m) => m.actualAccountId === asset.actualAccountId);
   // Indexed once per call: links and anchors look rows up by id, and a scan per lookup grows with links × rows.
-  // Keyed by account and id, first row kept: a row moved between the book and external reads can appear in both.
-  const index = new Map<string, (typeof all.rows)[number]>();
-  for (const r of [...all.rows, ...external.rows]) { const key = `${r.accountId}|${r.id}`; if (!index.has(key)) index.set(key, r); }
-  const actual = (id: string, accountId: string) => index.get(`${accountId}|${id}`);
+  // A transaction moved between the book and external reads can appear under two accounts: Actual's current account is
+  // unknown then, so it counts in neither (it is a moved transaction until a fresh read agrees).
+  const index = new Map<string, (typeof all.rows)[number]>(); const moved = new Set<string>();
+  for (const r of [...all.rows, ...external.rows]) { const seen = index.get(r.id); if (!seen) index.set(r.id, r); else if (seen.accountId !== r.accountId) moved.add(r.id); }
+  const actual = (id: string, accountId: string) => { const row = index.get(id); return row && row.accountId === accountId && !moved.has(id) ? row : undefined; };
   const operating: number[] = [], capital: number[] = [], proceeds: number[] = [];
   /** Every dated movement of money, for the annual (money-weighted) return. */
   const flows: DatedFlow[] = [];

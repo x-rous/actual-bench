@@ -153,8 +153,9 @@ export function useAssetSetup({ connection, asset, accounts, registry, onDiscard
           moving ? `${moving} ${moving === 1 ? "entry" : "entries"} in Notes already ${moving === 1 ? "carries" : "carry"} ${hashtag}, so ${moving === 1 ? "it moves" : "they move"} from ${members[0].name} to this asset.` : "",
           unassigned ? `${unassigned} ${unassigned === 1 ? "entry carries" : "entries carry"} another asset hashtag, so ${unassigned === 1 ? "it becomes" : "they become"} Unassigned.` : "",
         ].filter(Boolean).join(" ");
-        if (notice && taggedSeen !== `${hashtag}|${moving}|${unassigned}`) {
-          setTaggedSeen(`${hashtag}|${moving}|${unassigned}`);
+        const seen = `${actualAccountId}|${members[0].id}|${hashtag}|${moving}|${unassigned}`;
+        if (notice && taggedSeen !== seen) {
+          setTaggedSeen(seen);
           throw new Error(`${notice} Save again to continue, or change those Notes in Actual first.`);
         }
       }

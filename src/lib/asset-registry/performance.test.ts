@@ -53,6 +53,10 @@ it("withholds total returns while a row is unclassified, and ignores a link whos
   const g = calculate();
   g.external.rows = g.external.rows.filter((r) => r.id !== "rent"); // deleted in Actual: no longer counted, and nothing to review
   expect(g.run()).toMatchObject({ operatingMinor: -200, gaps: [] });
+  // Moved between two reads, the same transaction shows under two accounts: it counts in neither until a read agrees.
+  const h = calculate();
+  h.external.rows = [...h.external.rows, { ...h.external.rows.find((r) => r.id === "rent")!, accountId: "savings" }];
+  expect(h.run()).toMatchObject({ operatingMinor: -200 });
 });
 it("does not flag a moved source; a hand-picked Disposal with no sale recorded is a gap, and a nonpositive base withholds returns", () => {
   const f = calculate();
