@@ -19,8 +19,14 @@ RUN node demo/generate-metadata.cjs && npm run build
 FROM jhonderson/actual-http-api:26.11.0
 USER root
 # Refresh Alpine's own packages (musl, openssl) rather than relying on the
-# snapshot the upstream image was built against.
-RUN apk upgrade --no-cache \
+# snapshot the upstream image was built against. APK_REFRESH and the edge musl
+# are explained in docker/Dockerfile.prod.
+ARG APK_REFRESH=
+RUN echo "apk refresh: ${APK_REFRESH:-local}" \
+ && apk upgrade --no-cache \
+ && apk add --no-cache --upgrade \
+      --repository=https://dl-cdn.alpinelinux.org/alpine/edge/main \
+      'musl>=1.2.6-r6' 'musl-utils>=1.2.6-r6' \
  && apk add --no-cache python3 make g++ \
  && npm install -g @actual-app/sync-server@26.11.0
 # The API image uses Node 22. Bench and its native modules are built with Node
