@@ -53,6 +53,9 @@ see that rather than discover it.
 - Create and rename payees inline.
 - Every delete confirms, with the transaction and rule counts. Transfer payees sit out of bulk delete
   and are counted separately in the dialog.
+- Deleting a payee that has transactions offers **Merge into another payee instead**. Merging keeps
+  those transactions' payee by moving them, and its rules, to the payee you pick.
+- A saved payee always keeps a name: clearing it is refused, with a message.
 
 ## Merge duplicate payees
 
@@ -66,6 +69,8 @@ see that rather than discover it.
 ## Filter
 
 Filter by name, type (regular / transfer / all), and whether a payee has associated rules.
+**Unused** lists regular payees with no rules and no transactions; select them all and delete to tidy
+up. It counts transactions with one query, only while the filter is on.
 
 ## Import and export
 

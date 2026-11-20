@@ -115,3 +115,39 @@ export async function getAllTransactionCounts(
 
   return mapTransactionCounts(response.data, groupField);
 }
+
+// ─── Tag usage ────────────────────────────────────────────────────────────────
+
+/**
+ * Tags as Actual finds them in notes: `#name`, ending at whitespace or the next
+ * `#`. A doubled `##` is an escaped literal and does not tag anything.
+ */
+const NOTE_TAG = /(?<!#)#([^#\s]+)/g;
+
+/** The distinct tag names one note carries. */
+export function tagsInNote(notes: string): Set<string> {
+  const found = new Set<string>();
+  for (const match of notes.matchAll(NOTE_TAG)) found.add(match[1]!);
+  return found;
+}
+
+/**
+ * How many transactions carry each tag in their notes, keyed by tag name.
+ * Tags have no id on transactions, so this reads the notes that contain `#`
+ * (one query) and counts them here. Read-only.
+ */
+export async function getTagUsageCounts(connection: ConnectionInstance): Promise<Map<string, number>> {
+  const response = await runQuery<{ data: { notes: string | null }[] }>(connection, {
+    ActualQLquery: {
+      table: "transactions",
+      filter: { notes: { $like: "%#%" } },
+      select: ["notes"],
+    },
+  });
+  const counts = new Map<string, number>();
+  for (const row of response.data ?? []) {
+    if (!row.notes) continue;
+    for (const tag of tagsInNote(row.notes)) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+  }
+  return counts;
+}

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { uniqueCopyName } from "../lib/scheduleNames";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { usePersistedFilters } from "@/hooks/usePersistedFilters";
 import { useHighlight } from "@/hooks/useHighlight";
@@ -159,9 +160,22 @@ export function SchedulesTable({
     };
   }, [staged, allPayees, allAccounts, payeeFilter, accountFilter]);
 
+  // Actual rejects two schedules with the same name (ignoring case), so the
+  // table flags them before Save does.
+  const duplicateNames = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const s of Object.values(staged)) {
+      const key = (s.entity.name ?? "").trim().toLowerCase();
+      if (!s.isDeleted && key) counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return new Set([...counts].filter(([, count]) => count > 1).map(([key]) => key));
+  }, [staged]);
+
   // ── Derived rows ─────────────────────────────────────────────────────────────
+  // Typing stays responsive on long lists: the rows follow the search a beat later.
+  const deferredSearch = useDeferredValue(search);
   const rows = useMemo<StagedEntity<Schedule>[]>(() => {
-    const q = search.trim().toLowerCase();
+    const q = deferredSearch.trim().toLowerCase();
     return Object.values(staged).filter((s) => {
       if (s.isDeleted) return false;
       const status = statusMap.get(s.entity.id);
@@ -185,7 +199,7 @@ export function SchedulesTable({
       }
       return true;
     });
-  }, [staged, search, statusFilter, txsLoading, statusMap, autoAddFilter, frequencyFilter, payeeFilter, accountFilter, stagedPayees, stagedAccounts]);
+  }, [staged, deferredSearch, statusFilter, txsLoading, statusMap, autoAddFilter, frequencyFilter, payeeFilter, accountFilter, stagedPayees, stagedAccounts]);
 
   // ── Column sort ───────────────────────────────────────────────────────────────
   const [sortCol, setSortCol] = useState<SortCol | null>(null);
@@ -255,6 +269,10 @@ export function SchedulesTable({
     stageNew("schedules", {
       ...structuredClone(s),
       id: generateId(),
+      // Schedule names are unique in Actual, so the copy gets its own.
+      // Names of schedules waiting to be deleted count as taken: Save creates
+      // before it deletes, so Actual would still see them.
+      name: s.name ? uniqueCopyName(s.name, Object.values(staged).map((e) => e.entity.name ?? "")) : s.name,
       // Strip server-only fields from the duplicate
       ruleId: undefined,
       nextDate: undefined,
@@ -376,6 +394,11 @@ export function SchedulesTable({
                         <span className={cn("font-medium", !entity.name && "italic text-muted-foreground")}>
                           {entity.name || "Unnamed"}
                         </span>
+                        {duplicateNames.has((entity.name ?? "").trim().toLowerCase()) && (
+                          <span title="Duplicate name: schedule names must be unique" className="shrink-0">
+                            <AlertTriangle className="h-3 w-3 text-amber-500" role="img" aria-label="Duplicate name: schedule names must be unique" />
+                          </span>
+                        )}
                         {(() => {
                           const status = statusMap.get(entity.id);
                           if (!status || txsLoading) return null;

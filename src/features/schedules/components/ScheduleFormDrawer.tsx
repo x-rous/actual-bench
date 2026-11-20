@@ -370,7 +370,7 @@ export function ScheduleFormDrawer({ open, onOpenChange, scheduleId, onEditAsRul
       title={isNew ? "New Schedule" : "Edit Schedule"}
       description={isNew ? "Create a new schedule" : "Edit schedule details"}
       descriptionClassName="sr-only"
-      contentClassName="data-[side=right]:sm:max-w-lg"
+      contentClassName="data-[side=right]:sm:max-w-2xl"
       footerClassName="pt-3 pb-4"
       footer={
         <div className="flex w-full items-center gap-2">

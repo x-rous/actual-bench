@@ -36,13 +36,21 @@ function countSaveSummary(summary: SaveSummary) {
   };
 }
 
+function mergeSummaries(a: SaveSummary, b: SaveSummary): SaveSummary {
+  return { succeeded: [...a.succeeded, ...b.succeeded], failed: [...a.failed, ...b.failed], idMap: { ...a.idMap, ...b.idMap } };
+}
+
 /**
  * Shared staged-save orchestration for the connected budget.
  *
- * Keeps entity dependency order in one place:
- * 1. save independent entities in parallel
- * 2. save categories after groups to resolve new group IDs
- * 3. save rules after accounts/payees/categories to resolve entity references
+ * Keeps entity dependency order in one place, one entity type at a time
+ * (Direct writes stay serialized, and each step can use the ids the steps
+ * before it created):
+ * 1. accounts, payees and tags
+ * 2. category group creates and renames, then categories (new group ids), then
+ *    group deletes, once categories have been moved out of them
+ * 3. schedules, after accounts and payees (new payee and account ids)
+ * 4. rules, after everything they can reference
  */
 export function useBudgetSavePipeline() {
   const {
@@ -91,22 +99,19 @@ export function useBudgetSavePipeline() {
     isSavingTags;
 
   async function saveAll(): Promise<BudgetSavePipelineResult> {
-    const [
-      accounts,
-      payees,
-      categoryGroups,
-      tags,
-      schedules,
-    ] = await Promise.all([
-      hasPendingAccounts ? saveAccounts() : Promise.resolve(EMPTY_SAVE_SUMMARY),
-      hasPendingPayees ? savePayees() : Promise.resolve(EMPTY_SAVE_SUMMARY),
-      hasPendingGroups ? saveCategoryGroups() : Promise.resolve(EMPTY_SAVE_SUMMARY),
-      hasPendingTags ? saveTags() : Promise.resolve(EMPTY_SAVE_SUMMARY),
-      hasPendingSchedules ? saveSchedules() : Promise.resolve(EMPTY_SAVE_SUMMARY),
-    ]);
+    const accounts = hasPendingAccounts ? await saveAccounts() : EMPTY_SAVE_SUMMARY;
+    const payees = hasPendingPayees ? await savePayees() : EMPTY_SAVE_SUMMARY;
+    const tags = hasPendingTags ? await saveTags() : EMPTY_SAVE_SUMMARY;
 
+    const groupUpserts = hasPendingGroups ? await saveCategoryGroups("upsert") : EMPTY_SAVE_SUMMARY;
     const categories = hasPendingCategories
-      ? await saveCategories(categoryGroups.idMap)
+      ? await saveCategories(groupUpserts.idMap)
+      : EMPTY_SAVE_SUMMARY;
+    const groupDeletes = hasPendingGroups ? await saveCategoryGroups("delete") : EMPTY_SAVE_SUMMARY;
+    const categoryGroups = mergeSummaries(groupUpserts, groupDeletes);
+
+    const schedules = hasPendingSchedules
+      ? await saveSchedules({ ...payees.idMap, ...accounts.idMap })
       : EMPTY_SAVE_SUMMARY;
     const rules = hasPendingRules
       ? await saveRules({

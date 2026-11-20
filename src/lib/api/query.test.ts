@@ -1,7 +1,9 @@
 import {
   getAllTransactionCounts,
+  getTagUsageCounts,
   getTransactionCountsForIds,
   runQuery,
+  tagsInNote,
 } from "./query";
 import type { ConnectionInstance } from "@/store/connection";
 
@@ -220,5 +222,23 @@ describe("getAllTransactionCounts", () => {
 
     expect(mockGetTransport).toHaveBeenCalledWith(directConnection);
     expect(mockApiRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe("tag usage", () => {
+  it("finds the tags Actual would, ignoring escaped ## and repeats", () => {
+    expect([...tagsInNote("#food lunch #work #food")]).toEqual(["food", "work"]);
+    expect([...tagsInNote("#food#rent")]).toEqual(["food", "rent"]);
+    expect([...tagsInNote("price ##5 and #ok")]).toEqual(["ok"]);
+  });
+
+  it("counts transactions per tag from the notes that contain #", async () => {
+    mockApiRequest.mockResolvedValueOnce({ data: [{ notes: "#food #food" }, { notes: "#food #work" }, { notes: null }] });
+    const counts = await getTagUsageCounts(connection);
+    expect(counts.get("food")).toBe(2);
+    expect(counts.get("work")).toBe(1);
+    expect(mockApiRequest).toHaveBeenLastCalledWith(connection, "/run-query", expect.objectContaining({
+      body: { ActualQLquery: { table: "transactions", filter: { notes: { $like: "%#%" } }, select: ["notes"] } },
+    }));
   });
 });

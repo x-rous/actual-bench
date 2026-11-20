@@ -97,6 +97,23 @@ export async function updateAccount(
   });
 }
 
+/** Closes an account through actual-http-api's close endpoint, moving its balance to another account. */
+export async function closeAccount(
+  connection: ConnectionInstance,
+  id: string,
+  transfer: { transferAccountId: string; transferCategoryId?: string | null }
+): Promise<void> {
+  await apiRequest<void>(connection, `/accounts/${id}/close`, {
+    method: "PUT",
+    body: {
+      transfer: {
+        transferAccountId: transfer.transferAccountId,
+        ...(transfer.transferCategoryId ? { transferCategoryId: transfer.transferCategoryId } : {}),
+      },
+    },
+  });
+}
+
 export async function deleteAccount(
   connection: ConnectionInstance,
   id: string

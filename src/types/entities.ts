@@ -182,3 +182,9 @@ export type EntityStore = {
   rules: EntityMap<Rule>;
   schedules: EntityMap<Schedule>;
 };
+
+/** Where a closing account's balance goes: another account, and a category when that move crosses on/off budget. */
+export type AccountCloseTransfer = {
+  transferAccountId: string;
+  transferCategoryId?: string | null;
+};

@@ -94,6 +94,7 @@ export function CategoriesTable({
   const stagedCats = useStagedStore((s) => s.categories);
   const stagedRules = useStagedStore((s) => s.rules);
   const stageNew = useStagedStore((s) => s.stageNew);
+  const stageDeleteTransfer = useStagedStore((s) => s.stageDeleteTransfer);
   const stageUpdate = useStagedStore((s) => s.stageUpdate);
   const stageDelete = useStagedStore((s) => s.stageDelete);
   const revertEntity = useStagedStore((s) => s.revertEntity);
@@ -364,6 +365,29 @@ export function CategoriesTable({
     });
   }
 
+  // Selected expense categories (income categories stay in the income group).
+  const movableSelectedIds = useMemo(
+    () => [...selectedIds].filter((id) => {
+      const cat = stagedCats[id];
+      return !!cat && !cat.isDeleted && !cat.entity.isIncome;
+    }),
+    [selectedIds, stagedCats]
+  );
+
+  function handleBulkMove(groupId: string) {
+    const ids = movableSelectedIds.filter((id) => stagedCats[id]?.entity.groupId !== groupId);
+    if (ids.length === 0) return;
+    pushUndo();
+    for (const id of ids) stageUpdate("categories", id, { groupId });
+    clearSelection();
+  }
+
+  /** Stages a delete, with the category that takes over its transactions and budget amounts (if any). */
+  function deleteWithTransfer(kind: "categories" | "categoryGroups", id: string, transferCategoryId: string | null) {
+    stageDelete(kind, id);
+    if (transferCategoryId) stageDeleteTransfer(kind, id, transferCategoryId);
+  }
+
   function handleCategoryGroupChange(categoryId: string, nextGroupId: string) {
     pushUndo();
     stageUpdate("categories", categoryId, { groupId: nextGroupId });
@@ -462,6 +486,20 @@ export function CategoriesTable({
     // Capture refs for the confirm closure
     const groupsToDelete = [...effectiveGroupIds];
     const catsToDelete = [...directCatIds];
+    // One category can take over everything deleted here when it is all on one side of the budget.
+    const sides = new Set(allCatIds.map((id) => (stagedCats[id]?.entity.isIncome ? "income" : "expense")));
+    const bulkSide = sides.size === 1 ? [...sides][0] as "income" | "expense" : null;
+    const deleteAll = (transferCategoryId: string | null) => {
+      pushUndo();
+      for (const gid of groupsToDelete) {
+        for (const cat of Object.values(stagedCats)) {
+          if (cat.entity.groupId === gid) deleteWithTransfer("categories", cat.entity.id, transferCategoryId);
+        }
+        deleteWithTransfer("categoryGroups", gid, transferCategoryId);
+      }
+      for (const id of catsToDelete) deleteWithTransfer("categories", id, transferCategoryId);
+      clearSelection();
+    };
 
     onDeleteIntentChange({
       kind: "bulk",
@@ -470,17 +508,10 @@ export function CategoriesTable({
       bulkServerCount: serverCount,
       bulkNewCount: newCount,
       bulkRuleCount: totalRuleCount,
-      onConfirm: () => {
-        pushUndo();
-        for (const gid of groupsToDelete) {
-          for (const cat of Object.values(stagedCats)) {
-            if (cat.entity.groupId === gid) stageDelete("categories", cat.entity.id);
-          }
-          stageDelete("categoryGroups", gid);
-        }
-        for (const id of catsToDelete) stageDelete("categories", id);
-        clearSelection();
-      },
+      onConfirm: () => deleteAll(null),
+      transfer: bulkSide && serverCatIds.length > 0
+        ? { side: bulkSide, excludeIds: allCatIds, onConfirm: deleteAll }
+        : undefined,
     });
   }
 
@@ -535,6 +566,13 @@ export function CategoriesTable({
             0
           );
           const capturedChildren = [...children];
+          const deleteGroup = (transferCategoryId: string | null) => {
+            pushUndo();
+            // Each category is deleted before its group, so each carries the
+            // transfer as well; Actual would otherwise uncategorize them first.
+            for (const cat of capturedChildren) deleteWithTransfer("categories", cat.entity.id, transferCategoryId);
+            deleteWithTransfer("categoryGroups", groupId, transferCategoryId);
+          };
           onDeleteIntentChange({
             kind: "group",
             ids: serverChildIds,
@@ -542,11 +580,10 @@ export function CategoriesTable({
             groupName: groupEntity.name || "Unnamed",
             childCount: children.length,
             groupRuleCount,
-            onConfirm: () => {
-              pushUndo();
-              for (const cat of capturedChildren) stageDelete("categories", cat.entity.id);
-              stageDelete("categoryGroups", groupId);
-            },
+            onConfirm: () => deleteGroup(null),
+            transfer: serverChildIds.length > 0
+              ? { side: groupEntity.isIncome ? "income" : "expense", excludeIds: children.map((c) => c.entity.id), onConfirm: deleteGroup }
+              : undefined,
           });
         }}
         onInspect={(id) => onInspectTargetChange({ id, type: "categoryGroup" })}
@@ -598,16 +635,20 @@ export function CategoriesTable({
         onRequestDelete={(id) => {
           const category = stagedCats[id];
           if (!category) return;
+          const deleteCategory = (transferCategoryId: string | null) => {
+            pushUndo();
+            deleteWithTransfer("categories", id, transferCategoryId);
+          };
           onDeleteIntentChange({
             kind: "single",
             ids: category.isNew ? [] : [id],
             title: "Delete category?",
             entityLabel: category.entity.name || "Unnamed",
             entityRuleCount: categoryRuleCount.get(id) ?? 0,
-            onConfirm: () => {
-              pushUndo();
-              stageDelete("categories", id);
-            },
+            onConfirm: () => deleteCategory(null),
+            transfer: category.isNew
+              ? undefined
+              : { side: category.entity.isIncome ? "income" : "expense", excludeIds: [id], onConfirm: deleteCategory },
           });
         }}
         onInspect={(id) => onInspectTargetChange({ id, type: "category" })}
@@ -640,6 +681,8 @@ export function CategoriesTable({
           selectedCount={activeSelectedCount}
           onBulkDelete={handleBulkDelete}
           onDeselect={() => clearSelection()}
+          moveGroupOptions={movableSelectedIds.length > 0 ? expenseGroupOptions : undefined}
+          onBulkMove={handleBulkMove}
         />
 
         <div className="min-h-0 flex-1 overflow-auto">

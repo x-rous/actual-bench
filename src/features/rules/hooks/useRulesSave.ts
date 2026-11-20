@@ -155,6 +155,21 @@ export function useRulesSave() {
         useStagedStore.getState().clearMergeDependencies(processedMergeIds);
       }
 
+      // A rule that did not save may still name payees, accounts or categories
+      // by the temporary ids they had before this Save created them. The map
+      // lives only for this Save, so point the draft at the real ids now.
+      if (Object.keys(entityIdMap).length > 0) {
+        for (const f of failed) {
+          const entry = useStagedStore.getState().rules[f.id];
+          if (!entry || entry.isDeleted) continue;
+          const conditions = applyRuleEntityIdMap(entry.entity.conditions, entityIdMap);
+          const actions = applyRuleEntityIdMap(entry.entity.actions, entityIdMap);
+          if (JSON.stringify(conditions) !== JSON.stringify(entry.entity.conditions) || JSON.stringify(actions) !== JSON.stringify(entry.entity.actions)) {
+            useStagedStore.getState().stageUpdate("rules", f.id, { conditions, actions });
+          }
+        }
+      }
+
       if (failed.length > 0) {
         const errors: Record<string, string> = {};
         for (const f of failed) {

@@ -17,6 +17,8 @@ import {
 import type { SaveResult, SaveSummary } from "@/types/diff";
 import type { Schedule } from "@/types/entities";
 
+type ScheduleWrite = Parameters<ReturnType<typeof getTransport>["createSchedule"]>[0];
+
 export function useSchedulesSave() {
   const [isSaving, setIsSaving] = useState(false);
 
@@ -29,7 +31,8 @@ export function useSchedulesSave() {
     [staged]
   );
 
-  async function save(): Promise<SaveSummary> {
+  /** `entityIdMap` maps temp ids of payees and accounts created earlier in the same Save to their real ids. */
+  async function save(entityIdMap: Record<string, string> = {}): Promise<SaveSummary> {
     if (!connection) throw new Error("No active connection");
 
     setIsSaving(true);
@@ -37,9 +40,6 @@ export function useSchedulesSave() {
     try {
       const transport = getTransport(connection);
       const ops = computeSaveOperations<Schedule>(staged);
-      // Skip incomplete schedules (no date set)
-      const toCreate = ops.toCreate.filter((s) => !!s.date);
-      const toUpdate = ops.toUpdate.filter((s) => !!s.date);
       const { toDelete } = ops;
 
       const succeeded: SaveResult[] = [];
@@ -47,20 +47,58 @@ export function useSchedulesSave() {
       const succeededCreateIds = new Set<string>();
       const idMap: Record<string, string> = {};
 
+      // Checked here rather than left to the server, so each problem is
+      // reported on its row instead of the schedule being skipped silently
+      // (no date) or failing with Actual's generic message (duplicate name).
+      const { payees, accounts } = useStagedStore.getState();
+      const nameKey = (name: string | undefined) => (name ?? "").trim().toLowerCase();
+      const nameCounts = new Map<string, number>();
+      for (const entry of Object.values(staged)) {
+        if (entry.isDeleted) continue;
+        const key = nameKey(entry.entity.name);
+        if (key) nameCounts.set(key, (nameCounts.get(key) ?? 0) + 1);
+      }
+      /** A payee or account id the server knows, or an error when it was not created. */
+      const resolveRef = (id: string | null | undefined, kind: "payee" | "account"): string | null | Error => {
+        if (!id) return null;
+        if (entityIdMap[id]) return entityIdMap[id];
+        const entry = kind === "payee" ? payees[id] : accounts[id];
+        if (entry?.isNew) return new Error(`Its ${kind} has not been saved yet. Fix the ${kind}, then save again.`);
+        return id;
+      };
+      const prepared = new Map<string, ScheduleWrite>();
+      const prepare = (s: Schedule): boolean => {
+        const problem = !s.date
+          ? "A date is required."
+          : (nameCounts.get(nameKey(s.name)) ?? 0) > 1
+            ? `Another schedule is named "${s.name?.trim()}". Schedule names must be unique.`
+            : null;
+        const payeeId = resolveRef(s.payeeId, "payee");
+        const accountId = resolveRef(s.accountId, "account");
+        const message = problem ?? (payeeId instanceof Error ? payeeId.message : accountId instanceof Error ? accountId.message : null);
+        if (message) {
+          failed.push({ status: "error", id: s.id, message });
+          return false;
+        }
+        prepared.set(s.id, {
+          name: s.name,
+          postsTransaction: s.postsTransaction,
+          payeeId: payeeId as string | null,
+          accountId: accountId as string | null,
+          amount: s.amount,
+          amountOp: s.amountOp,
+          date: s.date,
+        });
+        return true;
+      };
+      const toCreate = ops.toCreate.filter(prepare);
+      const toUpdate = ops.toUpdate.filter(prepare);
+
       // ── Creates (parallel) ──────────────────────────────────────────────────
       const createResults = await settleTransportWrites(
         transport,
         toCreate,
-        (s) =>
-          transport.createSchedule({
-            name: s.name,
-            postsTransaction: s.postsTransaction,
-            payeeId: s.payeeId,
-            accountId: s.accountId,
-            amount: s.amount,
-            amountOp: s.amountOp,
-            date: s.date,
-          })
+        (s) => transport.createSchedule(prepared.get(s.id)!)
       );
       for (let i = 0; i < toCreate.length; i++) {
         const stagedId = toCreate[i].id;
@@ -84,16 +122,7 @@ export function useSchedulesSave() {
       const updateResults = await settleTransportWrites(
         transport,
         toUpdate,
-        (s) =>
-          transport.updateSchedule(s.id, {
-            name: s.name,
-            postsTransaction: s.postsTransaction,
-            payeeId: s.payeeId,
-            accountId: s.accountId,
-            amount: s.amount,
-            amountOp: s.amountOp,
-            date: s.date,
-          })
+        (s) => transport.updateSchedule(s.id, prepared.get(s.id)!)
       );
       for (let i = 0; i < toUpdate.length; i++) {
         const id = toUpdate[i].id;
@@ -145,6 +174,19 @@ export function useSchedulesSave() {
       );
       if (succeededDeletedIds.length > 0) {
         store.markSaved("schedules", succeededDeletedIds);
+      }
+
+      // A schedule that did not save may still name a payee or account by the
+      // temporary id it had before this Save created it. The id map lives only
+      // for this Save, so point the draft at the real id now; a retry would
+      // otherwise send an id Actual has never seen.
+      for (const f of failed) {
+        const entry = useStagedStore.getState().schedules[f.id];
+        if (!entry || entry.isDeleted) continue;
+        const patch: Partial<Schedule> = {};
+        if (entry.entity.payeeId && entityIdMap[entry.entity.payeeId]) patch.payeeId = entityIdMap[entry.entity.payeeId];
+        if (entry.entity.accountId && entityIdMap[entry.entity.accountId]) patch.accountId = entityIdMap[entry.entity.accountId];
+        if (Object.keys(patch).length > 0) store.stageUpdate("schedules", f.id, patch);
       }
 
       if (failed.length > 0) {

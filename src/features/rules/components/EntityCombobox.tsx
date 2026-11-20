@@ -12,6 +12,29 @@ const ENTITY_LABEL: Record<RuleEntityType, string> = {
   account: "Account",
 };
 
+const MISSING_LABEL: Record<RuleEntityType, string> = {
+  payee: "[deleted payee]",
+  category: "[deleted category]",
+  categoryGroup: "[deleted group]",
+  account: "[deleted account]",
+};
+
+/**
+ * Rows for ids the rule holds but the budget no longer has (a deleted payee,
+ * account, category or group). Without them the picker drew nothing for such
+ * an id - no chip, no label - while the rule kept it, so it could be neither
+ * seen nor removed. Listed first, marked, so they can be cleared or replaced.
+ */
+export function withMissingOptions(entity: RuleEntityType, options: ComboboxOption[], ids: string[]): ComboboxOption[] {
+  const known = new Set(options.map((o) => o.id));
+  const missing = ids.filter((id) => id && !known.has(id));
+  if (missing.length === 0) return options;
+  return [
+    ...missing.map((id) => ({ id, name: MISSING_LABEL[entity], trailing: "not in this budget" })),
+    ...options,
+  ];
+}
+
 /** The rule editor's entity pickers: the shared lists, plus a "Create …" footer. */
 export function EntityCombobox({
   entity,
@@ -43,7 +66,7 @@ export function EntityCombobox({
 
   return (
     <SearchableCombobox
-      options={options}
+      options={withMissingOptions(entity, options, [value])}
       value={value}
       onChange={onChange}
       placeholder={placeholder}
@@ -91,7 +114,7 @@ export function MultiEntityCombobox({
       : "Select accounts…";
   return (
     <MultiSearchableCombobox
-      options={options}
+      options={withMissingOptions(entity, options, values)}
       values={values}
       onChange={onChange}
       placeholder={placeholder}
