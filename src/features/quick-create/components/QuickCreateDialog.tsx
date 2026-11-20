@@ -81,8 +81,11 @@ function QuickCreateForm({
   }, [name, selectedType, stagedPayees, stagedCategories, stagedAccounts, stagedTags]);
 
   const trimmedName = name.trim();
+  // A tag is named as notes use it, so "# #" leaves nothing to name it by.
+  const tagNameEmpty = selectedType === "tag" && trimmedName.length > 0 && normalizeTagName(trimmedName) === "";
   const isValid =
     trimmedName.length > 0 &&
+    !tagNameEmpty &&
     trimmedName.length <= 100 &&
     !(selectedType === "category" && !groupId);
 
@@ -103,7 +106,7 @@ function QuickCreateForm({
         stageNew("accounts", { id, name: trimmedName, offBudget, closed: false });
         break;
       case "tag":
-        stageNew("tags", { id, name: normalizeTagName(trimmedName) || trimmedName, ...(color ? { color } : {}) });
+        stageNew("tags", { id, name: normalizeTagName(trimmedName), ...(color ? { color } : {}) });
         break;
     }
 
@@ -159,6 +162,11 @@ function QuickCreateForm({
           onKeyDown={handleKeyDown}
           placeholder={`${ENTITY_LABELS[selectedType]} name…`}
         />
+        {tagNameEmpty && (
+          <p role="alert" className="text-xs text-destructive">
+            A tag name needs at least one character other than spaces and &ldquo;#&rdquo;.
+          </p>
+        )}
         {isDuplicate && (
           <p className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
             <AlertTriangle className="h-3 w-3 shrink-0" />

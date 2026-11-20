@@ -40,8 +40,8 @@ uses.
 - Filter by **Used** or **Unused**: whether any transaction's notes carry the tag. Bench reads the notes
   that contain `#` (one query, only while the filter is on) and finds tags the way Actual does - `#name`,
   ending at a space or the next `#`, with `##` as an escaped literal.
-- Tag names lose spaces and leading `#` signs wherever you name a tag, CSV import included, because a
-  note could never match them.
+- Tag names lose spaces and `#` signs wherever you name a tag, CSV import included, because a note
+  could never match them (`#food#rent` reads as two tags).
 - Select several and delete them together. Duplicate names get flagged.
 - Import and export tags as CSV. CSV columns:
   - `name` (required), `color` (optional hex, e.g. `#FF5733`), `description` (optional).

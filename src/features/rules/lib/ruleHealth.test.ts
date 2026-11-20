@@ -54,4 +54,17 @@ describe("findRuleIssues", () => {
     expect(issues.has("deleted-copy")).toBe(false);
     expect(issues.get("empty")).toEqual(["no-conditions"]);
   });
+
+  it("does not call rules duplicates when their actions run in another order", () => {
+    const setThenAppend = [
+      { field: "notes", op: "set", value: "A" },
+      { field: "notes", op: "append-notes", value: "B" },
+    ];
+    const issues = findRuleIssues(mapOf(
+      staged(rule("set-first", { actions: setThenAppend })),
+      staged(rule("append-first", { actions: [...setThenAppend].reverse() })),
+    ), maps);
+    expect(issues.has("set-first")).toBe(false);
+    expect(issues.has("append-first")).toBe(false);
+  });
 });

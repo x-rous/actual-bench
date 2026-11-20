@@ -64,7 +64,12 @@ function CloseTransferFields({
 }) {
   const stagedAccounts = useStagedStore((s) => s.accounts);
   const groups = useStagedStore((s) => s.accountGroups);
-  const { categories, groups: categoryGroups } = useStagedCategories();
+  const stagedCategories = useStagedStore((s) => s.categories);
+  const { groups: categoryGroups } = useStagedCategories();
+  // Saved categories only: a draft's id is temporary, and the close would send it to Actual as is.
+  const categories = Object.values(stagedCategories)
+    .filter((c) => !c.isNew && !c.isDeleted)
+    .map((c) => c.entity);
   // Saved, open accounts only: a draft has no transfer payee yet.
   const accounts = Object.values(stagedAccounts)
     .filter((s) => !s.isNew && !s.isDeleted && !s.entity.closed && s.entity.id !== accountId)

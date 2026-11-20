@@ -391,12 +391,16 @@ export interface ActualBenchTransport {
   getCategoryGroups(): Promise<CategoryGroupsResponse>;
   createCategoryGroup(input: Pick<CategoryGroup, "name" | "isIncome" | "hidden">): Promise<string>;
   updateCategoryGroup(id: string, patch: Partial<Pick<CategoryGroup, "name" | "hidden">>): Promise<void>;
-  /** `transferCategoryId` moves the group's transactions and budget amounts to that category. */
+  /** `transferCategoryId` moves the group's transactions to that category, and an expense group's budget amounts too. */
   deleteCategoryGroup(id: string, transferCategoryId?: string | null): Promise<void>;
   createCategory(input: Pick<Category, "name" | "groupId" | "isIncome" | "hidden">): Promise<string>;
   /** `groupId` moves the category to another (expense) group. */
   updateCategory(id: string, patch: Partial<Pick<Category, "name" | "hidden" | "groupId">>): Promise<void>;
-  /** `transferCategoryId` moves the category's transactions and budget amounts to that category. */
+  /**
+   * `transferCategoryId` moves the category's transactions to that category, and
+   * for an expense category its budget amounts too (Actual does not move an
+   * income category's budget amounts).
+   */
   deleteCategory(id: string, transferCategoryId?: string | null): Promise<void>;
 
   getTags(): Promise<Tag[]>;

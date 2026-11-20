@@ -55,7 +55,8 @@ export function TagsTable({
   const usageFilter = filters.usageFilter ?? "all";
   const setUsageFilter = (v: UsageFilter) => setFilters((f) => ({ ...f, usageFilter: v }));
   // Read only while a usage filter is on: it scans the notes that contain "#".
-  const { data: usageCounts, isLoading: usageLoading } = useTagUsageCounts({ enabled: usageFilter !== "all" });
+  const { data: usageCounts, isLoading: usageLoading, error: usageError, refetch: retryUsage } =
+    useTagUsageCounts({ enabled: usageFilter !== "all" });
   const setSearch      = (v: string)      => setFilters((f) => ({ ...f, search: v }));
   const setColorFilter = (v: ColorFilter) => setFilters((f) => ({ ...f, colorFilter: v }));
   const [sortNameDir, setSortNameDir] = useState<"asc" | "desc" | null>(null);
@@ -73,9 +74,10 @@ export function TagsTable({
         if (q && !s.entity.name.toLowerCase().includes(q) && !(s.entity.description?.toLowerCase().includes(q) ?? false)) return false;
         if (colorFilter === "has_color" && !s.entity.color) return false;
         if (colorFilter === "no_color"  &&  s.entity.color) return false;
-        if (usageFilter !== "all") {
-          // A draft has no history yet; until the counts arrive nothing is listed.
-          if (!usageCounts || s.isNew) return false;
+        if (usageFilter !== "all" && !s.isNew) {
+          // Drafts stay listed whatever the filter, so a tag just added can be
+          // seen and named; saved tags wait for the counts.
+          if (!usageCounts) return false;
           const used = (usageCounts.get(s.entity.name) ?? 0) > 0;
           if (usageFilter === "used" ? !used : used) return false;
         }
@@ -260,7 +262,12 @@ export function TagsTable({
         <div className="min-h-0 flex-1 overflow-auto">
         {rows.length === 0 ? (
           <div className="flex flex-1 items-center justify-center py-16 text-sm text-muted-foreground">
-            {usageFilter !== "all" && usageLoading
+            {usageFilter !== "all" && usageError && !usageCounts ? (
+              <span role="alert" className="flex items-center gap-2 text-destructive">
+                Could not read tags from transaction notes.
+                <button type="button" className="text-xs underline hover:text-foreground" onClick={() => void retryUsage()}>Retry</button>
+              </span>
+            ) : usageFilter !== "all" && usageLoading
               ? "Reading tags from transaction notes…"
               : search || colorFilter !== "all" || usageFilter !== "all"
               ? "No tags match the current filters."

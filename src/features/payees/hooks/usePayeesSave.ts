@@ -120,6 +120,25 @@ export function usePayeesSave() {
         }
       }
 
+      // ── Merges (sequential — each merge is a single API call) ───────────────
+      // Ahead of the deletes: a merge target that is also deleted in this Save
+      // has to exist when its merge runs (its merged transactions then go with
+      // the delete, as they would had the merge been saved earlier).
+      const succeededMergeTargetIds: string[] = [];
+      for (const { targetId, mergeIds } of pendingPayeeMerges) {
+        try {
+          await transport.mergePayees(targetId, mergeIds);
+          succeededMergeTargetIds.push(targetId);
+          for (const id of mergeIds) {
+            succeeded.push({ status: "success", id });
+          }
+        } catch (reason) {
+          for (const id of mergeIds) {
+            failed.push({ status: "error", id, message: extractMessage(reason, "Merge failed") });
+          }
+        }
+      }
+
       // ── Deletes (parallel) ──────────────────────────────────────────────────
       const deleteResults = await settleTransportWrites(
         transport,
@@ -133,22 +152,6 @@ export function usePayeesSave() {
           succeeded.push({ status: "success", id });
         } else {
           failed.push({ status: "error", id, message: extractMessage(r.reason, "Delete failed") });
-        }
-      }
-
-      // ── Merges (sequential — each merge is a single API call) ───────────────
-      const succeededMergeTargetIds: string[] = [];
-      for (const { targetId, mergeIds } of pendingPayeeMerges) {
-        try {
-          await transport.mergePayees(targetId, mergeIds);
-          succeededMergeTargetIds.push(targetId);
-          for (const id of mergeIds) {
-            succeeded.push({ status: "success", id });
-          }
-        } catch (reason) {
-          for (const id of mergeIds) {
-            failed.push({ status: "error", id, message: extractMessage(reason, "Merge failed") });
-          }
         }
       }
 

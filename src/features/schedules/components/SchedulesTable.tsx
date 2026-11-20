@@ -270,7 +270,9 @@ export function SchedulesTable({
       ...structuredClone(s),
       id: generateId(),
       // Schedule names are unique in Actual, so the copy gets its own.
-      name: s.name ? uniqueCopyName(s.name, Object.values(staged).filter((e) => !e.isDeleted).map((e) => e.entity.name ?? "")) : s.name,
+      // Names of schedules waiting to be deleted count as taken: Save creates
+      // before it deletes, so Actual would still see them.
+      name: s.name ? uniqueCopyName(s.name, Object.values(staged).map((e) => e.entity.name ?? "")) : s.name,
       // Strip server-only fields from the duplicate
       ruleId: undefined,
       nextDate: undefined,

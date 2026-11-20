@@ -86,14 +86,18 @@ export function hasMissingReference(rule: Rule, maps: EntityMaps): boolean {
   return false;
 }
 
-/** A stable key for a rule's behavior: stage, operator, and conditions and actions in any order. */
+/**
+ * A stable key for a rule's behavior: stage, operator, conditions in any order,
+ * and actions in their order. Actual runs actions in sequence, so the same
+ * actions in another order can give another result (set notes, then append).
+ */
 function ruleKey(rule: Rule): string {
   const part = (p: ConditionOrAction) => JSON.stringify([p.field, p.op, p.value, p.options ?? null]);
   return JSON.stringify([
     rule.stage || "default",
     rule.conditionsOp,
     rule.conditions.map(part).sort(),
-    rule.actions.map(part).sort(),
+    rule.actions.map(part),
   ]);
 }
 

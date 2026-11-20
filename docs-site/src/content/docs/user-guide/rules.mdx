@@ -143,8 +143,9 @@ Bench asks you to edit them individually instead.
   that category's id. You never see a raw id.
 - Arriving from the Payees or Categories page filters the list to that entity for you.
 - **Needs attention** appears when any rule needs a look, with a count: rules naming a deleted or
-  unknown payee, category, account or category group; rules identical to another (same stage,
-  operator, conditions and actions, in any order); and rules with no conditions, which never run. The
+  unknown payee, category, account or category group; rules identical to another (same stage and
+  operator, the same conditions in any order, the same actions in the same order - Actual runs actions
+  in sequence); and rules with no conditions, which never run. The
   row says what is wrong. To fix a deleted reference, open the rule: the missing item shows as a
   "[deleted account]" (or payee, category, group) chip - remove it with its ×, or pick a replacement. Text operators (`contains`, `matches`) compare raw text, so they do not count
   as references.

@@ -43,9 +43,25 @@ export function useCategoryGroupsSave() {
       const ops = computeSaveOperations<CategoryGroup>(current);
       const toCreate = phase === "delete" ? [] : ops.toCreate;
       const toUpdate = phase === "delete" ? [] : ops.toUpdate;
-      const toDelete = phase === "upsert" ? [] : ops.toDelete;
       const succeeded: SaveResult[] = [];
       const failed: SaveResult[] = [];
+      // Actual deletes a group's remaining categories with it. A category whose
+      // move out of the group did not save is still in it on the server, so the
+      // group is kept (and its delete stays staged) until that move succeeds.
+      const categories = useStagedStore.getState().categories;
+      const toDelete = (phase === "upsert" ? [] : ops.toDelete).filter((groupId) => {
+        const stuck = Object.values(categories).some((c) =>
+          !c.isDeleted && !c.isNew && c.original?.groupId === groupId && c.entity.groupId !== groupId
+        );
+        if (stuck) {
+          failed.push({
+            status: "error",
+            id: groupId,
+            message: "Not deleted: a category moving out of this group did not save, and deleting the group would delete it too. Fix that category, then save again.",
+          });
+        }
+        return !stuck;
+      });
       const succeededCreateIds = new Set<string>();
       const idMap: Record<string, string> = {};
 

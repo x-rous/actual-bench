@@ -83,4 +83,18 @@ describe("useSchedulesSave", () => {
     expect(messages.c).toBe("A date is required.");
     expect(messages.d).toMatch(/payee has not been saved/);
   });
+
+  it("keeps the real payee id on a schedule that failed, so a retry does not send the temporary one", async () => {
+    const createSchedule = jest.fn(async () => { throw new Error("server said no"); });
+    mockGetTransport.mockReturnValue({ mode: "http-api", createSchedule, getSchedules: jest.fn(async () => []) } as unknown as ActualBenchTransport);
+    store().stageNew("schedules", schedule("tmp-s", { name: "Rent", payeeId: "tmp-payee" }));
+
+    const { result } = renderSave();
+    await act(async () => {
+      await result.current.save({ "tmp-payee": "server-payee" });
+    });
+
+    expect(store().schedules["tmp-s"]?.entity.payeeId).toBe("server-payee");
+    expect(store().schedules["tmp-s"]?.saveError).toBe("server said no");
+  });
 });

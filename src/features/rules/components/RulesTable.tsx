@@ -162,6 +162,9 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollEl,
+    // Heights are cached per key: keyed by rule, a measurement follows its rule
+    // when a filter or delete shifts the indices, instead of passing to a neighbour.
+    getItemKey: (index) => rows[index]?.entity.id ?? index,
     estimateSize: () => 64,
     overscan: 8,
   });

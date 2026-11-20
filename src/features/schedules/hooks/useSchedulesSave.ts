@@ -176,6 +176,19 @@ export function useSchedulesSave() {
         store.markSaved("schedules", succeededDeletedIds);
       }
 
+      // A schedule that did not save may still name a payee or account by the
+      // temporary id it had before this Save created it. The id map lives only
+      // for this Save, so point the draft at the real id now; a retry would
+      // otherwise send an id Actual has never seen.
+      for (const f of failed) {
+        const entry = useStagedStore.getState().schedules[f.id];
+        if (!entry || entry.isDeleted) continue;
+        const patch: Partial<Schedule> = {};
+        if (entry.entity.payeeId && entityIdMap[entry.entity.payeeId]) patch.payeeId = entityIdMap[entry.entity.payeeId];
+        if (entry.entity.accountId && entityIdMap[entry.entity.accountId]) patch.accountId = entityIdMap[entry.entity.accountId];
+        if (Object.keys(patch).length > 0) store.stageUpdate("schedules", f.id, patch);
+      }
+
       if (failed.length > 0) {
         const errors: Record<string, string> = {};
         for (const f of failed) {

@@ -46,6 +46,8 @@ type BulkCategoryDeleteIntent = {
 /**
  * Offered when saved categories with transactions or budget amounts are being
  * deleted: a category that takes them over, as Actual's own delete offers.
+ * Actual moves budget amounts only for expense categories; for income ones it
+ * moves the transactions alone, and the dialog says so.
  */
 export type CategoryDeleteTransfer = {
   side: "expense" | "income";
@@ -80,7 +82,9 @@ function DeleteTransferField({
   const groups = Object.values(stagedGroups).filter((g) => !g.isDeleted).map((g) => g.entity);
   return (
     <div className="grid gap-1 text-sm">
-      <span id="category-delete-transfer" className="text-xs font-medium">Move transactions and budget amounts to (optional)</span>
+      <span id="category-delete-transfer" className="text-xs font-medium">
+        {transfer.side === "income" ? "Move transactions to (optional)" : "Move transactions and budget amounts to (optional)"}
+      </span>
       <CategoryPicker
         ariaLabel="Category that takes over transactions and budget amounts"
         ariaDescribedBy="category-delete-transfer"
@@ -92,6 +96,11 @@ function DeleteTransferField({
         value={value ?? ""}
         onChange={(id) => onChange(id || null)}
       />
+      {transfer.side === "income" && (
+        <p className="text-xs text-muted-foreground">
+          Actual moves an income category&apos;s transactions, but not the budget amounts set on it.
+        </p>
+      )}
     </div>
   );
 }

@@ -205,7 +205,8 @@ export function PayeesTable({
   // Apply the rules filter as a second step so it only invalidates when
   // rulesFilter is active or payeeRuleCount changes.
   // "Unused" needs every payee's transaction count, read only while it is chosen.
-  const { data: txCounts, isLoading: txCountsLoading } = useAllTransactionCounts("payee", { enabled: rulesFilter === "unused" });
+  const { data: txCounts, isLoading: txCountsLoading, error: txCountsError, refetch: retryTxCounts } =
+    useAllTransactionCounts("payee", { enabled: rulesFilter === "unused" });
   const rows: PayeeRow[] = useMemo(() => {
     if (rulesFilter === "all") return baseRows;
     if (rulesFilter === "unused" && !txCounts) return [];
@@ -400,6 +401,8 @@ export function PayeesTable({
 
   // ── Bulk add ─────────────────────────────────────────────────────────────────
   function addRows(count: number, focusFirst = false) {
+    // "Unused" never lists drafts, so new rows would be hidden (and the first could not take focus).
+    if (rulesFilter === "unused") setRulesFilter("all");
     pushUndo();
     const firstId = generateId();
     stageNew("payees", { id: firstId, name: "" });
@@ -567,7 +570,14 @@ export function PayeesTable({
         <div ref={setScrollEl} className="min-h-0 flex-1 overflow-auto">
         {rows.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
-            <span>{rulesFilter === "unused" && txCountsLoading ? "Counting transactions…" : search || typeFilter !== "all" || rulesFilter !== "all" ? "No payees match the current filters." : "No payees yet."}</span>
+            {rulesFilter === "unused" && txCountsError && !txCounts ? (
+              <span role="alert" className="flex items-center gap-2 text-destructive">
+                Could not count transactions, so unused payees cannot be listed.
+                <button type="button" className="text-xs underline hover:text-foreground" onClick={retryTxCounts}>Retry</button>
+              </span>
+            ) : (
+              <span>{rulesFilter === "unused" && txCountsLoading ? "Counting transactions…" : search || typeFilter !== "all" || rulesFilter !== "all" ? "No payees match the current filters." : "No payees yet."}</span>
+            )}
             {(search || typeFilter !== "all" || rulesFilter !== "all") && (
               <button
                 className="text-xs underline hover:text-foreground"
