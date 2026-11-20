@@ -21,15 +21,14 @@ USER root
 # Refresh Alpine's own packages (musl, openssl) rather than relying on the
 # snapshot the upstream image was built against. APK_REFRESH and the edge musl
 # are explained in docker/Dockerfile.prod. Unlike the Bench runtime, the
-# upstream image also has musl-dev, which pins musl to its own version, so every
-# installed musl package is moved to edge together.
+# upstream image also has musl-dev (g++ below needs it too), which pins musl to
+# its own version, so musl-dev moves to edge in the same transaction.
 ARG APK_REFRESH=
 RUN echo "apk refresh: ${APK_REFRESH:-local}" \
  && apk upgrade --no-cache \
- && musl_pkgs="$(apk info | grep -xE 'musl(-utils|-dev)?' | sed 's/$/>=1.2.6-r6/')" \
  && apk add --no-cache --upgrade \
       --repository=https://dl-cdn.alpinelinux.org/alpine/edge/main \
-      $musl_pkgs \
+      'musl>=1.2.6-r6' 'musl-utils>=1.2.6-r6' 'musl-dev>=1.2.6-r6' \
  && apk add --no-cache python3 make g++ \
  && npm install -g @actual-app/sync-server@26.11.0
 # The API image uses Node 22. Bench and its native modules are built with Node
