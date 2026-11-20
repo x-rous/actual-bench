@@ -2,16 +2,17 @@ import { getBackupCredential } from "@/lib/credentials/backupSecrets";
 import {
   getBackupArtifact,
   getBackupDestination,
-  getBackupPolicy,
   listArtifactLocations,
-  recordArtifactVerification,
   type BackupArtifact,
+  type BackupArtifactLocation,
+  type BackupDestination,
 } from "@/lib/app-db/backupRepository";
 import type { SqliteDatabase } from "@/lib/app-db/types";
 import { createDestinationAdapter } from "./destinations";
 import { decryptArchive } from "./encryption";
 import { sha256 } from "./manifest";
 import { verifyAppDbArchive, verifyBudgetArchive, type VerificationOutcome } from "./verify";
+import { recordReadOutcome } from "./verificationRecord";
 
 /**
  * Looking inside a backup without restoring it (RD-077 / PR-047e).
@@ -41,23 +42,37 @@ export type InspectionResult = {
 export async function inspectArtifact(
   db: SqliteDatabase,
   artifactId: string,
-  options: { passphrase?: string } = {}
+  options: { passphrase?: string; signal?: AbortSignal } = {}
 ): Promise<InspectionResult> {
   const artifact = getBackupArtifact(db, artifactId);
   if (!artifact) throw new Error("That backup is not in the inventory.");
 
-  const location = listArtifactLocations(db, artifactId).find(
-    (entry) => entry.status === "stored" && entry.destinationId
-  );
-  if (!location?.destinationId) {
+  // Every stored copy, healthiest destination first, until one can be read:
+  // trying only the first left a second, intact copy unused whenever the
+  // first destination was down.
+  const candidates = readableLocations(db, artifactId);
+  if (candidates.length === 0) {
     throw new Error("Bench has no stored copy of this backup to open.");
   }
 
-  const destination = getBackupDestination(db, location.destinationId);
-  if (!destination) throw new Error("The destination holding this backup has been removed.");
+  let bytes: Buffer | null = null;
+  let location = candidates[0].location;
+  let destination = candidates[0].destination;
+  const errors: string[] = [];
+  for (const candidate of candidates) {
+    try {
+      bytes = await createDestinationAdapter(db, candidate.destination, { signal: options.signal }).get(
+        candidate.location.objectKey
+      );
+      location = candidate.location;
+      destination = candidate.destination;
+      break;
+    } catch (error) {
+      errors.push(`${candidate.destination.name}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  if (!bytes) throw new Error(`No copy of this backup could be read. ${errors.join("; ")}`);
 
-  const adapter = createDestinationAdapter(db, destination);
-  const bytes = await adapter.get(location.objectKey);
   const checksumMatches = sha256(bytes) === artifact.checksumSha256;
 
   const base = {
@@ -103,12 +118,7 @@ export async function inspectArtifact(
   // An inspection is a verification, so it counts as one. Anything else would
   // mean a user could open a backup, see it is fine, and still be told on the
   // list that Bench has never checked it.
-  recordArtifactVerification(db, artifact.id, {
-    level: verification.level,
-    status: verification.status,
-    at: new Date().toISOString(),
-    findings: { version: 1, data: { findings: verification.findings } },
-  });
+  recordReadOutcome(db, artifact, verification, new Date().toISOString());
 
   return {
     ...base,
@@ -121,12 +131,30 @@ export async function inspectArtifact(
   };
 }
 
+/**
+ * The stored copies of an artifact Bench can reach, healthiest destination
+ * first: one whose last outcome was a success before one that last failed.
+ */
+export function readableLocations(
+  db: SqliteDatabase,
+  artifactId: string
+): { location: BackupArtifactLocation; destination: BackupDestination }[] {
+  const healthy = (destination: BackupDestination) =>
+    !destination.lastFailureAt || (destination.lastSuccessAt ?? "") > destination.lastFailureAt;
+  return listArtifactLocations(db, artifactId)
+    .filter((location) => location.status === "stored" && location.destinationId)
+    .map((location) => ({ location, destination: getBackupDestination(db, location.destinationId as string) }))
+    .filter(
+      (entry): entry is { location: BackupArtifactLocation; destination: BackupDestination } =>
+        entry.destination !== null
+    )
+    .sort((a, b) => Number(healthy(b.destination)) - Number(healthy(a.destination)));
+}
+
 function storedPassphrase(db: SqliteDatabase, artifact: BackupArtifact): string | null {
-  // The artifact's own reference first, so a copy whose rule was deleted can
-  // still be opened with the passphrase Bench kept for it.
-  const ref =
-    artifact.encryptionCredentialRef ??
-    (artifact.policyId ? getBackupPolicy(db, artifact.policyId)?.encryptionCredentialRef ?? null : null);
+  // The artifact's own reference only: a rule's current passphrase cannot
+  // open a copy taken before it changed.
+  const ref = artifact.encryptionCredentialRef;
   if (!ref) return null;
   try {
     const secret = getBackupCredential(db, ref);

@@ -5,7 +5,12 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
-import { createBackupDestination, createBackupPolicy } from "@/lib/app-db/backupRepository";
+import {
+  createBackupArtifact,
+  createBackupDestination,
+  createBackupPolicy,
+  getBackupPolicy,
+} from "@/lib/app-db/backupRepository";
 import { getBackupCredential } from "@/lib/credentials/backupSecrets";
 import { PATCH } from "./route";
 
@@ -66,5 +71,31 @@ describe("PATCH /api/backups/policies/[policyId]", () => {
 
     expect(response.status).toBe(200);
     expect(getBackupCredential(db, policy.id)).toEqual({ passphrase: "correct horse" });
+  });
+
+  it("keeps the old passphrase for the copies it encrypted when the passphrase changes", async () => {
+    // Overwriting it under the same ref made every older encrypted copy
+    // resolve to a passphrase that cannot open it.
+    const db = getAppDb();
+    const policy = createBackupPolicy(db, { name: "Off-site", contents: "app-db", scheduleKind: "manual" });
+    await patch(policy.id, { encryption: "passphrase", passphrase: "first passphrase" });
+    const oldRef = getBackupPolicy(db, policy.id)?.encryptionCredentialRef;
+    expect(oldRef).toBe(policy.id);
+    createBackupArtifact(db, {
+      policyId: policy.id,
+      kind: "app-db",
+      checksumSha256: "a".repeat(64),
+      sizeBytes: 10,
+      encrypted: true,
+      encryptionCredentialRef: oldRef,
+    });
+
+    const response = await patch(policy.id, { encryption: "passphrase", passphrase: "second passphrase" });
+
+    expect(response.status).toBe(200);
+    const newRef = getBackupPolicy(db, policy.id)?.encryptionCredentialRef;
+    expect(newRef).not.toBe(oldRef);
+    expect(getBackupCredential(db, oldRef as string)).toEqual({ passphrase: "first passphrase" });
+    expect(getBackupCredential(db, newRef as string)).toEqual({ passphrase: "second passphrase" });
   });
 });

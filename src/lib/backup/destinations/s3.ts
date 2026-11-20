@@ -49,6 +49,46 @@ export function readS3Config(destination: BackupDestination): S3DestinationConfi
   };
 }
 
+/**
+ * How long one request may take.
+ *
+ * A fixed minute for the request itself, plus time for the body at a slow
+ * uplink's pace. Without any limit a stalled endpoint held a run until the
+ * job's hour-long deadline, after the first write had started, so it ended
+ * "indeterminate" and was never retried.
+ */
+const BASE_TIMEOUT_MS = 60_000;
+const SLOWEST_BYTES_PER_SECOND = 512 * 1024;
+
+export function requestTimeoutMs(bodyBytes: number): number {
+  return BASE_TIMEOUT_MS + Math.ceil((bodyBytes / SLOWEST_BYTES_PER_SECOND) * 1000);
+}
+
+/** Waits between attempts of a request that failed in a way worth repeating. */
+export const DEFAULT_RETRY_DELAYS_MS = [1_000, 4_000];
+
+function sleep(ms: number, signal: AbortSignal | undefined): Promise<void> {
+  if (ms <= 0) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason ?? new Error("Aborted"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+export type S3AdapterOptions = {
+  /** The run's own signal: a cancel or deadline stops the request. */
+  signal?: AbortSignal;
+  /** Override for tests. */
+  retryDelaysMs?: number[];
+};
+
 function normalizePrefix(prefix: string): string {
   const trimmed = prefix.trim().replace(/^\/+/, "").replace(/\/+$/, "");
   return trimmed ? `${trimmed}/` : "";
@@ -69,18 +109,31 @@ function decodeXml(value: string): string {
     .replace(/&amp;/g, "&");
 }
 
+type SendOptions = {
+  method: string;
+  key?: string;
+  query?: Record<string, string | undefined>;
+  body?: Uint8Array;
+  extraHeaders?: Record<string, string>;
+  expectMissing?: boolean;
+};
+
 export class S3DestinationAdapter implements DestinationAdapter {
   readonly kind = "s3" as const;
   readonly destinationId: string;
   readonly name: string;
   private readonly config: S3DestinationConfig;
   private readonly credentials: S3Credentials;
+  private readonly signal: AbortSignal | undefined;
+  private readonly retryDelaysMs: number[];
 
-  constructor(destination: BackupDestination, credentials: S3Credentials) {
+  constructor(destination: BackupDestination, credentials: S3Credentials, options: S3AdapterOptions = {}) {
     this.destinationId = destination.id;
     this.name = destination.name;
     this.config = readS3Config(destination);
     this.credentials = credentials;
+    this.signal = options.signal;
+    this.retryDelaysMs = options.retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS;
   }
 
   private get host(): string {
@@ -106,14 +159,24 @@ export class S3DestinationAdapter implements DestinationAdapter {
     return `${this.config.prefix}${key.replace(/^\/+/, "")}`;
   }
 
-  private async send(options: {
-    method: string;
-    key?: string;
-    query?: Record<string, string | undefined>;
-    body?: Uint8Array;
-    extraHeaders?: Record<string, string>;
-    expectMissing?: boolean;
-  }): Promise<Response> {
+  /**
+   * One request, repeated when it failed in a way worth repeating: a network
+   * error, a timeout, a 5xx or throttling. A refusal (4xx) is final, and a
+   * stop asked for by the run is never retried.
+   */
+  private async send(options: SendOptions): Promise<Response> {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return await this.sendOnce(options);
+      } catch (error) {
+        const retryable = error instanceof DestinationError && error.retryable;
+        if (!retryable || this.signal?.aborted || attempt >= this.retryDelaysMs.length) throw error;
+        await sleep(this.retryDelaysMs[attempt], this.signal);
+      }
+    }
+  }
+
+  private async sendOnce(options: SendOptions): Promise<Response> {
     const objectPath = options.key === undefined ? "" : encodeS3Path(this.fullKey(options.key));
     const path = this.config.forcePathStyle
       ? `/${this.config.bucket}${objectPath}`
@@ -145,16 +208,28 @@ export class S3DestinationAdapter implements DestinationAdapter {
       : "";
     const url = `${this.scheme}://${this.host}${path}${search}`;
 
+    const timeout = AbortSignal.timeout(requestTimeoutMs(body?.byteLength ?? 0));
+    const signal = this.signal ? AbortSignal.any([this.signal, timeout]) : timeout;
+
     let response: Response;
     try {
       response = await guardedFetch(url, {
         method: options.method,
         headers: signed.headers,
-        body: body ? Buffer.from(body) : undefined,
+        // The bytes as they are: copying them into a Buffer first doubled the
+        // memory a large upload needed.
+        body: body as BodyInit | undefined,
+        signal,
       });
     } catch (error) {
       if (error instanceof OutboundBlockedError) {
         throw new DestinationError(error.message, { cause: error, retryable: false });
+      }
+      if (this.signal?.aborted) {
+        throw new DestinationError("Stopped before the request finished.", { cause: error, retryable: false });
+      }
+      if (timeout.aborted) {
+        throw new DestinationError(`${this.host} did not answer in time.`, { cause: error, retryable: true });
       }
       throw new DestinationError(
         `Could not reach ${this.host}: ${error instanceof Error ? error.message : String(error)}`,
@@ -191,6 +266,14 @@ export class S3DestinationAdapter implements DestinationAdapter {
   async get(key: string): Promise<Buffer> {
     const response = await this.send({ method: "GET", key });
     return Buffer.from(await response.arrayBuffer());
+  }
+
+  /** The object as a stream, so a download is not held in memory first. */
+  async getStream(key: string): Promise<{ stream: ReadableStream<Uint8Array>; sizeBytes: number }> {
+    const response = await this.send({ method: "GET", key });
+    if (!response.body) throw new DestinationError(`${key} came back with no body.`);
+    const size = Number(response.headers.get("content-length") ?? "0");
+    return { stream: response.body, sizeBytes: Number.isFinite(size) ? size : 0 };
   }
 
   async head(key: string): Promise<StoredObject | null> {

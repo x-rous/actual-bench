@@ -1,12 +1,9 @@
 import { NextResponse } from "next/server";
 import { getAppDb } from "@/lib/app-db/connection";
 import { appDbErrorResponse } from "@/lib/app-db/routeResponses";
-import {
-  getBackupArtifact,
-  getBackupDestination,
-  listArtifactLocations,
-} from "@/lib/app-db/backupRepository";
+import { getBackupArtifact } from "@/lib/app-db/backupRepository";
 import { createDestinationAdapter } from "@/lib/backup/destinations";
+import { readableLocations } from "@/lib/backup/inspect";
 
 type RouteContext = { params: Promise<{ artifactId: string }> };
 
@@ -34,33 +31,59 @@ export async function GET(_request: Request, context: RouteContext) {
     const artifact = getBackupArtifact(db, artifactId);
     if (!artifact) return NextResponse.json({ error: "Backup not found" }, { status: 404 });
 
-    const location = listArtifactLocations(db, artifactId).find(
-      (entry) => entry.status === "stored" && entry.destinationId
-    );
-    if (!location?.destinationId) {
+    // Every stored copy, healthiest destination first: a second, intact copy
+    // is no use if the download only ever tries the first.
+    const candidates = readableLocations(db, artifactId);
+    if (candidates.length === 0) {
       return NextResponse.json({ error: "Bench has no stored copy of this backup." }, { status: 404 });
     }
 
-    const destination = getBackupDestination(db, location.destinationId);
-    if (!destination) {
-      return NextResponse.json({ error: "The destination holding it has been removed." }, { status: 404 });
+    const errors: string[] = [];
+    for (const { location, destination } of candidates) {
+      try {
+        const adapter = createDestinationAdapter(db, destination);
+        const filename = location.objectKey.split("/").pop() || "backup.zip";
+        const headers: Record<string, string> = {
+          "Content-Type": artifact.encrypted
+            ? "application/octet-stream"
+            : artifact.kind === "budget"
+              ? "application/zip"
+              : "application/vnd.sqlite3",
+          "Content-Disposition": contentDisposition(filename),
+        };
+
+        // Streamed when the destination can, so a large copy is not held in
+        // the server's memory on its way to the browser.
+        if (adapter.getStream) {
+          const { stream, sizeBytes } = await adapter.getStream(location.objectKey);
+          if (sizeBytes > 0) headers["Content-Length"] = String(sizeBytes);
+          return new NextResponse(stream, { headers });
+        }
+        const bytes = await adapter.get(location.objectKey);
+        headers["Content-Length"] = String(bytes.byteLength);
+        return new NextResponse(new Uint8Array(bytes), { headers });
+      } catch (error) {
+        errors.push(`${destination.name}: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
 
-    const bytes = await createDestinationAdapter(db, destination).get(location.objectKey);
-    const filename = location.objectKey.split("/").pop() ?? "backup.zip";
-
-    return new NextResponse(new Uint8Array(bytes), {
-      headers: {
-        "Content-Type": artifact.encrypted
-          ? "application/octet-stream"
-          : artifact.kind === "budget"
-            ? "application/zip"
-            : "application/vnd.sqlite3",
-        "Content-Disposition": `attachment; filename="${filename}"`,
-        "Content-Length": String(bytes.byteLength),
-      },
-    });
+    return NextResponse.json(
+      { error: `No copy of this backup could be read. ${errors.join("; ")}` },
+      { status: 502 }
+    );
   } catch (error) {
     return appDbErrorResponse(error);
   }
+}
+
+/**
+ * The attachment header, safe for any name.
+ *
+ * Object keys found by discovery come from the destination, so the name is
+ * not trusted: the plain `filename` keeps only safe characters and the real
+ * name travels percent-encoded in `filename*`.
+ */
+function contentDisposition(filename: string): string {
+  const fallback = filename.replace(/[^A-Za-z0-9._-]/g, "_");
+  return `attachment; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
 }

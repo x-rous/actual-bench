@@ -143,4 +143,26 @@ describe("inspecting a candidate path", () => {
       else process.env.ACTUAL_BENCH_DB_PATH = previous;
     }
   });
+
+  it("refuses a folder that has lost its marker and its copies, which is what an unmounted volume looks like", async () => {
+    // An unmounted volume leaves an empty, writable directory behind. Writing
+    // into it looked like a backup; scrubbing it called every copy missing.
+    const adapter = new LocalDestinationAdapter(destination(root));
+    await adapter.put("budget/a.zip", Buffer.from("copy"));
+    await adapter.confirmIdentity({ expectCopies: true, sampleKey: "budget/a.zip" });
+
+    rmSync(root, { recursive: true, force: true });
+    await expect(
+      adapter.confirmIdentity({ expectCopies: true, sampleKey: "budget/a.zip" })
+    ).rejects.toThrow(/mounted/);
+  });
+
+  it("writes its marker on first use and accepts the folder from then on", async () => {
+    const adapter = new LocalDestinationAdapter(destination(root));
+    await adapter.confirmIdentity({ expectCopies: false, sampleKey: null });
+
+    // The marker alone is enough later, even before the copy it would sample.
+    await expect(adapter.confirmIdentity({ expectCopies: true, sampleKey: "missing.zip" })).resolves.toBeUndefined();
+    expect((await adapter.list("")).map((entry) => entry.key)).not.toContain(".bench-destination.json");
+  });
 });

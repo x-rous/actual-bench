@@ -44,12 +44,15 @@ import { Select } from "@/components/ui/select";
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  existing?: BackupDestination | null;
+  existing?: (BackupDestination & { holdsCopies?: boolean }) | null;
   onSaved: () => void;
 };
 
 export function DestinationDialog({ open, onOpenChange, existing, onSaved }: Props) {
   const editing = Boolean(existing);
+  // Where it points is fixed once it holds copies: they are recorded by their
+  // place in it, and moving it would leave every one of them "missing".
+  const locationLocked = Boolean(existing?.holdsCopies);
   const [kind, setKind] = useState<"local" | "s3">(existing?.kind ?? "local");
   const [name, setName] = useState(existing?.name ?? "");
 
@@ -183,12 +186,20 @@ export function DestinationDialog({ open, onOpenChange, existing, onSaved }: Pro
             </Field>
           )}
 
+          {locationLocked && (
+            <p className="text-muted-foreground">
+              This destination already holds backups, so where it points is fixed. For a new location,
+              add another destination; the copies here stay where they are.
+            </p>
+          )}
+
           {kind === "local" ? (
             <>
               <Field label="Folder">
                 <div className="flex gap-2">
                   <Input
                     value={path}
+                    disabled={locationLocked}
                     onChange={(event) => {
                       setPath(event.target.value);
                       setChecks(null);
@@ -216,7 +227,7 @@ export function DestinationDialog({ open, onOpenChange, existing, onSaved }: Pro
             <>
               <div className="grid grid-cols-2 gap-2">
                 <Field label="Bucket">
-                  <Input value={bucket} onChange={(e) => setBucket(e.target.value)} />
+                  <Input value={bucket} disabled={locationLocked} onChange={(e) => setBucket(e.target.value)} />
                 </Field>
                 <Field label="Region">
                   <Input value={region} onChange={(e) => setRegion(e.target.value)} />
@@ -225,12 +236,13 @@ export function DestinationDialog({ open, onOpenChange, existing, onSaved }: Pro
               <Field label="Endpoint (leave blank for AWS)">
                 <Input
                   value={endpoint}
+                  disabled={locationLocked}
                   onChange={(e) => setEndpoint(e.target.value)}
                   placeholder="https://minio.lan:9000"
                 />
               </Field>
               <Field label="Prefix">
-                <Input value={prefix} onChange={(e) => setPrefix(e.target.value)} />
+                <Input value={prefix} disabled={locationLocked} onChange={(e) => setPrefix(e.target.value)} />
               </Field>
               <div className="grid grid-cols-2 gap-2">
                 <Field label="Access key ID">

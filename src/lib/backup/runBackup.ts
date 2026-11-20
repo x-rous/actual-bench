@@ -8,12 +8,14 @@ import {
   recordArtifactLocation,
   recordDestinationOutcome,
   type BackupArtifact,
+  type BackupDestination,
   type BackupPolicy,
 } from "@/lib/app-db/backupRepository";
-import type { SqliteDatabase } from "@/lib/app-db/types";
+import type { JsonEnvelope, SqliteDatabase } from "@/lib/app-db/types";
+import { generateId } from "@/lib/uuid";
 import type { ConnectionInstance } from "@/store/connection";
 import { contentOf, detectBackupAnomalies } from "./anomaly";
-import { createDestinationAdapter, DestinationError } from "./destinations";
+import { DestinationError, openDestination } from "./destinations";
 import { encryptArchive } from "./encryption";
 import {
   manifestKeyFor,
@@ -26,6 +28,7 @@ import {
 } from "./manifest";
 import { exportAppDbSnapshot } from "./sources/appDbExport";
 import { verifyAppDbArchive, verifyBudgetArchive, type VerificationOutcome } from "./verify";
+import { jsonSummary } from "./verificationRecord";
 import { LATEST_SCHEMA_VERSION } from "@/lib/app-db/migrations";
 
 /**
@@ -119,6 +122,8 @@ export type RunBackupOptions = {
    * means (an automation in a worker) needs to know when that changes.
    */
   onBeforeStore?: () => void;
+  /** The run's deadline and cancel: honoured between steps and by every request. */
+  signal?: AbortSignal;
 };
 
 function slug(value: string): string {
@@ -201,7 +206,8 @@ async function prepareArtifact(
   db: SqliteDatabase,
   policy: BackupPolicy,
   kind: BackupArtifactKind,
-  supplied: RunBackupOptions["budgetArchive"] = null
+  supplied: RunBackupOptions["budgetArchive"] = null,
+  signal?: AbortSignal
 ): Promise<PreparedArtifact> {
   if (kind === "app-db") {
     const bytes = exportAppDbSnapshot(db);
@@ -236,7 +242,9 @@ async function prepareArtifact(
   const connection = readSourceConnection(db, policy);
   const transport = openServerTransport(connection);
   if (!transport.exportBudget) throw new Error("This connection cannot export its budget.");
-  const bytes = Buffer.from(await transport.exportBudget());
+  const exported = await transport.exportBudget({ signal });
+  // A view over the exported bytes, not a copy of them.
+  const bytes = Buffer.from(exported.buffer, exported.byteOffset, exported.byteLength);
   // A server that answers with nothing is a failure, not an empty backup.
   if (bytes.byteLength === 0) throw new Error("The server returned an empty export.");
   const label = connection.label && connection.label !== connection.baseUrl ? connection.label : null;
@@ -266,6 +274,7 @@ export async function runBackup(
   const startedAt = now.toISOString();
   const trigger = options.trigger ?? "scheduled";
   const tier = options.tier ?? (trigger === "manual" ? "manual" : trigger === "safety" ? "auto" : "daily");
+  const signal = options.signal;
 
   const destinations = policy.destinationIds
     .map((id) => getBackupDestination(db, id))
@@ -290,10 +299,12 @@ export async function runBackup(
   const artifacts: ArtifactOutcome[] = [];
 
   for (const kind of kindsFor(options.contentsOverride ?? policy.contents)) {
+    signal?.throwIfAborted();
     let prepared: PreparedArtifact;
     try {
-      prepared = await prepareArtifact(db, policy, kind, options.budgetArchive ?? null);
+      prepared = await prepareArtifact(db, policy, kind, options.budgetArchive ?? null, signal);
     } catch (error) {
+      if (signal?.aborted) throw error;
       artifacts.push({
         kind,
         artifactId: null,
@@ -310,8 +321,21 @@ export async function runBackup(
     // that failed to open half its data, produces a perfectly valid archive
     // holding the wrong amount of budget — so the new copy is compared with the
     // last one before it is allowed to call itself verified.
+    //
+    // The last one that *passed*, of the same budget. Comparing with whatever
+    // came last let a second truncated export match the first and pass, and
+    // comparing across budgets (a rule whose source changed) failed copies that
+    // were fine.
     const previous =
-      listBackupArtifacts(db, { policyId: policy.id, kind, limit: 1 })[0] ?? null;
+      listBackupArtifacts(db, {
+        policyId: policy.id,
+        kind,
+        sourceBudgetId: prepared.sourceBudgetId,
+        verificationStatus: "passed",
+        limit: 1,
+      })[0] ?? null;
+    // Whether the copy read cleanly, before the comparison with the last one.
+    const readable = prepared.verification.status === "passed";
     const anomalies = detectBackupAnomalies({
       content: prepared.verification.content,
       sizeBytes: prepared.plaintext.byteLength,
@@ -327,8 +351,13 @@ export async function runBackup(
     const plaintextChecksum = prepared.verification.checksumSha256;
     const encrypted = passphrase ? encryptArchive(prepared.plaintext, passphrase) : null;
     const stored = encrypted ? encrypted.bytes : prepared.plaintext;
+    const verifiedAt = new Date().toISOString();
 
-    const artifact = createBackupArtifact(db, {
+    // The row is written once a copy exists somewhere, not before: a run that
+    // stored nothing used to leave a row behind that retention could never
+    // remove, and every failed night added another.
+    const record = {
+      id: generateId(),
       policyId: policy.id,
       kind,
       createdAt: startedAt,
@@ -352,41 +381,40 @@ export async function runBackup(
       takenBefore: options.takenBefore ?? null,
       verificationLevel: prepared.verification.level,
       verificationStatus: prepared.verification.status,
-      verifiedAt: new Date().toISOString(),
+      verifiedAt,
       verification: {
         version: 1,
         data: {
           findings: prepared.verification.findings,
+          // Kept apart so the page can tell "smaller than last time" (a copy
+          // that opened fine and needs a human to judge) from "unreadable".
+          anomalies,
+          readable,
           content: jsonSummary(prepared.verification.content),
         },
       },
       manifestVersion: MANIFEST_VERSION,
       notes: options.notes ?? null,
-    });
+    } satisfies Omit<BackupArtifact, "benchVersion"> & { verification: JsonEnvelope };
 
     const objectKey = backupObjectKey({
       kind,
       label: prepared.label,
       createdAt: now,
-      artifactId: artifact.id,
+      artifactId: record.id,
       encrypted: encrypted !== null,
     });
 
-    const manifest = buildManifest({
-      artifact,
-      policy,
-      prepared,
-      objectKey,
-      encrypted: encrypted !== null,
-    });
+    const manifest = buildManifest({ record, policy, prepared, objectKey });
 
     options.onBeforeStore?.();
-    const results = await fanOut(db, destinations, objectKey, stored, manifest, artifact);
+    const results = await fanOut(db, destinations, objectKey, stored, manifest, record, signal);
 
+    const anyStored = results.some((result) => result.status === "stored");
     artifacts.push({
       kind,
-      artifactId: artifact.id,
-      status: results.some((result) => result.status === "stored") ? "stored" : "failed",
+      artifactId: anyStored ? record.id : null,
+      status: anyStored ? "stored" : "failed",
       sizeBytes: stored.byteLength,
       verification: prepared.verification,
       destinations: results,
@@ -409,20 +437,14 @@ export async function runBackup(
   };
 }
 
-/** Strip `undefined` so a content summary can be stored as JSON. */
-function jsonSummary(content: Record<string, unknown>): Record<string, string | number | null> {
-  const out: Record<string, string | number | null> = {};
-  for (const [key, value] of Object.entries(content)) {
-    if (value === undefined) continue;
-    if (typeof value === "string" || typeof value === "number" || value === null) out[key] = value;
-  }
-  return out;
-}
-
 function summarize(artifacts: ArtifactOutcome[], stored: boolean, verified: boolean): string | undefined {
   const failedArtifact = artifacts.find((entry) => entry.status === "failed");
   if (failedArtifact) {
-    return failedArtifact.error ?? `The ${failedArtifact.kind} backup could not be stored anywhere.`;
+    const reason = failedArtifact.destinations.find((entry) => entry.error)?.error;
+    return (
+      failedArtifact.error ??
+      `The ${failedArtifact.kind} backup could not be stored anywhere${reason ? `: ${reason}` : "."}`
+    );
   }
   if (stored && !verified) {
     const unverified = artifacts.find((entry) => entry.verification?.status !== "passed");
@@ -438,29 +460,30 @@ function summarize(artifacts: ArtifactOutcome[], stored: boolean, verified: bool
   return undefined;
 }
 
+type ArtifactRecord = Omit<BackupArtifact, "benchVersion" | "verification"> & { verification: JsonEnvelope };
+
 function buildManifest(input: {
-  artifact: BackupArtifact;
+  record: ArtifactRecord;
   policy: BackupPolicy;
   prepared: PreparedArtifact;
   objectKey: string;
-  encrypted: boolean;
 }): BackupManifest {
-  const { artifact, policy, prepared } = input;
+  const { record, policy, prepared } = input;
   return {
     manifestVersion: MANIFEST_VERSION,
-    artifactId: artifact.id,
-    kind: artifact.kind,
-    createdAt: artifact.createdAt,
-    sizeBytes: artifact.sizeBytes,
-    checksumSha256: artifact.checksumSha256,
-    plaintextChecksumSha256: artifact.plaintextChecksumSha256,
-    encryption: input.encrypted
+    artifactId: record.id,
+    kind: record.kind,
+    createdAt: record.createdAt,
+    sizeBytes: record.sizeBytes,
+    checksumSha256: record.checksumSha256,
+    plaintextChecksumSha256: record.plaintextChecksumSha256,
+    encryption: record.encrypted
       ? {
           algorithm: "aes-256-gcm",
           kdf: "scrypt",
-          salt: String(artifact.encryption?.data.salt ?? ""),
-          iv: String(artifact.encryption?.data.iv ?? ""),
-          authTag: String(artifact.encryption?.data.authTag ?? ""),
+          salt: String(record.encryption?.data.salt ?? ""),
+          iv: String(record.encryption?.data.iv ?? ""),
+          authTag: String(record.encryption?.data.authTag ?? ""),
         }
       : null,
     source: {
@@ -472,14 +495,14 @@ function buildManifest(input: {
     verification: {
       level: prepared.verification.level,
       status: prepared.verification.status,
-      verifiedAt: artifact.verifiedAt,
+      verifiedAt: record.verifiedAt,
       findings: prepared.verification.findings,
     },
     policy: { id: policy.id, name: policy.name },
-    tier: artifact.tier,
-    pinned: artifact.pinned,
-    protectedUntil: artifact.protectedUntil,
-    takenBefore: artifact.takenBefore,
+    tier: record.tier,
+    pinned: record.pinned,
+    protectedUntil: record.protectedUntil,
+    takenBefore: record.takenBefore,
     benchVersion: process.env.NEXT_PUBLIC_APP_VERSION ?? null,
     appDbSchemaVersion: LATEST_SCHEMA_VERSION,
   };
@@ -495,35 +518,42 @@ function buildManifest(input: {
  */
 async function fanOut(
   db: SqliteDatabase,
-  destinations: ReturnType<typeof getBackupDestination>[],
+  destinations: BackupDestination[],
   objectKey: string,
   bytes: Uint8Array,
   manifest: BackupManifest,
-  artifact: BackupArtifact
+  record: ArtifactRecord,
+  signal: AbortSignal | undefined
 ): Promise<DestinationOutcome[]> {
   const results: DestinationOutcome[] = [];
+  let artifactExists = false;
+  const failures: { destination: BackupDestination; message: string }[] = [];
 
   for (const destination of destinations) {
-    if (!destination) continue;
+    signal?.throwIfAborted();
     const at = new Date().toISOString();
     try {
-      const adapter = createDestinationAdapter(db, destination);
+      const adapter = await openDestination(db, destination, { signal });
       const written = await adapter.put(
         objectKey,
         bytes,
-        artifact.kind === "budget" && !artifact.encrypted ? "application/zip" : "application/octet-stream"
+        record.kind === "budget" && !record.encrypted ? "application/zip" : "application/octet-stream"
       );
       // The manifest goes second and only on success: a manifest without its
       // artifact would advertise a backup that is not there.
       await adapter.put(manifestKeyFor(objectKey), serializeManifest(manifest), "application/json");
 
+      if (!artifactExists) {
+        createBackupArtifact(db, record);
+        artifactExists = true;
+      }
       recordArtifactLocation(db, {
-        artifactId: artifact.id,
+        artifactId: record.id,
         destinationId: destination.id,
         objectKey,
         status: "stored",
         uploadedAt: at,
-        lastVerifiedAt: artifact.verificationStatus === "passed" ? at : null,
+        lastVerifiedAt: record.verificationStatus === "passed" ? at : null,
       });
       recordDestinationOutcome(db, destination.id, { success: true, at });
 
@@ -535,18 +565,13 @@ async function fanOut(
         sizeBytes: written.sizeBytes,
       });
     } catch (error) {
+      if (signal?.aborted) throw error;
       const message =
         error instanceof DestinationError || error instanceof Error
           ? error.message
           : String(error);
 
-      recordArtifactLocation(db, {
-        artifactId: artifact.id,
-        destinationId: destination.id,
-        objectKey,
-        status: "failed",
-        lastError: message,
-      });
+      failures.push({ destination, message });
       recordDestinationOutcome(db, destination.id, { success: false, at, reason: message });
 
       results.push({
@@ -556,6 +581,21 @@ async function fanOut(
         objectKey: null,
         sizeBytes: null,
         error: message,
+      });
+    }
+  }
+
+  // Failed uploads are recorded against the artifact only when it exists:
+  // the detail is useful beside a copy that landed elsewhere, and is already
+  // in the run result and the destination's health when nothing landed.
+  if (artifactExists) {
+    for (const failure of failures) {
+      recordArtifactLocation(db, {
+        artifactId: record.id,
+        destinationId: failure.destination.id,
+        objectKey,
+        status: "failed",
+        lastError: failure.message,
       });
     }
   }

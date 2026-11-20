@@ -1,8 +1,9 @@
 import { getAppMeta, setAppMeta } from "@/lib/app-db/appMetaRepository";
-import { listBackupArtifacts, listBackupPolicies } from "@/lib/app-db/backupRepository";
+import { listBackupArtifacts, listBackupPolicies, type BackupPolicy } from "@/lib/app-db/backupRepository";
 import { logger } from "@/lib/logger";
 import type { SqliteDatabase } from "@/lib/app-db/types";
 import { runBackup } from "./runBackup";
+import type { UploadedArchive } from "./uploadedArchive";
 
 /**
  * Safety recovery points (RD-077 / PR-047f).
@@ -69,11 +70,41 @@ export function writeSafetySettings(
 }
 
 export type SafetyPointOutcome = {
-  status: "taken" | "reused" | "disabled" | "unavailable" | "failed";
+  /**
+   * `needs-archive`: the rule that covers this budget takes its copy from the
+   * browser (a Direct budget that is not enrolled), so the caller should
+   * export the budget and ask again with the archive.
+   */
+  status: "taken" | "reused" | "disabled" | "unavailable" | "failed" | "needs-archive";
   message: string;
   artifactId?: string;
   takenAt?: string;
 };
+
+/**
+ * The rule that protects this budget.
+ *
+ * Matched on the connection the user is saving through. Taking the first
+ * enabled rule backed up whichever budget that rule named - another budget
+ * entirely, or none for a rule that copies only Bench's settings - and then
+ * reported "recovery point taken" for the budget about to be changed.
+ */
+export function ruleForConnection(db: SqliteDatabase, connectionFingerprint: string): BackupPolicy | null {
+  return (
+    listBackupPolicies(db).find(
+      (policy) =>
+        policy.enabled &&
+        policy.contents !== "app-db" &&
+        policy.destinationIds.length > 0 &&
+        policy.sourceRef.data.connectionFingerprint === connectionFingerprint
+    ) ?? null
+  );
+}
+
+/** Whether a rule's budget can only come from the browser. */
+function takesArchiveFromBrowser(policy: BackupPolicy): boolean {
+  return policy.scheduleKind === "manual" || policy.sourceRef.data.sourceKind === "direct";
+}
 
 /**
  * Take a recovery point before something risky, unless there is a good reason
@@ -85,7 +116,16 @@ export type SafetyPointOutcome = {
  */
 export async function takeSafetyRecoveryPoint(
   db: SqliteDatabase,
-  input: { reason: string; force?: boolean; now?: Date }
+  input: {
+    reason: string;
+    /** The connection the change is being saved through. */
+    connectionFingerprint?: string | null;
+    /** The budget, exported by the browser, for a rule that needs it. */
+    budgetArchive?: UploadedArchive | null;
+    force?: boolean;
+    now?: Date;
+    signal?: AbortSignal;
+  }
 ): Promise<SafetyPointOutcome> {
   const now = input.now ?? new Date();
   const settings = readSafetySettings(db);
@@ -94,22 +134,17 @@ export async function takeSafetyRecoveryPoint(
     return { status: "disabled", message: "Recovery points before risky changes are turned off." };
   }
 
-  const policy = listBackupPolicies(db).find(
-    (entry) =>
-      entry.enabled &&
-      entry.destinationIds.length > 0 &&
-      typeof entry.sourceRef.data.connectionFingerprint === "string"
-  );
+  const policy = input.connectionFingerprint ? ruleForConnection(db, input.connectionFingerprint) : null;
   if (!policy) {
     return {
       status: "unavailable",
       message:
-        "Bench has no backup rule it can use, so it cannot take a recovery point before this change.",
+        "No backup rule covers this budget, so Bench did not take a recovery point. Add a rule for it on the Backups page.",
     };
   }
 
   if (!input.force) {
-    const recent = listBackupArtifacts(db, { policyId: policy.id, limit: 20 }).find(
+    const recent = listBackupArtifacts(db, { policyId: policy.id, kind: "budget", limit: 20 }).find(
       (artifact) =>
         artifact.tier === "auto" &&
         now.getTime() - new Date(artifact.createdAt).getTime() < settings.debounceMinutes * 60_000
@@ -124,6 +159,10 @@ export async function takeSafetyRecoveryPoint(
     }
   }
 
+  if (takesArchiveFromBrowser(policy) && !input.budgetArchive) {
+    return { status: "needs-archive", message: "This budget's recovery point is exported by the browser." };
+  }
+
   const protectedUntil = new Date(
     now.getTime() + policy.retention.autoProtectionDays * 24 * 3_600_000
   ).toISOString();
@@ -135,6 +174,8 @@ export async function takeSafetyRecoveryPoint(
       takenBefore: input.reason,
       protectedUntil,
       now,
+      signal: input.signal,
+      budgetArchive: input.budgetArchive ?? null,
       // The budget alone: this protects against a change about to be made to
       // the budget, and copying Bench's own settings too would double the time
       // the user waits for something they did not ask for.

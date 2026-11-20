@@ -456,6 +456,7 @@ export function createBackupPolicy(db: SqliteDatabase, input: unknown): BackupPo
     : [];
 
   const encryption = oneOf(input.encryption, ["none", "passphrase"] as const, "encryption", "none");
+  const scheduleKind = oneOf(input.scheduleKind, ["cron", "interval", "manual"] as const, "scheduleKind", "cron");
 
   db.prepare(
     `INSERT INTO backup_policies
@@ -477,11 +478,14 @@ export function createBackupPolicy(db: SqliteDatabase, input: unknown): BackupPo
     encryption,
     optionalText(input.encryptionCredentialRef, "encryptionCredentialRef", 200),
     JSON.stringify(normalizeRetention(input.retention)),
-    oneOf(input.scheduleKind, ["cron", "interval", "manual"] as const, "scheduleKind", "cron"),
+    scheduleKind,
     // A nightly backup in the small hours is the right default: late enough
     // that the day's transactions are in, early enough to be done before anyone
-    // looks at the budget.
-    optionalText(input.cronExpression, "cronExpression", 120) ?? "0 2 * * *",
+    // looks at the budget. A manual rule has no schedule, and storing one made
+    // readiness treat it as a daily rule that was always late.
+    scheduleKind === "manual"
+      ? null
+      : (optionalText(input.cronExpression, "cronExpression", 120) ?? "0 2 * * *"),
     input.intervalMinutes === undefined || input.intervalMinutes === null
       ? null
       : count(input.intervalMinutes, "intervalMinutes", 1440),
@@ -674,9 +678,24 @@ export function getBackupArtifact(db: SqliteDatabase, id: string): BackupArtifac
   return row ? rowToArtifact(row) : null;
 }
 
+/**
+ * Artifacts, newest first.
+ *
+ * `limit: "all"` is for callers whose answer is wrong if a row is left out:
+ * retention for one rule, and anything deciding whether a copy or a secret is
+ * still needed. A capped read there silently treats the oldest copies - the
+ * yearly and monthly ones, the long-term history - as if they did not exist.
+ */
 export function listBackupArtifacts(
   db: SqliteDatabase,
-  options: { policyId?: string; kind?: BackupArtifactKind; limit?: number } = {}
+  options: {
+    policyId?: string;
+    kind?: BackupArtifactKind;
+    /** Match one source budget; `null` matches copies with no budget (Bench's own database). */
+    sourceBudgetId?: string | null;
+    verificationStatus?: BackupVerificationStatus;
+    limit?: number | "all";
+  } = {}
 ): BackupArtifact[] {
   const clauses: string[] = [];
   const params: unknown[] = [];
@@ -688,13 +707,74 @@ export function listBackupArtifacts(
     clauses.push("kind = ?");
     params.push(options.kind);
   }
+  if (options.sourceBudgetId !== undefined) {
+    clauses.push("source_budget_id IS ?");
+    params.push(options.sourceBudgetId);
+  }
+  if (options.verificationStatus) {
+    clauses.push("verification_status = ?");
+    params.push(options.verificationStatus);
+  }
   const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
-  const limit = options.limit && options.limit > 0 ? Math.min(options.limit, 500) : 200;
 
+  if (options.limit === "all") {
+    return db
+      .prepare(`SELECT * FROM backup_artifacts ${where} ORDER BY created_at DESC`)
+      .all<ArtifactRow>(...params)
+      .map(rowToArtifact);
+  }
+
+  const limit = options.limit && options.limit > 0 ? Math.min(options.limit, 500) : 200;
   return db
     .prepare(`SELECT * FROM backup_artifacts ${where} ORDER BY created_at DESC LIMIT ?`)
     .all<ArtifactRow>(...params, limit)
     .map(rowToArtifact);
+}
+
+/**
+ * How many encrypted copies a sealed passphrase still opens, counted in SQL.
+ *
+ * Counted rather than listed so the answer covers every row. Deciding that a
+ * passphrase is unused from a capped list deleted secrets that old encrypted
+ * copies still needed. `policy_id` stands in for a copy written before each
+ * artifact recorded its own reference, which keeps a passphrase longer rather
+ * than shorter.
+ */
+export function countEncryptedArtifactsForCredential(
+  db: SqliteDatabase,
+  ref: string
+): { count: number; newestAt: string | null } {
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) AS n, MAX(created_at) AS newest FROM backup_artifacts
+        WHERE encrypted = 1 AND COALESCE(encryption_credential_ref, policy_id) = ?`
+    )
+    .get<{ n: number; newest: string | null }>(ref);
+  return { count: Number(row?.n ?? 0), newestAt: row?.newest ?? null };
+}
+
+/** Every location, grouped by artifact: one query instead of one per artifact. */
+export function listLocationsByArtifact(db: SqliteDatabase): Map<string, BackupArtifactLocation[]> {
+  const grouped = new Map<string, BackupArtifactLocation[]>();
+  for (const row of db
+    .prepare("SELECT * FROM backup_artifact_locations ORDER BY created_at")
+    .all<LocationRow>()) {
+    const location = rowToLocation(row);
+    const list = grouped.get(location.artifactId);
+    if (list) list.push(location);
+    else grouped.set(location.artifactId, [location]);
+  }
+  return grouped;
+}
+
+/** Whether Bench believes a destination currently holds at least one copy. */
+export function destinationHoldsCopies(db: SqliteDatabase, destinationId: string): boolean {
+  const row = db
+    .prepare(
+      "SELECT 1 AS present FROM backup_artifact_locations WHERE destination_id = ? AND status IN ('stored', 'missing') LIMIT 1"
+    )
+    .get<{ present: number }>(destinationId);
+  return Boolean(row);
 }
 
 /** Record a verification result against an artifact. */
@@ -730,6 +810,13 @@ export function recordArtifactVerification(
 export function setArtifactPinned(db: SqliteDatabase, id: string, pinned: boolean): BackupArtifact | null {
   if (!getBackupArtifact(db, id)) return null;
   db.prepare("UPDATE backup_artifacts SET pinned = ? WHERE id = ?").run(pinned ? 1 : 0, id);
+  return getBackupArtifact(db, id);
+}
+
+/** Attach a copy to a rule, so the rule's retention looks after it. */
+export function setArtifactPolicy(db: SqliteDatabase, id: string, policyId: string): BackupArtifact | null {
+  if (!getBackupArtifact(db, id)) return null;
+  db.prepare("UPDATE backup_artifacts SET policy_id = ? WHERE id = ?").run(policyId, id);
   return getBackupArtifact(db, id);
 }
 
@@ -840,8 +927,14 @@ export function listArtifactLocations(db: SqliteDatabase, artifactId: string): B
 export function listDestinationLocations(
   db: SqliteDatabase,
   destinationId: string,
-  options: { limit?: number } = {}
+  options: { limit?: number | "all" } = {}
 ): BackupArtifactLocation[] {
+  if (options.limit === "all") {
+    return db
+      .prepare("SELECT * FROM backup_artifact_locations WHERE destination_id = ? ORDER BY created_at DESC")
+      .all<LocationRow>(destinationId)
+      .map(rowToLocation);
+  }
   const limit = options.limit && options.limit > 0 ? Math.min(options.limit, 500) : 200;
   return db
     .prepare(

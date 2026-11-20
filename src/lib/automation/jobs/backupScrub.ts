@@ -57,10 +57,11 @@ export const backupScrubJobType: AutomationJobType<BackupScrubConfig, BackupScru
             .filter((destination) => destination.enabled)
             .map((destination) => destination.id);
 
-    ctx.logger.info(`Verifying the newest ${ctx.config.newest} copies in ${ids.length} destination(s)`);
+    ctx.logger.info(`Verifying stored copies in ${ids.length} destination(s)`);
     const destinations = await scrubAll(db, ids, {
       newest: ctx.config.newest,
       deepest: ctx.config.deepest,
+      signal: ctx.signal,
     });
 
     for (const result of destinations) {

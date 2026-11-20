@@ -23,6 +23,8 @@ function destination(config: JsonObject): BackupDestination {
 }
 
 const credentials = { accessKeyId: "AKIA", secretAccessKey: "secret" };
+// No waiting between retries in tests.
+const FAST = { retryDelaysMs: [0, 0] };
 
 type Call = { url: string; method: string; headers: Record<string, string>; body: unknown };
 
@@ -50,9 +52,7 @@ describe("S3 destination addressing", () => {
   it("uses path style against a custom endpoint, which is what self-hosted providers need", async () => {
     const { calls } = mockFetch(() => new Response("", { status: 200 }));
     const adapter = new S3DestinationAdapter(
-      destination({ bucket: "bench", endpoint: "https://minio.lan:9000", prefix: "budgets" }),
-      credentials
-    );
+      destination({ bucket: "bench", endpoint: "https://minio.lan:9000", prefix: "budgets" }), credentials, FAST);
 
     await adapter.put("2026/august.zip", Buffer.from("x"));
 
@@ -63,9 +63,7 @@ describe("S3 destination addressing", () => {
   it("uses virtual-host style against AWS", async () => {
     const { calls } = mockFetch(() => new Response("", { status: 200 }));
     const adapter = new S3DestinationAdapter(
-      destination({ bucket: "bench", region: "eu-west-1" }),
-      credentials
-    );
+      destination({ bucket: "bench", region: "eu-west-1" }), credentials, FAST);
 
     await adapter.put("a.zip", Buffer.from("x"));
 
@@ -74,7 +72,7 @@ describe("S3 destination addressing", () => {
 
   it("signs every request", async () => {
     const { calls } = mockFetch(() => new Response("", { status: 200 }));
-    const adapter = new S3DestinationAdapter(destination({ bucket: "bench" }), credentials);
+    const adapter = new S3DestinationAdapter(destination({ bucket: "bench" }), credentials, FAST);
 
     await adapter.put("a.zip", Buffer.from("payload"));
 
@@ -89,7 +87,7 @@ describe("S3 destination addressing", () => {
 describe("S3 destination behaviour", () => {
   it("reports a missing object as missing instead of failing the run", async () => {
     mockFetch(() => new Response("", { status: 404 }));
-    const adapter = new S3DestinationAdapter(destination({ bucket: "bench" }), credentials);
+    const adapter = new S3DestinationAdapter(destination({ bucket: "bench" }), credentials, FAST);
 
     expect(await adapter.head("gone.zip")).toBeNull();
   });
@@ -99,7 +97,7 @@ describe("S3 destination behaviour", () => {
     // would have scrub reporting copies missing that are sitting safely in the
     // bucket, and a refused delete recorded as done.
     mockFetch(() => new Response("<Error><Code>AccessDenied</Code></Error>", { status: 403 }));
-    const adapter = new S3DestinationAdapter(destination({ bucket: "bench" }), credentials);
+    const adapter = new S3DestinationAdapter(destination({ bucket: "bench" }), credentials, FAST);
 
     await expect(adapter.head("private.zip")).rejects.toThrow(/AccessDenied/);
     await expect(adapter.remove("private.zip")).rejects.toThrow(/AccessDenied/);
@@ -113,14 +111,14 @@ describe("S3 destination behaviour", () => {
           { status: 403 }
         )
     );
-    const adapter = new S3DestinationAdapter(destination({ bucket: "bench" }), credentials);
+    const adapter = new S3DestinationAdapter(destination({ bucket: "bench" }), credentials, FAST);
 
     await expect(adapter.get("a.zip")).rejects.toThrow(/SignatureDoesNotMatch/);
   });
 
   it("marks server errors retryable and permission errors not", async () => {
     mockFetch(() => new Response("<Error><Code>InternalError</Code></Error>", { status: 503 }));
-    const adapter = new S3DestinationAdapter(destination({ bucket: "bench" }), credentials);
+    const adapter = new S3DestinationAdapter(destination({ bucket: "bench" }), credentials, FAST);
     await expect(adapter.get("a.zip")).rejects.toMatchObject({ retryable: true });
 
     mockFetch(() => new Response("<Error><Code>AccessDenied</Code></Error>", { status: 403 }));
@@ -147,9 +145,7 @@ describe("S3 destination behaviour", () => {
     });
 
     const adapter = new S3DestinationAdapter(
-      destination({ bucket: "bench", prefix: "budgets" }),
-      credentials
-    );
+      destination({ bucket: "bench", prefix: "budgets" }), credentials, FAST);
     const listed = await adapter.list("");
 
     expect(listed.map((entry) => entry.key)).toEqual(["one.zip", "two.zip"]);
@@ -166,7 +162,7 @@ describe("S3 destination behaviour", () => {
         : new Response(Buffer.from("probe"), { status: 200 })
     );
 
-    const adapter = new S3DestinationAdapter(destination({ bucket: "bench" }), credentials);
+    const adapter = new S3DestinationAdapter(destination({ bucket: "bench" }), credentials, FAST);
     // Read-back compares checksums, so a fixed body fails that check; assert on
     // the delete check specifically.
     const result = await adapter.test();
@@ -181,9 +177,7 @@ describe("S3 destination behaviour", () => {
     }) as unknown as typeof fetch;
 
     const adapter = new S3DestinationAdapter(
-      destination({ bucket: "bench", endpoint: "https://minio.lan:9000" }),
-      credentials
-    );
+      destination({ bucket: "bench", endpoint: "https://minio.lan:9000" }), credentials, FAST);
 
     await expect(adapter.put("a.zip", Buffer.from("x"))).rejects.toThrow(DestinationError);
     await expect(adapter.put("a.zip", Buffer.from("x"))).rejects.toThrow(/minio\.lan:9000/);

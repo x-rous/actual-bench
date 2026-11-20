@@ -1,14 +1,15 @@
 import {
   deleteBackupArtifact,
-  getBackupArtifact,
   getBackupDestination,
-  listArtifactLocations,
+  listBackupDestinations,
+  listLocationsByArtifact,
   recordArtifactLocation,
   type BackupArtifact,
+  type BackupArtifactLocation,
   type BackupPolicy,
 } from "@/lib/app-db/backupRepository";
 import type { SqliteDatabase } from "@/lib/app-db/types";
-import { createDestinationAdapter } from "./destinations";
+import { openDestination, type DestinationAdapter } from "./destinations";
 import { manifestKeyFor } from "./manifest";
 import { planRetention, type RetentionDecision } from "./retention";
 
@@ -44,6 +45,11 @@ export type PruneResult = {
   pruned: PruneEntry[];
   failed: number;
   freedBytes: number;
+  /**
+   * Records of runs that never stored a copy anywhere, removed. There was no
+   * file to delete; the row only cluttered the inventory.
+   */
+  cleaned: number;
 };
 
 /**
@@ -57,11 +63,21 @@ export type PruneResult = {
  */
 export function storedArtifacts(
   db: SqliteDatabase,
-  artifacts: BackupArtifact[]
+  artifacts: BackupArtifact[],
+  locations: Map<string, BackupArtifactLocation[]> = listLocationsByArtifact(db)
 ): BackupArtifact[] {
   return artifacts.filter((artifact) =>
-    listArtifactLocations(db, artifact.id).some((location) => location.status === "stored")
+    (locations.get(artifact.id) ?? []).some((location) => location.status === "stored")
   );
+}
+
+/**
+ * Rows for runs that never stored a copy: every location is a failed upload
+ * (never uploaded), or there is none. A location that was stored once and
+ * later failed a check is not one of these - its file is still out there.
+ */
+function neverStored(locations: BackupArtifactLocation[]): boolean {
+  return locations.every((location) => location.status === "failed" && location.uploadedAt === null);
 }
 
 export type PrunePlanInput = {
@@ -70,28 +86,49 @@ export type PrunePlanInput = {
   now?: Date;
 };
 
-/** Preview what a prune would do, without touching a destination. */
-export function previewPrune(db: SqliteDatabase, input: PrunePlanInput): PruneResult {
-  const plan = planRetention(storedArtifacts(db, input.artifacts), input.retention, input.now);
+type Context = {
+  artifacts: Map<string, BackupArtifact>;
+  locations: Map<string, BackupArtifactLocation[]>;
+  destinationNames: Map<string, string>;
+};
+
+function context(db: SqliteDatabase, artifacts: BackupArtifact[]): Context {
   return {
-    dryRun: true,
-    kept: plan.keep.length,
-    failed: 0,
-    freedBytes: sumBytes(db, plan.prune),
-    pruned: plan.prune.map((decision) => describe(db, decision, true)),
+    artifacts: new Map(artifacts.map((artifact) => [artifact.id, artifact])),
+    locations: listLocationsByArtifact(db),
+    destinationNames: new Map(listBackupDestinations(db).map((destination) => [destination.id, destination.name])),
   };
 }
 
-function sumBytes(db: SqliteDatabase, decisions: RetentionDecision[]): number {
-  return decisions.reduce((total, decision) => {
-    const artifact = getBackupArtifact(db, decision.artifactId);
-    return total + (artifact?.sizeBytes ?? 0);
-  }, 0);
+function plan(db: SqliteDatabase, input: PrunePlanInput, ctx: Context) {
+  return planRetention(storedArtifacts(db, input.artifacts, ctx.locations), input.retention, input.now);
 }
 
-function describe(db: SqliteDatabase, decision: RetentionDecision, preview: boolean): PruneEntry {
-  const artifact = getBackupArtifact(db, decision.artifactId);
-  const locations = listArtifactLocations(db, decision.artifactId);
+function strays(input: PrunePlanInput, ctx: Context): BackupArtifact[] {
+  const now = (input.now ?? new Date()).getTime();
+  return input.artifacts.filter(
+    (artifact) =>
+      neverStored(ctx.locations.get(artifact.id) ?? []) &&
+      now - new Date(artifact.createdAt).getTime() >= input.retention.minimumAgeHours * 3_600_000
+  );
+}
+
+/** Preview what a prune would do, without touching a destination. */
+export function previewPrune(db: SqliteDatabase, input: PrunePlanInput): PruneResult {
+  const ctx = context(db, input.artifacts);
+  const decided = plan(db, input, ctx);
+  return {
+    dryRun: true,
+    kept: decided.keep.length,
+    failed: 0,
+    freedBytes: decided.prune.reduce((total, decision) => total + (ctx.artifacts.get(decision.artifactId)?.sizeBytes ?? 0), 0),
+    pruned: decided.prune.map((decision) => describe(ctx, decision)),
+    cleaned: strays(input, ctx).length,
+  };
+}
+
+function describe(ctx: Context, decision: RetentionDecision): PruneEntry {
+  const artifact = ctx.artifacts.get(decision.artifactId);
   return {
     artifactId: decision.artifactId,
     reason: decision.reason,
@@ -99,32 +136,48 @@ function describe(db: SqliteDatabase, decision: RetentionDecision, preview: bool
     kind: artifact?.kind ?? "budget",
     sizeBytes: artifact?.sizeBytes ?? 0,
     removed: false,
-    locations: locations.map((location) => ({
+    locations: (ctx.locations.get(decision.artifactId) ?? []).map((location) => ({
       destinationName:
-        (location.destinationId && getBackupDestination(db, location.destinationId)?.name) ||
-        "Unknown destination",
+        (location.destinationId && ctx.destinationNames.get(location.destinationId)) || "Unknown destination",
       objectKey: location.objectKey,
-      status: preview ? "deleted" : "missing",
+      status: "deleted",
     })),
   };
 }
 
 export async function prune(
   db: SqliteDatabase,
-  input: PrunePlanInput & { dryRun?: boolean }
+  input: PrunePlanInput & {
+    dryRun?: boolean;
+    /**
+     * Only these may be removed: the copies a person was shown in the
+     * preview. The plan is worked out again here, and a backup finishing in
+     * between can change it; a copy the plan now prunes that was not in the
+     * preview is left alone, and one the preview showed that the plan now
+     * keeps is kept.
+     */
+    onlyIds?: string[];
+    signal?: AbortSignal;
+  }
 ): Promise<PruneResult> {
   if (input.dryRun) return previewPrune(db, input);
 
-  const plan = planRetention(storedArtifacts(db, input.artifacts), input.retention, input.now);
+  const ctx = context(db, input.artifacts);
+  const allowed = input.onlyIds ? new Set(input.onlyIds) : null;
+  const decided = plan(db, input, ctx);
+  const decisions = decided.prune.filter((decision) => !allowed || allowed.has(decision.artifactId));
+  const kept = decided.keep.length + (decided.prune.length - decisions.length);
   const entries: PruneEntry[] = [];
   let failed = 0;
   let freedBytes = 0;
+  const adapters = new Map<string, Promise<DestinationAdapter>>();
 
-  for (const decision of plan.prune) {
-    const artifact = getBackupArtifact(db, decision.artifactId);
+  for (const decision of decisions) {
+    if (input.signal?.aborted) break;
+    const artifact = ctx.artifacts.get(decision.artifactId);
     if (!artifact) continue;
 
-    const locations = listArtifactLocations(db, artifact.id);
+    const locations = ctx.locations.get(artifact.id) ?? [];
     const results: PruneEntry["locations"] = [];
     let allGone = true;
 
@@ -142,7 +195,15 @@ export async function prune(
       }
 
       try {
-        const adapter = createDestinationAdapter(db, destination);
+        // Checked once per destination: deleting through a folder whose
+        // volume is unmounted "succeeds" on files that are not there, and the
+        // real copies would be recorded as gone.
+        let opening = adapters.get(destination.id);
+        if (!opening) {
+          opening = openDestination(db, destination, { signal: input.signal });
+          adapters.set(destination.id, opening);
+        }
+        const adapter = await opening;
         await adapter.remove(location.objectKey);
         await adapter.remove(manifestKeyFor(location.objectKey));
         recordArtifactLocation(db, {
@@ -188,5 +249,10 @@ export async function prune(
     });
   }
 
-  return { dryRun: false, kept: plan.keep.length, pruned: entries, failed, freedBytes };
+  let cleaned = 0;
+  for (const stray of strays(input, ctx)) {
+    if (deleteBackupArtifact(db, stray.id)) cleaned += 1;
+  }
+
+  return { dryRun: false, kept, pruned: entries, failed, freedBytes, cleaned };
 }

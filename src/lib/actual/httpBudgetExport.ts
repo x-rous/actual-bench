@@ -44,7 +44,7 @@ function filenameFromDisposition(disposition: string | null): string | null {
 
 export async function exportHttpApiBudget(
   connection: HttpApiConnection,
-  options: { timeoutMs?: number } = {}
+  options: { timeoutMs?: number; signal?: AbortSignal } = {}
 ): Promise<HttpBudgetExport> {
   if (typeof window !== "undefined") {
     const download = await apiDownload(connection, "/export");
@@ -73,7 +73,9 @@ export async function exportHttpApiBudget(
             Accept: "application/zip, application/octet-stream, */*",
             "budget-encryption-password": connection.encryptionPassword ?? "",
           },
-          signal: AbortSignal.timeout(timeoutMs),
+          signal: options.signal
+            ? AbortSignal.any([options.signal, AbortSignal.timeout(timeoutMs)])
+            : AbortSignal.timeout(timeoutMs),
         });
       } catch (error) {
         return {

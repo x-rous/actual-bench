@@ -13,8 +13,8 @@ import type { BackupEncryptionInfo } from "./manifest";
  * The encrypted file is **self-describing**: an eight-byte magic, the KDF
  * parameters, salt, IV and auth tag all precede the ciphertext. The manifest
  * carries the same values, but a backup whose recovery depends on a second file
- * being present is not a backup. Given the passphrase, `bench-restore` — or a
- * dozen lines of Node — can decrypt an artifact with nothing else at hand.
+ * being present is not a backup. Given the passphrase, a dozen lines of Node (the
+ * recovery sheet prints them) can decrypt an artifact with nothing else at hand.
  *
  * What is never written anywhere: the passphrase, and the key derived from it.
  */

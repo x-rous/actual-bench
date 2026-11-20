@@ -58,8 +58,18 @@ Any absolute path the server can write to. Bench creates it if missing, and grad
 - **Warned**: the same device as Bench's data (good against mistakes, useless against losing the
   disk), and a volume low on space.
 
-Writes go to a temporary file and are renamed into place, so a partly-written archive never looks
-like a complete one.
+Writes go to a temporary file that is flushed to disk (`fsync`) and then renamed into place, so a
+partly-written archive never looks like a complete one, even after a power cut. Temp files a stopped
+run left behind are swept by the weekly scrub.
+
+The folder carries a `.bench-destination.json` marker naming the destination. Before anything writes,
+deletes or calls a copy missing, Bench checks it. If the marker is gone and the newest recorded copy is
+not there either, the volume is reported as probably unmounted, and nothing is written into the empty
+directory it left behind. (A folder from before the marker existed gets one written the first time a
+recorded copy is found in it.)
+
+Once a destination holds copies, its path (or bucket, endpoint and prefix) cannot change: every copy
+is recorded by its key inside it. Add a new destination for a new location.
 
 ### S3-compatible
 
@@ -74,6 +84,9 @@ AWS's published GET Object test vector.
   whose credentials cannot be resolved **fails closed** — it never falls back to an
   unauthenticated attempt, which would surface as 403s that look like a broken bucket.
 
+Each request has a timeout (a minute plus time for the body at a slow uplink's pace), and network
+errors, timeouts, 5xx and throttling are retried twice with backoff. A refusal (4xx) is final.
+
 Every save tests the destination by writing real bytes, reading them back, comparing checksums and
 deleting the probe. A bucket that refuses deletes is a **warning**: backups still work, only
 retention cannot prune.
@@ -85,7 +98,11 @@ retention cannot prune.
    applying changes at that moment is how a backup gets taken mid-write.
 2. **Verify the plaintext**, before anything else touches it.
 3. **Encrypt**, if the rule says so.
-4. **Fan out** to every destination independently, recording each result on its own.
+4. **Fan out** to every destination independently, recording each result on its own. The artifact's
+   row is written once the first copy lands, so a run that stored nothing leaves no row behind.
+
+The run honours its deadline and cancel signal: the export, every destination request and the steps
+between them stop when it fires.
 
 A run that stored nothing is a failure. A run that stored somewhere but not everywhere, or stored
 something that did not verify, is **partial** — reported honestly, but it does **not** count towards
@@ -115,21 +132,28 @@ Every check above asks whether an artifact is *readable*. One more asks whether 
 truncated export, or a source that failed to open half its data, produces a perfectly valid archive
 containing the wrong amount of budget, and every integrity check passes on it.
 
-So each copy is compared with the last one of its kind under the same rule. A drop of more than 10%
+So each copy is compared with the last copy of the same budget, under the same rule, that **passed**
+(comparing with whatever came last let a second cut-short export match the first and pass). Counts
+leave out rows Actual has deleted (`tombstone = 1`); copies counted before this change are not
+compared with ones counted after it. A drop of more than 10%
 in transactions, any drop in account count, or a copy less than half the previous size fails
 verification with a finding naming both numbers. The thresholds are loose on purpose — people do
 delete things — and the wording states the change rather than accusing: *"If you deleted them, this
 is expected; if not, check the source budget before relying on this copy."*
 
-The copy is still stored and still restorable. It simply does not get to claim it was verified. The
-first backup of anything is never an anomaly.
+The copy is still stored and still restorable. It is shown as **Needs review**, not "Damaged": it
+opened fine. **Accept this change** on the copy (`PATCH /api/backups/artifacts/:id` with
+`{"acceptChange": true}`) marks it verified and makes it the new baseline. A later scrub or inspect
+re-checks readability only; it never clears an unaccepted plausibility finding, and it keeps the
+copy's recorded contents. The first backup of anything is never an anomaly.
 
 ### Scrub
 
-Weekly (`backup-scrub`, Sundays at 04:00 by default), Bench re-reads the newest three copies per
-destination: presence, size, checksum, and a full open of the newest one — decrypting first where the
-policy's passphrase is stored, so an encrypted backup is proved decryptable rather than merely
-present.
+Weekly (`backup-scrub`, Sundays at 04:00 by default), per destination, Bench fully opens the newest
+copy of each rule, kind and budget — decrypting first where its passphrase is stored, so an encrypted
+backup is proved decryptable rather than merely present — and checksums three more, the ones verified
+longest ago, so every copy is re-read over successive weeks. Copies recorded missing are looked for
+again, and come back as stored when they reappear.
 
 A scrub that finds damage **is** a failure and does count towards the streak. The reasoning is the
 mirror image of a backup run: a failed backup means today's copy is missing and tomorrow's run may
@@ -146,29 +170,40 @@ Refusals first, schedule second. In precedence order:
 1. Pinned copies are never pruned.
 2. Protected copies are never pruned while protected (this is what automatic recovery points use).
 3. Nothing younger than `minimumAgeHours` is pruned.
-4. The newest **verified** copy of each artifact kind, per rule, always survives; if none verified,
-   the newest copy survives.
-5. Manual backups are never expired automatically.
+4. The newest **verified** copy of each artifact kind and source budget, per rule, always survives;
+   if none verified, the newest copy survives.
+5. Manual backups are never expired automatically. **Back up now** on a scheduled rule makes a manual
+   copy too, and does not trigger a prune.
 
-Then grandfather-father-son: the newest copy of each of the last N days, weeks, months and years. The
+Then grandfather-father-son: the newest copy of each of the last N days, weeks, months and years —
+preferring, within a period, a copy that verified over a newer one that did not. The
 surviving copy from rule 4 occupies its own day/week/month/year slot, so "keep 7 daily" keeps seven
 rather than eight.
 
 If a copy cannot be deleted, the artifact **keeps its row**. Removing Bench's record of a file that is
 still in a destination would turn a transient error into an orphan nobody knows about.
 
-`POST /api/backups/policies/:id/prune` previews by default; `{"apply": true}` performs it. The
-preview is produced by the same function that performs the prune.
+`POST /api/backups/policies/:id/prune` previews by default; `{"apply": true, "artifactIds": [...]}`
+performs it, removing only the previewed copies the plan still prunes. The preview is produced by the
+same function that performs the prune. Applying also removes rows for runs that never stored a copy
+(older than the minimum age).
+
+Copies with no rule (rule deleted, or discovered) are outside retention. Attach one to a rule from its
+detail (`PATCH /api/backups/artifacts/:id` with `{"policyId": "..."}`) and that rule's retention looks
+after it. Discovery attaches copies whose manifest names a rule that exists on this install.
 
 ## Safety recovery points
 
 Before Bench saves a batch containing deletions or payee merges (or 25+ staged items), it takes a
-budget-only backup tagged with what you were about to do. These are `tier: auto`, protected for
+budget-only backup of **the budget being saved**, through the enabled rule whose source is that
+connection, tagged with what you were about to do. No such rule means no recovery point, and the user
+is told. A rule whose budget only the browser can export (a Direct budget that is not enrolled) gets
+the archive from the tab. These are `tier: auto`, protected for
 `autoProtectionDays` or while they are among the newest `autoProtectionCount`, and then expire
 normally — they are not pins.
 
-Debounced (30 minutes by default) so one working session shares a recovery point. On by default;
-switch it off from the Recovery Center. If one cannot be taken, the UI asks before continuing rather
+Debounced (30 minutes by default) so one working session shares a recovery point. **Off by
+default**; switch it on from the Recovery Center. If one cannot be taken, the UI asks before continuing rather
 than silently dropping the safety net.
 
 ## Restore
@@ -192,6 +227,9 @@ contents without restoring anything. An inspection counts as a verification.
 A rule's passphrase is sealed under the vault key and stored against the rule's id. Two rules
 about its lifetime matter more than they look:
 
+- **Changing a rule's passphrase does not replace the old one.** The new passphrase is sealed under a
+  new reference and applies to new copies; older copies keep the reference they were written with.
+  Overwriting it in place made every older copy resolve to a passphrase that cannot open it.
 - **Deleting a rule does not delete its passphrase.** Doing so would quietly make every encrypted
   backup that rule took unopenable — permanent data loss caused by tidying a setting. The Recovery
   Center lists what Bench is still holding and what depends on it.
@@ -237,13 +275,30 @@ The **recovery sheet** (`GET /api/backups/recovery-sheet`) is a Markdown page do
 above against your actual paths and keys. It contains no secrets and is meant to be printed or kept
 with your passwords.
 
+## Readiness
+
+The banner at the top is worked out **per rule**: each rule is judged on its budget (or on Bench's
+settings for a settings-only rule), from its newest stored copy and its newest verified one, against
+its own schedule. A manual rule is never "late". The headline is about the rule worst off, and with
+more than one rule each gets a row. Only a rule's newest copy counts against it: an old failed copy
+that retention happens to keep says nothing about whether the rule works today.
+
+## Where the work runs
+
+Verify now, Look inside, Find backups, **Back up now** on a manual rule and recovery points run in a
+disposable worker thread, like scheduled runs, so a large verification does not stall the web server.
+An uploaded archive is parked in a private temp folder for the worker and removed afterwards; a
+passphrase typed for one Look inside travels to the worker sealed with the vault key. With
+`ACTUAL_BENCH_AUTOMATION_EXECUTOR=in-thread` the same work runs in the server thread.
+
 ## Troubleshooting
 
 | Symptom | Cause |
 |---|---|
 | "has no stored credentials. Re-enter its access key" | The destination's sealed credential is missing. Fails closed by design. |
 | "Could not unseal credentials … the vault key may have changed" | The vault key changed since the credential was stored. App Health shows the vault as locked, with the fix. |
-| "not enrolled for unattended use" | The source connection has no vault credential; enrol it in Cross Budget Sync. |
+| "not enrolled for unattended use" | The source connection has no vault credential; enrol it from the backup rule dialog or Automations → Connections. |
+| "does not look like the folder Bench has been writing to" | The destination's marker file and its newest copy are both missing: usually an unmounted volume. Mount it and try again. |
 | Backup stored but "could not confirm it is readable" | Verification failed. Open the copy's detail for the findings — usually a truncated or non-Actual archive. |
 | A rule shows "paused after repeated failures" | The engine auto-paused its automation. Fix the cause, then Resume from the Automations page — editing the rule does not clear a pause. |
 | A rule shows "paused on the Automations page" | Someone paused the automation by hand. Re-enabling the rule does not undo that, on purpose. |

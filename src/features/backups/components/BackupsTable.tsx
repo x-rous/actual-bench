@@ -1,7 +1,8 @@
 "use client";
 
-import { CircleCheck, CircleHelp, CircleX, Lock, Pin, Server } from "lucide-react";
+import { CircleAlert, CircleCheck, CircleHelp, CircleX, Lock, Pin, Server } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { SortableHeader, type SortDirection } from "@/components/ui/sortable-header";
 import { cn } from "@/lib/utils";
 import {
@@ -34,6 +35,7 @@ import type { ArtifactWithLocations } from "../lib/backupsApi";
 const STATE_STYLE: Record<CopyState, { icon: LucideIcon; tone: string; row?: string }> = {
   verified: { icon: CircleCheck, tone: "text-green-600 dark:text-green-500" },
   unverified: { icon: CircleHelp, tone: "text-muted-foreground" },
+  review: { icon: CircleAlert, tone: "text-amber-700 dark:text-amber-400", row: "bg-amber-50/60 dark:bg-amber-950/20" },
   damaged: { icon: CircleX, tone: "text-destructive", row: "bg-destructive/5" },
   gone: { icon: CircleX, tone: "text-destructive", row: "bg-destructive/5" },
 };
@@ -55,16 +57,40 @@ type Props = {
   sort: { key: BackupSortKey; direction: SortDirection } | null;
   onSort: (key: BackupSortKey, direction: SortDirection) => void;
   onOpen: (artifactId: string) => void;
+  /** Rows ticked for a bulk action. */
+  checked: Set<string>;
+  onCheck: (artifactId: string, checked: boolean) => void;
+  /** Tick or clear every row shown. */
+  onCheckAll: (checked: boolean) => void;
 };
 
-export function BackupsTable({ artifacts, policies, selectedId, sort, onSort, onOpen }: Props) {
+export function BackupsTable({
+  artifacts,
+  policies,
+  selectedId,
+  sort,
+  onSort,
+  onOpen,
+  checked,
+  onCheck,
+  onCheckAll,
+}: Props) {
   const policyNames = new Map(policies.map((policy) => [policy.id, policy.name]));
+  const shownChecked = artifacts.filter((artifact) => checked.has(artifact.id)).length;
 
   return (
     <div className="min-h-0 flex-1 overflow-auto">
       <table className="w-full border-collapse text-xs">
         <thead className="sticky top-0 z-10 bg-background">
           <tr className="border-b border-border text-left text-xs text-muted-foreground">
+            <th scope="col" className="w-8 py-2 pl-4">
+              <Checkbox
+                aria-label="Select every backup shown"
+                checked={artifacts.length > 0 && shownChecked === artifacts.length}
+                indeterminate={shownChecked > 0 && shownChecked < artifacts.length}
+                onCheckedChange={onCheckAll}
+              />
+            </th>
             <SortableHeader label="Taken" sortKey="taken" sort={sort} onSort={onSort} />
             <SortableHeader label="Contents" sortKey="contents" sort={sort} onSort={onSort} />
             {/* Two columns verification already knows the answer to, and
@@ -94,9 +120,17 @@ export function BackupsTable({ artifacts, policies, selectedId, sort, onSort, on
                 className={cn(
                   "cursor-pointer border-b border-border/60 align-middle hover:bg-muted/50",
                   style.row,
-                  selectedId === artifact.id && "bg-muted"
+                  (selectedId === artifact.id || checked.has(artifact.id)) && "bg-muted"
                 )}
               >
+                <td className="w-8 py-2 pl-4" onClick={(event) => event.stopPropagation()}>
+                  <Checkbox
+                    aria-label={`Select the backup taken ${formatDateTime(artifact.createdAt)}`}
+                    checked={checked.has(artifact.id)}
+                    onCheckedChange={(value) => onCheck(artifact.id, value)}
+                  />
+                </td>
+
                 <td className="px-4 py-2 whitespace-nowrap">
                   {/* A real button, not a clickable row: everything a backup
                       can do - look inside, download, pin, delete - lives behind

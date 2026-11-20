@@ -84,6 +84,7 @@ function data(overrides: Partial<RecoveryCenterData> = {}): RecoveryCenterData {
       destinationCount: 1,
       redundant: false,
       issues: [],
+      rules: [],
     },
     destinations: [
       {
@@ -253,7 +254,7 @@ describe("the Recovery Center", () => {
       target: { value: "nothing matches this" },
     });
 
-    expect(await screen.findByText("No copy matches those filters.")).toBeInTheDocument();
+    expect(await screen.findByText("No results match your filters.")).toBeInTheDocument();
     // Not the guided "no copies yet" state, which would strand you.
     expect(screen.queryByText("No copies yet")).not.toBeInTheDocument();
 

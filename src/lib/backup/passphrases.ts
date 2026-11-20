@@ -1,7 +1,6 @@
 import {
-  listBackupArtifacts,
+  countEncryptedArtifactsForCredential,
   listBackupPolicies,
-  type BackupArtifact,
 } from "@/lib/app-db/backupRepository";
 import {
   deleteBackupCredential,
@@ -41,29 +40,39 @@ export type HeldPassphrase = {
   newestArtifactAt: string | null;
 };
 
-function encryptedArtifactsFor(db: SqliteDatabase, ref: string): BackupArtifact[] {
-  // Keyed on the artifact's own reference, not on its rule: deleting a rule
-  // nulls the policy link by design, and that is precisely when this lookup
-  // has to keep working.
-  return listBackupArtifacts(db, { limit: 500 }).filter(
-    (artifact) => artifact.encrypted && (artifact.encryptionCredentialRef ?? artifact.policyId) === ref
-  );
+/**
+ * The refs a live rule is using.
+ *
+ * A rule's current passphrase is its `encryptionCredentialRef`. Its own id
+ * counts as well: that is where every passphrase lived before a changed
+ * passphrase got a ref of its own, and keeping such a secret a little longer
+ * than needed is the safe direction.
+ */
+function refsInUse(db: SqliteDatabase): Map<string, string> {
+  const inUse = new Map<string, string>();
+  for (const policy of listBackupPolicies(db)) {
+    inUse.set(policy.id, policy.name);
+    if (policy.encryptionCredentialRef) inUse.set(policy.encryptionCredentialRef, policy.name);
+  }
+  return inUse;
 }
 
 export function listHeldPassphrases(db: SqliteDatabase): HeldPassphrase[] {
-  const policies = new Map(listBackupPolicies(db).map((policy) => [policy.id, policy]));
+  const inUse = refsInUse(db);
 
   return listBackupCredentialMeta(db)
     .filter((credential) => credential.kind === "passphrase")
     .map((credential) => {
-      const artifacts = encryptedArtifactsFor(db, credential.ref);
+      // Counted in SQL over every artifact: a capped list missed the oldest
+      // encrypted copies, which are exactly the ones a forgotten rule leaves.
+      const { count, newestAt } = countEncryptedArtifactsForCredential(db, credential.ref);
       return {
         ref: credential.ref,
-        label: credential.label || policies.get(credential.ref)?.name || "Backup passphrase",
+        label: credential.label || inUse.get(credential.ref) || "Backup passphrase",
         createdAt: credential.createdAt,
-        ruleExists: policies.has(credential.ref),
-        artifactCount: artifacts.length,
-        newestArtifactAt: artifacts[0]?.createdAt ?? null,
+        ruleExists: inUse.has(credential.ref),
+        artifactCount: count,
+        newestArtifactAt: newestAt,
       };
     });
 }
@@ -71,21 +80,21 @@ export function listHeldPassphrases(db: SqliteDatabase): HeldPassphrase[] {
 /**
  * Drop passphrases that nothing needs any more.
  *
- * Runs after anything that can remove the last encrypted copy — a prune, a
- * delete — so an orphaned secret is short-lived rather than permanent. Returns
+ * Runs after anything that can remove the last encrypted copy - a prune, a
+ * delete - so an orphaned secret is short-lived rather than permanent. Returns
  * the refs it collected, because "Bench forgot a passphrase" is worth being
  * able to say out loud.
  */
 export function collectUnusedPassphrases(db: SqliteDatabase): string[] {
-  const policyIds = new Set(listBackupPolicies(db).map((policy) => policy.id));
+  const inUse = refsInUse(db);
   const collected: string[] = [];
 
   for (const credential of listBackupCredentialMeta(db)) {
     if (credential.kind !== "passphrase") continue;
     // A live rule's passphrase is in use by definition, whether or not it has
     // taken an encrypted backup yet.
-    if (policyIds.has(credential.ref)) continue;
-    if (encryptedArtifactsFor(db, credential.ref).length > 0) continue;
+    if (inUse.has(credential.ref)) continue;
+    if (countEncryptedArtifactsForCredential(db, credential.ref).count > 0) continue;
 
     deleteBackupCredential(db, credential.ref);
     collected.push(credential.ref);

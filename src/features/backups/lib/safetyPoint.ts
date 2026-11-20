@@ -1,4 +1,7 @@
 import type { SafetyPointOutcome, SafetyPointSettings } from "@/lib/backup/safetyPoint";
+import { exportBrowserApiBudgetZip } from "@/lib/actual/browser/runtime";
+import { connectionFingerprint } from "@/lib/sync/connectionRef";
+import { isBrowserApiConnection, type ConnectionInstance } from "@/store/connection";
 
 /**
  * Asking for a recovery point before a risky change (RD-077 / PR-047f).
@@ -62,24 +65,50 @@ export function countStagedRisk(snapshot: {
   return { itemCount, deleteCount, mergeCount: snapshot.pendingPayeeMerges.length };
 }
 
-export async function takeRecoveryPoint(reason: string): Promise<SafetyPointOutcome> {
+/**
+ * Ask for a recovery point of the budget being saved.
+ *
+ * The connection goes with the request so the server backs up *this* budget.
+ * A Direct budget that is not enrolled can only be exported here: the server
+ * answers `needs-archive`, and the budget is exported in this tab and sent.
+ */
+export async function takeRecoveryPoint(
+  reason: string,
+  connection: ConnectionInstance | null
+): Promise<SafetyPointOutcome> {
+  const fingerprint = connection ? connectionFingerprint(connection) : null;
   try {
-    const response = await fetch("/api/backups/safety-point", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ reason }),
-    });
-    if (!response.ok) {
-      return { status: "failed", message: `Bench could not take a recovery point (${response.status}).` };
+    let outcome = await post(
+      JSON.stringify({ reason, connectionFingerprint: fingerprint }),
+      { "Content-Type": "application/json" }
+    );
+    if (outcome.status === "needs-archive" && connection && isBrowserApiConnection(connection)) {
+      const form = new FormData();
+      form.append("archive", new Blob([await exportBrowserApiBudgetZip(connection)], { type: "application/zip" }), "budget.zip");
+      form.append("budgetId", connection.budgetSyncId);
+      if (connection.label) form.append("budgetName", connection.label);
+      form.append("reason", reason);
+      if (fingerprint) form.append("connectionFingerprint", fingerprint);
+      outcome = await post(form);
     }
-    const body = (await response.json()) as { outcome: SafetyPointOutcome };
-    return body.outcome;
+    if (outcome.status === "needs-archive") {
+      return { status: "failed", message: "This budget's recovery point has to be exported from a tab connected to it." };
+    }
+    return outcome;
   } catch (error) {
     return {
       status: "failed",
       message: error instanceof Error ? error.message : "Bench could not take a recovery point.",
     };
   }
+}
+
+async function post(body: BodyInit, headers?: Record<string, string>): Promise<SafetyPointOutcome> {
+  const response = await fetch("/api/backups/safety-point", { method: "POST", headers, body });
+  if (!response.ok) {
+    return { status: "failed", message: `Bench could not take a recovery point (${response.status}).` };
+  }
+  return ((await response.json()) as { outcome: SafetyPointOutcome }).outcome;
 }
 
 export async function fetchSafetySettings(): Promise<SafetyPointSettings> {

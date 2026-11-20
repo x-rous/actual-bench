@@ -111,4 +111,29 @@ describe("passphrases Bench is holding", () => {
     expect(listHeldPassphrases(db)).toHaveLength(0);
     expect(getBackupCredential(db, "dest-1")).not.toBeNull();
   });
+
+  it("keeps a passphrase whose copies are older than the newest few hundred", async () => {
+    // Deciding "unused" from a capped list deleted secrets that old encrypted
+    // copies still needed once there were more than 500 newer artifacts.
+    const { policy } = encryptedRule();
+    const other = createBackupPolicy(db, { name: "Hourly" });
+    const insert = db.transaction(() => {
+      for (let index = 0; index < 600; index += 1) {
+        createBackupArtifact(db, {
+          policyId: other.id,
+          kind: "budget",
+          checksumSha256: "b".repeat(64),
+          sizeBytes: 10,
+          createdAt: new Date(Date.UTC(2030, 0, 1, 0, index)).toISOString(),
+        });
+      }
+    });
+    insert();
+    deleteBackupPolicy(db, policy.id);
+
+    collectUnusedPassphrases(db);
+
+    expect(getBackupCredential(db, policy.id)).toEqual({ passphrase: "correct horse" });
+    expect(listHeldPassphrases(db).find((entry) => entry.ref === policy.id)?.artifactCount).toBe(1);
+  });
 });

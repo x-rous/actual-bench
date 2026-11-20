@@ -1,6 +1,7 @@
 import {
   createBackupArtifact,
   getBackupArtifact,
+  getBackupPolicy,
   recordArtifactLocation,
   type BackupDestination,
 } from "@/lib/app-db/backupRepository";
@@ -35,6 +36,8 @@ export type DiscoveryResult = {
   imported: number;
   alreadyKnown: number;
   unreadable: number;
+  /** Imported copies given back to the rule that made them, which still exists here. */
+  adopted: number;
   notes: string[];
 };
 
@@ -49,6 +52,7 @@ export async function discoverBackups(
     imported: 0,
     alreadyKnown: 0,
     unreadable: 0,
+    adopted: 0,
     notes: [],
   };
 
@@ -90,11 +94,14 @@ export async function discoverBackups(
     if (getBackupArtifact(db, manifest.artifactId)) {
       result.alreadyKnown += 1;
     } else {
+      // Given back to the rule that made it when that rule exists here (a
+      // restored database, a lost row), so its retention looks after it
+      // again. Otherwise unowned: inventing an owner would be worse.
+      const owner = manifest.policy?.id ? getBackupPolicy(db, manifest.policy.id) : null;
+      if (owner) result.adopted += 1;
       createBackupArtifact(db, {
         id: manifest.artifactId,
-        // Not attached to a policy: the rule that made it may not exist on this
-        // install, and inventing one would be worse than leaving it unowned.
-        policyId: null,
+        policyId: owner?.id ?? null,
         kind: manifest.kind,
         createdAt: manifest.createdAt,
         sourceBudgetId: manifest.source?.budgetId ?? null,

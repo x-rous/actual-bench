@@ -25,6 +25,7 @@ import type { SqliteDatabase } from "@/lib/app-db/types";
 import { decryptArchive } from "./encryption";
 import { parseManifest } from "./manifest";
 import { backupObjectKey, runBackup } from "./runBackup";
+import { acceptPlausibilityFindings, plausibilityOf } from "./verificationRecord";
 
 function budgetDbBytes(options: { transactions?: number } = {}): Uint8Array {
   const root = mkdtempSync(join(tmpdir(), "bench-run-fixture-"));
@@ -328,6 +329,60 @@ describe("running a backup", () => {
     expect(second.verified).toBe(false);
     expect(second.message).toMatch(/fewer transactions/);
     expect(listBackupArtifacts(db)[0].verificationStatus).toBe("failed");
+  });
+
+  it("does not let a second short export pass by matching the first one", async () => {
+    // The baseline is the last copy that passed. Comparing with whatever came
+    // last let two truncated exports in a row call the second one verified.
+    const withTransactions = (count: number) =>
+      zipSync({
+        "db.sqlite": budgetDbBytes({ transactions: count }),
+        "metadata.json": Buffer.from(JSON.stringify({ budgetName: "Household", id: "budget-1" })),
+      });
+    const rule = policy();
+    mockExport(withTransactions(100));
+    expect((await runBackup(db, rule)).verified).toBe(true);
+
+    mockExport(withTransactions(10));
+    expect((await runBackup(db, rule)).verified).toBe(false);
+    mockExport(withTransactions(10));
+    const third = await runBackup(db, rule);
+
+    expect(third.verified).toBe(false);
+    expect(third.message).toMatch(/fewer transactions/);
+  });
+
+  it("compares with an accepted copy once someone says the change was theirs", async () => {
+    const withTransactions = (count: number) =>
+      zipSync({
+        "db.sqlite": budgetDbBytes({ transactions: count }),
+        "metadata.json": Buffer.from(JSON.stringify({ budgetName: "Household", id: "budget-1" })),
+      });
+    const rule = policy();
+    mockExport(withTransactions(100));
+    await runBackup(db, rule);
+    mockExport(withTransactions(10));
+    await runBackup(db, rule);
+
+    const flagged = listBackupArtifacts(db)[0];
+    expect(plausibilityOf(flagged)).toMatchObject({ readable: true });
+    expect(acceptPlausibilityFindings(db, flagged, new Date().toISOString())).toBe(true);
+
+    mockExport(withTransactions(10));
+    expect((await runBackup(db, rule)).verified).toBe(true);
+  });
+
+  it("leaves no record behind for a run that stored nothing", async () => {
+    // Such rows were never removed by retention and piled up one per failed night.
+    const blocked = join(root, "blocked");
+    writeFileSync(blocked, "x");
+    const destination = localDestination("Blocked", blocked);
+    mockExport();
+
+    const result = await runBackup(db, policy({ destinationIds: [destination.id] }));
+
+    expect(result.stored).toBe(false);
+    expect(listBackupArtifacts(db)).toHaveLength(0);
   });
 
   it("says what went wrong when the export itself fails", async () => {

@@ -3,6 +3,7 @@ import { describeCronExpression } from "@/lib/automation/cron";
 import type { BackupSortKey } from "../components/BackupsTable";
 import type { ArtifactWithLocations } from "./backupsApi";
 import type { BackupPolicy } from "@/lib/app-db/backupRepository";
+import { plausibilityOf } from "@/lib/backup/plausibility";
 
 /**
  * Turning backup state into words (RD-077 / PR-047e).
@@ -66,7 +67,7 @@ export function relativeTime(iso: string | null, now: Date = new Date()): string
   return months < 12 ? scale(months, "mo") : scale(Math.round(months / 12), "y");
 }
 
-export type CopyState = "verified" | "unverified" | "damaged" | "gone";
+export type CopyState = "verified" | "unverified" | "review" | "damaged" | "gone";
 
 /**
  * What a copy is worth, in one word.
@@ -78,7 +79,13 @@ export type CopyState = "verified" | "unverified" | "damaged" | "gone";
 export function copyState(artifact: ArtifactWithLocations): CopyState {
   const stored = artifact.locations.filter((location) => location.status === "stored");
   if (stored.length === 0) return "gone";
-  if (artifact.verificationStatus === "failed") return "damaged";
+  if (artifact.verificationStatus === "failed") {
+    // Readable, but noticeably smaller than the last good copy: a person has
+    // to judge it. Calling it "damaged" told people a copy that opens fine
+    // could not be read.
+    const { unresolved, readable } = plausibilityOf(artifact);
+    return unresolved.length > 0 && readable ? "review" : "damaged";
+  }
   if (artifact.verificationStatus === "passed") return "verified";
   return "unverified";
 }
@@ -88,6 +95,11 @@ export const COPY_STATE_COPY: Record<CopyState, { label: string; detail: string 
   unverified: {
     label: "Not checked",
     detail: "Stored, but Bench has not opened it. It might restore and it might not.",
+  },
+  review: {
+    label: "Needs review",
+    detail:
+      "This copy opens and reads fine, but it holds noticeably less than the last good copy of this budget. If you deleted those things, accept the change; if not, check the budget before relying on this copy.",
   },
   damaged: {
     label: "Damaged",
@@ -189,8 +201,9 @@ export function describeCoverage(contents: ArtifactContents): string {
 const COPY_STATE_ORDER: Record<CopyState, number> = {
   gone: 0,
   damaged: 1,
-  unverified: 2,
-  verified: 3,
+  review: 2,
+  unverified: 3,
+  verified: 4,
 };
 
 export function sortArtifacts(
@@ -241,7 +254,9 @@ export function filterArtifacts(
     if (filters.state !== "all") {
       const state = copyState(artifact);
       const matches =
-        filters.state === "problem" ? state === "damaged" || state === "gone" : state === filters.state;
+        filters.state === "problem"
+          ? state === "damaged" || state === "gone" || state === "review"
+          : state === filters.state;
       if (!matches) return false;
     }
 

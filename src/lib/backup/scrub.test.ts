@@ -21,6 +21,7 @@ import {
 import type { BackupDestination } from "@/lib/app-db/backupRepository";
 import type { SqliteDatabase } from "@/lib/app-db/types";
 import { encryptArchive } from "./encryption";
+import { DESTINATION_MARKER } from "./destinations";
 import { sha256 } from "./manifest";
 import { scrubDestination } from "./scrub";
 
@@ -73,6 +74,9 @@ describe("scrubbing a destination", () => {
       config: { version: 1, data: { path: volume } },
     });
     policyId = createBackupPolicy(db, { name: "Nightly", destinationIds: [destination.id] }).id;
+    // The marker Bench writes with its first copy, which tells a mounted
+    // volume from the empty directory an unmounted one leaves.
+    writeFileSync(join(volume, DESTINATION_MARKER), JSON.stringify({ destinationId: destination.id }));
   });
 
   afterEach(() => {

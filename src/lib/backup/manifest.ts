@@ -61,6 +61,12 @@ export type BackupContentSummary = {
   earliestTransaction?: string | null;
   latestTransaction?: string | null;
   integrityCheck?: string;
+  /**
+   * What the counts count. `"live"`: rows Actual has not deleted. Absent:
+   * every row, deleted ones included (copies verified before this was
+   * recorded). Counts on different bases are never compared.
+   */
+  countBasis?: "live";
 };
 
 export type BackupManifest = {
@@ -145,6 +151,7 @@ function readContent(value: unknown): BackupContentSummary | undefined {
   summary.latestTransaction = str(value.latestTransaction) ?? null;
   const integrity = str(value.integrityCheck);
   if (integrity) summary.integrityCheck = integrity;
+  if (value.countBasis === "live") summary.countBasis = "live";
   return summary;
 }
 
