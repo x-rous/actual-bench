@@ -107,17 +107,24 @@ function BalanceSheetGroups({ groups, empty, expanded, setExpanded, closed, setC
       accountGroups.set(row.groupId, accountGroup);
     }
     const orderedGroups = [...accountGroups.entries()].sort(([a], [b]) => a === null ? 1 : b === null ? -1 : 0);
-    const isSectionOpen = !closed.has(group.key);
+    const toggleKey = (key: string) => setExpanded((current) => { const next = new Set(current); if (!next.delete(key)) next.add(key); return next; });
+    const accountsTable = (rows: typeof group.rows, indent: string) => <table className={`w-full table-fixed ${STATEMENT_ROW}`}><colgroup><col className="w-[45%]" /><col className="w-[35%]" /><col className="w-[20%]" /></colgroup><thead className="sr-only"><tr><th scope="col">Account</th><th scope="col">Financial Reporting</th><th scope="col">Balance</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id} className="border-b border-border/40 last:border-b-0"><th scope="row" className={`py-1 ${indent} pr-3 text-left font-normal break-words`}>{row.name}{row.closed ? " (closed)" : ""}</th><td className="px-3 py-1 text-left text-muted-foreground break-words">{row.reporting}</td><td className="py-1 pr-3 text-right tabular-nums whitespace-nowrap">{money(row.amountMinor)}</td></tr>)}</tbody></table>;
+    // A class with a single account group (often just No Group) would repeat the
+    // class total on one group row, so its accounts sit directly under the class.
+    // The class row then opens the accounts, keyed like that group so Expand all
+    // and Collapse all treat it the same way.
+    const flatKey = orderedGroups.length === 1 ? JSON.stringify([group.key, orderedGroups[0][0]]) : null;
+    const isSectionOpen = flatKey ? expanded.has(flatKey) : !closed.has(group.key);
     return <section key={group.key}>
-      <button type="button" aria-expanded={isSectionOpen} className={`flex w-full items-center justify-between gap-3 bg-muted/40 px-3 py-2 text-left ${STATEMENT_HEADING} hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring`} onClick={() => setClosed((current) => { const next = new Set(current); if (!next.delete(group.key)) next.add(group.key); return next; })}><span className="flex items-center gap-1"><ChevronRight className={`size-4 shrink-0 text-muted-foreground transition-transform ${isSectionOpen ? "rotate-90" : ""}`} aria-hidden /><span className="capitalize">{group.label}</span></span><span className="tabular-nums">{money(group.amountMinor)}</span></button>
-      {isSectionOpen && <div>{orderedGroups.map(([id, accountGroup]) => {
+      <button type="button" aria-expanded={isSectionOpen} className={`flex w-full items-center justify-between gap-3 bg-muted/40 px-3 py-2 text-left ${STATEMENT_HEADING} hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring`} onClick={() => flatKey ? toggleKey(flatKey) : setClosed((current) => { const next = new Set(current); if (!next.delete(group.key)) next.add(group.key); return next; })}><span className="flex items-center gap-1"><ChevronRight className={`size-4 shrink-0 text-muted-foreground transition-transform ${isSectionOpen ? "rotate-90" : ""}`} aria-hidden /><span className="capitalize">{group.label}</span></span><span className="tabular-nums">{money(group.amountMinor)}</span></button>
+      {isSectionOpen && (flatKey ? accountsTable(group.rows, "pl-8") : <div>{orderedGroups.map(([id, accountGroup]) => {
         const key = JSON.stringify([group.key, id]);
         const isOpen = expanded.has(key);
         return <section key={id ?? "ungrouped"} className="border-b border-border/40 last:border-b-0">
-          <button type="button" aria-expanded={isOpen} className="flex w-full items-center justify-between gap-3 bg-muted/20 py-1.5 pr-3 pl-6 text-left font-sans text-xs font-medium text-muted-foreground hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" onClick={() => setExpanded((current) => { const next = new Set(current); if (!next.delete(key)) next.add(key); return next; })}><span className="flex items-center gap-1"><ChevronRight className={`size-4 shrink-0 transition-transform ${isOpen ? "rotate-90" : ""}`} aria-hidden /><span className="capitalize">{accountGroup.name}</span></span><span className="tabular-nums whitespace-nowrap">{money(accountGroup.rows.reduce((sum, row) => sum + row.amountMinor, 0))}</span></button>
-          {isOpen && <table className={`w-full table-fixed ${STATEMENT_ROW}`}><colgroup><col className="w-[45%]" /><col className="w-[35%]" /><col className="w-[20%]" /></colgroup><thead className="sr-only"><tr><th scope="col">Account</th><th scope="col">Financial Reporting</th><th scope="col">Balance</th></tr></thead><tbody>{accountGroup.rows.map((row) => <tr key={row.id} className="border-b border-border/40 last:border-b-0"><th scope="row" className="py-1 pl-12 pr-3 text-left font-normal break-words">{row.name}{row.closed ? " (closed)" : ""}</th><td className="px-3 py-1 text-left text-muted-foreground break-words">{row.reporting}</td><td className="py-1 pr-3 text-right tabular-nums whitespace-nowrap">{money(row.amountMinor)}</td></tr>)}</tbody></table>}
+          <button type="button" aria-expanded={isOpen} className="flex w-full items-center justify-between gap-3 bg-muted/20 py-1.5 pr-3 pl-6 text-left font-sans text-xs font-medium text-muted-foreground hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" onClick={() => toggleKey(key)}><span className="flex items-center gap-1"><ChevronRight className={`size-4 shrink-0 transition-transform ${isOpen ? "rotate-90" : ""}`} aria-hidden /><span className="capitalize">{accountGroup.name}</span></span><span className="tabular-nums whitespace-nowrap">{money(accountGroup.rows.reduce((sum, row) => sum + row.amountMinor, 0))}</span></button>
+          {isOpen && accountsTable(accountGroup.rows, "pl-12")}
         </section>;
-      })}</div>}
+      })}</div>)}
     </section>;
   })}</div>;
 }

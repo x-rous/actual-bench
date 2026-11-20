@@ -98,19 +98,18 @@ it("offers retry without rendering a partial statement when evidence fails", () 
 it("shows the balance sheet as a period-end snapshot and exports its account balances", () => {
   render(<StatementsTab data={data} onDrill={jest.fn()} />);
   const sheet = screen.getByRole("region", { name: "Balance Sheet" });
+  // A class with one account group (here only No Group) lists its accounts directly.
   const group = within(sheet).getByRole("button", { name: /Cash & bank/ });
-  expect(group).toHaveAttribute("aria-expanded", "true");
-  const accountGroup = within(sheet).getByRole("button", { name: /No Group/ });
-  expect(accountGroup).toHaveAttribute("aria-expanded", "false");
+  expect(within(sheet).queryByRole("button", { name: /No Group/ })).not.toBeInTheDocument();
+  expect(group).toHaveAttribute("aria-expanded", "false");
+  expect(within(sheet).queryByRole("rowheader", { name: "Checking" })).not.toBeInTheDocument();
   fireEvent.click(within(sheet).getByRole("button", { name: "Expand all" }));
-  expect(accountGroup).toHaveAttribute("aria-expanded", "true");
-  expect(within(sheet).getByRole("rowheader", { name: "Checking" })).toBeVisible();
+  expect(group).toHaveAttribute("aria-expanded", "true");
+  expect(within(sheet).getByRole("rowheader", { name: "Checking" })).toHaveClass("pl-8");
   expect(within(sheet).getByText("Cash & cash equivalents")).toBeVisible();
   fireEvent.click(within(sheet).getByRole("button", { name: "Collapse all" }));
-  expect(accountGroup).toHaveAttribute("aria-expanded", "false");
-  fireEvent.click(group);
   expect(group).toHaveAttribute("aria-expanded", "false");
-  fireEvent.click(within(sheet).getByRole("button", { name: "Expand all" }));
+  fireEvent.click(group);
   expect(group).toHaveAttribute("aria-expanded", "true");
   expect(within(sheet).getByRole("rowheader", { name: "Checking" })).toBeVisible();
   expect(within(sheet).getByText(/calculated as assets less liabilities/)).toBeInTheDocument();
@@ -118,6 +117,19 @@ it("shows the balance sheet as a period-end snapshot and exports its account bal
   expect(sheet.textContent ?? "").not.toMatch(/non-current|Current assets|Current liabilities/i);
   fireEvent.click(within(sheet).getByRole("button", { name: "Export Balance Sheet as CSV" }));
   expect(downloadCsv).toHaveBeenCalledWith("financial-insights-balance-sheet.csv", expect.arrayContaining([["Cash & bank", "No Group", "Checking", "Cash & cash equivalents", "123.45"], ["Totals", "", "Net worth", "", "123.45"]]));
+});
+
+it("keeps account group rows on the balance sheet when a class has more than one group", () => {
+  const groupedFacts: FinancialFacts = { ...facts, accounts: [{ ...facts.accounts[0], groupId: "daily", groupName: "Daily" }, { id: "savings", name: "Savings", accountClass: "bank", treatment: null, offBudget: false }] };
+  const groupedLedger = buildLedger(groupedFacts);
+  render(<StatementsTab data={{ ...data, ledger: groupedLedger } as ReadyData} onDrill={jest.fn()} />);
+  const sheet = screen.getByRole("region", { name: "Balance Sheet" });
+  expect(within(sheet).getByRole("button", { name: /Cash & bank/ })).toHaveAttribute("aria-expanded", "true");
+  const daily = within(sheet).getByRole("button", { name: /Daily/ });
+  expect(within(sheet).getByRole("button", { name: /No Group/ })).toHaveAttribute("aria-expanded", "false");
+  fireEvent.click(daily);
+  expect(within(sheet).getByRole("rowheader", { name: "Checking" })).toHaveClass("pl-12");
+  expect(within(sheet).queryByRole("rowheader", { name: "Savings" })).not.toBeInTheDocument();
 });
 
 it("expands and collapses all P&L category groups without changing the balance sheet", () => {
