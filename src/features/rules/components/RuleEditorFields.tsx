@@ -71,13 +71,14 @@ export function RuleEditorFields({
 
   return (
     <div className="flex-1 space-y-6 overflow-y-auto px-4 py-4">
-      {/* Stage - pill-style toggle */}
+      {/* Stage - a segmented control framed like the table's filter pills, with the
+          chosen stage filled like the Schedules drawer's toggles so it reads at a glance. */}
       <div className="flex items-center gap-2">
         <span id="stage-label" className="whitespace-nowrap text-xs font-medium text-muted-foreground">Stage</span>
         <div
           role="radiogroup"
           aria-labelledby="stage-label"
-          className="flex items-center gap-0.5"
+          className="flex items-center gap-px rounded-md border border-border bg-muted/40 p-px"
           onKeyDown={(e) => {
             if (!["ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp"].includes(e.key)) return;
             e.preventDefault();
@@ -97,10 +98,10 @@ export function RuleEditorFields({
               aria-checked={stage === s}
               onClick={() => onStageChange(s)}
               className={cn(
-                "rounded px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+                "rounded px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
                 stage === s
-                  ? "bg-primary/10 text-primary"
-                  : "text-muted-foreground hover:text-foreground"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:bg-background hover:text-foreground"
               )}
             >
               {s.charAt(0).toUpperCase() + s.slice(1)}

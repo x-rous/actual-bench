@@ -118,7 +118,7 @@ export type ActualApi = {
   getAccounts(): Promise<ApiAccount[]>;
   createAccount(account: Omit<ApiAccount, "id">, initialBalance?: number): Promise<string>;
   updateAccount(accountId: string, fields: Partial<ApiAccount>): Promise<void>;
-  closeAccount(accountId: string): Promise<void>;
+  closeAccount(accountId: string, transferAccountId?: string, transferCategoryId?: string): Promise<void>;
   reopenAccount(accountId: string): Promise<void>;
   deleteAccount(accountId: string): Promise<void>;
   /** Account groups (Actual 26.9+); optional so an older API build degrades gracefully. */
@@ -130,11 +130,11 @@ export type ActualApi = {
   getCategoryGroups(options?: { hidden?: boolean }): Promise<ApiCategoryGroup[]>;
   createCategoryGroup(group: Omit<ApiCategoryGroup, "id">): Promise<string>;
   updateCategoryGroup(groupId: string, fields: Partial<ApiCategoryGroup>): Promise<void>;
-  deleteCategoryGroup(groupId: string): Promise<void>;
+  deleteCategoryGroup(groupId: string, transferCategoryId?: string): Promise<void>;
   getCategories(options?: { hidden?: boolean }): Promise<Array<ApiCategory | ApiCategoryGroup>>;
   createCategory(category: Omit<ApiCategory, "id">): Promise<string>;
   updateCategory(categoryId: string, fields: Partial<ApiCategory>): Promise<void>;
-  deleteCategory(categoryId: string): Promise<void>;
+  deleteCategory(categoryId: string, transferCategoryId?: string): Promise<void>;
   getPayees(): Promise<ApiPayee[]>;
   createPayee(payee: Omit<ApiPayee, "id">): Promise<string>;
   updatePayee(payeeId: string, fields: Partial<ApiPayee>): Promise<void>;

@@ -2,6 +2,7 @@
 
 import { ChevronsDownUp, ChevronsUpDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { CategoryGroupPicker } from "@/components/ui/entity-picker";
 import { PillGroup } from "@/components/ui/pill-group";
 import { SearchInput } from "@/components/ui/search-input";
 
@@ -38,6 +39,7 @@ export function FilterBar({
   onToggleCollapseAll,
   selectedCount,
   onBulkDelete, onDeselect,
+  moveGroupOptions, onBulkMove,
 }: {
   search: string; onSearchChange: (v: string) => void;
   visibilityFilter: VisibilityFilter; onVisibilityChange: (v: VisibilityFilter) => void;
@@ -49,6 +51,9 @@ export function FilterBar({
   selectedCount: number;
   onBulkDelete: () => void;
   onDeselect: () => void;
+  /** Expense groups the selected expense categories can move to; absent when none of the selection can move. */
+  moveGroupOptions?: { id: string; name: string }[];
+  onBulkMove?: (groupId: string) => void;
 }) {
   const hasFilters = search || visibilityFilter !== "all" || typeFilter !== "all" || rulesFilter !== "all";
 
@@ -56,6 +61,18 @@ export function FilterBar({
     return (
       <div className="flex flex-wrap items-center gap-2 border-b border-border/40 bg-primary/5 px-2 py-1.5">
         <span className="text-xs font-medium text-primary">{selectedCount} selected</span>
+        {moveGroupOptions && onBulkMove && (
+          <div className="w-48">
+            <CategoryGroupPicker
+              size="sm"
+              ariaLabel="Move the selected categories to a group"
+              placeholder="Move to group…"
+              groups={moveGroupOptions}
+              value=""
+              onChange={(groupId) => { if (groupId) onBulkMove(groupId); }}
+            />
+          </div>
+        )}
         <Button size="xs" variant="destructive" onClick={onBulkDelete}>Delete</Button>
         <button onClick={onDeselect} className="ml-auto text-xs text-muted-foreground hover:text-foreground">
           Clear selection

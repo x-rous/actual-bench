@@ -9,13 +9,15 @@ import type {
 } from "../types";
 import { fetchAllOverviewStats } from "../lib/overviewQueries";
 
-function hasPartialFailure(snapshot: BudgetOverviewSnapshot | null | undefined): boolean {
+export function hasPartialFailure(snapshot: BudgetOverviewSnapshot | null | undefined): boolean {
   if (!snapshot) return false;
 
   return (
     snapshot.budgetMode === null ||
     snapshot.budgetingSince === null ||
-    Object.values(snapshot.stats).some((value) => value === null)
+    Object.values(snapshot.stats).some((value) => value === null) ||
+    // The breakdowns under the counts are part of the read: one missing is an incomplete refresh too.
+    Object.values(snapshot.details ?? {}).some((value) => value === null)
   );
 }
 

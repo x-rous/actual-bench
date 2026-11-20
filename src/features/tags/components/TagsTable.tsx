@@ -4,6 +4,7 @@ import { useState, useMemo } from "react";
 import { usePersistedFilters } from "@/hooks/usePersistedFilters";
 import { ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { toast } from "sonner";
+import { normalizeTagName } from "../utils/tagName";
 import type { ConfirmState } from "@/components/ui/confirm-dialog";
 import { TableBulkAddBar } from "@/components/ui/table-bulk-add-bar";
 import { useStagedStore } from "@/store/staged";
@@ -15,7 +16,8 @@ import { generateId } from "@/lib/uuid";
 import type { Tag } from "@/types/entities";
 import { FilterBar } from "./FilterBar";
 import { TagsTableRow } from "./TagsTableRow";
-import type { ColorFilter } from "./FilterBar";
+import type { ColorFilter, UsageFilter } from "./FilterBar";
+import { useTagUsageCounts } from "../hooks/useTagUsageCounts";
 import { Checkbox } from "@/components/ui/checkbox";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -47,8 +49,14 @@ export function TagsTable({
   const [filters, setFilters] = usePersistedFilters("filters:tags", {
     search: "",
     colorFilter: "all" as ColorFilter,
+    usageFilter: "all" as UsageFilter,
   });
   const { search, colorFilter } = filters;
+  const usageFilter = filters.usageFilter ?? "all";
+  const setUsageFilter = (v: UsageFilter) => setFilters((f) => ({ ...f, usageFilter: v }));
+  // Read only while a usage filter is on: it scans the notes that contain "#".
+  const { data: usageCounts, isLoading: usageLoading, error: usageError, refetch: retryUsage } =
+    useTagUsageCounts({ enabled: usageFilter !== "all" });
   const setSearch      = (v: string)      => setFilters((f) => ({ ...f, search: v }));
   const setColorFilter = (v: ColorFilter) => setFilters((f) => ({ ...f, colorFilter: v }));
   const [sortNameDir, setSortNameDir] = useState<"asc" | "desc" | null>(null);
@@ -66,6 +74,13 @@ export function TagsTable({
         if (q && !s.entity.name.toLowerCase().includes(q) && !(s.entity.description?.toLowerCase().includes(q) ?? false)) return false;
         if (colorFilter === "has_color" && !s.entity.color) return false;
         if (colorFilter === "no_color"  &&  s.entity.color) return false;
+        if (usageFilter !== "all" && !s.isNew) {
+          // Drafts stay listed whatever the filter, so a tag just added can be
+          // seen and named; saved tags wait for the counts.
+          if (!usageCounts) return false;
+          const used = (usageCounts.get(s.entity.name) ?? 0) > 0;
+          if (usageFilter === "used" ? !used : used) return false;
+        }
         return true;
       })
       .sort((a, b) => {
@@ -77,7 +92,7 @@ export function TagsTable({
         if (a.isNew !== b.isNew) return a.isNew ? -1 : 1;
         return a.entity.name.localeCompare(b.entity.name);
       });
-  }, [stagedTags, search, colorFilter, sortNameDir]);
+  }, [stagedTags, search, colorFilter, sortNameDir, usageFilter, usageCounts]);
 
   const nameCountMap = useMemo(() => {
     const counts = new Map<string, number>();
@@ -120,7 +135,7 @@ export function TagsTable({
 
   function handleNameDone(rowId: string, value: string, action: DoneAction) {
     if (action !== "cancel") {
-      const trimmed = value.trim().replace(/ /g, "");
+      const trimmed = normalizeTagName(value);
       const current = stagedTags[rowId]?.entity;
       if (trimmed && current) {
         const candidateKey = trimmed.toLowerCase();
@@ -236,6 +251,7 @@ export function TagsTable({
         <FilterBar
           search={search} onSearchChange={setSearch}
           colorFilter={colorFilter} onColorFilterChange={setColorFilter}
+          usageFilter={usageFilter} onUsageFilterChange={setUsageFilter}
           filteredCount={rows.filter((r) => !r.isDeleted).length}
           totalCount={totalCount}
           selectedCount={activeSelected}
@@ -246,7 +262,14 @@ export function TagsTable({
         <div className="min-h-0 flex-1 overflow-auto">
         {rows.length === 0 ? (
           <div className="flex flex-1 items-center justify-center py-16 text-sm text-muted-foreground">
-            {search || colorFilter !== "all"
+            {usageFilter !== "all" && usageError && !usageCounts ? (
+              <span role="alert" className="flex items-center gap-2 text-destructive">
+                Could not read tags from transaction notes.
+                <button type="button" className="text-xs underline hover:text-foreground" onClick={() => void retryUsage()}>Retry</button>
+              </span>
+            ) : usageFilter !== "all" && usageLoading
+              ? "Reading tags from transaction notes…"
+              : search || colorFilter !== "all" || usageFilter !== "all"
               ? "No tags match the current filters."
               : "No tags yet. Click \"Add Tag\" to create one."}
           </div>

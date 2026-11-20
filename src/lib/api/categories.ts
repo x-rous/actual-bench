@@ -36,11 +36,12 @@ export async function createCategory(
 export async function updateCategory(
   connection: ConnectionInstance,
   id: string,
-  patch: Partial<Pick<Category, "name" | "hidden">>
+  patch: Partial<Pick<Category, "name" | "hidden" | "groupId">>
 ): Promise<void> {
   const fields: Partial<ApiCategoryInput> = {};
   if (patch.name !== undefined) fields.name = patch.name;
   if (patch.hidden !== undefined) fields.hidden = patch.hidden;
+  if (patch.groupId !== undefined) fields.group_id = patch.groupId;
 
   await apiRequest<void>(connection, `/categories/${id}`, {
     method: "PATCH",
@@ -50,9 +51,12 @@ export async function updateCategory(
 
 export async function deleteCategory(
   connection: ConnectionInstance,
-  id: string
+  id: string,
+  transferCategoryId?: string | null
 ): Promise<void> {
-  await apiRequest<void>(connection, `/categories/${id}`, {
+  // The transfer category takes over the transactions and budget amounts.
+  const query = transferCategoryId ? `?transfer_category_id=${encodeURIComponent(transferCategoryId)}` : "";
+  await apiRequest<void>(connection, `/categories/${id}${query}`, {
     method: "DELETE",
   });
 }

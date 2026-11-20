@@ -24,11 +24,14 @@ been budgeting - and everything below it is the way through to the rest.*
 ## What the Overview shows
 
 - **A live snapshot row** with saved-state counts for **transactions, accounts, payees, categories,
-  schedules, and rules**.
+  schedules, and rules**. Deleted items are never counted. A small line under a count says what it
+  includes - closed accounts, transfer payees (Actual keeps one per account), hidden categories,
+  completed schedules, the rules your schedules keep - and hovering explains the rest: each line of a
+  split counts as one transaction, starting balances included.
 - **Derived context** - the **Budget Mode** (`Envelope`, `Tracking`, or `Unidentified`) and
-  **Budgeting since**, inferred from your oldest transaction date.
-- **A manual Refresh** with a loading state and a last-refreshed indicator. Snapshot values switch to
-  loading placeholders immediately when you switch budgets or refresh.
+  **First transaction**, the month of your oldest transaction.
+- **A manual Refresh** with a last-refreshed indicator. Refreshing keeps the old figures on screen,
+  dimmed, until the new ones arrive. A figure that could not be read shows "-" with a note to refresh.
 
 :::note[Overview reflects saved data]
 The snapshot reads the server. A draft you left staged on another page does not show up here until you

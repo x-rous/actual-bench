@@ -171,9 +171,11 @@ describe("Actual transport factory", () => {
   it("Direct account creates use the browser runtime and convert the initial balance", async () => {
     const createAccount = jest.fn().mockResolvedValue("account-1");
     const closeAccount = jest.fn().mockResolvedValue(undefined);
+    const updateAccount = jest.fn().mockResolvedValue(undefined);
     mockGetBrowserApiRuntime.mockResolvedValue({
       createAccount,
       closeAccount,
+      updateAccount,
     } as never);
 
     await expect(
@@ -195,7 +197,43 @@ describe("Actual transport factory", () => {
       { name: "New Checking", offbudget: true, closed: false },
       1234
     );
-    expect(closeAccount).toHaveBeenCalledWith("account-1");
+    // Closed through the plain flag: Actual's close refuses an account with a
+    // balance, which would report a created account as failed.
+    expect(updateAccount).toHaveBeenCalledWith("account-1", { closed: true });
+    expect(closeAccount).not.toHaveBeenCalled();
+  });
+
+  it("Direct account updates close by flag, and move a balance only through closeAccount", async () => {
+    const updateAccount = jest.fn().mockResolvedValue(undefined);
+    const closeAccount = jest.fn().mockResolvedValue(undefined);
+    const reopenAccount = jest.fn().mockResolvedValue(undefined);
+    mockGetBrowserApiRuntime.mockResolvedValue({ updateAccount, closeAccount, reopenAccount } as never);
+    const transport = getTransport(browserConnection);
+
+    await transport.updateAccount("account-1", { name: "Checking", closed: true });
+    expect(updateAccount).toHaveBeenCalledWith("account-1", { name: "Checking", closed: true });
+    await transport.updateAccount("account-1", { name: "Renamed" });
+    expect(updateAccount).toHaveBeenLastCalledWith("account-1", { name: "Renamed" });
+    expect(closeAccount).not.toHaveBeenCalled();
+    expect(reopenAccount).not.toHaveBeenCalled();
+
+    await transport.closeAccount("account-1", { transferAccountId: "account-2", transferCategoryId: "cat-1" });
+    expect(closeAccount).toHaveBeenCalledWith("account-1", "account-2", "cat-1");
+  });
+
+  it("Direct category writes move groups and pass delete transfers", async () => {
+    const updateCategory = jest.fn().mockResolvedValue(undefined);
+    const deleteCategory = jest.fn().mockResolvedValue(undefined);
+    const deleteCategoryGroup = jest.fn().mockResolvedValue(undefined);
+    mockGetBrowserApiRuntime.mockResolvedValue({ updateCategory, deleteCategory, deleteCategoryGroup } as never);
+    const transport = getTransport(browserConnection);
+
+    await transport.updateCategory("cat-1", { name: "Food", hidden: false, groupId: "group-2" });
+    expect(updateCategory).toHaveBeenCalledWith("cat-1", { name: "Food", hidden: false, group_id: "group-2" });
+    await transport.deleteCategory("cat-1", "cat-2");
+    expect(deleteCategory).toHaveBeenCalledWith("cat-1", "cat-2");
+    await transport.deleteCategoryGroup("group-1", null);
+    expect(deleteCategoryGroup).toHaveBeenCalledWith("group-1", undefined);
   });
 
   it("Direct rule creates convert default stage and amount values for the browser API", async () => {

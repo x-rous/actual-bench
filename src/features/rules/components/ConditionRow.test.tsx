@@ -140,3 +140,20 @@ describe("changing the operator preserves the value", () => {
     expect(onChange.mock.calls[0][0].value).toBe("food");
   });
 });
+
+describe("ConditionRow with a deleted entity", () => {
+  it("shows an id the budget no longer has as a removable chip, so the rule can be fixed", () => {
+    const onChange = jest.fn();
+    render(
+      <ConditionRow
+        condition={{ field: "account", op: "oneOf", value: ["a1", "gone"], type: "id" }}
+        entityOptions={entityOptions}
+        onChange={onChange}
+        onDelete={() => {}}
+      />
+    );
+    expect(screen.getByText("[deleted account]")).toBeInTheDocument();
+    screen.getByRole("button", { name: /Remove \[deleted account\]/ }).click();
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ value: ["a1"] }));
+  });
+});
