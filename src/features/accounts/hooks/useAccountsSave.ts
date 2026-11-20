@@ -168,8 +168,12 @@ export function useAccountsSave() {
           const patch: Parameters<typeof transport.updateAccount>[1] = {
             name: a.name,
             offBudget: a.offBudget,
-            closed: a.closed,
           };
+          // Only a change of state is sent. A close that moves the balance goes
+          // through Actual's own close after the other fields are written.
+          const wasClosed = staged[a.id]?.original?.closed ?? false;
+          const transfer = a.closed && !wasClosed ? staged[a.id]?.closeTransfer : null;
+          if (a.closed !== wasClosed && !transfer) patch.closed = a.closed;
           // Only touch the group when it changed, so servers without account
           // groups never see the field.
           const before = staged[a.id]?.original?.groupId ?? null;
@@ -179,7 +183,11 @@ export function useAccountsSave() {
             if (groupId === undefined) throw new Error("Its group could not be created.");
             patch.groupId = groupId;
           }
-          return transport.updateAccount(a.id, patch);
+          await transport.updateAccount(a.id, patch);
+          if (transfer) {
+            const target = idMap[transfer.transferAccountId] ?? transfer.transferAccountId;
+            await transport.closeAccount(a.id, { ...transfer, transferAccountId: target });
+          }
         }
       );
       for (let i = 0; i < accountUpdates.length; i++) {

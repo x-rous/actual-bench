@@ -2,7 +2,6 @@ export type OverviewStatKey =
   | "transactions"
   | "accounts"
   | "payees"
-  | "categoryGroups"
   | "categories"
   | "rules"
   | "schedules";
@@ -11,8 +10,14 @@ export type BudgetOverviewStats = Record<OverviewStatKey, number | null>;
 
 export type BudgetMode = "Envelope" | "Tracking" | "Unidentified";
 
+/** What a headline count includes, so it can be read correctly ("54 · 12 closed"). Null when it could not be read. */
+export type OverviewDetailKey = "closedAccounts" | "transferPayees" | "hiddenCategories" | "completedSchedules";
+
+export type BudgetOverviewDetails = Record<OverviewDetailKey, number | null>;
+
 export type BudgetOverviewSnapshot = {
   stats: BudgetOverviewStats;
+  details: BudgetOverviewDetails;
   budgetMode: BudgetMode | null;
   budgetingSince: string | null;
 };

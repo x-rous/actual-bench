@@ -41,12 +41,19 @@ export function usePayeesSave() {
       const transport = getTransport(connection);
       const ops = computeSaveOperations<Payee>(staged);
       const toCreate = ops.toCreate.filter((p) => p.name.trim() !== "");
+      // Blank new rows are placeholders and wait; a saved payee cleared to no
+      // name is reported on its row (Actual needs a name) rather than skipped.
       const toUpdate = ops.toUpdate.filter((p) => p.name.trim() !== "");
+      const blankRenames = ops.toUpdate.filter((p) => p.name.trim() === "");
       // Exclude payees being merged — the server handles their deletion via the merge API
       const mergedIds = new Set(pendingPayeeMerges.flatMap((m) => m.mergeIds));
       const toDelete = ops.toDelete.filter((id) => !mergedIds.has(id));
       const succeeded: SaveResult[] = [];
-      const failed: SaveResult[] = [];
+      const failed: SaveResult[] = blankRenames.map((p) => ({
+        status: "error" as const,
+        id: p.id,
+        message: "A payee needs a name. Enter one or revert the change.",
+      }));
       const succeededCreateIds = new Set<string>();
       const idMap: Record<string, string> = {};
 

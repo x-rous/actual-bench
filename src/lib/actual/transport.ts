@@ -44,6 +44,8 @@ export type ScheduleWriteInput = Omit<
 /** Integer minor currency units, matching Actual's cents-style amount fields. */
 export type MinorUnitAmount = number;
 
+export type { AccountCloseTransfer } from "@/types/entities";
+
 export type TransportBudgetMonthCategory = {
   id: string;
   name: string;
@@ -360,6 +362,13 @@ export interface ActualBenchTransport {
   createAccount(input: Omit<Account, "id">): Promise<Account>;
   updateAccount(id: string, patch: Partial<Omit<Account, "id" | "initialBalance">>): Promise<void>;
   deleteAccount(id: string): Promise<void>;
+  /**
+   * Closes an account and moves its balance to another account (optionally
+   * categorized), through Actual's own close. A close without a transfer is
+   * `updateAccount({ closed: true })`: Actual's close deletes an account that
+   * has no transactions and refuses one with a balance.
+   */
+  closeAccount(id: string, transfer: import("@/types/entities").AccountCloseTransfer): Promise<void>;
 
   /**
    * Account groups (Actual 26.9+). Optional like `runBankSync`: a transport or
@@ -382,10 +391,13 @@ export interface ActualBenchTransport {
   getCategoryGroups(): Promise<CategoryGroupsResponse>;
   createCategoryGroup(input: Pick<CategoryGroup, "name" | "isIncome" | "hidden">): Promise<string>;
   updateCategoryGroup(id: string, patch: Partial<Pick<CategoryGroup, "name" | "hidden">>): Promise<void>;
-  deleteCategoryGroup(id: string): Promise<void>;
+  /** `transferCategoryId` moves the group's transactions and budget amounts to that category. */
+  deleteCategoryGroup(id: string, transferCategoryId?: string | null): Promise<void>;
   createCategory(input: Pick<Category, "name" | "groupId" | "isIncome" | "hidden">): Promise<string>;
-  updateCategory(id: string, patch: Partial<Pick<Category, "name" | "hidden">>): Promise<void>;
-  deleteCategory(id: string): Promise<void>;
+  /** `groupId` moves the category to another (expense) group. */
+  updateCategory(id: string, patch: Partial<Pick<Category, "name" | "hidden" | "groupId">>): Promise<void>;
+  /** `transferCategoryId` moves the category's transactions and budget amounts to that category. */
+  deleteCategory(id: string, transferCategoryId?: string | null): Promise<void>;
 
   getTags(): Promise<Tag[]>;
   createTag(input: Pick<Tag, "name"> & Partial<Pick<Tag, "color" | "description">>): Promise<Tag>;

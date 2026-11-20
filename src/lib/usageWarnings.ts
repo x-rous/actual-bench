@@ -183,8 +183,7 @@ export function buildAccountCloseWarning(
   if (balance !== 0) {
     return (
       `"${name}" has an outstanding balance of ${formatBalance(balance)}. ` +
-      `In Actual Budget, accounts with transactions can only be closed after transferring the balance. ` +
-      `Staging this close may leave your budget inconsistent. Proceed only if you have handled the balance in Actual Budget directly.`
+      `Choose an account to move it to, as Actual does when it closes an account, or close it with the balance left where it is.`
     );
   }
 
@@ -248,7 +247,7 @@ export function buildAccountBulkCloseWarning(
     return (
       `Close ${plural(count, "account")}? ` +
       `${plural(nonZeroBalanceCount, "account")} ${nonZeroBalanceCount === 1 ? "has" : "have"} a non-zero balance - ` +
-      `verify transfers are handled in Actual Budget before saving.`
+      `their balances stay where they are. To move a balance, close that account on its own.`
     );
   }
   return `Close ${plural(count, "account")}? ${count === 1 ? "It" : "They"} will be hidden from your budget.`;

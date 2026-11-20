@@ -34,6 +34,10 @@ export type ConfirmState = {
   destructive?: boolean;
   /** Label for the button that backs out. Defaults to "Cancel". */
   cancelLabel?: string;
+  /** Controls below the message, such as a choice the action depends on (the message itself is a paragraph). */
+  details?: React.ReactNode;
+  /** Keeps the confirm button disabled, for example until a required choice is made. */
+  confirmDisabled?: boolean;
 };
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -53,12 +57,14 @@ export function ConfirmDialog({ open, onOpenChange, state }: Props) {
           <DialogTitle>{state?.title}</DialogTitle>
           <DialogDescription>{state?.message}</DialogDescription>
         </DialogHeader>
+        {state?.details}
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {state?.cancelLabel ?? "Cancel"}
           </Button>
           <Button
             variant={state?.destructive === false ? "default" : "destructive"}
+            disabled={state?.confirmDisabled}
             onClick={() => {
               state?.onConfirm();
               onOpenChange(false);

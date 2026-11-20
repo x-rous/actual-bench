@@ -5,7 +5,8 @@ import { PillGroup } from "@/components/ui/pill-group";
 import { SearchInput } from "@/components/ui/search-input";
 
 export type TypeFilter = "all" | "regular" | "transfer";
-export type RulesFilter = "all" | "with_rules" | "no_rules";
+/** "unused": no rules and no transactions (regular, saved payees only). */
+export type RulesFilter = "all" | "with_rules" | "no_rules" | "unused";
 export type SortCol = "name" | "type";
 export type SortDir = "asc" | "desc";
 
@@ -19,6 +20,7 @@ export const RULES_OPTIONS: { value: RulesFilter; label: string }[] = [
   { value: "all", label: "All" },
   { value: "with_rules", label: "Has Rules" },
   { value: "no_rules", label: "No Rules" },
+  { value: "unused", label: "Unused" },
 ];
 
 export function FilterBar({

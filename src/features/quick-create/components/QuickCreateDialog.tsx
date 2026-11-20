@@ -1,5 +1,6 @@
 "use client";
 
+import { normalizeTagName } from "@/features/tags/utils/tagName";
 import { ColorPicker } from "@/components/ui/color-picker";
 import { useState, useMemo } from "react";
 import { Plus, AlertTriangle } from "lucide-react";
@@ -102,7 +103,7 @@ function QuickCreateForm({
         stageNew("accounts", { id, name: trimmedName, offBudget, closed: false });
         break;
       case "tag":
-        stageNew("tags", { id, name: trimmedName, ...(color ? { color } : {}) });
+        stageNew("tags", { id, name: normalizeTagName(trimmedName) || trimmedName, ...(color ? { color } : {}) });
         break;
     }
 

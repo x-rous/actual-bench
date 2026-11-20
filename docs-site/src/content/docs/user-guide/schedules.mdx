@@ -80,6 +80,10 @@ the schedule's name and cannot be written by hand. Change the behaviour here ins
   server.
 - Deleting confirms first, showing the linked rule, the auto-post flag and the transaction count.
 - Filter by name, payee, account, frequency, and auto-add state.
+- Actual needs every schedule name to be unique. A duplicate gets a warning beside its name and is
+  reported on its row at Save; **Duplicate** names the copy "Name (copy)".
+- A schedule can use a payee or account you created in the same draft: Save writes those first and
+  hands the schedule their new ids.
 
 ## Import and export
 

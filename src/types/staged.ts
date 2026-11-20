@@ -18,6 +18,10 @@ export type StagedEntity<T extends BaseEntity> = {
   saveError?: string;
   /** Account rows only: Bench metadata staged until creation returns a real id, or awaiting a retry. Never sent to Actual. */
   pendingAccountClass?: AccountClass | null;
+  /** Category and category-group rows only: on delete, the category that takes over their transactions and budget amounts. */
+  transferCategoryId?: string | null;
+  /** Account rows only: where the balance goes when the staged close is saved. */
+  closeTransfer?: import("./entities").AccountCloseTransfer | null;
 };
 
 export type StagedMap<T extends BaseEntity> = Record<string, StagedEntity<T>>;

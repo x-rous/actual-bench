@@ -37,13 +37,19 @@ uses.
 ## Filter, delete, and import/export
 
 - Filter by name, by description, or by whether a tag has a colour. Counts update as you type.
+- Filter by **Used** or **Unused**: whether any transaction's notes carry the tag. Bench reads the notes
+  that contain `#` (one query, only while the filter is on) and finds tags the way Actual does - `#name`,
+  ending at a space or the next `#`, with `##` as an escaped literal.
+- Tag names lose spaces and leading `#` signs wherever you name a tag, CSV import included, because a
+  note could never match them.
 - Select several and delete them together. Duplicate names get flagged.
 - Import and export tags as CSV. CSV columns:
   - `name` (required), `color` (optional hex, e.g. `#FF5733`), `description` (optional).
 
 :::note[Tag usage data]
-The Usage Inspector shows which rules reference a tag. It cannot show transactions - Actual does not
-expose that for tags - and the drawer says so rather than showing a misleading zero.
+The Usage Inspector shows which rules reference a tag. It does not count transactions for a tag - tags
+live in note text, not as a field - and the drawer says so rather than showing a misleading zero. Use
+the **Used / Unused** filter to see which tags notes actually carry.
 :::
 
 ## Common problems

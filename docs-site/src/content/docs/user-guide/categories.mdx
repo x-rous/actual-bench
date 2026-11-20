@@ -35,6 +35,7 @@ uses.
 - Rename groups and categories inline; collapse or expand group rows (or all groups at once).
 - Moving a category between groups opens an editor when you ask for it. Rendering fifty dropdowns up
   front would make a big table crawl.
+- To move several at once, select the expense categories and choose **Move to group…**.
 
 :::note[Income category constraints]
 Income categories belong to the one income group and stay there. Only expense categories move.
@@ -46,6 +47,11 @@ Income categories belong to the one income group and stay there. Only expense ca
 - Deleting a **category** confirms with its transaction count and rule references. Deleting a **group**
   adds the child count and every child's transactions, plus a cascade warning. Bulk delete works out
   what is already implied and totals it once.
+- When saved categories go, the dialog offers **Move transactions and budget amounts to** another
+  category on the same side, as Actual does. Leave it empty and their transactions become
+  uncategorized. Bulk delete offers it when everything selected is income, or everything is expense.
+- Save moves categories before it deletes groups, so a category you moved out of a group is never
+  deleted along with it.
 
 ## Filter and sort
 

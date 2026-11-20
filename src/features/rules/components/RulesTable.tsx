@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { Fragment, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { usePersistedFilters } from "@/hooks/usePersistedFilters";
 import { useRouter } from "next/navigation";
 import { useHighlight } from "@/hooks/useHighlight";
@@ -18,6 +19,7 @@ import { rulePreview } from "../utils/rulePreview";
 import type { EntityMaps } from "../utils/rulePreview";
 import { STAGE_LABELS } from "../utils/ruleFields";
 import { isScheduleLinkedRule, matchesActionTypeFilter } from "../lib/ruleFilters";
+import { findRuleIssues, missingReferenceLabel, RULE_ISSUE_LABELS } from "../lib/ruleHealth";
 import { FilterBar } from "./FilterBar";
 import type { StageFilter, ActionTypeFilter } from "./FilterBar";
 import { ConditionChip, ActionChip } from "./RuleChips";
@@ -80,8 +82,13 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
     search: "",
     stageFilter: "all" as StageFilter,
     actionTypeFilter: "all" as ActionTypeFilter,
+    issuesOnly: false,
   });
   const { search, stageFilter, actionTypeFilter } = filters;
+  const issuesOnly = filters.issuesOnly ?? false;
+  const setIssuesOnly = (v: boolean) => setFilters((f) => ({ ...f, issuesOnly: v }));
+  // Typing stays responsive on long lists: the rows follow the search a beat later.
+  const deferredSearch = useDeferredValue(search);
   const setSearch          = (v: string)           => setFilters((f) => ({ ...f, search: v }));
   const setStageFilter     = (v: StageFilter)      => setFilters((f) => ({ ...f, stageFilter: v }));
   const setActionTypeFilter = (v: ActionTypeFilter) => setFilters((f) => ({ ...f, actionTypeFilter: v }));
@@ -104,10 +111,13 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
     return map;
   }, [stagedRules, entityMaps]);
 
+  const ruleIssues = useMemo(() => findRuleIssues(stagedRules, entityMaps), [stagedRules, entityMaps]);
+
   const rows = useMemo<StagedEntity<Rule>[]>(() => {
-    const q = search.trim().toLowerCase();
+    const q = deferredSearch.trim().toLowerCase();
     return Object.values(stagedRules).filter((s) => {
       if (s.isDeleted) return false;
+      if (issuesOnly && !ruleIssues.has(s.entity.id)) return false;
       if (stageFilter !== "all" && normalizeStage(s.entity.stage) !== stageFilter) return false;
       if (!matchesActionTypeFilter(s.entity, actionTypeFilter)) return false;
       if (payeeId) {
@@ -140,7 +150,42 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
       if (q && !(rulePreviews.get(s.entity.id) ?? "").includes(q)) return false;
       return true;
     });
-  }, [stagedRules, stageFilter, actionTypeFilter, payeeId, categoryId, accountId, search, rulePreviews]);
+  }, [stagedRules, stageFilter, actionTypeFilter, payeeId, categoryId, accountId, deferredSearch, rulePreviews, issuesOnly, ruleIssues]);
+
+  /*
+   * Only the rows in view are mounted. Long-lived budgets carry thousands of
+   * rules, each with several chips, and rendering them all made every
+   * keystroke in the search and every staged edit elsewhere slow. Rows measure
+   * themselves, since their chips wrap to any number of lines.
+   */
+  const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => scrollEl,
+    estimateSize: () => 64,
+    overscan: 8,
+  });
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const paddingTop = virtualRows.length > 0 ? virtualRows[0]!.start : 0;
+  const paddingBottom = virtualRows.length > 0 ? rowVirtualizer.getTotalSize() - virtualRows[virtualRows.length - 1]!.end : 0;
+
+  // `useHighlight` scrolls by querying the DOM, which finds nothing for a rule
+  // outside the window, so a deep link brings its row into view first (once).
+  const revealedHighlightRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!highlightedId) {
+      revealedHighlightRef.current = null;
+      return;
+    }
+    if (revealedHighlightRef.current === highlightedId || !scrollEl) return;
+    const index = rows.findIndex((row) => row.entity.id === highlightedId);
+    if (index >= 0) {
+      rowVirtualizer.scrollToIndex(index, { align: "center" });
+      revealedHighlightRef.current = highlightedId;
+    }
+    // Keyed to the highlight and the container, not the virtualiser's identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [highlightedId, rows, scrollEl]);
 
   function handleDelete(id: string) {
     setConfirmDialog({
@@ -238,14 +283,17 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
         onDeleteSelected={handleDeleteSelected}
         onMerge={handleMerge}
         onDeselect={clearSelection}
+        issuesOnly={issuesOnly}
+        onIssuesOnlyChange={setIssuesOnly}
+        issueCount={ruleIssues.size}
       />
 
       {/* Table */}
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div ref={setScrollEl} className="min-h-0 flex-1 overflow-auto">
         {rows.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-20 text-sm text-muted-foreground">
             <span>No rules found.</span>
-            {(search || stageFilter !== "all" || actionTypeFilter !== "all" || payeeId || categoryId || accountId) && (
+            {(search || issuesOnly || stageFilter !== "all" || actionTypeFilter !== "all" || payeeId || categoryId || accountId) && (
               <button
                 className="text-xs underline hover:text-foreground"
                 onClick={() => {
@@ -262,9 +310,9 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
             <span id="rules-selection-help" className="sr-only">
               Schedule-generated rules are managed by the Schedules page and cannot be merged or bulk deleted.
             </span>
-          <table className="w-full text-xs">
+          <table className="w-full text-xs" aria-rowcount={rows.length + 1}>
             <thead className="sticky top-0 z-10 bg-background">
-              <tr className="border-b border-border bg-muted/30 text-muted-foreground">
+              <tr aria-rowindex={1} className="border-b border-border bg-muted/30 text-muted-foreground">
                 <th className="w-8 px-3 py-2">
                   <Checkbox
                     checked={allSelected}
@@ -288,15 +336,24 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
               </tr>
             </thead>
             <tbody>
-              {rows.map((s) => {
+              {paddingTop > 0 && (
+                <tr aria-hidden="true"><td colSpan={6} style={{ height: paddingTop }} /></tr>
+              )}
+              {virtualRows.map((virtualRow) => {
+                const s = rows[virtualRow.index];
+                if (!s) return null;
                 const rule = s.entity;
                 const isDirty = s.isNew || s.isUpdated;
                 const hasError = !!s.saveError;
                 const isScheduleLinked = isScheduleGeneratedRule(rule);
+                const issues = ruleIssues.get(rule.id) ?? [];
 
                 return (
+                  <Fragment key={rule.id}>
                   <tr
-                    key={rule.id}
+                    ref={rowVirtualizer.measureElement}
+                    data-index={virtualRow.index}
+                    aria-rowindex={virtualRow.index + 2}
                     data-row-id={rule.id}
                     className={cn(
                       "group cursor-pointer border-b border-border border-l-2 border-l-transparent hover:bg-muted/20 transition-colors align-top",
@@ -373,6 +430,15 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
                           ))}
                         </div>
                       )}
+                      {issues.some((issue) => issue !== "no-conditions") && (
+                        <p className="mt-1 flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-400">
+                          <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden />
+                          {issues
+                            .filter((issue) => issue !== "no-conditions")
+                            .map((issue) => (issue === "missing-reference" ? missingReferenceLabel(rule, entityMaps) : RULE_ISSUE_LABELS[issue]))
+                            .join(" · ")}
+                        </p>
+                      )}
                       {hasError && (
                         <p className="mt-1 text-[11px] text-destructive">{s.saveError}</p>
                       )}
@@ -448,8 +514,12 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
                       </div>
                     </td>
                   </tr>
+                  </Fragment>
                 );
               })}
+              {paddingBottom > 0 && (
+                <tr aria-hidden="true"><td colSpan={6} style={{ height: paddingBottom }} /></tr>
+              )}
             </tbody>
           </table>
           </div>

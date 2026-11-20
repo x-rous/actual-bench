@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { BaseEntity } from "@/types/entities";
 import type {
   Account,
+  AccountCloseTransfer,
   AccountGroup,
   Payee,
   CategoryGroup,
@@ -66,6 +67,8 @@ function applyRestore<T extends BaseEntity>(
   if (!existing) return map;
   const restored = { ...existing };
   delete restored.pendingAccountClass;
+  delete restored.transferCategoryId;
+  delete restored.closeTransfer;
   return {
     ...map,
     [id]: {
@@ -134,6 +137,10 @@ type StagedStoreActions = {
 
   /** Stage Bench-only class metadata for a new account or a failed class save. */
   stageAccountClass: (id: string, accountClass: AccountClass | null) => void;
+  /** Sets where a staged account close sends the balance (`null`: close without moving it). */
+  stageAccountCloseTransfer: (id: string, transfer: AccountCloseTransfer | null) => void;
+  /** Sets the category that takes over a staged category or group delete's transactions and budget amounts. */
+  stageDeleteTransfer: (entityType: "categories" | "categoryGroups", id: string, transferCategoryId: string | null) => void;
 
   /** Stage an update to an existing entity */
   stageUpdate: <K extends EntityKey>(
@@ -452,6 +459,21 @@ export const useStagedStore = create<StagedStoreState & StagedStoreActions>((set
           [id]: { ...entry, pendingAccountClass: accountClass, isUpdated: !entry.isNew },
         },
       };
+    }),
+
+  stageAccountCloseTransfer: (id, transfer) =>
+    set((state) => {
+      const entry = state.accounts[id];
+      if (!entry) return state;
+      return { accounts: { ...state.accounts, [id]: { ...entry, closeTransfer: transfer } } };
+    }),
+
+  stageDeleteTransfer: (entityType, id, transferCategoryId) =>
+    set((state) => {
+      const map = state[entityType] as StagedMap<BaseEntity>;
+      const entry = map[id];
+      if (!entry) return state;
+      return { [entityType]: { ...map, [id]: { ...entry, transferCategoryId } } };
     }),
 
   stageUpdate: (entityType, id, patch) =>

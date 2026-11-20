@@ -25,14 +25,25 @@ export function useCategoryGroupsSave() {
   const queryClient = useQueryClient();
   const hasPendingChanges = useMemo(() => hasPendingStagedChanges(staged), [staged]);
 
-  async function save(): Promise<SaveSummary> {
+  /**
+   * `phase` splits the save around the categories: "upsert" creates and
+   * renames groups (categories need a new group's real id), "delete" removes
+   * groups once categories have been moved out of them (Actual deletes a
+   * group's remaining categories with it). Without a phase, both run.
+   */
+  async function save(phase: "upsert" | "delete" | "all" = "all"): Promise<SaveSummary> {
     if (!connection) throw new Error("No active connection");
 
     setIsSaving(true);
 
     try {
       const transport = getTransport(connection);
-      const { toCreate, toUpdate, toDelete } = computeSaveOperations<CategoryGroup>(staged);
+      // Read fresh: the delete phase runs after the categories save changed the store.
+      const current = useStagedStore.getState().categoryGroups;
+      const ops = computeSaveOperations<CategoryGroup>(current);
+      const toCreate = phase === "delete" ? [] : ops.toCreate;
+      const toUpdate = phase === "delete" ? [] : ops.toUpdate;
+      const toDelete = phase === "upsert" ? [] : ops.toDelete;
       const succeeded: SaveResult[] = [];
       const failed: SaveResult[] = [];
       const succeededCreateIds = new Set<string>();
@@ -77,7 +88,7 @@ export function useCategoryGroupsSave() {
       const deleteResults = await settleTransportWrites(
         transport,
         toDelete,
-        (id) => transport.deleteCategoryGroup(id)
+        (id) => transport.deleteCategoryGroup(id, current[id]?.transferCategoryId ?? null)
       );
       for (let i = 0; i < toDelete.length; i++) {
         const id = toDelete[i];

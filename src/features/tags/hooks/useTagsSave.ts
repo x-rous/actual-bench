@@ -38,10 +38,17 @@ export function useTagsSave() {
       const transport = getTransport(connection);
       const ops = computeSaveOperations<Tag>(staged);
       const toCreate = ops.toCreate.filter((t) => t.name.trim() !== "");
+      // Blank new rows are placeholders and wait; a saved tag cleared to no
+      // name is reported on its row (Actual needs a name) rather than skipped.
       const toUpdate = ops.toUpdate.filter((t) => t.name.trim() !== "");
+      const blankRenames = ops.toUpdate.filter((t) => t.name.trim() === "");
       const { toDelete } = ops;
       const succeeded: SaveResult[] = [];
-      const failed: SaveResult[] = [];
+      const failed: SaveResult[] = blankRenames.map((t) => ({
+        status: "error" as const,
+        id: t.id,
+        message: "A tag needs a name. Enter one or revert the change.",
+      }));
       const succeededCreateIds = new Set<string>();
       const idMap: Record<string, string> = {};
 
@@ -139,6 +146,7 @@ export function useTagsSave() {
       await syncTransportAfterChanges(transport, succeeded.length > 0);
 
       await queryClient.invalidateQueries({ queryKey: ["tags", connection.id] });
+      await queryClient.invalidateQueries({ queryKey: ["tagUsageCounts", connection.id] });
       return { succeeded, failed, idMap };
     } finally {
       setIsSaving(false);

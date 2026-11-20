@@ -596,6 +596,8 @@ export function MultiSearchableCombobox({
                 {o.name}
                 <button
                   type="button"
+                  aria-label={`Remove ${o.name}`}
+                  title={`Remove ${o.name}`}
                   onClick={(e) => remove(o.id, e)}
                   className="text-muted-foreground hover:text-foreground"
                 >

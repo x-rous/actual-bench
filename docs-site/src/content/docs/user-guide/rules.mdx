@@ -142,6 +142,13 @@ Bench asks you to edit them individually instead.
 - **Search knows the names.** Type "Groceries" and it finds the rules whose `oneOf` condition holds
   that category's id. You never see a raw id.
 - Arriving from the Payees or Categories page filters the list to that entity for you.
+- **Needs attention** appears when any rule needs a look, with a count: rules naming a deleted or
+  unknown payee, category, account or category group; rules identical to another (same stage,
+  operator, conditions and actions, in any order); and rules with no conditions, which never run. The
+  row says what is wrong. To fix a deleted reference, open the rule: the missing item shows as a
+  "[deleted account]" (or payee, category, group) chip - remove it with its ×, or pick a replacement. Text operators (`contains`, `matches`) compare raw text, so they do not count
+  as references.
+- Long lists stay quick: only the rules on screen are drawn.
 
 ## Merge rules
 

@@ -103,9 +103,12 @@ export async function updateCategoryGroup(
 
 export async function deleteCategoryGroup(
   connection: ConnectionInstance,
-  id: string
+  id: string,
+  transferCategoryId?: string | null
 ): Promise<void> {
-  await apiRequest<void>(connection, `/categorygroups/${id}`, {
+  // The transfer category takes over the group's transactions and budget amounts.
+  const query = transferCategoryId ? `?transfer_category_id=${encodeURIComponent(transferCategoryId)}` : "";
+  await apiRequest<void>(connection, `/categorygroups/${id}${query}`, {
     method: "DELETE",
   });
 }
