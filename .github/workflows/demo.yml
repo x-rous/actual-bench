@@ -56,6 +56,8 @@ jobs:
           tags: actual-bench-demo
           cache-from: type=gha,scope=demo
           cache-to: type=gha,mode=max,scope=demo
+          # Re-runs the runtime apk upgrade (see docker/Dockerfile.prod).
+          build-args: APK_REFRESH=${{ github.run_id }}
       - name: Smoke test and restart under Space limits
         run: bash demo/smoke.sh
         env:
