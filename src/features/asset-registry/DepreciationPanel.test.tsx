@@ -56,3 +56,35 @@ it("summarises the schedule: what is posted, what is left, the next charge and w
   expect(tile("Fully depreciated by")).toHaveTextContent("31 Dec");
   expect(within(strip).queryByText("Residual value")).not.toBeInTheDocument();
 });
+it("rechecks the residual value against a fresh read before each write", async () => {
+  // Preview sees the full value; a write-down typed in Actual afterwards (dated after the month being posted) leaves too little.
+  let writtenDown = false;
+  const later = [...source, testRow("writedown", -1150000, { date: "2026-03-10" })];
+  const freshAfter = async (date: string): Promise<ActionContext> => { const rows = writtenDown ? later : source; return { transport, registry, asset, snapshot: { ...snapshot(date), source: rows, rows: normalizeActivity(rows).rows.filter((r) => r.date <= date) } }; };
+  render(<DepreciationPanel asset={asset} registry={registry} snapshot={snapshot(TODAY)} valueMinor={1200000} today={TODAY} fresh={freshAfter} onSaved={jest.fn(async () => {})} onEdit={jest.fn()} onOpenBook={jest.fn()} financialBlocked={false} onUncertain={jest.fn()} />);
+  select("2026-01");
+  fireEvent.click(screen.getByRole("button", { name: "Post selected (1)" }));
+  const confirm = await screen.findByRole("button", { name: "Confirm Actual write" });
+  writtenDown = true;
+  fireEvent.click(confirm);
+  expect(await screen.findByText(/below the residual value/)).toBeInTheDocument();
+  expect(executeDepreciation).not.toHaveBeenCalled();
+});
+it("builds the retry's evidence from the fresh read, not from the row the write returned", async () => {
+  const written = { ...testRow("jan", -100000, { date: "2026-01-31" }) };
+  jest.mocked(executeDepreciation).mockResolvedValue({ transactionId: "jan", noop: false, deleted: false, row: written });
+  jest.mocked(registryRequest).mockRejectedValueOnce(new Error("Metadata unavailable")).mockResolvedValue(registry);
+  // By the retry, the transaction was changed in Actual to a positive amount.
+  let changed = false;
+  const freshRetry = async (date: string): Promise<ActionContext> => { const rows = changed ? [...source, { ...written, amount: 100000 }] : source; return { transport, registry, asset, snapshot: { ...snapshot(date), source: rows, rows: normalizeActivity(rows).rows } }; };
+  render(<DepreciationPanel asset={asset} registry={registry} snapshot={snapshot(TODAY)} valueMinor={1200000} today={TODAY} fresh={freshRetry} onSaved={jest.fn(async () => {})} onEdit={jest.fn()} onOpenBook={jest.fn()} financialBlocked={false} onUncertain={jest.fn()} />);
+  select("2026-01");
+  fireEvent.click(screen.getByRole("button", { name: "Post selected (1)" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Confirm Actual write" }));
+  await screen.findByText("Metadata unavailable");
+  changed = true;
+  fireEvent.click(screen.getByRole("button", { name: "Retry association only" }));
+  await screen.findByText("Posted 31 Jan");
+  const sources = (jest.mocked(registryRequest).mock.calls[1][2] as { sources: { id: string; amountMinor: number }[] }).sources;
+  expect(sources.find((r) => r.id === "jan")?.amountMinor).toBe(100000);
+});

@@ -240,6 +240,7 @@ export function parsePdfStatementDocumentV2(
     accountType: interpreted.accountType,
     balanceBehavior: interpreted.balanceBehavior,
     balancePolarity: interpreted.balancePolarity,
+    balanceCheckpoints: interpreted.balanceCheckpoints,
     transactions,
     diagnostics: [...layout.diagnostics, ...detectedRegions.diagnostics, ...extendedRegions.diagnostics, ...schemas.diagnostics, ...assembled.diagnostics, ...interpreted.diagnostics, ...validated.diagnostics],
     metrics,

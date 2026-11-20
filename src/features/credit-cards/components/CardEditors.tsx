@@ -158,7 +158,18 @@ export function CardEditor({
   const [initialDraft] = useState(() => draftFor(card));
   const [limits, setLimits] = useState<LimitChangeDraft[]>(() => limitChanges.map(({ effectiveDate, limitMinor }) => ({ effectiveDate, limitMinor })));
   const [recordingLimit, setRecordingLimit] = useState(false);
-  const [planIds, setPlanIds] = useState(() => planAccounts?.registered.map((account) => account.id) ?? []);
+  // The user's additions and removals, applied to the live list: chips and Save both follow what is
+  // registered now, so a change made in another tab while this editor is open is neither hidden nor undone.
+  const [staged, setStaged] = useState<{ added: string[]; removed: string[] }>({ added: [], removed: [] });
+  const liveIds = planAccounts?.registered.map((account) => account.id) ?? [];
+  const planIds = [...liveIds.filter((id) => !staged.removed.includes(id) && !staged.added.includes(id)), ...staged.added];
+  const removePlanId = (id: string) => setStaged(({ added, removed }) => (added.includes(id)
+    ? { added: added.filter((value) => value !== id), removed }
+    : { added, removed: [...removed, id] }));
+  const addPlanId = (id: string) => setStaged(({ added, removed }) => {
+    const rest = removed.filter((value) => value !== id);
+    return { added: !liveIds.includes(id) && !added.includes(id) ? [...added, id] : added, removed: rest };
+  });
   // "Do you keep plan principal in a separate account in Actual?" Yes when this card already moves
   // money to a plan account, or its statements are set to include plan balances.
   const [usesPlanAccount, setUsesPlanAccount] = useState(() => Boolean(card?.statementsIncludePlanBalances
@@ -166,7 +177,7 @@ export function CardEditor({
   const [extra, setExtra] = useState(initialDraft);
   const change = (key: keyof typeof extra, value: string | boolean) => setExtra((current) => ({ ...current, [key]: value }));
   const [error, setError] = useState("");
-  const signature = JSON.stringify({ accountId, limit, apr, timeZone, extra, color, network, planIds, usesPlanAccount, limits });
+  const signature = JSON.stringify({ accountId, limit, apr, timeZone, extra, color, network, staged, usesPlanAccount, limits });
   const [initialSignature] = useState(signature);
   const { requestClose, discardDialog } = useDiscardChanges(signature !== initialSignature, onClose);
   const accountName = accounts.find((account) => account.id === accountId)?.name;
@@ -216,12 +227,11 @@ export function CardEditor({
         interestModel: extra.interestModel,
       };
       const actions = creditCardStore.getState();
-      if (initialCard) await actions.updateCard(budgetSyncId, initialCard.id, initialCard.revision, input, limits);
-      // Answering No never unregisters accounts: other cards may use them.
-      if (planAccounts && usesPlanAccount && planIds.join() !== planAccounts.registered.map((account) => account.id).join()) {
-        await actions.setPlanAccounts(budgetSyncId, planIds);
-      }
-      const savedId = initialCard?.id ?? (await actions.registerCard(input)).id;
+      // Answering No never unregisters accounts: other cards may use them. Card and plan accounts are one change.
+      const nextPlanAccounts = planAccounts && usesPlanAccount && (staged.added.length > 0 || staged.removed.length > 0)
+        ? planIds : undefined;
+      if (initialCard) await actions.updateCard(budgetSyncId, initialCard.id, initialCard.revision, input, limits, nextPlanAccounts);
+      const savedId = initialCard?.id ?? (await actions.registerCard(input, nextPlanAccounts)).id;
       onSaved(savedId);
     } catch (cause) {
       setError(validationMessage(cause));
@@ -474,7 +484,7 @@ export function CardEditor({
             return <li key={id} className="inline-flex h-7 items-center gap-1 rounded-md border bg-muted/40 pr-1 pl-2 text-sm">
               {planAccountName(id)}
               {!usedBy.length && <Button type="button" size="icon-xs" variant="ghost" aria-label={`Remove plan account ${planAccountName(id)}`}
-                onClick={() => setPlanIds(planIds.filter((value) => value !== id))}><X className="size-3" aria-hidden /></Button>}
+                onClick={() => removePlanId(id)}><X className="size-3" aria-hidden /></Button>}
             </li>;
           })}</ul>}
           {planAccounts?.available.some((account) => !planIds.includes(account.id)) && <Select
@@ -483,7 +493,7 @@ export function CardEditor({
             className="w-56"
             aria-label="Add plan account"
             value=""
-            onValueChange={(value) => { if (value) setPlanIds([...planIds, value]); }}
+            onValueChange={(value) => { if (value) addPlanId(value); }}
             options={[
               { value: "", label: planIds.length ? "Add another account" : "Choose an off-budget account" },
               ...planAccounts.available.filter((account) => !planIds.includes(account.id)).map((account) => ({ value: account.id, label: account.name })),

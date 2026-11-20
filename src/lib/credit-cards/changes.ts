@@ -22,8 +22,10 @@ import {
  * by diffing the workspace before and after a command; the server applies it in one transaction.
  * Both run `applyChangeSet`, so revision checks and the repository rules (§12.3) exist once.
  *
- * - Cards, statements and plans carry a revision. A put must be `current + 1` (or the row is new);
- *   a removal names the revision it expects.
+ * - Cards, statements and plans carry a revision. A put must be `current + 1`; a new row starts at
+ *   revision 1, so a stale edit of a row deleted elsewhere conflicts instead of recreating it. Only an
+ *   undo may bring a deleted row back, and it names those rows in `restores`.
+ *   A removal names the revision it expects.
  * - A statement's decisions and a plan's entries are replaced as a whole, and only together with a
  *   put or removal of that statement or plan, so their parent's revision guards them.
  * - A type correction names the value it expects to replace (or null for none).
@@ -46,6 +48,8 @@ export type ChangeSet = {
   planAccounts: { expected: string[]; next: string[] } | null;
   /** A card's whole limit history, written only with that card (its revision guards them). */
   limitChanges: { cardId: string; rows: LimitChange[] }[];
+  /** Ids of deleted cards, statements and plans that an undo puts back (any revision allowed). */
+  restores?: string[];
 };
 
 export class CreditCardConflictError extends Error {
@@ -83,6 +87,7 @@ export const changeSetSchema = z.strictObject({
   })).max(MAX_ROWS),
   planAccounts: z.strictObject({ expected: z.array(z.string().min(1)), next: z.array(z.string().min(1)) }).nullable(),
   limitChanges: z.array(z.strictObject({ cardId: z.string().min(1), rows: z.array(limitChangeSchema).max(MAX_ROWS) })).max(MAX_ROWS),
+  restores: z.array(z.string().min(1)).max(MAX_ROWS).optional(),
 });
 
 export const EMPTY_CHANGES: ChangeSet = {
@@ -116,7 +121,12 @@ const typeKey = (entry: { cardId: string; transactionId: string }) => `${entry.c
 
 function groupBy<T>(rows: readonly T[], key: (row: T) => string) {
   const map = new Map<string, T[]>();
-  for (const row of rows) map.set(key(row), [...(map.get(key(row)) ?? []), row]);
+  for (const row of rows) {
+    const id = key(row);
+    const group = map.get(id);
+    if (group) group.push(row);
+    else map.set(id, [row]);
+  }
   return map;
 }
 
@@ -140,12 +150,17 @@ export function diffWorkspaces(before: Workspace, after: Workspace): ChangeSet {
   const typesBefore = new Map(before.typeCorrections.map((row) => [typeKey(row), row]));
   const typesAfter = new Map(after.typeCorrections.map((row) => [typeKey(row), row]));
   const typeKeys = new Set([...typesBefore.keys(), ...typesAfter.keys()]);
-  const removedStatements = new Set(before.statements.filter((row) => !after.statements.some((entry) => entry.id === row.id)).map((row) => row.id));
-  const removedPlans = new Set(before.plans.filter((row) => !after.plans.some((entry) => entry.id === row.id)).map((row) => row.id));
+  const removed = <T extends { id: string }>(old: readonly T[], now: readonly T[]) => {
+    const kept = new Set(now.map((row) => row.id));
+    return new Set(old.filter((row) => !kept.has(row.id)).map((row) => row.id));
+  };
+  const removedStatements = removed(before.statements, after.statements);
+  const removedPlans = removed(before.plans, after.plans);
   const limitsBefore = groupBy(before.limitChanges, (row) => row.cardId);
   const limitsAfter = groupBy(after.limitChanges, (row) => row.cardId);
   const limitCards = new Set([...limitsBefore.keys(), ...limitsAfter.keys()]);
-  const removedCards = new Set(before.cards.filter((row) => !after.cards.some((entry) => entry.id === row.id)).map((row) => row.id));
+  const removedCards = removed(before.cards, after.cards);
+  const cardsAfter = new Set(after.cards.map((card) => card.id));
   const byDate = (rows: LimitChange[]) => [...rows].sort((a, b) => a.effectiveDate.localeCompare(b.effectiveDate));
   return {
     cards: diffRevisioned(before.cards, after.cards),
@@ -164,7 +179,7 @@ export function diffWorkspaces(before: Workspace, after: Workspace): ChangeSet {
       .filter((key) => {
         // A card removal cascades its types; the inverse restores them.
         const previous = typesBefore.get(key);
-        return typesAfter.has(key) || !previous || after.cards.some((card) => card.id === previous.cardId);
+        return typesAfter.has(key) || !previous || cardsAfter.has(previous.cardId);
       })
       .map((key) => {
         const previous = typesBefore.get(key);
@@ -189,10 +204,10 @@ export function diffWorkspaces(before: Workspace, after: Workspace): ChangeSet {
  * cannot become valid again (ABA).
  */
 export function inverseChanges(before: Workspace, after: Workspace): ChangeSet {
-  const bump = <T extends { id: string; revision: number }>(rows: readonly T[], now: readonly T[]) => rows.map((row) => ({
-    ...row,
-    revision: Math.max(row.revision, now.find((entry) => entry.id === row.id)?.revision ?? 0) + 1,
-  }));
+  const bump = <T extends { id: string; revision: number }>(rows: readonly T[], now: readonly T[]) => {
+    const current = new Map(now.map((entry) => [entry.id, entry.revision]));
+    return rows.map((row) => ({ ...row, revision: Math.max(row.revision, current.get(row.id) ?? 0) + 1 }));
+  };
   const restored: Workspace = {
     ...before,
     cards: bump(before.cards, after.cards),
@@ -213,17 +228,21 @@ export function inverseChanges(before: Workspace, after: Workspace): ChangeSet {
     ...forward.plans.put.map((row) => row.id), ...forward.plans.remove.map((row) => row.id),
     ...forward.planEntries.map((entry) => entry.planId),
   ]);
-  return diffWorkspaces(after, {
+  const present = new Set([...after.cards, ...after.statements, ...after.plans].map((row) => row.id));
+  const inverse = diffWorkspaces(after, {
     ...restored,
     cards: [...after.cards.filter((row) => !cardIds.has(row.id)), ...restored.cards.filter(touched(cardIds))],
     statements: [...after.statements.map(stored).filter((row) => !statementIds.has(row.id)), ...restored.statements.filter(touched(statementIds))],
     plans: [...after.plans.filter((row) => !planIds.has(row.id)), ...restored.plans.filter(touched(planIds))],
   });
+  const restores = [...inverse.cards.put, ...inverse.statements.put, ...inverse.plans.put]
+    .map((row) => row.id).filter((id) => !present.has(id));
+  return restores.length ? { ...inverse, restores } : inverse;
 }
 
-function guardRevision<T extends { id: string; revision: number }>(rows: Map<string, T>, put: T) {
+function guardRevision<T extends { id: string; revision: number }>(rows: Map<string, T>, put: T, restores: ReadonlySet<string>) {
   const current = rows.get(put.id);
-  if (current && current.revision !== put.revision - 1) throw new CreditCardConflictError();
+  if (current ? current.revision !== put.revision - 1 : put.revision !== 1 && !restores.has(put.id)) throw new CreditCardConflictError();
 }
 
 function guardRemoval<T extends { id: string; revision: number }>(rows: Map<string, T>, guard: Guard) {
@@ -245,21 +264,22 @@ export function applyChangeSet(current: Workspace, changes: ChangeSet, budgetSyn
   let typeCorrections = current.typeCorrections;
   let planAccounts = current.planAccounts;
   let limitChanges = current.limitChanges;
+  const restores = new Set(changes.restores ?? []);
 
   // Types: compare against the value the client expects to replace.
+  const typesByKey = changes.typeCorrections.length ? new Map(typeCorrections.map((row) => [typeKey(row), row])) : null;
   for (const change of changes.typeCorrections) {
-    const existing = typeCorrections.find((row) => row.cardId === change.cardId && row.transactionId === change.transactionId);
+    const existing = typesByKey!.get(typeKey(change));
     const matches = change.expected === null ? !existing
       : Boolean(existing && existing.kind === change.expected.kind && existing.sourceHash === change.expected.sourceHash);
     if (!matches) throw new CreditCardConflictError();
     if (change.next && (change.next.cardId !== change.cardId || change.next.transactionId !== change.transactionId)) {
       throw new CreditCardRuleError("A type change must name its own transaction");
     }
-    typeCorrections = [
-      ...typeCorrections.filter((row) => row !== existing),
-      ...(change.next ? [change.next] : []),
-    ];
+    if (change.next) typesByKey!.set(typeKey(change), change.next);
+    else typesByKey!.delete(typeKey(change));
   }
+  if (typesByKey) typeCorrections = [...typesByKey.values()];
   if (changes.planAccounts) {
     if (!same([...planAccounts].sort(), [...changes.planAccounts.expected].sort())) throw new CreditCardConflictError();
     planAccounts = [...new Set(changes.planAccounts.next)];
@@ -287,20 +307,20 @@ export function applyChangeSet(current: Workspace, changes: ChangeSet, budgetSyn
     limitChanges = limitChanges.filter((row) => row.cardId !== guard.id);
   }
   for (const row of changes.cards.put) {
-    guardRevision(cards, row);
+    guardRevision(cards, row, restores);
     const existing = cards.get(row.id);
     if (row.budgetSyncId !== budgetSyncId) throw new CreditCardRuleError("A card belongs to one budget");
     if (existing && existing.accountId !== row.accountId) throw new CreditCardRuleError("A card's Actual account cannot change");
     cards.set(row.id, row);
   }
   for (const row of changes.statements.put) {
-    guardRevision(statements, row);
+    guardRevision(statements, row, restores);
     const existing = statements.get(row.id);
     if (existing && existing.cardId !== row.cardId) throw new CreditCardRuleError("A statement cannot move to another card");
     statements.set(row.id, row);
   }
   for (const row of changes.plans.put) {
-    guardRevision(plans, row);
+    guardRevision(plans, row, restores);
     const existing = plans.get(row.id);
     if (existing && existing.cardId !== row.cardId) throw new CreditCardRuleError("A plan cannot move to another card");
     plans.set(row.id, row);
@@ -359,16 +379,20 @@ export function checkWorkspace(workspace: Workspace) {
     accounts.add(card.accountId);
   }
   const statements = new Map(workspace.statements.map((statement) => [statement.id, statement]));
-  for (const statement of workspace.statements) {
-    if (!cards.has(statement.cardId)) fail("A statement needs its card");
-    const others = workspace.statements.filter((entry) => entry.cardId === statement.cardId && entry.id !== statement.id);
-    if (others.some((entry) => entry.closingDate === statement.closingDate)) fail("A statement already uses this closing date");
-    if (others.some((entry) => !(entry.closingDate < statement.periodStart || entry.periodStart > statement.closingDate))) {
-      fail("Statement periods must not overlap");
+  const statementsByCard = groupBy(workspace.statements, (statement) => statement.cardId);
+  for (const [cardId, rows] of statementsByCard) {
+    if (!cards.has(cardId)) fail("A statement needs its card");
+    if (new Set(rows.map((entry) => entry.closingDate)).size !== rows.length) fail("A statement already uses this closing date");
+    // Sorted by start, periods overlap exactly when one starts on or before the latest close so far.
+    const ordered = [...rows].sort((a, b) => a.periodStart.localeCompare(b.periodStart));
+    let latestClose = "";
+    for (const entry of ordered) {
+      if (latestClose && entry.periodStart <= latestClose) fail("Statement periods must not overlap");
+      if (entry.closingDate > latestClose) latestClose = entry.closingDate;
     }
   }
   for (const card of workspace.cards) {
-    if (card.billingDaysSource === "default" && workspace.statements.some((entry) => entry.cardId === card.id)) {
+    if (card.billingDaysSource === "default" && statementsByCard.has(card.id)) {
       fail("The first bank statement replaces default billing days");
     }
   }
@@ -393,10 +417,11 @@ export function checkWorkspace(workspace: Workspace) {
     types.add(typeKey(correction));
   }
   const plans = new Map(workspace.plans.map((plan) => [plan.id, plan]));
+  const plansByAccount = groupBy(workspace.plans.filter((plan) => plan.planAccountId), (plan) => plan.planAccountId!);
   for (const plan of workspace.plans) {
     if (!cards.has(plan.cardId)) fail("A plan needs its card");
     if (!plan.planAccountId) continue;
-    const sharing = workspace.plans.filter((other) => other.id !== plan.id && other.planAccountId === plan.planAccountId);
+    const sharing = plansByAccount.get(plan.planAccountId)!.filter((other) => other.id !== plan.id);
     if (plan.planAccountTag === null && sharing.length) fail("An account owned by one plan cannot hold other plans");
     if (plan.planAccountTag !== null && sharing.some((other) => other.planAccountTag === plan.planAccountTag)) {
       fail("Each plan tag must be unique within its plan account");

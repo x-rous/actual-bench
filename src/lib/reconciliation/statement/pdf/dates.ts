@@ -163,20 +163,47 @@ function scoreDateFormat(
   return { valid, inPeriod, reversals };
 }
 
+/**
+ * The year a yearless day-and-month belongs to, judged by the statement period.
+ *
+ * The year whose month lies closest to the period wins. Taking the period's
+ * year whenever the period sat in one calendar year read `28/12` on a January
+ * statement — a card purchase posted in the new year — as the coming December,
+ * eleven months in the future. A month that overlaps the period in two
+ * candidate years is genuinely ambiguous (an annual statement's January) and a
+ * month far from every candidate is not this statement's; both stay unread.
+ */
 function inferYearForMonth(month: number, period: { start: string | null; end: string | null }) {
   if (month < 1 || month > 12) return null;
   const bounds = [period.start, period.end].filter((value): value is string => Boolean(value));
   if (!bounds.length) return null;
-  const candidates = [...new Set(bounds.map((value) => Number(value.slice(0, 4))))];
-  if (candidates.length === 1) return candidates[0];
-  const matching = candidates.filter((year) => {
-    const firstOfMonth = `${year}-${String(month).padStart(2, "0")}-01`;
-    const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
-    const lastOfMonth = `${year}-${String(month).padStart(2, "0")}-${lastDay}`;
-    return (!period.end || firstOfMonth <= period.end) && (!period.start || lastOfMonth >= period.start);
-  });
-  return matching.length === 1 ? matching[0] : null;
+  const years = new Set<number>();
+  for (const bound of bounds) {
+    const year = Number(bound.slice(0, 4));
+    years.add(year - 1); years.add(year); years.add(year + 1);
+  }
+  // With one bound known, assume the span of a typical statement on the other
+  // side of it: an open end would make every earlier year tie.
+  const known = Date.parse(bounds[0]);
+  const start = period.start ? Date.parse(period.start) : known - ASSUMED_SPAN_MS;
+  const end = period.end ? Date.parse(period.end) : known + ASSUMED_SPAN_MS;
+  const ranked = [...years].map((year) => {
+    const first = Date.UTC(year, month - 1, 1);
+    const last = Date.UTC(year, month, 0);
+    const distance = last < start ? start - last : first > end ? first - end : 0;
+    return { year, distance };
+  }).sort((left, right) => left.distance - right.distance);
+  const [best, next] = ranked;
+  if (best.distance > MAX_MONTH_DISTANCE_MS) return null;
+  if (next && next.distance === best.distance) return null;
+  return best.year;
 }
+
+/** The span assumed on the unknown side of a one-sided period. */
+const ASSUMED_SPAN_MS = 62 * 86_400_000;
+
+/** How far outside the period a yearless date may fall and still be read. */
+const MAX_MONTH_DISTANCE_MS = 62 * 86_400_000;
 
 function result(
   raw: string,

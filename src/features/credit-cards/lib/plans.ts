@@ -236,10 +236,13 @@ export function suggestPlanLink(row: ActivityRow, plan: RepaymentPlan, card: Car
     return converted ? { role: "conversion", instalmentNumber: null, reason: reason("Matches the original amount"), score: 70 + bonus } : null;
   }
   const candidates = scheduleByAmount(planSchedule(plan, card)).get(-row.amountMinor) ?? [];
-  const matches = candidates.filter((entry) => row.date <= entry.date && row.date >= addMonths(entry.date, -1));
+  // Each instalment's window ends on its due date and starts after the previous one, so a charge on a
+  // due date belongs to that instalment and not also to the next.
+  const matches = candidates.filter((entry) => row.date <= entry.date && row.date > addMonths(entry.date, -1));
   if (matches.length) {
     const label = matches.length > 1 ? "Amount matches several periods; choose one" : `Matches instalment ${matches[0].index}`;
-    return { role: "instalment", instalmentNumber: matches[0].index, reason: reason(label), score: 65 + bonus };
+    // Several equal instalments fit: leave the number for the user to choose rather than guess the first.
+    return { role: "instalment", instalmentNumber: matches.length > 1 ? null : matches[0].index, reason: reason(label), score: 65 + bonus };
   }
   return named ? { role: "instalment", instalmentNumber: null, reason: "Plan name matches; check the amount", score: 70 } : null;
 }
@@ -251,15 +254,16 @@ export function planProgress(plan: RepaymentPlan, card: Card, workspace: Workspa
   let billed: string[] = [];
   if (plan.recordedAs === "plan-account" && snapshot) {
     const ledger = planLedger(card, workspace, snapshot);
-    // A positive plan-account row whose peer is on the card is principal billed back (one per cycle).
+    // A positive plan-account row whose peer is on the card is principal billed back. Each transfer
+    // counts once: a short cycle can bill two instalments in one calendar month.
     billed = (ledger.rowsByPlan.get(plan.id) ?? [])
       .filter((row) => row.amountMinor > 0 && peerOf(row, snapshot)?.accountId === card.accountId)
-      .map((row) => row.date.slice(0, 7));
+      .map((row) => row.id);
   } else {
-    const index = snapshot ? rowIndex(snapshot).rows : new Map<string, ActivityRow>();
+    // Rows linked to one instalment number (a split billing) count as that one instalment.
     billed = workspace.planEntries
       .filter((entry) => entry.planId === plan.id && entry.role === "instalment")
-      .map((entry) => index.get(entry.transactionId)?.date.slice(0, 7) ?? entry.transactionId);
+      .map((entry) => (entry.instalmentNumber != null ? `number:${entry.instalmentNumber}` : `row:${entry.transactionId}`));
   }
   const billedCount = Math.min(tracked.length || Infinity, new Set(billed).size);
   return {

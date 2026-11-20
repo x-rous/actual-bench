@@ -6,10 +6,18 @@ import {
 } from "@/lib/credit-cards/changes";
 import { EMPTY_WORKSPACE, type Workspace } from "../models";
 
+/** A read with the count of stored rows this build could not parse (kept, never shown). */
+export type LoadedWorkspace = { workspace: Workspace; unsupported: number };
+
+/** Accepts a bare workspace (memory and test persistence) or a read with its unsupported count. */
+export function loadedWorkspace(value: Workspace | LoadedWorkspace): LoadedWorkspace {
+  return "workspace" in value ? value : { workspace: value, unsupported: 0 };
+}
+
 /** Where credit-card metadata is kept. The browser uses the app-DB API; tests use memory. */
 export type CreditCardPersistence = {
   /** The budget's metadata. Rejects when storage is unavailable, never returns an empty stand-in. */
-  read: (budgetSyncId: string) => Workspace | Promise<Workspace>;
+  read: (budgetSyncId: string) => Workspace | LoadedWorkspace | Promise<Workspace | LoadedWorkspace>;
   /** Applies one guarded change set and returns the committed workspace. */
   commit: (budgetSyncId: string, changes: ChangeSet) => Workspace | Promise<Workspace>;
 };
@@ -54,12 +62,27 @@ async function request(input: string, init?: RequestInit) {
   }
 }
 
+/** Tabs of this browser tell each other which budget's credit-card records just changed. */
+export const CHANGE_CHANNEL = "actual-bench:credit-cards";
+
+function announce(budgetSyncId: string) {
+  if (typeof BroadcastChannel === "undefined") return;
+  try {
+    const channel = new BroadcastChannel(CHANGE_CHANNEL);
+    channel.postMessage({ budgetSyncId });
+    channel.close();
+  } catch {
+    // Another tab picks the change up when it regains focus.
+  }
+}
+
 /** The app-DB API (`/api/credit-cards`). Bodies carry Actual ids and opaque hashes only. */
 export const httpPersistence: CreditCardPersistence = {
   async read(budgetSyncId) {
     const response = await request(`/api/credit-cards?budgetSyncId=${encodeURIComponent(budgetSyncId)}`, { cache: "no-store" });
     if (!response.ok) return failure(response);
-    return ((await response.json()) as { workspace: Workspace }).workspace;
+    const body = (await response.json()) as { workspace: Workspace; unsupported?: number };
+    return { workspace: body.workspace, unsupported: body.unsupported ?? 0 };
   },
   async commit(budgetSyncId, changes) {
     const response = await request("/api/credit-cards", {
@@ -68,6 +91,8 @@ export const httpPersistence: CreditCardPersistence = {
       body: JSON.stringify({ budgetSyncId, changes }),
     });
     if (!response.ok) return failure(response);
-    return ((await response.json()) as { workspace: Workspace }).workspace;
+    const committed = ((await response.json()) as { workspace: Workspace }).workspace;
+    announce(budgetSyncId);
+    return committed;
   },
 };

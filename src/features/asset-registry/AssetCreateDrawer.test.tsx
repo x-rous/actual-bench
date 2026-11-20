@@ -78,7 +78,7 @@ it("keeps the asset and says so when the starting value could not be recorded", 
   fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Family car" } });
   fireEvent.change(screen.getByLabelText("Value"), { target: { value: "100" } });
   create();
-  expect(await screen.findByText(/asset was created, but its opening value was not recorded: Actual did not answer/)).toBeInTheDocument();
+  expect(await screen.findByText(/asset was created, but its opening value was not recorded: Actual did not answer\. Open the asset and use Update value or Add Entry/)).toBeInTheDocument();
   expect(onOpenAsset).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Open asset" }));
   expect(onOpenAsset).toHaveBeenCalled();

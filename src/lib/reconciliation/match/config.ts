@@ -117,4 +117,5 @@ export const DEFAULT_MATCH_CONFIG: MatchConfig = {
   pairLeftoversByMerchantAndDate: true,
   clusterDateToleranceDays: 1,
   clusterTextFloor: 0.8,
+  textDisagreementPenalty: 8,
 };

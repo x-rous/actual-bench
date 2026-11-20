@@ -35,6 +35,30 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * consumed and locked, so a module-level instance shared by these handlers
  * would fail on the second miss with `ReadableStream is locked`.
  */
+function idList(value: unknown): string[] {
+  if (!Array.isArray(value) || value.some((id) => typeof id !== "string")) {
+    throw new AppDbValidationError("Expected an array of item ids");
+  }
+  return value as string[];
+}
+
+const APPLY_OWNED_STATUSES = new Set(["applying", "partial", "completed"]);
+
+/**
+ * Apply outcomes have their own guarded actions (claim / finish / recover /
+ * complete on POST). Letting an ordinary update or save write them would let a
+ * client lock a session without a claim, or mark rows applied that were never
+ * written — `isAppliedItem` trusts `applyResults` as that proof.
+ */
+function assertNotApplyOwned(patch: { status?: unknown; applyResults?: unknown }, currentStatus: string | undefined) {
+  if (patch.status !== undefined && APPLY_OWNED_STATUSES.has(String(patch.status))) {
+    throw new AppDbValidationError("That status is set by Apply, not by a session update.");
+  }
+  if (patch.applyResults !== undefined && currentStatus !== "applying") {
+    throw new AppDbValidationError("Apply results can only be recorded while Apply is running.");
+  }
+}
+
 function notFound() {
   return NextResponse.json({ error: "Reconciliation session not found" }, { status: 404 });
 }
@@ -74,6 +98,9 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     // Only known keys are forwarded; the repository validates the status value.
     const patch: UpdateSessionInput = {};
+    if ("status" in body || "applyResults" in body) {
+      assertNotApplyOwned(body, getReconciliationSession(getAppDb(), id)?.status);
+    }
     if ("status" in body) patch.status = body.status as ReconciliationSessionStatus;
     if ("accountName" in body) patch.accountName = body.accountName as string | null;
     if ("profileId" in body) patch.profileId = body.profileId as string | null;
@@ -120,7 +147,8 @@ export async function POST(request: Request, context: RouteContext) {
   try {
     const { id } = await context.params;
     const db = getAppDb();
-    if (!getReconciliationSession(db, id)) return notFound();
+    const current = getReconciliationSession(db, id);
+    if (!current) return notFound();
     const body = reconciliationObject(await readJsonBody(request));
     const patches = body.itemPatches === undefined ? undefined : reconciliationItems(body.itemPatches)
       .map(({ id: itemId, ...patch }) => ({ id: itemId!, patch }));
@@ -143,11 +171,17 @@ export async function POST(request: Request, context: RouteContext) {
       }) });
     }
     if (body.action !== "save") throw new AppDbValidationError("Unknown reconciliation action");
+    const savePatch = body.patch === undefined ? {} : reconciliationPatch(body.patch);
+    // Read again: an Apply may have finished while the body was arriving, and
+    // nothing awaits between this read and the save transaction.
+    assertNotApplyOwned(savePatch, getReconciliationSession(db, id)?.status);
     return NextResponse.json({ session: saveReconciliationWork(db, id, {
       ...(body.statementRows !== undefined ? { statementRows: reconciliationRows(body.statementRows) } : {}),
       ...(body.items !== undefined ? { items: reconciliationItems(body.items) } : {}),
       itemPatches: patches,
-      patch: body.patch === undefined ? {} : reconciliationPatch(body.patch),
+      ...(body.addedItems !== undefined ? { addedItems: reconciliationItems(body.addedItems) } : {}),
+      ...(body.removedItemIds !== undefined ? { removedItemIds: idList(body.removedItemIds) } : {}),
+      patch: savePatch,
     }) });
   } catch (error) {
     return appDbErrorResponse(error);

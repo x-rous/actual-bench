@@ -172,3 +172,66 @@ function originalValue(context: TransformContext, field: StageableField): string
       return null;
   }
 }
+
+export type SequencePreview = TransformPreview & {
+  /** Rows each rule changed, in the order the rules ran. */
+  changedByRule: number[];
+};
+
+/**
+ * Several rules run one after another, previewed as one change.
+ *
+ * Each rule sees what the previous ones left (feature spec §32): its rows carry
+ * the earlier rules' staged patches before it runs, so "replace `#API` with the
+ * month" followed by "use the statement's payee" keeps both edits. A row's
+ * before is what it held before the first rule, its after what the last rule
+ * left, and its patch the final one, ready to stage.
+ */
+export function previewTransformSequence(input: Omit<PreviewInput, "rule"> & {
+  rules: TransformRule[];
+}): SequencePreview {
+  const current = new Map(input.items.map((item) => [item.id, item]));
+  const changesById = new Map<string, Map<StageableField, { before: string | null; after: string | null }>>();
+  const patches = new Map<string, StagedPatch>();
+  const matchedIds = new Set<string>();
+  const lastSkip = new Map<string, SkippedRow>();
+  const changedByRule: number[] = [];
+
+  for (const rule of input.rules) {
+    const items = input.items.map((item) => current.get(item.id)!);
+    const step = previewTransform({ ...input, rule, items });
+    changedByRule.push(step.changed.length);
+
+    for (const item of items) {
+      if (ruleMatches(rule, input.contextFor(item))) matchedIds.add(item.id);
+    }
+    for (const skip of step.skipped) lastSkip.set(skip.itemId, skip);
+    for (const row of step.changed) {
+      const fields = changesById.get(row.itemId) ?? new Map();
+      for (const change of row.changes) {
+        const previous = fields.get(change.field);
+        fields.set(change.field, { before: previous ? previous.before : change.before, after: change.after });
+      }
+      changesById.set(row.itemId, fields);
+      patches.set(row.itemId, row.patch);
+      current.set(row.itemId, { ...current.get(row.itemId)!, stagedChanges: row.patch });
+    }
+  }
+
+  const changed: PreviewRow[] = [];
+  for (const item of input.items) {
+    const fields = changesById.get(item.id);
+    if (!fields) continue;
+    const rowChanges = [...fields].map(([field, values]) => ({ field, ...values }));
+    const patch = patches.get(item.id) ?? {};
+    // Rules that undid each other leave nothing to stage. Judged on the patch,
+    // not on the values shown: clearing a new row's proposed payee shows as
+    // "none" to "none" but is a real change to stage.
+    if (JSON.stringify(patch) === JSON.stringify(item.stagedChanges ?? {})) continue;
+    changed.push({ itemId: item.id, changes: rowChanges, patch });
+  }
+  const changedIds = new Set(changed.map((row) => row.itemId));
+  const skipped = [...lastSkip.values()].filter((skip) => !changedIds.has(skip.itemId));
+
+  return { matched: matchedIds.size, changed, skipped, changedByRule };
+}

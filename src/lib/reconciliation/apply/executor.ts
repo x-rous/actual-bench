@@ -29,6 +29,7 @@ import type {
   CreateOperation,
   OperationResult,
 } from "./operations";
+import { markersOf } from "./operations";
 
 export type ApplyProgress = {
   completed: number;
@@ -77,6 +78,10 @@ export async function executeApplyPlan(input: ApplyExecutorInput): Promise<Apply
   // Creates first, in one call. Anything already done — recorded as applied, or
   // recognisable by its marker in the account — is settled here rather than
   // sent again.
+  if (plan.operations.length > 0) {
+    input.onProgress?.({ completed: 0, total: plan.operations.length, operation: plan.operations[0] });
+  }
+
   const createResults = new Map<string, OperationResult>();
   const pendingCreates: CreateOperation[] = [];
 
@@ -87,7 +92,12 @@ export async function executeApplyPlan(input: ApplyExecutorInput): Promise<Apply
       createResults.set(operation.id, previous);
       continue;
     }
-    if (existingMarkers.has(operation.marker)) {
+    // The legacy marker is looked for only on a retry of this very operation:
+    // an older session may have created it under the narrower marker, and a
+    // first attempt has nothing to find there but another create's collision.
+    const attemptedBefore = (input.previousResults ?? []).some((result) => result.operationId === operation.id);
+    const markers = attemptedBefore ? markersOf(operation) : [operation.marker];
+    if (markers.some((marker) => existingMarkers.has(marker))) {
       createResults.set(operation.id, {
         operationId: operation.id,
         status: "skipped",
@@ -147,6 +157,17 @@ export async function executeApplyPlan(input: ApplyExecutorInput): Promise<Apply
   // Each single write re-reads its row and carries its own mutation and undo
   // entry, so a few hundred of them is minutes of overhead for seconds of
   // writing.
+  // Batched writes finish before the per-operation loop below, so report them
+  // as they land rather than letting the bar sit at zero and then jump to the end.
+  let reported = createResults.size;
+  if (reported > 0) {
+    input.onProgress?.({
+      completed: reported,
+      total: plan.operations.length,
+      operation: plan.operations.find((operation) => operation.kind === "create")!,
+    });
+  }
+
   const batchedWrites = new Map<string, OperationResult>();
   if (transport.batchWrite) {
     const updates = plan.operations.filter(
@@ -181,6 +202,12 @@ export async function executeApplyPlan(input: ApplyExecutorInput): Promise<Apply
             transactionId: operation.transactionId,
           });
         }
+        reported += updates.length + deletes.length;
+        input.onProgress?.({
+          completed: reported,
+          total: plan.operations.length,
+          operation: updates[0] ?? deletes[0],
+        });
       } catch (error) {
         // One call, one outcome — reported per operation rather than left
         // unexplained.
@@ -197,7 +224,12 @@ export async function executeApplyPlan(input: ApplyExecutorInput): Promise<Apply
   }
 
   for (const operation of plan.operations) {
-    input.onProgress?.({ completed, total: plan.operations.length, operation });
+    const batchedAlready = createResults.has(operation.id) || batchedWrites.has(operation.id);
+    // Only operations that run one at a time move the bar here.
+    if (!batchedAlready && !alreadyApplied.has(operation.id)) {
+      input.onProgress?.({ completed: Math.max(completed, reported), total: plan.operations.length, operation });
+      reported += 1;
+    }
     completed += 1;
 
     // Creates were settled in the batch above.

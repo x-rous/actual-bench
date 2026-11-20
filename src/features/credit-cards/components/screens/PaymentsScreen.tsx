@@ -1,7 +1,10 @@
 "use client";
 import { useRef } from "react";
 import type { Account } from "@/types/entities";
+import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { downloadCsv } from "@/lib/csv";
+import { exportFileName, paymentsCsv } from "../../lib/exports";
 import { ClearedHeader, ClearedStatus } from "@/components/ui/cleared-status";
 import { PillGroup } from "@/components/ui/pill-group";
 import { daysBetween } from "@/lib/financial-models/calendar/dates";
@@ -96,6 +99,11 @@ export function PaymentsScreen({ entry, accounts, filter, onFilter, panelId, onP
           { value: "unmatched", label: "Not matched", count: payments.filter((payment) => matches(payment, "unmatched")).length },
         ]}
       />
+      <Button size="sm" variant="outline" className="order-last" disabled={!visible.length} title="Export the payments shown (CSV)"
+        onClick={() => downloadCsv(exportFileName(name, "payments", today),
+          paymentsCsv(visible, (row) => from(row) ?? "", (payment) => paymentTiming(payment, since).label), { includeBom: true })}>
+        <Download className="size-3.5" aria-hidden />Export
+      </Button>
       <p className="ml-auto text-xs text-muted-foreground" role="status">
         Paid <span className="font-medium text-foreground tabular-nums">{snapshot ? money(sumMinor(cleared.map(({ row }) => row.amountMinor))) : MISSING}</span>
         {since ? ` since ${formatCardDate(since)}` : " since tracking"}

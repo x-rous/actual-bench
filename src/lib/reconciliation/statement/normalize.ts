@@ -230,6 +230,25 @@ export type StatementTotals = {
   credits: MinorUnitAmount;
   net: MinorUnitAmount;
   rowCount: number;
+  /** The balance the statement says the account closed at, when it printed one (PDF only). */
+  closingBalance?: StatementClosingBalance;
+};
+
+/**
+ * The account balance a statement printed for the end of its period, already
+ * in Actual's sign convention: a card statement's "1,234.56 owed" is -123456.
+ */
+export type StatementClosingBalance = {
+  /** Integer minor units, Actual's sign. */
+  amount: MinorUnitAmount;
+  /** ISO date the balance is as of: the statement period's end. */
+  asOf: string;
+  /** A printed closing-balance line, or the running balance after the last row. */
+  source: "closing-line" | "last-row";
+  /** How the printed figure was turned into Actual's sign. */
+  polarity: "deposit" | "liability";
+  /** True when the account type behind `polarity` was detected, not confirmed. */
+  polarityDetected: boolean;
 };
 
 /**

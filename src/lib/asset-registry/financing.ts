@@ -1,5 +1,5 @@
 import { divRoundInt } from "@/lib/financial-models/money";
-import { isIsoDate } from "@/lib/financial-models/calendar/dates";
+import { addDays, isIsoDate } from "@/lib/financial-models/calendar/dates";
 
 /**
  * Basis points: 10000 = 100% of the loan's Actual outstanding debt. Periods are `[effectiveFrom, effectiveTo)`;
@@ -88,4 +88,31 @@ export function trackedEquity(assetId: string, date: string, links: AssetDebtLin
   }
   const complete = gaps.length === 0;
   return { allocatedDebtMinor: complete ? debt : null, equityMinor: complete && assetValueMinor !== null ? assetValueMinor - debt : null, gaps: assetValueMinor === null ? [...gaps, "Dated asset value is unavailable"] : gaps };
+}
+
+/**
+ * The dates at which a loan's interest-to-date is needed to price `[from, to]` for one asset: the day before each covered
+ * segment starts and the segment's last day. `[effectiveFrom, effectiveTo)` periods; dates are inclusive here.
+ */
+export function interestSegments(assetId: string, links: AssetDebtLink[], from: string, to: string): { debtId: string; allocationBps: number; before: string; last: string }[] {
+  if (!isIsoDate(from) || !isIsoDate(to) || from > to) return [];
+  return links.filter((l) => l.assetId === assetId).flatMap((l) => {
+    const start = l.effectiveFrom > from ? l.effectiveFrom : from;
+    const end = l.effectiveTo === null ? to : addDays(l.effectiveTo, -1) < to ? addDays(l.effectiveTo, -1) : to;
+    return start <= end ? [{ debtId: l.debtId, allocationBps: l.allocationBps, before: addDays(start, -1), last: end }] : [];
+  });
+}
+/**
+ * Loan interest charged to an asset over `[from, to]` (positive integer minor units): each linked loan's interest in every
+ * period the link covers, times that period's allocation. `interestToDate(debtId, date)` is the loan's cumulative interest
+ * through a date, or undefined while unknown. Null when any figure is unknown; 0 when no loan is linked in the period.
+ */
+export function allocatedInterest(assetId: string, links: AssetDebtLink[], from: string, to: string, interestToDate: (debtId: string, date: string) => number | null | undefined): number | null {
+  let total = BigInt(0);
+  for (const s of interestSegments(assetId, links, from, to)) {
+    const a = interestToDate(s.debtId, s.before); const b = interestToDate(s.debtId, s.last);
+    if (a == null || b == null) return null;
+    total += divRoundInt(BigInt(b - a) * BigInt(s.allocationBps), BigInt(FULL), "half-even");
+  }
+  return Number(total);
 }

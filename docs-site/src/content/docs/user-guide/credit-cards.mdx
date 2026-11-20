@@ -29,6 +29,8 @@ Bench reads activity from the **first tracked statement** onwards and never inve
 
 **Delete card** removes only Bench's records for the card; **Undo** restores them.
 
+**Auto-pay and annual fee.** The auto-pay setting appears beside the due date on the **Overview**. If you enter the annual fee and its renewal date, the Overview reminds you 30 days before each yearly renewal, so you can keep, downgrade or cancel the card in time.
+
 ## Statements
 
 Each row of **Statements** is one bank statement: what the bank printed, and how the bill is going (amount due, minimum, paid, left to pay, paid against the due date). Rows you haven't entered yet are marked **Estimate**.
@@ -83,10 +85,14 @@ If the bank includes plan balances in the statement balance, tick **Statement ba
 
 **Overview** shows what to pay now, total owed (card plus plan principal, counted once), credit used and a 6- or 12-month balance chart with statements, payments, due dates and the limit. **Insights** shows interest and fees, how bills were paid, and an estimate of paying only the minimum (an illustration, not a bank quote).
 
+**Payoff plan.** On **All cards**, **Payoff plan** takes one amount you can pay across every card each month. Each card gets its minimum, and the rest goes to one card at a time: **Highest APR first** (the least interest) or **Smallest balance first** (cards cleared sooner). It shows the debt-free month, the interest each order costs and when each card is cleared. It is an estimate from today's balances with no new spending; instalment plans are not included (what is left of a plan kept in the card balance is taken off that card's balance), and a card with no APR set counts as 0%. A card whose balance has not loaded is named and left out. Past 50 years it says the cards are not paid off within that time.
+
+**Export.** **Statements** and **Payments** each have **Export**, which saves the rows shown as a CSV file. Amounts are plain numbers with no currency.
+
 ## What is stored where
 
 | Kept in Actual (read only) | Kept in Bench |
 |---|---|
 | Accounts, transactions, categories, notes, cleared status | Card settings and limit changes, bank statement figures, your statement answers and moves, type corrections, plans and their links |
 
-Records are saved per budget and survive reloads. If two tabs save the same budget, the second save is refused rather than overwriting the first; reload and retry. **Undo** reverses your last change.
+Records are saved per budget and survive reloads. A change saved in another tab appears straight away, and one saved on another device appears when you return to the tab. If two tabs save the same record, the second save is refused rather than overwriting the first, and an edit of a record deleted elsewhere never brings it back. **Undo** reverses your last change. Records written by a newer version of Bench are kept unchanged, and a note says how many can't be shown.

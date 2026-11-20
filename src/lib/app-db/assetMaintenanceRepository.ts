@@ -5,6 +5,8 @@ import { AppDbValidationError } from "./errors";
 import { readRegistry } from "./assetRepository";
 import type { SqliteDatabase } from "./types";
 
+/** How far a browser clock may run ahead of the server before a just-saved link could be pruned. */
+const PRUNE_CLOCK_MARGIN_MS = 5 * 60_000;
 function parse<T>(schema: z.ZodType<T>, input: unknown): T {
   const result = schema.safeParse(input);
   if (!result.success) throw new AppDbValidationError(result.error.issues.map((i) => i.message).join("; "));
@@ -17,8 +19,12 @@ function parse<T>(schema: z.ZodType<T>, input: unknown): T {
 export function pruneStaleAssetMetadata(db: SqliteDatabase, input: unknown) {
   const evidence = parse(pruneEvidenceSchema, input);
   return db.transaction(() => {
-    const plan = planPrune(readRegistry(db, evidence.budgetSyncId), evidence);
     const budget = evidence.budgetSyncId;
+    // Metadata saved after the reads began (another tab or device linked a transaction the reads could not see yet) is newer
+    // than the evidence and is kept. A small margin absorbs clock differences between the browser and this server.
+    const since = new Date(Date.parse(evidence.readAt) - PRUNE_CLOCK_MARGIN_MS).toISOString();
+    const recent = new Set(db.prepare("SELECT actual_transaction_id AS id FROM asset_transaction_metadata WHERE budget_sync_id=? AND updated_at>?").all<{ id: string }>(budget, since).map((r) => r.id));
+    const plan = planPrune(readRegistry(db, budget), evidence, recent);
     const remove = db.prepare("DELETE FROM asset_transaction_metadata WHERE budget_sync_id=? AND actual_transaction_id=?");
     for (const id of [...plan.removeBook, ...plan.removeCashflow]) remove.run(budget, id);
     return { registry: readRegistry(db, budget), dropped: pruneSize(plan) };

@@ -50,11 +50,24 @@ const DUPLICATE_EVIDENCE_DELTA = 3;
 const MAX_WEAK_CANDIDATES = 5;
 
 /**
- * A candidate below this carries nothing but a coincidence of amount and a date
- * inside the window. Offering it as a possible match wastes the user's
- * attention on a pair no evidence supports.
+ * How far below the automatic floor a candidate may score and still be offered
+ * for review.
+ *
+ * A fixed 60 used to equal the default floor, and candidates are visited best
+ * first, so a row whose best candidate was below the floor had nothing at or
+ * above 60 left to offer: the `below-floor` review could never fire at default
+ * settings. An exact amount four to seven days out with no text scores 57 —
+ * Actual's own importer would match it — and leaving it unoffered turned it
+ * into a "not in Actual" row the user then created a second time.
  */
-const MIN_CANDIDATE_TO_OFFER = 60;
+const OFFER_BELOW_FLOOR = 10;
+
+/** Never offer a pair this weak, whatever the floor is set to. */
+const MIN_CANDIDATE_TO_OFFER = 45;
+
+function offerFloor(config: MatchConfig): number {
+  return Math.max(MIN_CANDIDATE_TO_OFFER, config.autoMatchFloor - OFFER_BELOW_FLOOR);
+}
 
 export function assignMatches(input: AssignmentInput): AssignmentResult {
   const { candidates, config } = input;
@@ -94,6 +107,21 @@ export function assignMatches(input: AssignmentInput): AssignmentResult {
   }
 
   const ambiguousByRow = new Map<string, AmbiguousMatch>();
+  /*
+   * Transactions a review item is already offering.
+   *
+   * `consumedTransactions` only grows on a match, so a transaction left
+   * contested between two candidates of one row stayed free, and a later,
+   * weaker row could auto-match it on amount and date alone — while the first
+   * row went on offering it. A reserved transaction can still be *offered* to
+   * another row, but never taken automatically: the row that wanted it more is
+   * waiting on a person.
+   */
+  const reservedTransactions = new Set<string>();
+  const reserve = (entry: AmbiguousMatch) => {
+    ambiguousByRow.set(entry.statementRowId, entry);
+    for (const candidate of entry.candidates) reservedTransactions.add(candidate.actualTransactionId);
+  };
   const duplicatesByRow = new Map<string, LikelyDuplicate>();
   const duplicateRivals = new Map<
     string,
@@ -110,7 +138,7 @@ export function assignMatches(input: AssignmentInput): AssignmentResult {
       // the user can pick, rather than silently dropping the row or listing
       // every transaction that happens to share the amount.
       const worthOffering = availableFor(candidate.statementRowId)
-        .filter((entry) => entry.score >= MIN_CANDIDATE_TO_OFFER)
+        .filter((entry) => entry.score >= offerFloor(config))
         .slice(0, MAX_WEAK_CANDIDATES);
 
       if (worthOffering.length === 0) {
@@ -119,10 +147,23 @@ export function assignMatches(input: AssignmentInput): AssignmentResult {
         continue;
       }
 
-      ambiguousByRow.set(candidate.statementRowId, {
+      reserve({
         statementRowId: candidate.statementRowId,
         candidates: worthOffering,
         why: "below-floor",
+      });
+      continue;
+    }
+
+    if (reservedTransactions.has(candidate.actualTransactionId)) {
+      // Another row is already asking about this transaction. Offer it here too
+      // rather than taking it, so the person deciding sees both claims.
+      reserve({
+        statementRowId: candidate.statementRowId,
+        candidates: availableFor(candidate.statementRowId)
+          .filter((entry) => entry.score >= offerFloor(config))
+          .slice(0, MAX_WEAK_CANDIDATES),
+        why: "close-runner-up",
       });
       continue;
     }
@@ -136,21 +177,26 @@ export function assignMatches(input: AssignmentInput): AssignmentResult {
         (other) =>
           other.score >= (bestScoreByTransaction.get(other.actualTransactionId) ?? other.score)
       );
-    const runnerUp = rivals[0];
+    // Rivals close enough to the winner to be a real question.
+    const contenders = rivals.filter(
+      (rival) => candidate.score - rival.score <= config.ambiguityDelta
+    );
+    const competing = contenders.filter((rival) => rival.score >= config.autoMatchFloor);
 
     // Interchangeable candidates are not a question. When rivals carry exactly
     // the same evidence as the winner — same score, same date distance, same
-    // text agreement — asking which one it is has no answer, because either
-    // choice produces the same reconciliation. Take one and let the rest fall
-    // to other statement rows; whatever is genuinely surplus surfaces as a
-    // duplicate once the whole pass is done.
+    // text agreement, same reference evidence — asking which one it is has no
+    // answer, because either choice produces the same reconciliation. Take one
+    // and let the rest fall to other statement rows; whatever is genuinely
+    // surplus surfaces as a duplicate once the whole pass is done.
     const interchangeable =
-      runnerUp !== undefined &&
+      rivals.length > 0 &&
       rivals.every(
         (rival) =>
           rival.score === candidate.score &&
           dateDeltaOf(rival) === dateDeltaOf(candidate) &&
-          bestTextSimilarity(rival) === bestTextSimilarity(candidate)
+          bestTextSimilarity(rival) === bestTextSimilarity(candidate) &&
+          hasReferenceHit(rival) === hasReferenceHit(candidate)
       );
 
     // Close scores alone do not make two candidates indistinguishable. Two fee
@@ -158,22 +204,23 @@ export function assignMatches(input: AssignmentInput): AssignmentResult {
     // text scores 1.0 and 0.79 — the evidence plainly separates them, and the
     // scores are close only because text carries a quarter of the budget.
     //
-    // But a signal only separates when nothing else contradicts it. A candidate
-    // whose text agrees better while its date agrees worse is the genuinely
-    // ambiguous case, and belongs to the user.
-    const textSeparates =
-      runnerUp !== undefined &&
-      bestTextSimilarity(candidate) - bestTextSimilarity(runnerUp) >=
-        config.textSeparationMargin &&
-      Math.abs(dateDeltaOf(candidate)) <= Math.abs(dateDeltaOf(runnerUp));
+    // A bank reference found verbatim in the notes separates on its own: it is
+    // the strongest evidence below an `imported_id`, and it used to count as
+    // *no* text agreement here, so a payee that merely read the same pushed a
+    // reference hit into review — labelled a likely duplicate.
+    //
+    // Every contender has to be separated, not just the runner-up: a third
+    // candidate as good as the winner is as much a question as the second.
+    const separatedFrom = (rival: ScoredCandidate) => {
+      if (hasReferenceHit(rival)) return false;
+      if (hasReferenceHit(candidate)) return true;
+      return (
+        bestTextSimilarity(candidate) - bestTextSimilarity(rival) >= config.textSeparationMargin &&
+        Math.abs(dateDeltaOf(candidate)) <= Math.abs(dateDeltaOf(rival))
+      );
+    };
 
-    if (
-      runnerUp &&
-      !textSeparates &&
-      !interchangeable &&
-      runnerUp.score >= config.autoMatchFloor &&
-      candidate.score - runnerUp.score <= config.ambiguityDelta
-    ) {
+    if (competing.length > 0 && !interchangeable && !competing.every(separatedFrom)) {
       // Two plausible candidates too close to separate. The matcher must not
       // silently choose between a 94% and a 91% (feature spec §10 Level 3).
       //
@@ -181,10 +228,7 @@ export function assignMatches(input: AssignmentInput): AssignmentResult {
       // amount and falls in the date window is a *candidate*, not a competing
       // match, and listing it as one turns "these two are indistinguishable"
       // into a misleading pile of unrelated rows.
-      const contenders = rivals.filter(
-        (rival) => candidate.score - rival.score <= config.ambiguityDelta
-      );
-
+      //
       // "Which of these is it?" and "this was entered twice" are different
       // questions. When the contenders are near-identical to the winner rather
       // than merely close, picking between them is arbitrary and the loser is
@@ -197,10 +241,11 @@ export function assignMatches(input: AssignmentInput): AssignmentResult {
             candidate.score - rival.score <= DUPLICATE_EVIDENCE_DELTA &&
             matchedOnPostedAmount(rival) &&
             matchedOnPostedAmount(candidate) &&
+            hasReferenceHit(rival) === hasReferenceHit(candidate) &&
             Math.abs(dateDeltaOf(rival) - dateDeltaOf(candidate)) <= 1
         );
 
-      ambiguousByRow.set(candidate.statementRowId, {
+      reserve({
         statementRowId: candidate.statementRowId,
         candidates: [candidate, ...contenders],
         why: duplicates ? "duplicate-candidates" : "close-runner-up",
@@ -266,6 +311,10 @@ export function assignMatches(input: AssignmentInput): AssignmentResult {
 function compareCandidates(a: ScoredCandidate, b: ScoredCandidate): number {
   if (a.score !== b.score) return b.score - a.score;
 
+  // A reference hit outranks an equal score without one.
+  const aReference = hasReferenceHit(a);
+  if (aReference !== hasReferenceHit(b)) return aReference ? -1 : 1;
+
   const aDate = Math.abs(dateDeltaOf(a));
   const bDate = Math.abs(dateDeltaOf(b));
   if (aDate !== bDate) return aDate - bDate;
@@ -283,6 +332,11 @@ function bestTextSimilarity(candidate: ScoredCandidate): number {
     if (reason.kind === "text" && reason.similarity > best) best = reason.similarity;
   }
   return best;
+}
+
+/** True when the statement's bank reference was found verbatim in the notes. */
+function hasReferenceHit(candidate: ScoredCandidate): boolean {
+  return candidate.reasons.some((reason) => reason.kind === "reference" && reason.where === "notes");
 }
 
 /** True when the pair agreed on the posted amount, rather than an original one. */

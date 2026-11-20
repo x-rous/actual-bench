@@ -1217,6 +1217,26 @@ CREATE TABLE IF NOT EXISTS cashflow_plans (
 `;
 
 /*
+ * Saved reconciliation transforms (migration v67). A named IF/THEN rule the user runs again on later
+ * imports, scoped to one budget because a "Set payee" action holds that budget's payee id. The rule is
+ * a JSON document validated in code (`sanitizeSavedRule`), so a reader skips what it does not
+ * understand instead of failing. Never statement rows, transactions or amounts from a session.
+ */
+export const RECONCILIATION_TRANSFORMS_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS reconciliation_transforms (
+  id text PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 100),
+  budget_sync_id text NOT NULL CHECK (length(budget_sync_id) BETWEEN 1 AND 200),
+  name text NOT NULL CHECK (length(name) BETWEEN 1 AND 120),
+  rule_json text NOT NULL,
+  position integer NOT NULL DEFAULT 0,
+  created_at text NOT NULL,
+  updated_at text NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_reconciliation_transforms_budget
+  ON reconciliation_transforms(budget_sync_id, position);
+`;
+
+/*
  * Credit cards (RD-098 / PR-127c, migration v48). Bench-owned metadata only: Actual ids, opaque
  * evidence hashes and the user's own statement figures and decisions. Never Actual transactions,
  * balances or credentials. Enumerations are validated in code (readers skip unknown values), so a

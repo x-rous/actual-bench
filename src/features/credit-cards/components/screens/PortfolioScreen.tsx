@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { LineChart, TriangleAlert } from "lucide-react";
+import { LineChart, TrendingDown, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SearchInput } from "@/components/ui/search-input";
 import { ListToolbar } from "@/components/ui/list-toolbar";
@@ -12,8 +12,9 @@ import { sumMinor } from "../../lib/statements";
 import { formatCardDate } from "../../lib/displayDates";
 import { statementPaymentTotals, netActivitySinceStatement } from "../../lib/insights";
 import { observedChargeTotals, observedInterestTotals } from "../../lib/history";
-import { commonCoverage, portfolioInterestTrend, portfolioStatementTrend } from "../../lib/portfolioView";
+import { commonCoverage, coverageWindow, portfolioInterestTrend, portfolioStatementTrend, withStatements } from "../../lib/portfolioView";
 import { trackedDebtPoints } from "../../lib/derive/planAccounts";
+import { planTermsRemaining } from "../../lib/plans";
 import { formatPercentBps } from "../../lib/percent";
 import { CardMark } from "../CardIdentity";
 import { HistoryChart } from "../HistoryChart";
@@ -22,6 +23,8 @@ import { DataTable, HEADER_ROW_HEIGHT, Stack, type Column, type TableController 
 import { attentionSummary, cardAttention } from "../cardAttention";
 import { Figure } from "../primitives/Figure";
 import { SidePanel } from "../primitives/SidePanel";
+import { PayoffPanel } from "./PayoffPanel";
+import type { PayoffDebt } from "../../lib/payoff";
 import { StatusBadge } from "../primitives/StatusBadge";
 import { MISSING, money, ordinal, plural, shortDate } from "../primitives/format";
 
@@ -84,7 +87,9 @@ function Sparkline({ values, bars = false }: { values: (number | null)[]; bars?:
  */
 export function PortfolioScreen({ entries, workspace, focusCardId, sort, onSort, onOpen }: Props) {
   const [chart, setChart] = useState<"owed" | "statements">("owed");
-  const [trends, setTrends] = useState(false);
+  const [panel, setPanel] = useState<"trends" | "payoff" | null>(null);
+  const trends = panel === "trends";
+  const setTrends = (open: boolean) => setPanel(open ? "trends" : null);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<StatusFilter>("all");
   const needle = search.trim().toLowerCase();
@@ -96,7 +101,7 @@ export function PortfolioScreen({ entries, workspace, focusCardId, sort, onSort,
   const todays = entries.map((entry) => entry.today);
   const sources = entries.map((entry) => entry.snapshot);
   const trendStatements = entries.flatMap((entry) => entry.view.statements);
-  const statementWorkspace = { ...workspace, statements: trendStatements };
+  const statementWorkspace = withStatements(workspace, trendStatements);
   const nameOf = (card: { id: string }) => entries.find((entry) => entry.card.id === card.id)?.name ?? "Card";
   const payments = statementPaymentTotals(cards, statementWorkspace, sources, todays);
   const owed = entries.map(owedOf);
@@ -105,7 +110,7 @@ export function PortfolioScreen({ entries, workspace, focusCardId, sort, onSort,
   // CA-15: one shared date range, so the total never implies coverage some cards don't have.
   const costs = entries.map((entry) => {
     if (!entry.snapshot || !coverage) return null;
-    const window = { ...entry.snapshot, ...coverage };
+    const window = coverageWindow(entry.snapshot, coverage);
     return [observedInterestTotals(entry.card, workspace, window, entry.today), observedChargeTotals(entry.card, workspace, window, entry.today, "fee")];
   });
   const costsMinor = costs.every(Boolean) ? sumMinor(costs.flatMap((pair) => pair!.map((total) => total.totalMinor))) : null;
@@ -239,6 +244,17 @@ export function PortfolioScreen({ entries, workspace, focusCardId, sort, onSort,
     },
   ];
   const filtered = Boolean(needle) || status !== "all";
+  const payoffUnknown = entries.filter((entry) => entry.card.status === "active" && !entry.balance).map((entry) => entry.name);
+  const payoffDebts = entries.flatMap((entry): PayoffDebt[] => {
+    // A plan kept in the card balance repays on its own terms, not at the purchase APR: leave its principal out.
+    const planned = sumMinor(workspace.plans
+      .filter((plan) => plan.cardId === entry.card.id && plan.status === "active" && plan.recordedAs === "card-balance")
+      .map((plan) => planTermsRemaining(plan, entry.card, entry.today) ?? 0));
+    const debt = Math.max(0, (entry.balance?.debtMinor ?? 0) - planned);
+    return entry.card.status === "active" && debt > 0
+      ? [{ id: entry.card.id, name: entry.name, balanceMinor: debt, aprBps: entry.card.purchaseAprBps, card: entry.card }]
+      : [];
+  });
 
   return <div className="flex min-h-0 flex-1 flex-col">
     <dl aria-label="All cards" className="grid shrink-0 grid-cols-2 divide-x border-b md:grid-cols-3 xl:grid-cols-5">
@@ -268,6 +284,9 @@ export function PortfolioScreen({ entries, workspace, focusCardId, sort, onSort,
       ]} />
       {filtered && <Button size="sm" variant="ghost" onClick={() => { setSearch(""); setStatus("all"); }}>Clear filters</Button>}
       <Button size="sm" variant="outline" aria-pressed={trends} onClick={() => setTrends(!trends)}><LineChart className="size-3.5" aria-hidden />Trends</Button>
+      <Button size="sm" variant="outline" aria-pressed={panel === "payoff"} onClick={() => setPanel(panel === "payoff" ? null : "payoff")}>
+        <TrendingDown className="size-3.5" aria-hidden />Payoff plan
+      </Button>
       <p className="ml-auto text-xs text-muted-foreground" role="status">
         {filtered ? `${records.length} of ${plural(cards.length, "card")}` : plural(cards.length, "card")}
         {" · "}<span className="font-medium text-foreground tabular-nums">{money(knownOwed.length ? sumMinor(knownOwed) : null)}</span> owed
@@ -286,6 +305,10 @@ export function PortfolioScreen({ entries, workspace, focusCardId, sort, onSort,
         controller={table}
         empty={filtered ? "No results match your filters." : "No cards yet."}
       />
+      {panel === "payoff" && <SidePanel title="Payoff plan" description="All cards" headerHeight={HEADER_ROW_HEIGHT}
+        onClose={() => setPanel(null)} className="w-[520px]">
+        <PayoffPanel debts={todays.length ? payoffDebts : []} unknown={payoffUnknown} today={[...todays].sort().at(-1) ?? ""} />
+      </SidePanel>}
       {trends && <SidePanel title="Trends" description="All cards" headerHeight={HEADER_ROW_HEIGHT} onClose={() => setTrends(false)} className="w-[520px]">
         <div className="space-y-4 p-4">
           <div role="group" aria-label="Chart" className="inline-flex overflow-hidden rounded-md border text-xs">

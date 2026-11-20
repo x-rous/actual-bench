@@ -6,6 +6,8 @@ import { saveAsset, saveBookMetadata, readRegistry } from "./assetRepository";
 import { applyAccountClassChanges } from "./accountClassRepository";
 import { saveAssetCashflows } from "./assetCashflowRepository";
 import { deleteArchivedAsset, pruneStaleAssetMetadata } from "./assetMaintenanceRepository";
+/** Reads that began well after the test data was saved. */
+const LATER = "2999-01-01T00:00:00.000Z";
 import { testAsset, testRow } from "@/lib/asset-registry/testing";
 import { normalizeActivity } from "@/features/credit-cards/lib/activity";
 import { sourceEvidence } from "@/lib/asset-registry/cashflows";
@@ -30,15 +32,20 @@ const live = (accountId: string, ids: string[]) => ({ accountId, ids });
 
 it("drops saved links to transactions Actual no longer has", () => {
   const { db, directory } = fixture();
-  const { registry, dropped } = pruneStaleAssetMetadata(db, { budgetSyncId: "budget", directory, accounts: [live("vehicles", []), live("bank", [])] });
+  const { registry, dropped } = pruneStaleAssetMetadata(db, { budgetSyncId: "budget", readAt: LATER, directory, accounts: [live("vehicles", []), live("bank", [])] });
   expect(registry.metadata).toEqual([]); expect(registry.cashflows).toBeUndefined();
   expect(dropped).toBe(2);
-  expect(pruneStaleAssetMetadata(db, { budgetSyncId: "budget", directory, accounts: [live("vehicles", []), live("bank", [])] }).dropped).toBe(0); // repeating changes nothing
+  expect(pruneStaleAssetMetadata(db, { budgetSyncId: "budget", readAt: LATER, directory, accounts: [live("vehicles", []), live("bank", [])] }).dropped).toBe(0); // repeating changes nothing
+});
+it("keeps links saved after the reads began, which the reads could not have seen", () => {
+  const { db, directory } = fixture();
+  const before = new Date(Date.now() - 60_000).toISOString();
+  expect(pruneStaleAssetMetadata(db, { budgetSyncId: "budget", readAt: before, directory, accounts: [live("vehicles", []), live("bank", [])] }).dropped).toBe(0);
 });
 it("never prunes an account that was not read completely, and drops links to an account Actual no longer has", () => {
   const { db, directory } = fixture();
-  expect(pruneStaleAssetMetadata(db, { budgetSyncId: "budget", directory, accounts: [] }).dropped).toBe(0);
-  const { registry } = pruneStaleAssetMetadata(db, { budgetSyncId: "budget", directory: directory.filter((id) => id !== "bank"), accounts: [] });
+  expect(pruneStaleAssetMetadata(db, { budgetSyncId: "budget", readAt: LATER, directory, accounts: [] }).dropped).toBe(0);
+  const { registry } = pruneStaleAssetMetadata(db, { budgetSyncId: "budget", readAt: LATER, directory: directory.filter((id) => id !== "bank"), accounts: [] });
   expect(registry.cashflows).toBeUndefined();
 });
 it("deletes only an archived asset and everything Bench stored for it", () => {
@@ -51,7 +58,7 @@ it("deletes only an archived asset and everything Bench stored for it", () => {
 });
 it("never treats an empty account directory as proof that every account is gone", () => {
   const { db } = fixture();
-  expect(() => pruneStaleAssetMetadata(db, { budgetSyncId: "budget", directory: [], accounts: [] })).toThrow(/directory is empty/);
+  expect(() => pruneStaleAssetMetadata(db, { budgetSyncId: "budget", readAt: LATER, directory: [], accounts: [] })).toThrow(/directory is empty/);
   expect(readRegistry(db, "budget").metadata).toHaveLength(1);
   expect(readRegistry(db, "budget").cashflows).toHaveLength(1);
 });

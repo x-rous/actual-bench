@@ -15,6 +15,8 @@ import { type attributeBook } from "@/lib/asset-registry/ledger";
 import { assetMoney, bookTypeLabel, NA, SummaryStrip } from "./AssetPresentation";
 import { cashflowByPeriod } from "./cashflowSummary";
 import { percent } from "./ReportControls";
+import type { AssetDebtLink } from "@/lib/asset-registry/financing";
+import { useAllocatedInterest } from "./useAllocatedInterest";
 import { TimelineSection, type BookFocus, type CashflowFocus, type ChartPrefs } from "./TimelineSection";
 import type { FinancingEvent, OperatingEntry } from "./timeline";
 import type { BookView } from "./BookPanel";
@@ -31,6 +33,8 @@ type Props = {
   onBook: (view?: BookView) => void; onTab: (tab: string) => void;
   onFocusBook: (focus: BookFocus) => void; onFocusCashflow: (focus: CashflowFocus) => void;
   /** The chart choices, kept by the page so they survive a change of tab. */ chartPrefs?: ChartPrefs; onChartPrefs?: (prefs: ChartPrefs) => void;
+  /** Loan allocations of this budget, and a loan's calculated interest through a date (minor units), for the after-interest rows. */
+  debtLinks?: AssetDebtLink[]; interestToDate?: (debtId: string, date: string) => Promise<number>; queryScope?: readonly unknown[];
 };
 /** Attention items already shown elsewhere on this page (unclassified: chart; unassigned: its own button). */
 const SHOWN_ELSEWHERE = new Set(["Unclassified entries", "Unassigned entries require review"]);
@@ -49,7 +53,28 @@ type Column = { key: string; label: string; sub?: string; from: string; to: stri
 function Row({ label, values, strong, indent }: { label: string; values: ReactNode[]; strong?: boolean; indent?: boolean }) {
   return <tr className="border-t border-border/50"><th scope="row" className={strong ? "px-4 py-2 text-left text-sm font-semibold" : `px-4 py-2 text-left font-normal text-muted-foreground ${indent ? "pl-7" : ""}`}>{label}</th>{values.map((v, i) => <td key={i} className={strong ? "px-3 py-2 text-right text-sm font-semibold" : "px-3 py-2 text-right"}>{v}</td>)}</tr>;
 }
-export function AssetOverview({ asset, date, valueMinor, reading, reportFor, firstDate, book, debtAt, unposted, operating, capital, financing, depreciationDue, onBook, onTab, onFocusBook, onFocusCashflow, chartPrefs, onChartPrefs }: Props) {
+const NO_LINKS: AssetDebtLink[] = [];
+const noInterest = async () => 0;
+/** The after-interest rows, only for an asset with a linked loan (they read each loan's interest from Loans). */
+function InterestRows({ assetId, links, results, interestToDate, queryScope, figure }: {
+  assetId: string; links: AssetDebtLink[]; results: { column: Column; perf: AssetPerformance | undefined }[];
+  interestToDate: (debtId: string, date: string) => Promise<number>; queryScope: readonly unknown[]; figure: (value: string) => string;
+}) {
+  const interestFor = useAllocatedInterest(queryScope, assetId, links, results.map((r) => r.column), interestToDate);
+  const interests = results.map((r) => interestFor(r.column.from, r.column.to));
+  const after = results.map((r, i) => r.perf?.totalMinor == null || interests[i] == null ? null : r.perf.totalMinor - interests[i]!);
+  const afterReturn = (i: number) => {
+    const p = results[i].perf; const base = (p?.openingMinor ?? 0) + (p?.capitalAddedMinor ?? 0);
+    return after[i] === null || p?.simpleReturn == null || base <= 0 ? null : Math.round((after[i]! * 10000) / base) / 100;
+  };
+  const cell = (i: number, value: string) => figure(interests[i] === undefined ? "…" : value);
+  return <>
+    <Row label="Loan interest (allocated)" values={results.map((_, i) => cell(i, interests[i] == null ? NA : assetMoney(-interests[i]!)))} />
+    <Row strong label="Total result after interest" values={results.map((_, i) => cell(i, assetMoney(after[i])))} />
+    <Row label="Return after interest" values={results.map((_, i) => cell(i, percent(afterReturn(i))))} />
+  </>;
+}
+export function AssetOverview({ asset, date, valueMinor, reading, reportFor, firstDate, book, debtAt, unposted, operating, capital, financing, depreciationDue, onBook, onTab, onFocusBook, onFocusCashflow, chartPrefs, onChartPrefs, debtLinks = NO_LINKS, interestToDate = noInterest, queryScope = NO_LINKS }: Props) {
   const own = book?.rows.filter((r) => r.assetId === asset.id) ?? [];
   const available = valueMinor !== null;
   const unassignedRows = book?.rows.filter((r) => !r.assetId).length ?? 0;
@@ -80,6 +105,9 @@ export function AssetOverview({ asset, date, valueMinor, reading, reportFor, fir
   const pct = (pick: (p: AssetPerformance) => number | null) => results.map((r) => figure(r.perf ? percent(pick(r.perf)) : NA));
   const bridge = (pick: (b: ReturnType<typeof valueBridge>) => number) => results.map((r) => assetMoney(pick(r.bridge)));
   const hasOther = results.some((r) => r.bridge.disposalMinor + r.bridge.otherMinor !== 0);
+  // Loan interest is a cost of holding the asset, but it is paid through the loan, not from the asset's linked accounts, so it is
+  // shown apart: the result and return after it are extra rows and never change the figures above.
+  const financed = debtLinks.some((l) => l.assetId === asset.id);
 
   const gaps = [...new Set([...results.flatMap((r) => r.perf?.gaps ?? []), ...(book?.issues ?? [])])].filter((gap) => !SHOWN_ELSEWHERE.has(gap));
   const attention: { text: string; onClick?: () => void }[] = [
@@ -120,7 +148,7 @@ export function AssetOverview({ asset, date, valueMinor, reading, reportFor, fir
               </tbody></table>}
         </section>}
         <section aria-label="Performance breakdown" className={`min-w-0 rounded-lg border bg-background ${hasCashflows || income ? "" : "xl:col-span-2"}`}>
-          <div className="flex items-center justify-between gap-2 border-b px-4 py-2.5"><div className="flex items-center gap-1"><h2 className="text-sm font-semibold">Performance breakdown</h2><InfoHint label="how results are calculated">Opening + Capital added + Revaluation + Depreciation &amp; write-downs + Disposals &amp; other = Closing, summed from the classified Asset Ledger entries. Total = Close − Open − Capital Added + Net Proceeds{showOperating ? " + Operating Result" : ""}, from linked transactions. Yield and Simple Total Return divide by Open + Capital Added, are non-annualized and non-time-weighted, and show N/A unless that base is positive.</InfoHint></div>
+          <div className="flex items-center justify-between gap-2 border-b px-4 py-2.5"><div className="flex items-center gap-1"><h2 className="text-sm font-semibold">Performance breakdown</h2><InfoHint label="how results are calculated">Opening + Capital added + Revaluation + Depreciation &amp; write-downs + Disposals &amp; other = Closing, summed from the classified Asset Ledger entries. Total = Close − Open − Capital Added + Net Proceeds{showOperating ? " + Operating Result" : ""}, from linked transactions. Yield and Simple Total Return divide by Open + Capital Added, are non-annualized and non-time-weighted, and show N/A unless that base is positive.{financed ? " Loan interest is each linked loan's interest as Loans calculates it, times the share allocated to this asset in each period; the after-interest rows subtract it from the total result and the simple return." : ""}</InfoHint></div>
             <div className="flex items-center gap-1.5"><Button size="xs" variant="outline" onClick={() => onBook()}>Asset Ledger<ArrowRight className="size-3" aria-hidden /></Button>
             <Popover open={pickerOpen} onOpenChange={setPickerOpen}><PopoverTrigger render={<Button size="xs" variant="outline">Custom period</Button>} />
               <PopoverContent align="end" className="w-72 p-3"><div className="grid gap-2 text-xs"><label className="grid gap-1">From<DateInput size="sm" aria-label="Custom period from" value={draft.from} onValueChange={(from) => setDraft((d) => ({ ...d, from }))} /></label>
@@ -143,6 +171,7 @@ export function AssetOverview({ asset, date, valueMinor, reading, reportFor, fir
               {showOperating && <Row label="Operating yield" values={pct((p) => p.operatingYield)} />}
               <Row label="Simple total return" values={pct((p) => p.simpleReturn)} />
               <Row label="Annualized return (IRR)" values={pct((p) => p.irr)} />
+              {financed && <InterestRows assetId={asset.id} links={debtLinks} results={results} interestToDate={interestToDate} queryScope={queryScope} figure={figure} />}
             </tbody></table>
         </section>
       </div>

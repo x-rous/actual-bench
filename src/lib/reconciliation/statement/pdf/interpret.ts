@@ -1,5 +1,5 @@
 import { cellBelongsToColumn, columnAppliesToPage, columnBoundsForPage, rowValuesForColumn } from "./columns";
-import { CURRENCY_CANDIDATE, dateCandidates, formatExactDecimal, looksLikeMoney, moneyCandidates, parseExactDecimal, printedSignOf } from "./candidates";
+import { dateCandidates, printedCurrencyOf, formatExactDecimal, inferDocumentNumberFormat, looksLikeDate, looksLikeMoney, moneyCandidates, parseExactDecimal, printedSignOf } from "./candidates";
 import { parsePdfDateCandidate, type PdfDateCandidateResult } from "./dates";
 import { diagnostic } from "./diagnostics";
 import type {
@@ -74,11 +74,17 @@ export function interpretPdfBlocks(
   guidance: PdfParserGuidance,
   dateFormatsByRole: DateFormatsByRole = {}
 ): PdfInterpretResult {
+  const index = createPdfPageIndex(pages);
+  // One decimal convention per statement: an unambiguous amount elsewhere in
+  // the document settles `1.234`, rather than every such value going to review.
+  if (guidance.numberFormat === "auto") {
+    const inferred = inferDocumentNumberFormat(blockMoneyValues(blocks, schema, index));
+    if (inferred !== "auto") guidance = { ...guidance, numberFormat: inferred };
+  }
   const accountTypeConfirmed = guidance.accountType !== "auto";
   const accountType = accountTypeConfirmed
     ? guidance.accountType as PdfAccountType
     : detectAccountType(pages, guidance.regions);
-  const index = createPdfPageIndex(pages);
   const balanceBehavior = detectBalanceBehavior(pages, blocks, schema, index);
   const balanceCheckpoints = detectBalanceCheckpoints(pages, schema, guidance);
   // A single amount column that marks only its credits has told us what an
@@ -773,7 +779,7 @@ function fallbackDescription(text: string) {
 }
 
 function currencyFrom(value: string) {
-  const match = value.match(CURRENCY_CANDIDATE)?.[0]?.toUpperCase();
+  const match = printedCurrencyOf(value);
   return match && /^[A-Z]{3}$/.test(match) ? match : null;
 }
 
@@ -942,4 +948,26 @@ function balanceGroupFor(accountType: PdfAccountType) {
   if (LIABILITY_ACCOUNT_TYPES.includes(accountType)) return "liability";
   if (DEPOSIT_ACCOUNT_TYPES.includes(accountType)) return "deposit";
   return "other";
+}
+
+/** Every money-looking value in the statement's transaction rows, dates left out. */
+const MONEY_ROLES: PdfColumnRole[] = ["amount", "debit", "credit", "balance", "original-amount", "fee", "vat"];
+
+/**
+ * Money-shaped values for number-format inference. With a column map, only
+ * cells in mapped money columns count, date-shaped ones included (`12.30` in
+ * an amount column is an amount). Without one, every cell that is not
+ * date-shaped counts.
+ */
+function blockMoneyValues(blocks: PdfTransactionBlock[], schema: PdfTableSchema | null, index: PdfPageIndex): string[] {
+  const columns = schema?.columns ?? [];
+  return blocks.filter((block) => !block.excluded).flatMap((block) => block.rowIds.flatMap((rowId) => {
+    const cells = index.rowsById.get(rowId)?.cells ?? [];
+    const moneyCells = new Set(MONEY_ROLES.flatMap((role) => cellsForRoleFromCells(cells, columns, role, index)));
+    return cells
+      // With a column map, only mapped money cells are evidence: an ignored
+      // column (an exchange rate, say) must not decide the convention.
+      .filter((cell) => (columns.length ? moneyCells.has(cell) : !looksLikeDate(cell.text)))
+      .flatMap((cell) => moneyCandidates(cell.text));
+  }));
 }

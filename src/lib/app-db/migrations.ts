@@ -70,6 +70,7 @@ import {
   CASH_BUFFER_SCENARIOS_TABLE_SQL,
   CASH_BUFFER_SETTINGS_TABLE_SQL,
   CASHFLOW_PLANS_TABLE_SQL,
+  RECONCILIATION_TRANSFORMS_TABLE_SQL,
   CREDIT_CARD_INDEX_SQL,
   CREDIT_CARD_TABLES_SQL,
   CREDIT_CARD_TRIGGER_SQL,
@@ -78,7 +79,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 66;
+export const LATEST_SCHEMA_VERSION = 67;
 
 type Migration = {
   version: number;
@@ -719,6 +720,7 @@ const MIGRATIONS: readonly Migration[] = [
   { version: 65, apply: applyAccountFlags },
   // Cashflow Planning: one JSON document per plan and budget. Additive; no existing table is touched.
   { version: 66, statements: [CASHFLOW_PLANS_TABLE_SQL] },
+  { version: 67, statements: [RECONCILIATION_TRANSFORMS_TABLE_SQL] },
 ];
 
 function applyAccountFlags(db: SqliteDatabase): void {

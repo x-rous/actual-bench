@@ -63,7 +63,8 @@ export function prepareAction(context: ActionContext, edit: BookEdit): PreparedA
 export class UncertainAssetWrite extends Error {
   constructor() { super("Actual write outcome needs inspection. Refresh and inspect the account before starting another action; do not repeat this create."); }
 }
-export type ActionResult = { transactionId: string | null; deleted: boolean; noop: boolean };
+export type ActionResult = { transactionId: string | null; deleted: boolean; noop: boolean;
+  /** The written row as the confirming read returned it (absent for a delete or a no-op). */ row?: SyncSourceTransaction };
 /** Reread immediately before a single write; no parallel mutations, retries or cross-client atomicity promise. */
 export async function executeAction(prepared: PreparedAction, fresh: () => Promise<ActionContext>): Promise<ActionResult> {
   const context = await fresh();
@@ -99,7 +100,7 @@ export async function executeAction(prepared: PreparedAction, fresh: () => Promi
       const amount = edit.kind === "set-value" ? prepared.deltaMinor : edit.amountMinor;
       // Actual may normalize blank Notes to null; nonempty Notes still require an exact match.
       if (row && row.accountId === snapshot.accountId && row.date === edit.date && row.amount === amount && (row.notes?.trim() ? row.notes : null) === (notes.trim() ? notes : null) && row.payeeId === edit.payeeId && !protectedReason(row, snapshot.transferKnown)) {
-        return { transactionId: row.id, deleted: false, noop: false };
+        return { transactionId: row.id, deleted: false, noop: false, row };
       }
       if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 200));
     }

@@ -672,6 +672,21 @@ describe("PDF parser v2 financial interpretation and validation", () => {
     expect(result.transactions[0].vat[0]).toMatchObject({ coefficient: "25", currency: "USD" });
   });
 
+  it("lets only mapped money columns decide the decimal convention", () => {
+    const columns = [
+      { id: "date", pageNumber: null, xStart: 15, xEnd: 95, role: "transaction-date" as const, header: null, examples: [], confidence: 1 },
+      { id: "description", pageNumber: null, xStart: 100, xEnd: 300, role: "description" as const, header: null, examples: [], confidence: 1 },
+      { id: "skipped", pageNumber: null, xStart: 305, xEnd: 440, role: "ignore" as const, header: null, examples: [], confidence: 1 },
+      { id: "debit", pageNumber: null, xStart: 600, xEnd: 700, role: "debit" as const, header: null, examples: [], confidence: 1 },
+    ];
+    const result = parsePdfStatementPages([page([
+      { y: 740, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 620, text: "Debit" }] },
+      { y: 700, cells: [{ x: 20, text: "08/15/2026" }, { x: 120, text: "ANON" }, { x: 320, text: "9999.9999" }, { x: 620, text: "1.000" }] },
+    ])], { guidance: guidance({ columns }) });
+    // `1.000` is one thousand or one: the ignored column's dot decimal must not settle it.
+    expect(result.transactions[0].confidence.accountAmount.reasons).toContain("AMOUNT_FORMAT_AMBIGUOUS");
+  });
+
   it("retains three-decimal money internally and rejects lossy downstream conversion", () => {
     const result = parsePdfStatementPages([page([
       { y: 740, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 480, text: "Debit" }] },

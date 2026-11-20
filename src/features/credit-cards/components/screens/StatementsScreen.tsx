@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ListChecks, MoreHorizontal, Plus } from "lucide-react";
+import { Download, ListChecks, MoreHorizontal, Plus } from "lucide-react";
+import { downloadCsv } from "@/lib/csv";
+import { exportFileName, statementsCsv } from "../../lib/exports";
 import { Button } from "@/components/ui/button";
 import { PillGroup } from "@/components/ui/pill-group";
 import { SearchInput } from "@/components/ui/search-input";
@@ -249,6 +251,10 @@ export function StatementsScreen(props: Props) {
         {" · "}Fees <span className="font-medium text-foreground tabular-nums">{money(fees?.totalMinor)}</span> (tracked)
         {suggested > 0 && ` · ${plural(suggested, "suggestion")} not counted`}
       </p>
+      <Button size="sm" variant="outline" disabled={!visible.length} title="Export the statements shown (CSV)"
+        onClick={() => downloadCsv(exportFileName(name, "statements", today), statementsCsv(visible), { includeBom: true })}>
+        <Download className="size-3.5" aria-hidden />Export
+      </Button>
       <Button size="sm" disabled={!eligible} onClick={() => onEnter()}><Plus className="size-3.5" aria-hidden />Enter statement</Button>
     </div>
     <div className="flex min-h-0 flex-1">

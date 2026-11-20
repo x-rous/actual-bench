@@ -59,8 +59,19 @@ it("accepts manual unique hashtags and stores no hashtag for dedicated accounts"
   const dedicated = saveAsset(db, { ...payload, asset: { ...payload.asset, assetTag: null } }).assets[0];
   expect(dedicated.assetTag).toBeNull();
   expect(() => saveAsset(db, { ...payload, asset: { ...payload.asset, id: "other", assetTag: null } })).toThrow(/Shared/);
-  const shared = saveAsset(db, { ...payload, asset: { ...payload.asset, id: "other", assetTag: "#asset_family_car" } }).assets.find((a) => a.id === "other");
+  // The dedicated asset's rows carry no hashtag: sharing its account must assign them to it in the same save.
+  expect(() => saveAsset(db, { ...payload, asset: { ...payload.asset, id: "other", assetTag: "#asset_family_car" } })).toThrow(/must be assigned/);
+  saveBookMetadata(db, { budgetSyncId: "budget", changes: [{ actualTransactionId: "typed", actualAccountId: "vehicles", assetId: null, classification: "revaluation", revision: 0 }] });
+  // An entry moved in from another account still has that account's details: adopting would skip it, so the save stops.
+  saveBookMetadata(db, { budgetSyncId: "budget", changes: [{ actualTransactionId: "moved", actualAccountId: "vehicles", assetId: null, classification: null, revision: 0 }] });
+  db.prepare("UPDATE asset_transaction_metadata SET actual_account_id='former' WHERE actual_transaction_id='moved'").run();
+  expect(() => saveAsset(db, { ...payload, asset: { ...payload.asset, id: "other", assetTag: "#asset_family_car" }, adopt: { assetId: dedicated.id, transactionIds: ["typed", "moved"] } })).toThrow(/another account/);
+  expect(readRegistry(db, "budget").assets.map((a) => a.id)).toEqual([dedicated.id]);
+  db.prepare("DELETE FROM asset_transaction_metadata WHERE actual_transaction_id='moved'").run();
+  const next = saveAsset(db, { ...payload, asset: { ...payload.asset, id: "other", assetTag: "#asset_family_car" }, adopt: { assetId: dedicated.id, transactionIds: ["typed", "opening"] } });
+  const shared = next.assets.find((a) => a.id === "other");
   expect(shared?.assetTag).toBe("#asset_family_car");
+  expect(next.metadata.map((m) => [m.actualTransactionId, m.assetId, m.classification])).toEqual([["opening", dedicated.id, null], ["typed", dedicated.id, "revaluation"]]);
   expect(() => saveAsset(db, { ...payload, asset: { ...payload.asset, id: "duplicate", assetTag: "#asset_family_car" } })).toThrow(/already used/);
 });
 

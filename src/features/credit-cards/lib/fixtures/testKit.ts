@@ -118,7 +118,7 @@ export const CARD_INPUT: CardInput = {
 
 /** Empties the app's shared store and backs it with memory, so component tests never call the API. */
 export function resetCreditCardStore() {
-  creditCardStore.setState({ workspaces: {}, status: {}, notices: {}, undoHistory: {}, persistence: memoryPersistence() });
+  creditCardStore.setState({ workspaces: {}, status: {}, notices: {}, noticeTones: {}, noticeIds: {}, undoHistory: {}, persistence: memoryPersistence() });
 }
 
 type TestStore = Pick<ReturnType<typeof createCreditCardStore>, "getState">;

@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { selectActiveInstance, useConnectionStore } from "@/store/connection";
-import { httpPersistence } from "@/features/credit-cards/lib/store/persistence";
+import { httpPersistence, loadedWorkspace } from "@/features/credit-cards/lib/store/persistence";
 import type { CardCategories } from "@/lib/financial-insights/debt";
 
 export type CardCostSettings =
@@ -23,7 +23,7 @@ export function useCardCosts(enabled: boolean): CardCostSettings {
     enabled: enabled && !!connection?.budgetSyncId,
     refetchOnMount: "always",
     retry: false,
-    queryFn: () => httpPersistence.read(connection!.budgetSyncId),
+    queryFn: async () => loadedWorkspace(await httpPersistence.read(connection!.budgetSyncId)).workspace,
   });
   return useMemo((): CardCostSettings => {
     if (query.isError) return { state: "unavailable" };

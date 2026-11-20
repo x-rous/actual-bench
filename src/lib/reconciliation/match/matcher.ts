@@ -19,9 +19,15 @@ import type {
   ScoredCandidate,
   StatementRow,
 } from "../types";
-import { amountDateSlice, buildActualIndex, dateSlice, type ActualIndex } from "./actualIndex";
+import {
+  amountDateSlice,
+  buildActualIndex,
+  dateSlice,
+  type ActualIndex,
+} from "./actualIndex";
 import { assignMatches } from "./assign";
 import {
+  dayDelta,
   reviewDateWindow,
   scoreAmountMismatchCandidate,
   scoreCandidate,
@@ -48,10 +54,18 @@ export function match(input: MatchInput): MatchGraph {
       })),
     }] : [];
   });
+  const collisionRows = new Set(identityReviews.map((entry) => entry.statementRowId));
+  const collisionTransactions = new Set(identityReviews.flatMap((entry) => entry.candidates.map((c) => c.actualTransactionId)));
+  const identity = pinByImportedId(
+    statementRows.filter((row) => !collisionRows.has(row.id)),
+    index,
+    config,
+    collisionTransactions
+  );
+  identityReviews.push(...identity.reviews);
   const identityRows = new Set(identityReviews.map((entry) => entry.statementRowId));
   const identityTransactions = new Set(identityReviews.flatMap((entry) => entry.candidates.map((c) => c.actualTransactionId)));
-  const pinned = pinByImportedId(statementRows.filter((row) => !identityRows.has(row.id)), index)
-    .filter((pin) => !identityTransactions.has(pin.actualTransactionId));
+  const pinned = identity.pinned;
   const pinnedRows = new Set(pinned.map((p) => p.statementRowId));
   const pinnedTransactions = new Set(pinned.map((p) => p.actualTransactionId));
 
@@ -375,30 +389,88 @@ function push(map: Map<string, ScoredCandidate[]>, key: string, value: ScoredCan
  * (RD-072 §2.6) — but if the row in Actual arrived through a bank import that
  * did store one, that is identity evidence and worth using.
  */
-function pinByImportedId(rows: StatementRow[], index: ActualIndex): MatchOutcome[] {
+/**
+ * How far apart a reference-column identity hit may be dated and still pin.
+ *
+ * Wider than the match tolerance on purpose: an identity hit is not a fuzzy
+ * match, and a bank reference posting a week or two after the authorisation is
+ * ordinary. A recycled short code, the case this guards against, is usually
+ * months away.
+ */
+const REFERENCE_PIN_MAX_DAYS = 31;
+
+function pinByImportedId(
+  rows: StatementRow[],
+  index: ActualIndex,
+  config: MatchConfig,
+  excluded: ReadonlySet<string>
+): { pinned: MatchOutcome[]; reviews: AmbiguousMatch[] } {
   const pinned: MatchOutcome[] = [];
-  const taken = new Set<string>();
+  const reviews: AmbiguousMatch[] = [];
+  const taken = new Set<string>(excluded);
 
   for (const row of rows) {
     // Tried in order of authority, not exclusively: an OFX `FITID` that Actual
     // has never seen must not stop the row's own reference — which the account
     // may well carry — from being looked up.
-    const transactionId = [row.externalId, row.bankReference]
-      .map((identifier) => (identifier ? index.byImportedId.get(identifier) : undefined))
-      .find((found) => found !== undefined);
+    const byExternalId = row.externalId ? index.byImportedId.get(row.externalId) : undefined;
+    const byReference = row.bankReference ? index.byImportedId.get(row.bankReference) : undefined;
+    const transactionId = byExternalId ?? byReference;
     if (!transactionId || taken.has(transactionId)) continue;
-    taken.add(transactionId);
-    pinned.push({
+    const transaction = index.byId.get(transactionId);
+    if (!transaction) continue;
+
+    const candidate: ScoredCandidate = {
       statementRowId: row.id,
       actualTransactionId: transactionId,
       score: 100,
       label: "exact",
       tier: "reference-imported-id",
       reasons: [{ kind: "reference", where: "importedId" }],
-      evidenceSource: "bench",
-    });
+    };
+
+    /*
+     * A bank's own transaction id (OFX `FITID`) is identity. A CSV reference
+     * column is "whatever the bank chose to put there" — cheque numbers, branch
+     * codes, a recycled short code — and can equal an unrelated `imported_id`
+     * a bank sync stored. So a reference hit has to agree with the row on the
+     * direction of the money and on the month before it counts, and one whose
+     * amount differs is shown for review rather than pinned as exact.
+     */
+    if (byExternalId === undefined) {
+      const sameDirection = Math.sign(transaction.amount) === Math.sign(row.amount);
+      const inWindow =
+        Math.abs(dayDelta(row.postedDate, transaction.date)) <=
+        Math.max(config.dateToleranceDays, REFERENCE_PIN_MAX_DAYS);
+      if (!sameDirection || !inWindow) continue;
+      if (transaction.amount !== row.amount) {
+        taken.add(transactionId);
+        reviews.push({
+          statementRowId: row.id,
+          why: "amount-mismatch",
+          candidates: [{
+            ...candidate,
+            label: "low",
+            reasons: [
+              ...candidate.reasons,
+              {
+                kind: "amount-mismatch",
+                statementAmount: row.amount,
+                actualAmount: transaction.amount,
+                difference: transaction.amount - row.amount,
+              },
+              { kind: "date", deltaDays: dayDelta(row.postedDate, transaction.date) },
+            ],
+          }],
+        });
+        continue;
+      }
+    }
+
+    taken.add(transactionId);
+    pinned.push({ ...candidate, evidenceSource: "bench" });
   }
-  return pinned;
+  return { pinned, reviews };
 }
 
 /**

@@ -202,6 +202,13 @@ function middleState(
         tone: "text-amber-600 dark:text-amber-400",
         icon: TriangleAlert,
       };
+    case REASON.newInActual:
+      return {
+        label: "Needs review",
+        detail: several ?? "Appeared in Actual since this was matched",
+        tone: "text-amber-600 dark:text-amber-400",
+        icon: TriangleAlert,
+      };
     case REASON.likelyDuplicate:
       return {
         label: "Likely duplicate",

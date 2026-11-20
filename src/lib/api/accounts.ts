@@ -61,13 +61,21 @@ export async function createAccount(
   connection: ConnectionInstance,
   input: Omit<Account, "id">
 ): Promise<Account> {
-  // The API expects the payload wrapped in an "account" key
-  const response = await apiRequest<ApiSingleResponse<ApiAccount>>(
+  // The API expects the payload wrapped in an "account" key. actual-http-api answers with
+  // the new account's id as a plain string (like payees and account groups); a full
+  // account object is accepted too. Without the id, callers cannot save the account's
+  // class or find the account they just created.
+  const response = await apiRequest<ApiSingleResponse<ApiAccount | string>>(
     connection,
     "/accounts",
     { method: "POST", body: { account: denormalizeAccountCreate(input) } }
   );
-  return normalizeAccount(response.data);
+  const data = response.data;
+  if (typeof data === "string" && data) {
+    return { id: data, name: input.name, offBudget: input.offBudget, closed: input.closed ?? false, groupId: null };
+  }
+  if (data && typeof data === "object" && data.id) return normalizeAccount(data);
+  throw new Error("The account was created, but the server did not return its id. Refresh Accounts before retrying.");
 }
 
 export async function updateAccount(

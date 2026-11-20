@@ -68,7 +68,7 @@ describe("account flag repository", () => {
   it("exists on a new database at the latest version", () => {
     const db = tempDb();
     expect(runMigrations(db).schemaVersion).toBe(LATEST_SCHEMA_VERSION);
-    expect(LATEST_SCHEMA_VERSION).toBe(66);
+    expect(LATEST_SCHEMA_VERSION).toBe(67);
     expect(db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='account_flags'").all()).toHaveLength(1);
   });
 });

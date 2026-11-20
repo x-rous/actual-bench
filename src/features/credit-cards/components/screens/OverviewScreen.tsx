@@ -1,5 +1,5 @@
 "use client";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { CircleDashed, TriangleAlert, CircleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Statement, Workspace } from "../../lib/models";
@@ -10,6 +10,7 @@ import { sumMinor } from "../../lib/statements";
 import { BalanceHistory } from "../BalanceHistory";
 import type { CardEntry } from "../cardEntry";
 import { cardAttention } from "../cardAttention";
+import { autoPayLine } from "../../lib/feeRenewal";
 import { StatusBadge } from "../primitives/StatusBadge";
 import { money, plural, shortDate } from "../primitives/format";
 
@@ -23,6 +24,8 @@ type Props = {
   onActivityCurrent: () => void;
   onPlans: () => void;
   onPayment: (id: string) => void;
+  /** Opens the card's settings (annual fee and auto-pay live there). */
+  onSettings?: () => void;
 };
 
 type Attention = { key: string; icon: "warning" | "danger" | "estimate"; text: ReactNode; action: string; run: () => void; rank: number };
@@ -49,8 +52,9 @@ const ICONS = { warning: TriangleAlert, danger: CircleAlert, estimate: CircleDas
 const ICON_TONES = { warning: "size-4 text-amber-700", danger: "size-4 text-red-700", estimate: "size-4 text-muted-foreground" };
 
 /** Overview (§9.6): what needs you, the next payment, Total owed, the balance chart and plans. */
-export function OverviewScreen({ entry, workspace, onStatement, onEnter, onReview, onActivityCurrent, onPlans, onPayment }: Props) {
+export function OverviewScreen({ entry, workspace, onStatement, onEnter, onReview, onActivityCurrent, onPlans, onPayment, onSettings }: Props) {
   const { card, view, snapshot, balance, owed, today, limitMinor } = entry;
+  const [showAll, setShowAll] = useState(false);
   const bank = view.bank;
   const payment = view.nextPayment;
   const row = view.rows.find((item) => item.statement.id === bank?.id);
@@ -63,7 +67,8 @@ export function OverviewScreen({ entry, workspace, onStatement, onEnter, onRevie
         : `Activity starts on ${shortDate(snapshot.from, today)}. Refresh to read the full period.`
     : null;
   const plans = workspace.plans.filter((plan) => plan.cardId === card.id && plan.status === "active");
-  const ACTIONS = { statement: "Open", review: "Review", enter: "Enter", plans: "Plans" } as const;
+  const autoPay = autoPayLine(card);
+  const ACTIONS = { statement: "Open", review: "Review", enter: "Enter", plans: "Plans", settings: "Settings" } as const;
   const attention: Attention[] = cardAttention(entry, workspace).map((item) => ({
     ...item,
     action: item.key === "found" ? "Review" : item.target.kind === "plans" && (item.key === "unassigned" || item.key === "ambiguous") ? "Show"
@@ -73,6 +78,7 @@ export function OverviewScreen({ entry, workspace, onStatement, onEnter, onRevie
       if (target.kind === "statement") onStatement(target.statement.id);
       else if (target.kind === "review") onReview(target.statement);
       else if (target.kind === "enter") onEnter();
+      else if (target.kind === "settings") onSettings?.();
       else onPlans();
     },
   }));
@@ -98,7 +104,7 @@ export function OverviewScreen({ entry, workspace, onStatement, onEnter, onRevie
         <h2 className="rounded-t-lg border-b border-amber-500/30 bg-amber-50 px-4 py-2.5 text-sm font-semibold dark:bg-amber-950/30">
           Needs your attention ({attention.length})
         </h2>
-        <ul className="divide-y px-4">{attention.slice(0, 5).map((item) => {
+        <ul className="divide-y px-4">{(showAll ? attention : attention.slice(0, 5)).map((item) => {
           const Icon = ICONS[item.icon];
           return <li key={item.key} className="flex items-center gap-3 py-2 text-sm">
             <Icon className={ICON_TONES[item.icon]} aria-hidden />
@@ -106,6 +112,11 @@ export function OverviewScreen({ entry, workspace, onStatement, onEnter, onRevie
             <Button size="xs" variant="outline" onClick={item.run}>{item.action}</Button>
           </li>;
         })}</ul>
+        {attention.length > 5 && <div className="border-t px-4 py-1.5">
+          <Button size="xs" variant="ghost" aria-expanded={showAll} onClick={() => setShowAll(!showAll)}>
+            {showAll ? "Show fewer" : `Show ${attention.length - 5} more`}
+          </Button>
+        </div>}
       </section>}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -132,7 +143,8 @@ export function OverviewScreen({ entry, workspace, onStatement, onEnter, onRevie
               {marker > 0 && <span aria-hidden className="absolute -top-1 h-4 w-0.5 bg-foreground" style={{ left: `min(calc(100% - 2px), ${marker}%)` }} />}
             </div>
             <p className="text-xs text-muted-foreground">{money(paid)} paid of {money(due)} amount due{minimumText ? ` · ${minimumText}` : ""}</p>
-            <p className="text-sm">Due {shortDate(bank.dueDate, today)}{payment?.pendingMinor ? ` · ${money(payment.pendingMinor)} pending` : ""}</p>
+            <p className="text-sm">Due {shortDate(bank.dueDate, today)}{payment?.pendingMinor ? ` · ${money(payment.pendingMinor)} pending` : ""}
+              {autoPay && !row?.status.paid ? <span className="text-muted-foreground"> · {autoPay}</span> : null}</p>
             <Button variant="link" size="xs" className="h-auto p-0" onClick={() => onStatement(bank.id)}>Open statement →</Button>
           </div> : <div className="space-y-2 text-sm text-muted-foreground">
             <p>Enter a bank statement to track what to pay.</p>
