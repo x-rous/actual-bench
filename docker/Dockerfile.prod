@@ -28,7 +28,23 @@ WORKDIR /app
 # The cost is that a rebuild of the same tag can pick up different package
 # versions. That is the right trade for the layer holding the TLS library: a
 # reproducible build of a known-vulnerable image is not worth much.
-RUN apk upgrade --no-cache
+#
+# APK_REFRESH exists only to change this layer's cache key. The release and
+# edge workflows build with the GitHub Actions layer cache, and this RUN line
+# never changes, so BuildKit reused the cached result and the upgrade never ran
+# again: openssl 3.5.9-r0 shipped after 3.5.9-r1 was in the repositories. The
+# workflows pass the run id, so every published image re-runs the upgrade.
+ARG APK_REFRESH=
+#
+# musl comes from edge until Alpine 3.24 ships the fix (CVE-2026-107891 is
+# fixed in 1.2.6-r6; 3.24 still has 1.2.6-r3). musl has no dependencies and a
+# stable ABI, so taking only musl and musl-utils from edge is safe. Drop the
+# edge line once 3.24/main carries 1.2.6-r6 or later.
+RUN echo "apk refresh: ${APK_REFRESH:-local}" \
+ && apk upgrade --no-cache \
+ && apk add --no-cache --upgrade \
+      --repository=https://dl-cdn.alpinelinux.org/alpine/edge/main \
+      'musl>=1.2.6-r6' 'musl-utils>=1.2.6-r6'
 
 # The runtime has no package manager, because it never uses one: the command is
 # `node scripts/start.mjs`, which spawns the standalone `node server.js`. npm

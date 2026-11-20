@@ -111,6 +111,8 @@ jobs:
           outputs: type=image,"name=${{ env.IMAGE_GHCR }},${{ env.IMAGE_DOCKERHUB }}",push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=${{ matrix.platform }}
           cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
+          # Re-runs the runtime apk upgrade (see docker/Dockerfile.prod).
+          build-args: APK_REFRESH=${{ github.run_id }}
           provenance: true
           sbom: true
 
