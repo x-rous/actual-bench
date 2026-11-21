@@ -456,8 +456,11 @@ export interface ActualBenchTransport {
    * Optional, like `runBankSync`: the capability report's `canExportBudget`
    * says whether a transport has it, so a backup never discovers mid-run that
    * it cannot read the budget.
+   *
+   * `signal` stops an HTTP export in flight (a backup's deadline or cancel).
+   * A Direct export runs in-process and finishes once started.
    */
-  exportBudget?(): Promise<Uint8Array>;
+  exportBudget?(options?: { signal?: AbortSignal }): Promise<Uint8Array>;
   /** Read source transactions with split lines inline and names resolved. */
   listTransactionsForSync(
     input: ListTransactionsForSyncInput

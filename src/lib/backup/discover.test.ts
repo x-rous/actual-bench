@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
 import {
+  deleteBackupArtifact,
   createBackupDestination,
   createBackupPolicy,
   getBackupArtifact,
@@ -124,6 +125,34 @@ describe("finding backups in a destination", () => {
     expect(first.alreadyKnown).toBe(1);
     expect(second.alreadyKnown).toBe(1);
     expect(listBackupArtifacts(db)).toHaveLength(1);
+  });
+
+  it("gives a found copy back to its rule only when the rule backs up that budget", async () => {
+    const original = await takeRealBackup();
+    deleteBackupArtifact(db, original.id);
+
+    // The rule's connection now points at another budget.
+    upsertSyncCredential(db, {
+      connectionFingerprint: "conn-1",
+      mode: "http-api",
+      baseUrl: "https://actual.example.com",
+      budgetSyncId: "budget-2",
+      label: "Business",
+      secret: { apiKey: "key", encryptionPassword: "" },
+    });
+    const elsewhere = await discoverBackups(db, destination());
+    expect(elsewhere).toMatchObject({ imported: 1, adopted: 0 });
+    expect(getBackupArtifact(db, original.id)?.policyId).toBeNull();
+  });
+
+  it("gives a found copy back to the rule that made it", async () => {
+    const original = await takeRealBackup();
+    deleteBackupArtifact(db, original.id);
+
+    const result = await discoverBackups(db, destination());
+
+    expect(result).toMatchObject({ imported: 1, adopted: 1 });
+    expect(getBackupArtifact(db, original.id)?.policyId).toBe(original.policyId);
   });
 
   it("refuses to list a backup whose file is gone, however good its manifest", async () => {

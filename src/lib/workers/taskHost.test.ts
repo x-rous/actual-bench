@@ -10,6 +10,7 @@ import { createAutomationRun } from "@/lib/app-db/automationRunRepository";
 import { __resetAutomationRegistryForTests, registerAutomationJobType } from "@/lib/automation/registry";
 import { __configureNodeHostForTests, __resetNodeHostForTests, getNodeRuntime } from "@/lib/actual/runtime/nodeHost";
 import { createTaskHost } from "./taskHost";
+import { backupTaskHandlers } from "@/lib/backup/workerTasks";
 import type { WorkerToParentMessage } from "./protocol";
 
 /**
@@ -249,5 +250,23 @@ describe("worker task host", () => {
     await taskHost.handle(null);
 
     expect(posted).toEqual([]);
+  });
+
+  it("runs the Backups page's tasks, so they never fall back to the web server's thread", async () => {
+    // Every backup task kind must reach a handler; an unregistered kind fails
+    // in production only, because tests run the in-thread path.
+    const { host: taskHost, posted } = host();
+
+    await taskHost.handle({
+      type: "task",
+      taskId: "t-scrub",
+      kind: "backup.scrub",
+      input: { destinationIds: [], newest: 3, deepest: 1 },
+    });
+
+    expect(posted).toEqual([{ type: "result", taskId: "t-scrub", output: [] }]);
+    for (const kind of ["backup.scrub", "backup.inspect", "backup.discover", "backup.run", "backup.safetyPoint"]) {
+      expect(Object.keys(backupTaskHandlers)).toContain(kind);
+    }
   });
 });

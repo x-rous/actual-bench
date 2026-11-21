@@ -92,12 +92,26 @@ function createDiagnosticDb(database: SqliteHandle): DiagnosticDb {
   };
 }
 
+/**
+ * Rows in a table, leaving out the ones Actual has deleted.
+ *
+ * Actual deletes by setting `tombstone = 1` and keeps the row, so a plain
+ * count reported deleted transactions and accounts as if they were there, and
+ * the "fewer than last time" check could never notice a real deletion.
+ */
+function liveClause(database: SqliteHandle, table: string, joiner: "WHERE" | "AND"): string {
+  const columns = database.prepare(`PRAGMA table_info(${quoteIdentifier(table)})`).all() as { name: string }[];
+  return columns.some((column) => column.name === "tombstone") ? ` ${joiner} COALESCE(tombstone, 0) = 0` : "";
+}
+
 function count(database: SqliteHandle, table: string): number | undefined {
   try {
-    const row = database.prepare(`SELECT COUNT(*) AS n FROM ${quoteIdentifier(table)}`).get() as
+    const columns = database.prepare(`PRAGMA table_info(${quoteIdentifier(table)})`).all() as { name: string }[];
+    const live = liveClause(database, table, "WHERE");
+    const row = database.prepare(`SELECT COUNT(*) AS n FROM ${quoteIdentifier(table)}${live}`).get() as
       | { n: number }
       | undefined;
-    return Number(row?.n ?? 0);
+    return columns.length === 0 ? undefined : Number(row?.n ?? 0);
   } catch {
     return undefined;
   }
@@ -109,13 +123,14 @@ function summarize(database: SqliteHandle): BackupContentSummary {
     transactions: count(database, "transactions"),
     payees: count(database, "payees"),
     categories: count(database, "categories"),
+    countBasis: "live",
   };
 
   try {
     // Actual stores dates as YYYYMMDD integers.
     const row = database
       .prepare(
-        "SELECT MIN(date) AS earliest, MAX(date) AS latest FROM transactions WHERE date IS NOT NULL"
+        `SELECT MIN(date) AS earliest, MAX(date) AS latest FROM transactions WHERE date IS NOT NULL${liveClause(database, "transactions", "AND")}`
       )
       .get() as { earliest: number | null; latest: number | null } | undefined;
     summary.earliestTransaction = formatActualDate(row?.earliest ?? null);

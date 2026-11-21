@@ -36,7 +36,7 @@ import { SetupTab } from "./SetupTab";
 import { BackupRuleDialog } from "./BackupRuleDialog";
 import { DestinationDialog } from "./DestinationDialog";
 import { RetentionPreviewDialog } from "./RetentionPreviewDialog";
-import { forgetPassphrase, type PolicyWithAutomation } from "../lib/backupsApi";
+import { deleteArtifact, forgetPassphrase, setPinned, type PolicyWithAutomation } from "../lib/backupsApi";
 import type { BackupDestination } from "@/lib/app-db/backupRepository";
 import type { PruneResult } from "@/lib/backup/prune";
 import { exportBrowserApiBudgetZip } from "@/lib/actual/browser/runtime";
@@ -91,6 +91,7 @@ export function BackupsView() {
   // Bench. Deleting a backup is not undoable and should not be one click away.
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [checked, setChecked] = useState<Set<string>>(() => new Set());
 
   // Filters persist, the way the entity pages persist theirs. The tab does not:
   // it is where you are looking right now, not a preference. Arriving at the
@@ -138,9 +139,11 @@ export function BackupsView() {
   const query = useQuery({
     queryKey: ["backups"],
     queryFn: fetchRecoveryCenter,
-    // Runs finish while the page is open — a scheduled backup at 2am, a scrub, a
-    // manual run in another tab.
-    refetchInterval: 30_000,
+    // Quick while a backup is running, so its result shows up; otherwise
+    // every couple of minutes. The whole inventory comes back each time, and
+    // nothing changes between scheduled runs. Refresh is always one click.
+    refetchInterval: (current) =>
+      current.state.data?.policies.some((policy) => policy.automation?.running) ? 10_000 : 120_000,
   });
 
   const connections = useConnectionStore((state) => state.instances);
@@ -217,8 +220,15 @@ export function BackupsView() {
     mutationFn: () => discoverBackups(),
     onSuccess: (results) => {
       const imported = results.reduce((total, entry) => total + entry.imported, 0);
+      const adopted = results.reduce((total, entry) => total + (entry.adopted ?? 0), 0);
       const notes = results.flatMap((entry) => entry.notes);
-      if (imported > 0) toast.success(`Found ${imported} backup(s) not in the inventory`);
+      if (imported > 0) {
+        toast.success(
+          `Found ${imported} backup(s) not in the inventory${
+            adopted > 0 ? `; ${adopted} went back to the rule that made them` : ""
+          }`
+        );
+      }
       else toast.info(notes[0] ?? "Nothing new - the inventory already matches what is stored");
       invalidate();
     },
@@ -270,6 +280,34 @@ export function BackupsView() {
           ? `Passphrase forgotten. ${strandedBackups} encrypted backup(s) can now only be opened with your own copy of it.`
           : "Passphrase forgotten"
       );
+      invalidate();
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  /*
+   * Bulk actions over ticked copies, one request each so a failure names the
+   * copy it belongs to and the others still go through.
+   */
+  const bulk = useMutation({
+    mutationFn: async (input: { ids: string[]; action: "pin" | "unpin" | "delete" }) => {
+      const failures: { id: string; message: string }[] = [];
+      for (const id of input.ids) {
+        try {
+          if (input.action === "delete") await deleteArtifact(id);
+          else await setPinned(id, input.action === "pin");
+        } catch (error) {
+          failures.push({ id, message: error instanceof Error ? error.message : String(error) });
+        }
+      }
+      return { done: input.ids.length - failures.length, failures, action: input.action };
+    },
+    onSuccess: ({ done, failures, action }) => {
+      const verb = action === "delete" ? "Deleted" : action === "pin" ? "Pinned" : "Unpinned";
+      if (failures.length === 0) toast.success(`${verb} ${done} backup(s)`);
+      else toast.warning(`${verb} ${done}; ${failures.length} could not be changed: ${failures[0].message}`);
+      // The ones that failed stay ticked, so they can be tried again.
+      setChecked(new Set(failures.map((failure) => failure.id)));
       invalidate();
     },
     onError: (error: Error) => toast.error(error.message),
@@ -487,6 +525,19 @@ export function BackupsView() {
               }
               onOpenArtifact={setSelectedArtifactId}
               onGoToSetup={() => setTab("setup")}
+              checked={checked}
+              onCheckedChange={setChecked}
+              bulkPending={bulk.isPending}
+              onBulkPin={(ids, pinned) => bulk.mutate({ ids, action: pinned ? "pin" : "unpin" })}
+              onBulkDelete={(ids) =>
+                setConfirm({
+                  title: `Delete ${ids.length} backup${ids.length === 1 ? "" : "s"}?`,
+                  message:
+                    "Each is removed from every destination holding it, pinned copies included. This cannot be undone. A copy Bench cannot delete everywhere is kept, and named afterwards.",
+                  destructiveLabel: `Delete ${ids.length}`,
+                  onConfirm: () => bulk.mutate({ ids, action: "delete" }),
+                })
+              }
             />
           )}
         </TabsContent>
@@ -509,6 +560,10 @@ export function BackupsView() {
           sources={data.sources}
           vault={data.vault}
           existing={ruleDialog.existing}
+          sourceLocked={
+            ruleDialog.existing !== null &&
+            artifacts.some((artifact) => artifact.policyId === ruleDialog.existing?.id && artifact.kind === "budget")
+          }
           onSaved={invalidate}
         />
       )}
@@ -536,6 +591,7 @@ export function BackupsView() {
       {selected && (
         <BackupDetail
           artifact={selected}
+          policies={data?.policies ?? []}
           onClose={() => setSelectedArtifactId(null)}
           onChanged={invalidate}
         />

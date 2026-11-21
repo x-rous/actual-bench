@@ -62,11 +62,21 @@ export const backupJobType: AutomationJobType<BackupJobConfig, BackupJobResult> 
       throw new Error("This backup rule no longer exists.");
     }
 
+    // "Back up now" starts this job with `{ manual: true }`. Such a copy is
+    // one somebody asked for, so it is kept like any other copy taken by hand
+    // (retention never expires those) and it does not trigger a prune.
+    const manual = ctx.input?.data.manual === true;
+    const takenBefore = typeof ctx.input?.data.takenBefore === "string" ? ctx.input.data.takenBefore : null;
+    const notes = typeof ctx.input?.data.notes === "string" ? ctx.input.data.notes : null;
+
     ctx.logger.info(`Backing up "${policy.name}" to ${policy.destinationIds.length} destination(s)`);
     // Exporting and verifying only read; writing to a destination changes
     // something, so a run stopped from there on is reported as indeterminate.
     const result = await runBackup(db, policy, {
-      trigger: "scheduled",
+      trigger: manual ? "manual" : "scheduled",
+      takenBefore,
+      notes,
+      signal: ctx.signal,
       onBeforeStore: () => ctx.enterPhase("mutating"),
     });
 
@@ -89,10 +99,13 @@ export const backupJobType: AutomationJobType<BackupJobConfig, BackupJobResult> 
     // failed backup would delete an old copy to make room for one that does not
     // exist — precisely when the old copies matter most.
     let pruneResult: PruneResult | null = null;
-    if (result.stored) {
+    if (result.stored && !manual && !ctx.signal.aborted) {
+      // Every copy this rule has, not the newest few hundred: a capped list
+      // left the oldest copies outside retention for good.
       pruneResult = await prune(db, {
-        artifacts: listBackupArtifacts(db, { policyId: policy.id, limit: 500 }),
+        artifacts: listBackupArtifacts(db, { policyId: policy.id, limit: "all" }),
         retention: policy.retention,
+        signal: ctx.signal,
       });
       if (pruneResult.pruned.length > 0) {
         ctx.logger.info(`Retention removed ${pruneResult.pruned.length} older copy(ies).`);

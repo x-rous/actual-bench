@@ -59,6 +59,8 @@ type Props = {
   sources: BackupSource[];
   vault: VaultSummary;
   existing?: BackupPolicy | null;
+  /** The rule already holds copies of its budget, so its source is fixed. */
+  sourceLocked?: boolean;
   onSaved: () => void;
 };
 
@@ -69,6 +71,7 @@ export function BackupRuleDialog({
   sources,
   vault,
   existing,
+  sourceLocked = false,
   onSaved,
 }: Props) {
   const editing = Boolean(existing);
@@ -146,6 +149,7 @@ export function BackupRuleDialog({
   const [verificationLevel, setVerificationLevel] = useState(existing?.verificationLevel ?? "data");
   const [encrypt, setEncrypt] = useState(existing?.encryption === "passphrase");
   const [passphrase, setPassphrase] = useState("");
+  const [passphraseAgain, setPassphraseAgain] = useState("");
   const [scrubEnabled, setScrubEnabled] = useState(existing?.scrubEnabled ?? true);
   const [showMore, setShowMore] = useState(false);
 
@@ -206,7 +210,10 @@ export function BackupRuleDialog({
     name.trim().length > 0 &&
     destinationIds.length > 0 &&
     (!needsSource || (source.length > 0 && (chosen?.enrolled || chosen?.manualOnly || false))) &&
-    (!encrypt || editing || passphrase.length >= 8) &&
+    // Typed twice, because a typo here is a backup nobody can open once
+    // Bench is gone. Optional on edit - empty keeps the current one - but a
+    // new one obeys the same rules.
+    (!encrypt || (editing && passphrase.length === 0) || (passphrase.length >= 8 && passphrase === passphraseAgain)) &&
     (manualOnly || scheduleValid);
 
   return (
@@ -251,7 +258,7 @@ export function BackupRuleDialog({
                   aria-label="Budget"
                   options={budgetChoices.options}
                   value={source}
-                  disabled={budgetChoices.connecting}
+                  disabled={budgetChoices.connecting || sourceLocked}
                   emptyLabel="No budget connections saved"
                   onValueChange={async (value) => {
                     // A saved budget joins the session in the background, then
@@ -261,6 +268,12 @@ export function BackupRuleDialog({
                   }}
                 />
                 {budgetChoices.dialog}
+                {sourceLocked && (
+                  <span className="block text-muted-foreground">
+                    Fixed: this rule already has backups of this budget. To back up a different budget,
+                    create a new rule.
+                  </span>
+                )}
               </div>
 
               {/* Every budget you have connected to is listed, not only the
@@ -364,7 +377,28 @@ export function BackupRuleDialog({
               <span className="block text-muted-foreground">
                 Write this down somewhere that is not on this server. It is the single point of
                 failure in the whole arrangement.
+                {editing &&
+                  " A new passphrase applies to new copies only: copies already taken keep opening with the one they were taken with, and Bench keeps that one for them."}
               </span>
+            </label>
+          )}
+
+          {encrypt && passphrase.length > 0 && (
+            <label className="block space-y-1">
+              <span className="font-medium">Passphrase again</span>
+              <Input
+                type="password"
+                value={passphraseAgain}
+                onChange={(event) => setPassphraseAgain(event.target.value)}
+                autoComplete="new-password"
+                aria-invalid={passphraseAgain.length > 0 && passphraseAgain !== passphrase}
+              />
+              {passphrase.length > 0 && passphrase.length < 8 && (
+                <span className="block text-destructive">Use at least 8 characters.</span>
+              )}
+              {passphraseAgain.length > 0 && passphraseAgain !== passphrase && (
+                <span className="block text-destructive">The two passphrases do not match.</span>
+              )}
             </label>
           )}
 
@@ -400,11 +434,13 @@ export function BackupRuleDialog({
                       <Input
                         type="number"
                         min={0}
+                        step={1}
                         value={retention[tier]}
                         onChange={(event) =>
                           setRetention((current) => ({
                             ...current,
-                            [tier]: Math.max(0, Number(event.target.value)),
+                            // Whole copies only: the server refuses a fraction.
+                            [tier]: Math.max(0, Math.round(Number(event.target.value) || 0)),
                           }))
                         }
                       />

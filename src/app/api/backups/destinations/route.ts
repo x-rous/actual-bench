@@ -48,25 +48,29 @@ export async function POST(request: Request) {
     const db = getAppDb();
     // Bench will not store an access key it cannot encrypt.
     if (payload.kind === "s3") requireReadyVault(db);
-    const destination = createBackupDestination(db, payload);
+    // One transaction: a destination row whose keys failed to store would be
+    // a destination that looks configured and fails every night.
+    const destination = db.transaction(() => {
+      const created = createBackupDestination(db, payload);
+      if (payload.kind === "s3" && credentials?.accessKeyId && credentials?.secretAccessKey) {
+        upsertBackupCredential(db, {
+          ref: created.id,
+          kind: "s3",
+          label: created.name,
+          secret: {
+            accessKeyId: credentials.accessKeyId,
+            secretAccessKey: credentials.secretAccessKey,
+            ...(credentials.sessionToken ? { sessionToken: credentials.sessionToken } : {}),
+          },
+        });
+        // The reference is the destination's own id: one destination, one
+        // secret, and deleting the destination has an obvious thing to delete.
+        return updateBackupDestination(db, created.id, { credentialRef: created.id }) ?? created;
+      }
+      return created;
+    })();
 
-    if (payload.kind === "s3" && credentials?.accessKeyId && credentials?.secretAccessKey) {
-      upsertBackupCredential(db, {
-        ref: destination.id,
-        kind: "s3",
-        label: destination.name,
-        secret: {
-          accessKeyId: credentials.accessKeyId,
-          secretAccessKey: credentials.secretAccessKey,
-          ...(credentials.sessionToken ? { sessionToken: credentials.sessionToken } : {}),
-        },
-      });
-      // The reference is the destination's own id: one destination, one secret,
-      // and deleting the destination has an obvious thing to delete.
-      updateBackupDestination(db, destination.id, { credentialRef: destination.id });
-    }
-
-    return NextResponse.json({ destination: { ...destination, credentialRef: destination.id } }, { status: 201 });
+    return NextResponse.json({ destination }, { status: 201 });
   } catch (error) {
     return appDbErrorResponse(error);
   }

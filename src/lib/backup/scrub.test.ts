@@ -21,6 +21,7 @@ import {
 import type { BackupDestination } from "@/lib/app-db/backupRepository";
 import type { SqliteDatabase } from "@/lib/app-db/types";
 import { encryptArchive } from "./encryption";
+import { DESTINATION_MARKER } from "./destinations";
 import { sha256 } from "./manifest";
 import { scrubDestination } from "./scrub";
 
@@ -73,6 +74,9 @@ describe("scrubbing a destination", () => {
       config: { version: 1, data: { path: volume } },
     });
     policyId = createBackupPolicy(db, { name: "Nightly", destinationIds: [destination.id] }).id;
+    // The marker Bench writes with its first copy, which tells a mounted
+    // volume from the empty directory an unmounted one leaves.
+    writeFileSync(join(volume, DESTINATION_MARKER), JSON.stringify({ destinationId: destination.id }));
   });
 
   afterEach(() => {
@@ -314,5 +318,42 @@ describe("scrubbing a destination", () => {
     expect(result.error).toMatch(/access key/i);
     expect(result.checked).toBe(0);
     expect(result.failed).toBe(0);
+  });
+  it("records nothing about a copy when the scrub is stopped", async () => {
+    const { artifact } = store(budgetZip());
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(scrubDestination(db, destination, { signal: controller.signal })).rejects.toThrow();
+
+    expect(getBackupArtifact(db, artifact.id)?.verificationStatus).toBe("passed");
+    expect(listArtifactLocations(db, artifact.id)[0].lastError).toBeNull();
+    expect(getBackupDestination(db, destination.id)?.lastFailureAt ?? null).toBeNull();
+  });
+
+  it("moves on to other missing copies, so one that comes back is found", async () => {
+    // More missing copies than one scrub looks at: the oldest is the one a
+    // fixed "newest 50" would never reach.
+    const missing = Array.from({ length: 51 }, (_, index) => {
+      const createdAt = new Date(Date.UTC(2026, 0, 1 + index)).toISOString();
+      const { artifact, key } = store(budgetZip(), { createdAt });
+      recordArtifactLocation(db, {
+        artifactId: artifact.id,
+        destinationId: destination.id,
+        objectKey: key,
+        status: "missing",
+        lastError: "The object is no longer in this destination.",
+      });
+      return { artifact, key };
+    });
+    db.prepare("UPDATE backup_artifact_locations SET updated_at = '2026-01-01T00:00:00.000Z'").run();
+    for (const entry of missing.slice(1)) rmSync(join(volume, entry.key));
+    const oldest = missing[0];
+
+    await scrubDestination(db, destination);
+    expect(listArtifactLocations(db, oldest.artifact.id)[0].status).toBe("missing");
+
+    await scrubDestination(db, destination);
+    expect(listArtifactLocations(db, oldest.artifact.id)[0].status).toBe("stored");
   });
 });

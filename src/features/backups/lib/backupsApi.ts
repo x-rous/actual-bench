@@ -55,7 +55,8 @@ export type BackupSource = {
 
 export type RecoveryCenterData = {
   readiness: BackupReadiness;
-  destinations: BackupDestination[];
+  /** `holdsCopies`: where it points can no longer change. */
+  destinations: (BackupDestination & { holdsCopies?: boolean })[];
   policies: PolicyWithAutomation[];
   artifacts: ArtifactWithLocations[];
   sources: BackupSource[];
@@ -252,18 +253,59 @@ export function backupOutcomeFromRun(run: AutomationRun): ManualBackupOutcome {
   };
 }
 
-export async function previewRetention(policyId: string, apply = false): Promise<PruneResult> {
+export async function previewRetention(policyId: string): Promise<PruneResult> {
   const body = await json<{ result: PruneResult }>(
     await fetch(`/api/backups/policies/${policyId}/prune`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ apply }),
+      body: JSON.stringify({ apply: false }),
+    })
+  );
+  return body.result;
+}
+
+/**
+ * Remove what a preview showed, and nothing else.
+ *
+ * The ids travel with the request because the server works the plan out again
+ * and a backup finishing in between can change it.
+ */
+export async function applyRetention(policyId: string, artifactIds: string[]): Promise<PruneResult> {
+  const body = await json<{ result: PruneResult }>(
+    await fetch(`/api/backups/policies/${policyId}/prune`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ apply: true, artifactIds }),
     })
   );
   return body.result;
 }
 
 // ── copies ───────────────────────────────────────────────────────────────────
+
+/** "I deleted those on purpose": the copy counts as verified and becomes the new baseline. */
+export async function acceptChange(artifactId: string): Promise<BackupArtifact> {
+  const body = await json<{ artifact: BackupArtifact }>(
+    await fetch(`/api/backups/artifacts/${artifactId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ acceptChange: true }),
+    })
+  );
+  return body.artifact;
+}
+
+/** Give a copy with no rule to a rule, whose retention then looks after it. */
+export async function attachToRule(artifactId: string, policyId: string): Promise<BackupArtifact> {
+  const body = await json<{ artifact: BackupArtifact }>(
+    await fetch(`/api/backups/artifacts/${artifactId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ policyId }),
+    })
+  );
+  return body.artifact;
+}
 
 export async function setPinned(artifactId: string, pinned: boolean): Promise<BackupArtifact> {
   const body = await json<{ artifact: BackupArtifact }>(

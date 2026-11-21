@@ -211,7 +211,7 @@ export function createHttpApiTransport(
     // The endpoints are part of actual-http-api's contract, so there is no
     // per-build question to ask the way there is for the Direct runtime.
     canRunBankSync: async () => true,
-    exportBudget: async () => (await exportHttpApiBudget(connection)).bytes,
+    exportBudget: async (options) => (await exportHttpApiBudget(connection, { signal: options?.signal })).bytes,
     runBankSync: (input) =>
       runBankSyncForAccounts({
         loadAccounts: () =>

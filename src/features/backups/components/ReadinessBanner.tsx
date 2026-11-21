@@ -3,6 +3,7 @@
 import { AlertTriangle, ShieldAlert, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { BackupReadiness } from "@/lib/backup/readiness";
+import { relativeTime } from "../lib/presentation";
 
 /**
  * The readiness statement (RD-077 / PR-047e).
@@ -35,6 +36,12 @@ const TONE = {
   },
 } as const;
 
+const STATUS_LABEL = {
+  protected: "Protected",
+  "at-risk": "At risk",
+  unprotected: "Not protected",
+} as const;
+
 export function ReadinessBanner({ readiness }: { readiness: BackupReadiness }) {
   const tone = TONE[readiness.status];
   const Icon = tone.icon;
@@ -51,6 +58,51 @@ export function ReadinessBanner({ readiness }: { readiness: BackupReadiness }) {
             {readiness.headline}
           </h2>
           <p className="mt-0.5 text-xs text-muted-foreground">{readiness.detail}</p>
+
+          {/* One row per rule, once there is more than one: the headline is
+              about the rule worst off, and the rows show the rest, so a
+              healthy rule can never stand in for one that has stopped. */}
+          {readiness.rules.length > 1 && (
+            <table className="mt-2 w-full text-xs">
+              <caption className="sr-only">Readiness of each backup rule</caption>
+              <thead>
+                <tr className="text-left text-muted-foreground">
+                  <th scope="col" className="py-0.5 pr-4 font-medium">Rule</th>
+                  <th scope="col" className="py-0.5 pr-4 font-medium">Protects</th>
+                  <th scope="col" className="py-0.5 pr-4 font-medium">Newest verified copy</th>
+                  <th scope="col" className="py-0.5 pr-4 font-medium">State</th>
+                  <th scope="col" className="py-0.5 font-medium">What needs attention</th>
+                </tr>
+              </thead>
+              <tbody>
+                {readiness.rules.map((rule) => {
+                  const ruleTone = TONE[rule.status];
+                  const RuleIcon = ruleTone.icon;
+                  return (
+                    <tr key={rule.policyId} className="border-t border-border/40">
+                      <td className="py-0.5 pr-4 whitespace-nowrap">{rule.name}</td>
+                      <td className="py-0.5 pr-4 whitespace-nowrap text-muted-foreground">
+                        {rule.subject === "app-db" ? "Bench settings" : (rule.budgetName ?? "Budget")}
+                      </td>
+                      <td className="py-0.5 pr-4 whitespace-nowrap text-muted-foreground">
+                        {rule.newestVerifiedAt ? relativeTime(rule.newestVerifiedAt) : "-"}
+                      </td>
+                      <td className={cn("py-0.5 pr-4 whitespace-nowrap", ruleTone.accent)}>
+                        <span className="flex items-center gap-1">
+                          <RuleIcon className="size-3.5" aria-hidden />
+                          {STATUS_LABEL[rule.status]}
+                          {!rule.enabled && <span className="text-muted-foreground">(paused)</span>}
+                        </span>
+                      </td>
+                      <td className="max-w-md truncate py-0.5 text-muted-foreground" title={rule.issues.join(" ")}>
+                        {rule.issues[0] ?? "-"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
 
           {readiness.issues.length > 0 && (
             <ul className="mt-2 space-y-1">
