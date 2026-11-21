@@ -208,6 +208,28 @@ Handoff: files changed (including `agents/`), numbers created, behavior changed,
 
 <!-- BEGIN:nextjs-agent-rules -->
 
+## 16. Git Commit  PR Title Writing Style
+
+Write commit messages and PR titles in clear, natural, professional English, as a human developer would.
+
+- Use direct, factual language that describes what was actually changed and why.
+- Prefer specific technical descriptions over vague, generic, or marketing-style wording.
+- For bug fixes, explicitly describe the bug or incorrect behavior being corrected.
+- For new features, describe the capability being introduced.
+- For improvements, explain what existing behavior was improved.
+- Avoid clever wording, slogans, exaggerated claims, and AI-generated phrasing.
+- Do not use vague expressions such as "keep things working", "make X smarter", "ensure everything stays in sync", "back up the right budget", or "keep encrypted copies openable".
+
+Before writing commit or a PR message, ask:
+
+1. Does it clearly explain what changed?
+2. Is it specific enough for another developer to understand?
+3. Does it sound like something a human developer would naturally write?
+4. Does it avoid generic AI-generated wording?
+
+If not, rewrite it before submitting.
+
+
 ## This is NOT the Next.js you know
 
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
