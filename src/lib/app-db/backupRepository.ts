@@ -562,7 +562,17 @@ export function updateBackupPolicy(db: SqliteDatabase, id: string, input: unknow
 }
 
 export function deleteBackupPolicy(db: SqliteDatabase, id: string): boolean {
-  return db.prepare("DELETE FROM backup_policies WHERE id = ?").run(id).changes > 0;
+  return db.transaction(() => {
+    // Deleting the rule clears its copies' link to it (ON DELETE SET NULL).
+    // An older encrypted copy with no ref of its own is opened with its
+    // rule's id, so that is written down first, or passphrase clean-up would
+    // find nothing using it and delete the passphrase the copy needs.
+    db.prepare(
+      `UPDATE backup_artifacts SET encryption_credential_ref = policy_id
+        WHERE policy_id = ? AND encrypted = 1 AND encryption_credential_ref IS NULL`
+    ).run(id);
+    return db.prepare("DELETE FROM backup_policies WHERE id = ?").run(id).changes > 0;
+  })();
 }
 
 // ── artifacts and their copies ───────────────────────────────────────────────

@@ -198,7 +198,7 @@ same function that performs the prune. Applying also removes rows for runs that 
 Copies with no rule (rule deleted, or discovered) are outside retention. Attach one to a rule from its
 detail (`PATCH /api/backups/artifacts/:id` with `{"policyId": "..."}`) and that rule's retention looks
 after it. A budget copy can only be attached to the rule for the same budget, and an older encrypted
-copy keeps the passphrase it was made with. Discovery attaches copies whose manifest names a rule that exists on this install.
+copy keeps the passphrase it was made with. Discovery attaches copies whose manifest names a rule that exists on this install and, for a budget copy, backs up that same budget; otherwise the copy is left with no rule.
 
 ## Safety recovery points
 

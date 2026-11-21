@@ -362,6 +362,8 @@ export class S3DestinationAdapter implements DestinationAdapter {
           "max-keys": "1000",
           "continuation-token": continuationToken,
         },
+        // Read inside the attempt, so a listing that stalls is retried.
+        readBody: true,
       });
       const xml = await response.text();
 

@@ -3,6 +3,7 @@ import { getAppMeta, setAppMeta } from "@/lib/app-db/appMetaRepository";
 import { listBackupArtifacts, listBackupPolicies, type BackupPolicy } from "@/lib/app-db/backupRepository";
 import { logger } from "@/lib/logger";
 import type { SqliteDatabase } from "@/lib/app-db/types";
+import { ruleBudgetId } from "./ruleBudget";
 import { runBackup } from "./runBackup";
 import type { UploadedArchive } from "./uploadedArchive";
 
@@ -151,9 +152,13 @@ export async function takeSafetyRecoveryPoint(
   }
 
   if (!input.force) {
+    // Only a recovery point of this rule's own budget can stand in for one.
+    const budgetId = ruleBudgetId(db, policy);
     const recent = listBackupArtifacts(db, { policyId: policy.id, kind: "budget", limit: 20 }).find(
       (artifact) =>
         artifact.tier === "auto" &&
+        budgetId !== null &&
+        artifact.sourceBudgetId === budgetId &&
         now.getTime() - new Date(artifact.createdAt).getTime() < settings.debounceMinutes * 60_000
     );
     if (recent) {

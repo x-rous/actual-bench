@@ -543,10 +543,9 @@ async function fanOut(
         bytes,
         record.kind === "budget" && !record.encrypted ? "application/zip" : "application/octet-stream"
       );
-      // The manifest goes second and only on success: a manifest without its
-      // artifact would advertise a backup that is not there.
-      await adapter.put(manifestKeyFor(objectKey), serializeManifest(manifest), "application/json");
-
+      // Recorded as soon as the copy is stored, before the manifest: a stored
+      // copy Bench has no row for is one retention, the scrub and the
+      // passphrase clean-up cannot see.
       if (!artifactExists) {
         db.transaction(() => {
           createBackupArtifact(db, record);
@@ -571,7 +570,32 @@ async function fanOut(
         uploadedAt: at,
         lastVerifiedAt: record.verificationStatus === "passed" ? at : null,
       });
-      recordDestinationOutcome(db, destination.id, { success: true, at });
+
+      // The manifest goes second and only after the copy: a manifest without
+      // its copy would advertise a backup that is not there. Its failure is
+      // reported on its own; the copy is stored and restorable without it,
+      // it is only harder to find again if Bench's records are lost.
+      let manifestError: string | null = null;
+      try {
+        await adapter.put(manifestKeyFor(objectKey), serializeManifest(manifest), "application/json");
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        manifestError = `Stored, but its manifest could not be written: ${
+          error instanceof Error ? error.message : String(error)
+        }`;
+        recordArtifactLocation(db, {
+          artifactId: record.id,
+          destinationId: destination.id,
+          objectKey,
+          status: "stored",
+          lastError: manifestError,
+        });
+      }
+      recordDestinationOutcome(
+        db,
+        destination.id,
+        manifestError ? { success: false, at, reason: manifestError } : { success: true, at }
+      );
 
       results.push({
         destinationId: destination.id,
@@ -579,6 +603,7 @@ async function fanOut(
         status: "stored",
         objectKey,
         sizeBytes: written.sizeBytes,
+        ...(manifestError ? { error: manifestError } : {}),
       });
     } catch (error) {
       if (signal?.aborted) throw error;

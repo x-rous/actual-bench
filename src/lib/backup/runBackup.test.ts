@@ -24,6 +24,7 @@ import {
 import type { SqliteDatabase } from "@/lib/app-db/types";
 import { decryptArchive } from "./encryption";
 import { parseManifest } from "./manifest";
+import { LocalDestinationAdapter } from "./destinations/local";
 import { backupObjectKey, runBackup } from "./runBackup";
 import { acceptPlausibilityFindings, plausibilityOf } from "./verificationRecord";
 
@@ -456,6 +457,31 @@ describe("running a backup", () => {
 
     expect(result.stored).toBe(false);
     expect(statSync(readOnly).isFile()).toBe(true);
+  });
+
+  it("records a stored copy even when its manifest cannot be written", async () => {
+    // Unrecorded, the copy would sit in the destination where retention, the
+    // scrub and passphrase clean-up cannot see it.
+    const original = LocalDestinationAdapter.prototype.put;
+    const spy = jest.spyOn(LocalDestinationAdapter.prototype, "put").mockImplementation(function (
+      this: LocalDestinationAdapter,
+      key: string,
+      bytes: Uint8Array
+    ) {
+      if (key.endsWith(".manifest.json")) return Promise.reject(new Error("disk full"));
+      return original.call(this, key, bytes);
+    });
+    try {
+      const result = await runBackup(db, policy());
+
+      expect(result.stored).toBe(true);
+      const [artifact] = listBackupArtifacts(db);
+      const [location] = listArtifactLocations(db, artifact.id);
+      expect(location.status).toBe("stored");
+      expect(location.lastError).toMatch(/manifest could not be written: disk full/);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("writes nothing outside the destination root", async () => {

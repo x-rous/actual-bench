@@ -152,4 +152,16 @@ describe("passphrases Bench is holding", () => {
     expect(getBackupArtifact(db, artifact.id)?.encryptionCredentialRef).toBe(policy.id);
     expect(getBackupCredential(db, policy.id)).toEqual({ passphrase: "correct horse" });
   });
+  it("keeps an older copy's passphrase when its rule is deleted", () => {
+    // A copy with no ref of its own is opened with its rule's id; deleting
+    // the rule cleared that link, and clean-up then removed the passphrase.
+    const { policy, artifact } = encryptedRule();
+    db.prepare("UPDATE backup_artifacts SET encryption_credential_ref = NULL WHERE id = ?").run(artifact.id);
+
+    deleteBackupPolicy(db, policy.id);
+    collectUnusedPassphrases(db);
+
+    expect(getBackupArtifact(db, artifact.id)?.encryptionCredentialRef).toBe(policy.id);
+    expect(getBackupCredential(db, policy.id)).toEqual({ passphrase: "correct horse" });
+  });
 });

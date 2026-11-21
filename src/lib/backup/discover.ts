@@ -1,3 +1,4 @@
+import { ruleBudgetId } from "./ruleBudget";
 import {
   createBackupArtifact,
   getBackupArtifact,
@@ -100,7 +101,14 @@ export async function discoverBackups(
       // Given back to the rule that made it when that rule exists here (a
       // restored database, a lost row), so its retention looks after it
       // again. Otherwise unowned: inventing an owner would be worse.
-      const owner = manifest.policy?.id ? getBackupPolicy(db, manifest.policy.id) : null;
+      // A budget copy only goes back to a rule known to back up that same
+      // budget; an unknown budget is not a match.
+      const named = manifest.policy?.id ? getBackupPolicy(db, manifest.policy.id) : null;
+      const sourceBudgetId = manifest.source?.budgetId ?? null;
+      const owner =
+        named && (manifest.kind !== "budget" || (sourceBudgetId !== null && ruleBudgetId(db, named) === sourceBudgetId))
+          ? named
+          : null;
       if (owner) result.adopted += 1;
       createBackupArtifact(db, {
         id: manifest.artifactId,
