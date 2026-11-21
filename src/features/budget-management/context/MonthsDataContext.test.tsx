@@ -143,3 +143,46 @@ describe("MonthsDataProvider re-renders (P1)", () => {
     expect(renders["2026-01:a"]).toBe(afterFirst["2026-01:a"]);
   });
 });
+
+describe("MonthsDataProvider Envelope carry", () => {
+  beforeEach(() => useBudgetEditsStore.getState().discardAll());
+
+  it("replays an edit in a month before the window with Actual's rules", () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { staleTime: Infinity, retry: false } },
+    });
+    // March: "a" overspent by 80 (not rollover). April: balance 0.
+    const march = monthState("2026-03");
+    march.categoriesById.a = { ...category("a", 0), actuals: -80, balance: -80 };
+    const april = monthState("2026-04");
+    april.categoriesById.a = { ...category("a", 0), balance: 0 };
+    april.summary.lastMonthOverspent = -80;
+    client.setQueryData(["budget-month-data", "conn-1", "2026-03"], march);
+    client.setQueryData(["budget-month-data", "conn-1", "2026-04"], april);
+
+    function AprilBalance() {
+      const cat = useEffectiveCategory("2026-04", "a");
+      return <span data-testid="balance">{cat?.balance}</span>;
+    }
+    const view = render(
+      <QueryClientProvider client={client}>
+        <MonthsDataProvider months={["2026-04"]} availableMonths={["2026-03", "2026-04"]}>
+          <AprilBalance />
+        </MonthsDataProvider>
+      </QueryClientProvider>
+    );
+
+    // Covering March's overspend (March is out of view) clears it; April's
+    // balance does not gain 80, as Actual resets a negative balance.
+    act(() => {
+      useBudgetEditsStore.getState().stageEdit({
+        month: "2026-03",
+        categoryId: "a",
+        nextBudgeted: 80,
+        previousBudgeted: 0,
+        source: "manual",
+      });
+    });
+    expect(view.getByTestId("balance").textContent).toBe("0");
+  });
+});

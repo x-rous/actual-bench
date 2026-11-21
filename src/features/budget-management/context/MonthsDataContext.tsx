@@ -19,10 +19,10 @@ import {
 } from "../lib/monthDataQuery";
 import { useBudgetMode } from "../hooks/useBudgetMode";
 import { useIncomeBudgets } from "../hooks/useIncomeBudgets";
+import { useEnvelopeCarry } from "../hooks/useEnvelopeCarry";
 import { incomeCategoryIdsNeedingBudgetFallback } from "../lib/monthAuthority";
 import {
   computeEffectiveMonthState,
-  computeEnvelopeCarry,
   mergeMonthStates,
   type MergedStructure,
 } from "../lib/effectiveMonth";
@@ -242,17 +242,17 @@ export function MonthsDataProvider({
     return { raw, errors, isLoading, merged: mergeMonthStates(dataArr) };
   }, [months, loadableMonthSet, isLoading, dataArr, errorArr]);
 
+  // H1: Envelope carries staged edits forward with Actual's rules (negative
+  // balances reset, charged to next month's To Budget), not linearly, replayed
+  // from the earliest staged edit even when it is before the window.
+  const loadableStates = useMemo(
+    () => months.map((m, i) => (loadableMonthSet.has(m) ? dataArr[i] : undefined)),
+    [months, loadableMonthSet, dataArr]
+  );
+  const envelopeCarry = useEnvelopeCarry(months, loadableStates, allEdits, !isTracking, loadableMonthSet);
+
   const effective = useMemo<EffectiveMap>(() => {
     const result = new Map<string, LoadedMonthState>();
-    // H1: Envelope carries staged edits forward with Actual's rules (negative
-    // balances reset, charged to next month's To Budget), not linearly.
-    const envelopeCarry = isTracking
-      ? undefined
-      : computeEnvelopeCarry(
-          months,
-          months.map((m, i) => (loadableMonthSet.has(m) ? dataArr[i] : undefined)),
-          allEdits
-        );
 
     for (let i = 0; i < months.length; i++) {
       const m = months[i]!;
@@ -271,7 +271,7 @@ export function MonthsDataProvider({
       if (eff) result.set(m, eff);
     }
     return result;
-  }, [months, loadableMonthSet, allEdits, allHolds, isTracking, incomeBudgets, dataArr]);
+  }, [months, loadableMonthSet, allEdits, allHolds, isTracking, incomeBudgets, dataArr, envelopeCarry]);
 
   // The store is created once with the first effective map, so the first
   // render already reads real data; later maps are published before paint.

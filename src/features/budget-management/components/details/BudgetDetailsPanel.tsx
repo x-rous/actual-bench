@@ -14,8 +14,8 @@ import {
 } from "../../lib/monthDataQuery";
 import {
   computeEffectiveMonthState,
-  computeEnvelopeCarry,
 } from "../../lib/effectiveMonth";
+import { useEnvelopeCarry } from "../../hooks/useEnvelopeCarry";
 import { incomeCategoryIdsNeedingBudgetFallback } from "../../lib/monthAuthority";
 import { buildBudgetDetailsModel } from "../../lib/budgetDetailsModel";
 import {
@@ -86,9 +86,16 @@ export function BudgetDetailsPanel() {
     queries: monthQueries,
   });
 
+  // Disabled queries can still expose cached data. Leave unavailable months
+  // out, as the grid's MonthsDataProvider does, so the Envelope carry replay
+  // below sees the same months and both show the same figures.
   const dataArr = useMemo(
-    () => queries.map((query) => query.data),
-    [queries]
+    () =>
+      queries.map((query, index) => {
+        const month = displayMonths[index];
+        return month && availableMonthSet.has(month) ? query.data : undefined;
+      }),
+    [availableMonthSet, displayMonths, queries]
   );
   const isMonthLoading = useMemo(
     () => queries.some((query) => query.isLoading),
@@ -120,13 +127,12 @@ export function BudgetDetailsPanel() {
   const hasMonthQueryError = monthQueryError != null;
   const hasIncomeBudgetsError = isTracking && incomeBudgetsError != null;
 
+  // Same Envelope carry as the grid (MonthsDataProvider), so both agree.
+  const envelopeCarry = useEnvelopeCarry(displayMonths, dataArr, edits, !isTracking, availableMonthSet);
+
   const statesByMonth = useMemo(() => {
     const result = new Map<string, LoadedMonthState>();
     if (hasMonthQueryError || hasIncomeBudgetsError) return result;
-    // Same Envelope carry as the grid (MonthsDataProvider), so both agree.
-    const envelopeCarry = isTracking
-      ? undefined
-      : computeEnvelopeCarry(displayMonths, dataArr, edits);
 
     for (let i = 0; i < displayMonths.length; i++) {
       const month = displayMonths[i];
@@ -150,6 +156,7 @@ export function BudgetDetailsPanel() {
     dataArr,
     displayMonths,
     edits,
+    envelopeCarry,
     holds,
     hasIncomeBudgetsError,
     hasMonthQueryError,

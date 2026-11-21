@@ -7,6 +7,7 @@
  * per month at a single call-site instead of per-cell.
  */
 
+import { isMonthId, monthsInRange, prevMonth, subtractMonths } from "@/lib/budget/monthMath";
 import type {
   BudgetCellKey,
   LoadedCategory,
@@ -65,9 +66,37 @@ export type EnvelopeCarry = {
  *
  * Edits before the first month in `months` cannot be replayed without their
  * months' data, so they enter the first month with the linear rule (full
- * delta to the balance and to To Budget), as before. A month whose server
- * state is missing is passed through the same way.
+ * delta to the balance and to To Budget). Callers avoid that by starting
+ * `months` at `envelopeReplayMonths` (see `useEnvelopeCarry`), so a month
+ * leaving the view does not change later figures. A month whose server state
+ * is missing is passed through the same way.
  */
+/** How far back `envelopeReplayMonths` reaches for staged edits. */
+export const ENVELOPE_REPLAY_LIMIT = 24;
+
+/**
+ * The months before `firstMonth` that hold staged edits, from the earliest of
+ * them (at most `limit` months back) up to the month before `firstMonth`, so
+ * `computeEnvelopeCarry` can replay them with Actual's rules instead of
+ * carrying them in linearly. Empty when no edit is staged before `firstMonth`.
+ */
+export function envelopeReplayMonths(
+  firstMonth: string,
+  allEdits: Record<BudgetCellKey, StagedBudgetEdit>,
+  limit = ENVELOPE_REPLAY_LIMIT
+): string[] {
+  let earliest: string | null = null;
+  for (const key of Object.keys(allEdits)) {
+    const editMonth = key.split(":")[0];
+    if (editMonth && editMonth < firstMonth && (earliest === null || editMonth < earliest)) {
+      earliest = editMonth;
+    }
+  }
+  if (earliest === null || !isMonthId(firstMonth)) return [];
+  const floor = subtractMonths(firstMonth, limit);
+  return monthsInRange(earliest < floor ? floor : earliest, prevMonth(firstMonth));
+}
+
 export function computeEnvelopeCarry(
   months: string[],
   rawStates: (LoadedMonthState | undefined)[],

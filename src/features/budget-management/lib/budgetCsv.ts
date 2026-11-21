@@ -68,6 +68,25 @@ export type BudgetExportOptions = {
 
 // ─── Export ───────────────────────────────────────────────────────────────────
 
+/** The header marker of a non-budget export (see `exportToCsv`). */
+const ANALYSIS_HEADER_LABEL: Record<Exclude<BudgetExportValue, "budgeted">, string> = {
+  actuals: "Spent",
+  balance: "Balance",
+};
+
+/**
+ * A name a spreadsheet would read as a formula (=, +, -, @, tab or carriage
+ * return first) is written with a leading apostrophe, which spreadsheets show
+ * as text. `readLiteralText` removes it again on import.
+ */
+function literalText(name: string): string {
+  return /^[=+\-@\t\r]/.test(name) ? `'${name}` : name;
+}
+
+function readLiteralText(cell: string): string {
+  return /^'[=+\-@\t\r]/.test(cell) ? cell.slice(1) : cell;
+}
+
 /**
  * Builds a CSV string from loaded budget data.
  *
@@ -121,7 +140,11 @@ export function exportToCsv(
     }
   }
 
-  const header = ["Group Name", "Category Name", ...months].map(escape).join(delimiter);
+  // Spent and balance exports say so in the header, so the importer can refuse
+  // them instead of staging those figures as budgets.
+  const categoryHeader =
+    value === "budgeted" ? "Category Name" : `Category Name (${ANALYSIS_HEADER_LABEL[value]})`;
+  const header = ["Group Name", categoryHeader, ...months].map(escape).join(delimiter);
   const rows: string[] = [header];
 
   for (const group of orderedGroups) {
@@ -133,7 +156,7 @@ export function exportToCsv(
       if (!cat) continue;
       if (!opts.includeHidden && cat.hidden) continue;
 
-      const cells: string[] = [escape(group.name), escape(cat.name)];
+      const cells: string[] = [escape(literalText(group.name)), escape(literalText(cat.name))];
       for (const month of months) {
         const monthCat = monthDataMap[month]?.categoriesById[cat.id];
         let minorValue: number;
@@ -180,7 +203,7 @@ export function exportBlankTemplate(
 
       const blanks = months.map(() => "");
       rows.push(
-        [escape(group.name), escape(cat.name), ...blanks].join(delimiter)
+        [escape(literalText(group.name)), escape(literalText(cat.name)), ...blanks].join(delimiter)
       );
     }
   }
@@ -211,6 +234,13 @@ export type ParsedBudgetCsv = {
   ignoredColumns: string[];
   /** Non-empty month cells that are not amounts (ignored, never staged). */
   invalidCells: InvalidImportCell[];
+  /** Columns whose headers read as the same month (the import is refused). */
+  duplicateMonthColumns: { month: string; headers: string[] }[];
+  /**
+   * Set when the file is a Spent or Balance export (its header says so):
+   * those figures are not budgets and must not be imported.
+   */
+  analysisExport: string | null;
 };
 
 const MONTH_NAMES = [
@@ -331,14 +361,20 @@ export function parseImportAmount(raw: string): number | null {
   if (lastComma !== -1 && lastDot !== -1) {
     const decimal = lastComma > lastDot ? "," : ".";
     const group = decimal === "," ? "." : ",";
+    // The whole part must be grouped in threes: 1,234.50 or 1.234,50.
+    const whole = text.slice(0, text.lastIndexOf(decimal));
+    const grouped = new RegExp(`^\\d{1,3}(?:\\${group}\\d{3})+$`);
+    if (!grouped.test(whole)) return null;
     normalized = text.split(group).join("");
     if (normalized.split(decimal).length > 2) return null;
     normalized = normalized.replace(decimal, ".");
   } else if (lastComma !== -1) {
     const parts = text.split(",");
-    normalized =
-      parts.length === 2 && /^\d{1,2}$/.test(parts[1]!) ? parts.join(".") : parts.join("");
+    if (parts.length === 2 && /^\d{1,2}$/.test(parts[1]!)) normalized = parts.join(".");
+    else if (/^\d{1,3}(?:,\d{3})+$/.test(text)) normalized = parts.join("");
+    else return null; // 1,2,3 or 12,3456: not a grouping anyone writes
   } else if (lastDot !== -1 && text.split(".").length > 2) {
+    if (!/^\d{1,3}(?:\.\d{3})+$/.test(text)) return null;
     normalized = text.split(".").join(""); // 1.234.567
   } else {
     normalized = text;
@@ -370,16 +406,15 @@ function detectDelimiter(headerLine: string): CsvDelimiter {
 export function parseBudgetCsv(raw: string): ParsedBudgetCsv {
   // Strip UTF-8 BOM that Excel and some tools prepend.
   const stripped = raw.startsWith("\uFEFF") ? raw.slice(1) : raw;
-  let lines = stripped.split(/\r?\n/);
-  let lineOffset = 1;
+  // Records, not physical lines: a quoted name can hold a line break.
+  let lines = splitRecords(stripped);
   let forced: CsvDelimiter | null = null;
   // Excel's "sep=;" hint line.
-  const sepHint = lines[0]?.trim().match(/^"?sep=(.)"?$/i);
+  const sepHint = lines[0]?.text.trim().match(/^"?sep=(.)"?$/i);
   if (sepHint) {
     const ch = sepHint[1]!;
     forced = ch === ";" ? ";" : ch === "\t" ? "\t" : ",";
     lines = lines.slice(1);
-    lineOffset = 2;
   }
 
   const empty: ParsedBudgetCsv = {
@@ -388,11 +423,15 @@ export function parseBudgetCsv(raw: string): ParsedBudgetCsv {
     monthColumns: [],
     ignoredColumns: [],
     invalidCells: [],
+    duplicateMonthColumns: [],
+    analysisExport: null,
   };
-  const headerIndex = lines.findIndex((l) => l.trim().length > 0);
+  const headerIndex = lines.findIndex((l) => l.text.trim().length > 0);
   if (headerIndex === -1) return empty;
-  const delimiter = forced ?? detectDelimiter(lines[headerIndex]!);
-  const headerCells = parseCsvLine(lines[headerIndex]!, delimiter);
+  const delimiter = forced ?? detectDelimiter(lines[headerIndex]!.text);
+  const headerCells = parseCsvLine(lines[headerIndex]!.text, delimiter);
+  const analysisExport =
+    (headerCells[1] ?? "").trim().match(/^Category Name \((Spent|Balance)\)$/i)?.[1] ?? null;
 
   const columns = headerCells.slice(2).map((header) => ({
     header: header.trim(),
@@ -404,16 +443,21 @@ export function parseBudgetCsv(raw: string): ParsedBudgetCsv {
   const ignoredColumns = columns
     .filter((c) => c.month === null && c.header !== "")
     .map((c) => c.header);
+  const headersByMonth = new Map<string, string[]>();
+  for (const c of monthColumns) headersByMonth.set(c.month, [...(headersByMonth.get(c.month) ?? []), c.header]);
+  const duplicateMonthColumns = [...headersByMonth.entries()]
+    .filter(([, headers]) => headers.length > 1)
+    .map(([month, headers]) => ({ month, headers }));
 
   const rows: BudgetCsvRow[] = [];
   const invalidCells: InvalidImportCell[] = [];
 
   for (let i = headerIndex + 1; i < lines.length; i++) {
-    const line = lines[i] ?? "";
-    if (line.trim().length === 0) continue;
-    const cells = parseCsvLine(line, delimiter);
-    const groupName = (cells[0] ?? "").trim();
-    const categoryName = (cells[1] ?? "").trim();
+    const record = lines[i]!;
+    if (record.text.trim().length === 0) continue;
+    const cells = parseCsvLine(record.text, delimiter);
+    const groupName = readLiteralText((cells[0] ?? "").trim());
+    const categoryName = readLiteralText((cells[1] ?? "").trim());
     if (!groupName && !categoryName) continue;
 
     const monthValues: Record<string, string> = {};
@@ -423,7 +467,7 @@ export function parseBudgetCsv(raw: string): ParsedBudgetCsv {
       if (!column.month || value === "") continue;
       if (parseImportAmount(value) === null) {
         invalidCells.push({
-          line: i + lineOffset,
+          line: record.line,
           groupName,
           categoryName,
           header: column.header,
@@ -437,7 +481,15 @@ export function parseBudgetCsv(raw: string): ParsedBudgetCsv {
     rows.push({ groupName, categoryName, monthValues });
   }
 
-  return { rows, delimiter, monthColumns, ignoredColumns, invalidCells };
+  return {
+    rows,
+    delimiter,
+    monthColumns,
+    ignoredColumns,
+    invalidCells,
+    duplicateMonthColumns,
+    analysisExport,
+  };
 }
 
 /**
@@ -616,7 +668,34 @@ function escapeCell(value: string, delimiter: CsvDelimiter = ","): string {
   return value;
 }
 
-/** Parses a single line, handling quoted fields. */
+/**
+ * Splits text into records at line breaks outside quoted fields, keeping each
+ * record's 1-based starting line for messages.
+ */
+function splitRecords(text: string): { text: string; line: number }[] {
+  const records: { text: string; line: number }[] = [];
+  let start = 0;
+  let line = 1;
+  let startLine = 1;
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '"') inQuotes = !inQuotes;
+    else if (ch === "\n") {
+      if (!inQuotes) {
+        const end = i > start && text[i - 1] === "\r" ? i - 1 : i;
+        records.push({ text: text.slice(start, end), line: startLine });
+        start = i + 1;
+        startLine = line + 1;
+      }
+      line++;
+    }
+  }
+  records.push({ text: text.slice(start).replace(/\r$/, ""), line: startLine });
+  return records;
+}
+
+/** Parses a single record, handling quoted fields. */
 function parseCsvLine(line: string, delimiter: CsvDelimiter = ","): string[] {
   const cells: string[] = [];
   let current = "";

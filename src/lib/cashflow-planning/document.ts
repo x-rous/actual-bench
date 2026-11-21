@@ -424,7 +424,8 @@ export function parseAmountExpression(source: string): number | null {
   try {
     const value = expression();
     if (pos !== src.length || !Number.isFinite(value)) return null;
-    const minor = Math.round(value);
+    // Half a cent rounds away from zero, as plain amounts do (-0.125 is -0.13).
+    const minor = Math.sign(value) * Math.round(Math.abs(value));
     if (!Number.isSafeInteger(minor) || Math.abs(minor) > MAX_AMOUNT) return null;
     return minor === 0 ? 0 : minor;
   } catch {

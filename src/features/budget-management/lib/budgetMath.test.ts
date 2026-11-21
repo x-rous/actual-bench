@@ -138,4 +138,15 @@ describe("parseBudgetExpression", () => {
       expect(parseBudgetExpression("1   +   2")).toEqual({ ok: true, value: 300 });
     });
   });
+
+  describe("thousands separators", () => {
+    it("reads correctly grouped numbers, also inside expressions", () => {
+      expect(parseBudgetExpression("1,500")).toEqual({ ok: true, value: 150000 });
+      expect(parseBudgetExpression("1,500.25+12,000")).toEqual({ ok: true, value: 1350025 });
+    });
+
+    it.each(["1,50", "1,2,3", "12,3456", ",5", "100+1,5"])("refuses %s", (text) => {
+      expect(parseBudgetExpression(text).ok).toBe(false);
+    });
+  });
 });

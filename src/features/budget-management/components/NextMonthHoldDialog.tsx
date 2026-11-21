@@ -109,7 +109,7 @@ export function NextMonthHoldDialog({
             ref={inputRef}
             id="hold-amount"
             type="text"
-            inputMode="decimal"
+            inputMode="text"
             value={amountStr}
             onChange={(e) => setAmountStr(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && amountStr !== "") handleSet(); }}

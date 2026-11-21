@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { runQuery } from "@/lib/api/query";
+import type { ConnectionInstance } from "@/store/connection";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -20,6 +21,49 @@ type RunQueryResponse = { data: IncomeBudgetRow[] };
 function toMonthString(n: number): string {
   const s = String(n);
   return `${s.slice(0, 4)}-${s.slice(4, 6)}`;
+}
+
+// ─── Query ────────────────────────────────────────────────────────────────────
+
+/**
+ * Query options for the income budgets of `incomeCategoryIds` (sorted into a
+ * stable key so every reader shares one cache entry). Shared by the hook and
+ * by callers that need the values outside React, such as the import preview.
+ */
+export function incomeBudgetsQueryOptions(
+  connection: ConnectionInstance | null | undefined,
+  incomeCategoryIds: string[]
+) {
+  const sortedIds = [...incomeCategoryIds].sort();
+  return {
+    queryKey: ["income-budgets", connection?.id, sortedIds.join(",")] as const,
+    queryFn: async (): Promise<Map<string, Map<string, number>>> => {
+      if (!connection) throw new Error("No active connection");
+
+      const response = await runQuery<RunQueryResponse>(connection, {
+        ActualQLquery: {
+          table: "reflect_budgets",
+          filter: {
+            category: { $oneof: sortedIds },
+          },
+          select: ["month", "category", "amount"],
+        },
+      });
+
+      // Build a two-level Map: YYYY-MM → categoryId → amount.
+      const result = new Map<string, Map<string, number>>();
+      for (const row of response.data) {
+        const monthStr = toMonthString(row.month);
+        if (!result.has(monthStr)) {
+          result.set(monthStr, new Map());
+        }
+        result.get(monthStr)!.set(row.category, row.amount);
+      }
+      return result;
+    },
+    // Income budgets change infrequently — cache aggressively.
+    staleTime: 5 * 60 * 1000,
+  };
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -44,38 +88,9 @@ export function useIncomeBudgets(
 } {
   const connection = useConnectionStore(selectActiveInstance);
 
-  // Stable sorted key so React Query deduplicates calls across components.
-  const sortedIds = [...incomeCategoryIds].sort();
-
   const query = useQuery({
-    queryKey: ["income-budgets", connection?.id, sortedIds.join(",")],
-    queryFn: async () => {
-      if (!connection) throw new Error("No active connection");
-
-      const response = await runQuery<RunQueryResponse>(connection, {
-        ActualQLquery: {
-          table: "reflect_budgets",
-          filter: {
-            category: { $oneof: sortedIds },
-          },
-          select: ["month", "category", "amount"],
-        },
-      });
-
-      // Build a two-level Map: YYYY-MM → categoryId → amount.
-      const result = new Map<string, Map<string, number>>();
-      for (const row of response.data) {
-        const monthStr = toMonthString(row.month);
-        if (!result.has(monthStr)) {
-          result.set(monthStr, new Map());
-        }
-        result.get(monthStr)!.set(row.category, row.amount);
-      }
-      return result;
-    },
-    enabled: enabled && !!connection && sortedIds.length > 0,
-    // Income budgets change infrequently — cache aggressively.
-    staleTime: 5 * 60 * 1000,
+    ...incomeBudgetsQueryOptions(connection, incomeCategoryIds),
+    enabled: enabled && !!connection && incomeCategoryIds.length > 0,
   });
 
   return {

@@ -431,6 +431,10 @@ describe("plan documents", () => {
     expect(parseAmountExpression("-40+10")).toBe(-3_000);
     expect(parseAmountExpression("5−8")).toBe(-300);
     expect(parseAmountExpression("6×2÷4")).toBe(300);
+    // Half a cent rounds away from zero either way, matching parseAmount.
+    expect(parseAmountExpression("1/8")).toBe(13);
+    expect(parseAmountExpression("-1/8")).toBe(-13);
+    expect(parseAmount("-0.125")).toBe(-13);
     // Plain amounts read as before, accounting brackets included.
     expect(parseAmountExpression("(300)")).toBe(-30_000);
     expect(parseAmountExpression("1,250.50")).toBe(125_050);

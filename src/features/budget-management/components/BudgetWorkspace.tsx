@@ -1232,7 +1232,8 @@ function BudgetWorkspaceInner({
       <BudgetSelectionSummary
         selection={selection}
         activeMonths={activeMonths}
-        categories={categories}
+        // Same rows as copy, paste, fill and bulk actions: collapsed groups excluded.
+        categories={rowCategories}
         cellView={cellView}
       />
 

@@ -178,65 +178,96 @@ export function BudgetExportDialog({
   /**
    * Loads every selected month (cache hits for months the grid has loaded)
    * and builds the export text, or returns null after reporting a failure.
+   * The caller holds `isExporting` for the whole action.
    */
   const buildExport = async (delimiter: CsvDelimiter): Promise<string | null> => {
     if (!canExport || !connection) return null;
     setFetchError(null);
-    setIsExporting(true);
-    try {
-      const results = await Promise.allSettled(
-        selectedMonths.map((m) =>
-          queryClient.fetchQuery(budgetMonthDataQueryOptions(connection, m))
-        )
+    const results = await Promise.allSettled(
+      selectedMonths.map((m) =>
+        queryClient.fetchQuery(budgetMonthDataQueryOptions(connection, m))
+      )
+    );
+
+    const failedCount = results.filter((r) => r.status === "rejected").length;
+    if (failedCount > 0) {
+      setFetchError(
+        `Failed to load data for ${failedCount} month${failedCount !== 1 ? "s" : ""}. Please try again.`
       );
-
-      const failedCount = results.filter((r) => r.status === "rejected").length;
-      if (failedCount > 0) {
-        setFetchError(
-          `Failed to load data for ${failedCount} month${failedCount !== 1 ? "s" : ""}. Please try again.`
-        );
-        return null;
-      }
-
-      const monthDataMap: Record<string, LoadedMonthState> = {};
-      for (let i = 0; i < selectedMonths.length; i++) {
-        const result = results[i];
-        if (result?.status === "fulfilled") {
-          monthDataMap[selectedMonths[i]!] = result.value;
-        }
-      }
-
-      const opts = {
-        months: selectedMonths,
-        includeHidden,
-        includeIncome,
-        value: exportValue,
-        delimiter,
-      };
-      // Staged values exist only for budgeted amounts.
-      const edits = includeStagedView && exportValue === "budgeted" ? stagedEdits : undefined;
-      return exportToCsv(selectedMonths, groups, monthDataMap, opts, edits);
-    } finally {
-      setIsExporting(false);
+      return null;
     }
+
+    const monthDataMap: Record<string, LoadedMonthState> = {};
+    for (let i = 0; i < selectedMonths.length; i++) {
+      const result = results[i];
+      if (result?.status === "fulfilled") {
+        monthDataMap[selectedMonths[i]!] = result.value;
+      }
+    }
+
+    const opts = {
+      months: selectedMonths,
+      includeHidden,
+      includeIncome,
+      value: exportValue,
+      delimiter,
+    };
+    // Staged values exist only for budgeted amounts.
+    const edits = includeStagedView && exportValue === "budgeted" ? stagedEdits : undefined;
+    return exportToCsv(selectedMonths, groups, monthDataMap, opts, edits);
   };
 
   const fileLabel = EXPORT_VALUES.find((v) => v.value === exportValue)?.fileLabel ?? "budget";
 
   const handleExport = async () => {
-    const csv = await buildExport(",");
-    if (csv === null) return;
-    const filename = `${fileLabel}-export-${selectedMonths[0]}-to-${selectedMonths[selectedMonths.length - 1]}.csv`;
-    triggerDownload(csv, filename);
-    onClose();
+    if (isExporting) return;
+    setIsExporting(true);
+    try {
+      const csv = await buildExport(",");
+      if (csv === null) return;
+      const filename = `${fileLabel}-export-${selectedMonths[0]}-to-${selectedMonths[selectedMonths.length - 1]}.csv`;
+      triggerDownload(csv, filename);
+      onClose();
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  /**
+   * Starts the clipboard write inside the click, as Safari requires, with the
+   * text still loading: the clipboard item's content is a promise for it.
+   * Browsers without promised clipboard items fall back to writeText.
+   */
+  const writeToClipboard = async (text: Promise<string | null>): Promise<string | null> => {
+    if (typeof ClipboardItem !== "undefined" && typeof navigator.clipboard?.write === "function") {
+      let built: string | null = null;
+      const blob = text.then((t) => {
+        if (t === null) throw new Error("export failed");
+        built = t;
+        return new Blob([t], { type: "text/plain" });
+      });
+      try {
+        await navigator.clipboard.write([new ClipboardItem({ "text/plain": blob })]);
+      } catch (err) {
+        // A failed export has already been reported; only a clipboard
+        // failure needs its own message.
+        if (built === null && (await text) === null) return null;
+        throw err;
+      }
+      return built;
+    }
+    const t = await text;
+    if (t !== null) await navigator.clipboard.writeText(t);
+    return t;
   };
 
   // Tab-separated text pastes straight into spreadsheet cells.
   const handleCopy = async () => {
-    const text = await buildExport("\t");
-    if (text === null) return;
+    if (isExporting) return;
+    setIsExporting(true);
     try {
-      await navigator.clipboard.writeText(text);
+      const text = await writeToClipboard(buildExport("\t"));
+      if (text === null) return;
       const rowCount = Math.max(0, text.split("\n").length - 1);
       toast.success(
         `Copied ${rowCount} row${rowCount !== 1 ? "s" : ""} × ${selectedMonths.length} month${selectedMonths.length !== 1 ? "s" : ""}`,
@@ -245,6 +276,8 @@ export function BudgetExportDialog({
       onClose();
     } catch {
       setFetchError("The clipboard is not available here. Use Export CSV instead.");
+    } finally {
+      setIsExporting(false);
     }
   };
 

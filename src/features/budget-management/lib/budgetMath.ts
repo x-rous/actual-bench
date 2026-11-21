@@ -11,7 +11,13 @@ type ParseResult =
   | { ok: false; error: string };
 
 export function parseBudgetExpression(input: string): ParseResult {
-  // Strip thousands-separator commas so "12,000" parses as 12000.
+  // Commas only group thousands ("12,000" is 12000). A number grouped any
+  // other way, such as "1,50", is refused rather than read as 150.
+  for (const number of input.match(/[\d.,]+/g) ?? []) {
+    if (number.includes(",") && !/^\d{1,3}(?:,\d{3})+(?:\.\d*)?$/.test(number)) {
+      return { ok: false, error: "Use commas only to group thousands, as in 1,500" };
+    }
+  }
   const src = input.trim().replace(/,/g, "");
   if (src === "") return { ok: false, error: "Empty expression" };
 

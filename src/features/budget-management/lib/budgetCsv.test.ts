@@ -527,7 +527,7 @@ describe("parseImportAmount", () => {
     expect(parseImportAmount(text)).toBe(minor);
   });
 
-  it.each(["abc", "1.2.3,4,5", "--5", "$", "12a"])("rejects %s", (text) => {
+  it.each(["abc", "1.2.3,4,5", "--5", "$", "12a", "1,2,3", "12,3456", "1.2.3", "12,34.50", "1.23,50"])("rejects %s", (text) => {
     expect(parseImportAmount(text)).toBeNull();
   });
 });
@@ -546,6 +546,24 @@ describe("parseBudgetCsv", () => {
     const parsed = parseBudgetCsv("Group Name\tCategory Name\t2026-01\nFood\tGroceries\t$1,200.00");
     expect(parsed.delimiter).toBe("\t");
     expect(parsed.rows[0]!.monthValues).toEqual({ "2026-01": "$1,200.00" });
+  });
+
+  it("keeps a quoted name with a line break in one record", () => {
+    const parsed = parseBudgetCsv('Group Name,Category Name,2026-01\nFood,"Eating\nout",12.00\nFood,Bad,x\n');
+    expect(parsed.rows.map((r) => r.categoryName)).toEqual(["Eating\nout", "Bad"]);
+    expect(parsed.rows[0]!.monthValues).toEqual({ "2026-01": "12.00" });
+    // Diagnostics keep the physical line the record starts on.
+    expect(parsed.invalidCells[0]!.line).toBe(4);
+  });
+
+  it("reports columns that read as the same month", () => {
+    const parsed = parseBudgetCsv("Group Name,Category Name,Jan-26,2026-01\nFood,Groceries,10.00,20.00\n");
+    expect(parsed.duplicateMonthColumns).toEqual([{ month: "2026-01", headers: ["Jan-26", "2026-01"] }]);
+  });
+
+  it("recognises Spent and Balance exports, but not budgeted files", () => {
+    expect(parseBudgetCsv("Group Name,Category Name (Spent),2026-01\nFood,Groceries,-4.00").analysisExport).toBe("Spent");
+    expect(parseBudgetCsv("Group Name,Category Name,2026-01\nFood,Groceries,4.00").analysisExport).toBeNull();
   });
 
   it("reports cells it cannot read instead of dropping them silently", () => {
@@ -582,11 +600,27 @@ describe("exportToCsv - range, value and delimiter", () => {
     ]);
   });
 
+  it("writes formula-like names as text and reads them back unchanged", () => {
+    const formulaGroups = [group({ id: "g1", name: "=Food", categoryIds: ["c1"] })];
+    const data = { "2026-01": monthState({ c1: cat({ id: "c1", name: "+Cash", budgeted: 100 }) }) };
+    const csv = exportToCsv(["2026-01"], formulaGroups, data, {
+      months: ["2026-01"], includeHidden: false, includeIncome: false,
+    });
+    expect(csv.split("\n")[1]).toBe("'=Food,'+Cash,1.00");
+    // Amounts are not touched, even negative ones.
+    expect(exportToCsv(["2026-01"], groups, { "2026-01": monthState({ c1: cat({ id: "c1", budgeted: -100 }) }) }, {
+      months: ["2026-01"], includeHidden: false, includeIncome: false,
+    }).split("\n")[1]).toBe("Food,Groceries,-1.00");
+    const row = parseBudgetCsv(csv).rows[0]!;
+    expect([row.groupName, row.categoryName]).toEqual(["=Food", "+Cash"]);
+  });
+
   it("writes spent or balance, and tab-separated text for pasting", () => {
     const data = { "2026-01": monthState({ c1: cat({ id: "c1", actuals: -4200, balance: 800 }) }) };
     const base = { months: ["2026-01"], includeHidden: false, includeIncome: false };
-    expect(exportToCsv(["2026-01"], groups, data, { ...base, value: "actuals" }).split("\n")[1])
-      .toBe("Food,Groceries,-42.00");
+    const spent = exportToCsv(["2026-01"], groups, data, { ...base, value: "actuals" }).split("\n");
+    expect(spent[0]).toBe("Group Name,Category Name (Spent),2026-01");
+    expect(spent[1]).toBe("Food,Groceries,-42.00");
     expect(
       exportToCsv(["2026-01"], groups, data, { ...base, value: "balance", delimiter: "\t" }).split("\n")[1]
     ).toBe("Food\tGroceries\t8.00");

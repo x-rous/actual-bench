@@ -1,6 +1,7 @@
 import {
   computeEffectiveMonthState,
   computeEnvelopeCarry,
+  envelopeReplayMonths,
   mergeMonthStates,
 } from "./effectiveMonth";
 import type {
@@ -887,5 +888,41 @@ describe("computeEnvelopeCarry (H1)", () => {
     const [, april] = project({ budgeted: 0, actuals: -80, balance: -80, carryover: true }, 80);
     expect(april.categoriesById.c1!.balance).toBe(80);
     expect(april.summary.toBudget).toBe(420);
+  });
+
+  it("keeps April's figures when the edited March leaves the window", () => {
+    const c1March = { budgeted: 0, actuals: -80, balance: -80 };
+    const [march, april] = envelopeMonths(c1March);
+    const edits = editsMap([edit("2026-03", "c1", 80, 0)]);
+    const aprilFrom = (carryMonths: string[], states: LoadedMonthState[]) =>
+      computeEffectiveMonthState({
+        serverState: april,
+        allEdits: edits,
+        isTracking: false,
+        incomeBudgets: undefined,
+        month: "2026-04",
+        envelopeCarry: computeEnvelopeCarry(carryMonths, states, edits).get("2026-04"),
+      })!;
+
+    // Window starts in April; March is replayed in front of it (useEnvelopeCarry).
+    expect(envelopeReplayMonths("2026-04", edits)).toEqual(["2026-03"]);
+    const replayed = aprilFrom(["2026-03", "2026-04"], [march, april]);
+    expect(replayed.summary.toBudget).toBe(500);
+    expect(replayed.categoriesById.c1!.balance).toBe(0);
+  });
+});
+
+describe("envelopeReplayMonths", () => {
+  it("covers the months from the earliest staged edit before the window", () => {
+    const edits = editsMap([edit("2026-01", "c1", 1, 0), edit("2026-05", "c1", 1, 0)]);
+    expect(envelopeReplayMonths("2026-04", edits)).toEqual(["2026-01", "2026-02", "2026-03"]);
+  });
+
+  it("is empty without edits before the window, and stops at the limit", () => {
+    expect(envelopeReplayMonths("2026-04", editsMap([edit("2026-04", "c1", 1, 0)]))).toEqual([]);
+    expect(envelopeReplayMonths("2026-04", editsMap([edit("2020-01", "c1", 1, 0)]), 2)).toEqual([
+      "2026-02",
+      "2026-03",
+    ]);
   });
 });

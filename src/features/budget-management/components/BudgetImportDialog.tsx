@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useMemo, useState, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   parseBudgetCsv,
@@ -20,6 +20,9 @@ import { formatCurrency as formatAmount, formatDelta } from "../lib/format";
 import type { LoadedCategory, LoadedGroup, LoadedMonthState } from "../types";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
+import { incomeBudgetsQueryOptions } from "../hooks/useIncomeBudgets";
+import { incomeCategoryIdsNeedingBudgetFallback } from "../lib/monthAuthority";
+import { applyIncomeBudgetFallback } from "../lib/varianceInvestigation/varianceIncomeBudgets";
 
 type Props = {
   availableMonths: string[];
@@ -88,13 +91,14 @@ export function BudgetImportDialog({
 }: Props) {
   const stageBulkEdits = useBudgetEditsStore((s) => s.stageBulkEdits);
   const stagedEdits = useBudgetEditsStore((s) => s.edits);
+  const isTracking = useBudgetEditsStore((s) => s.budgetMode) === "tracking";
   const connection = useConnectionStore(selectActiveInstance);
   const queryClient = useQueryClient();
 
   const [step, setStep] = useState<Step>("upload");
   const [parseError, setParseError] = useState<string | null>(null);
   const [parsed, setParsed] = useState<ParsedBudgetCsv | null>(null);
-  const [matchResults, setMatchResults] = useState<ImportRowResult[]>([]);
+  const [matchCategories, setMatchCategories] = useState<LoadedCategory[]>([]);
   const [approvedIds, setApprovedIds] = useState<Set<string>>(new Set());
   const [previewRows, setPreviewRows] = useState<ImportPreviewEntry[]>([]);
   const [showUnchanged, setShowUnchanged] = useState(false);
@@ -102,27 +106,50 @@ export function BudgetImportDialog({
   const [isDragging, setIsDragging] = useState(false);
   const [isWorking, setIsWorking] = useState(false);
   const [pasteText, setPasteText] = useState("");
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Each read or preview load takes a ticket; a newer one (or Back) makes an
+  // older pending load's result void, so it cannot replace newer state.
+  const requestRef = useRef(0);
+
+  // Recomputed when the visible range changes, so months brought into view
+  // by "Move the visible range" are no longer treated as out of range. Row
+  // ids are row positions, so approvals carry over unchanged.
+  const matchResults = useMemo<ImportRowResult[]>(
+    () => (parsed ? matchImportRows(parsed.rows, matchCategories, availableMonths, activeMonths) : []),
+    [parsed, matchCategories, availableMonths, activeMonths]
+  );
 
   /**
-   * Server state for each given month. These are normally cache hits (the
-   * grid has loaded the window). A month that cannot be loaded is left out;
-   * the preview then falls back to the first visible month for it.
+   * Server state for each given month, with the months that could not be
+   * loaded. Matching can use the cache (the grid has loaded the window); the
+   * preview reads fresh (`fresh`), because a cached value that another client
+   * has since changed would hide a real change as "already matches".
    */
-  const loadMonthStates = async (months: string[]) => {
+  const loadMonthStates = async (months: string[], fresh = false) => {
     const monthStates: Record<string, LoadedMonthState | undefined> = {};
+    const failed: string[] = [];
     const loaded = await Promise.allSettled(
       months.map(async (month) => {
-        const state = await queryClient.ensureQueryData(
-          budgetMonthDataQueryOptions(connection, month)
-        );
+        const options = budgetMonthDataQueryOptions(connection, month);
+        const state = fresh
+          ? await queryClient.fetchQuery({ ...options, staleTime: 0 })
+          : await queryClient.ensureQueryData(options);
         return [month, state] as const;
       })
     );
-    for (const outcome of loaded) {
+    for (const [index, outcome] of loaded.entries()) {
       if (outcome.status === "fulfilled") monthStates[outcome.value[0]] = outcome.value[1];
+      else failed.push(months[index]!);
     }
-    return monthStates;
+    return { monthStates, failed };
+  };
+
+  const goToStep = (next: Step) => {
+    requestRef.current++;
+    setIsWorking(false);
+    setPreviewError(null);
+    setStep(next);
   };
 
   // ---------- Step 1: Upload or paste ----------
@@ -145,7 +172,21 @@ export function BudgetImportDialog({
       setParseError(`The ${sourceLabel} contains no category rows.`);
       return;
     }
+    if (result.analysisExport) {
+      setParseError(
+        `This is a ${result.analysisExport} export, not budgeted amounts, so it cannot be imported. Export Budgeted amounts to edit and import them back.`
+      );
+      return;
+    }
+    if (result.duplicateMonthColumns.length > 0) {
+      const conflicts = result.duplicateMonthColumns
+        .map((d) => `${d.headers.join(" and ")} (${formatMonthLabel(d.month)})`)
+        .join("; ");
+      setParseError(`More than one column is the same month: ${conflicts}. Keep one column per month and try again.`);
+      return;
+    }
 
+    const request = ++requestRef.current;
     setIsWorking(true);
     try {
       // Match against every category that exists in the months in view, so a
@@ -155,7 +196,8 @@ export function BudgetImportDialog({
       const inView = [...new Set(result.monthColumns.map((c) => c.month))].filter(
         (m) => visible.has(m) && available.has(m)
       );
-      const states = await loadMonthStates(inView);
+      const { monthStates: states } = await loadMonthStates(inView);
+      if (request !== requestRef.current) return;
       const allCategories = mergeCategories(
         categories,
         Object.values(states).filter((st): st is LoadedMonthState => st != null)
@@ -163,7 +205,7 @@ export function BudgetImportDialog({
 
       const results = matchImportRows(result.rows, allCategories, availableMonths, activeMonths);
       setParsed(result);
-      setMatchResults(results);
+      setMatchCategories(allCategories);
       // Auto-approve exact matches
       setApprovedIds(
         new Set(
@@ -176,13 +218,16 @@ export function BudgetImportDialog({
       );
       setShowAllInvalid(false);
       setParseError(null);
+      setPreviewError(null);
       setStep("match");
     } finally {
-      setIsWorking(false);
+      if (request === requestRef.current) setIsWorking(false);
     }
   };
 
   const handleFile = (file: File) => {
+    // One import at a time: a second file waits until the first is read.
+    if (isWorking) return;
     const name = file.name.toLowerCase();
     const looksLikeText =
       name.endsWith(".csv") ||
@@ -281,14 +326,48 @@ export function BudgetImportDialog({
         if (avail === "available") targetMonths.add(month);
       }
     }
+    const request = ++requestRef.current;
     setIsWorking(true);
+    setPreviewError(null);
     try {
-      const monthStates = await loadMonthStates([...targetMonths]);
+      const { monthStates, failed } = await loadMonthStates([...targetMonths], true);
+      if (request !== requestRef.current) return;
+      // Never compare a month's cells with another month's values: a month
+      // whose saved amounts could not be read blocks the preview until retried.
+      if (failed.length > 0) {
+        const labels = failed.sort().map((m) => formatMonthLabel(m)).join(", ");
+        setPreviewError(`Could not load the saved amounts for ${labels}. Try again.`);
+        return;
+      }
+      // Older Actual servers leave Tracking income budgets out of the month
+      // data; the grid reads them separately, and the preview must compare
+      // against the same saved values (read fresh, like the months).
+      const fallbackIds = isTracking
+        ? incomeCategoryIdsNeedingBudgetFallback(Object.values(monthStates))
+        : [];
+      if (fallbackIds.length > 0) {
+        let incomeBudgets: Map<string, Map<string, number>>;
+        try {
+          incomeBudgets = await queryClient.fetchQuery({
+            ...incomeBudgetsQueryOptions(connection, fallbackIds),
+            staleTime: 0,
+          });
+        } catch {
+          if (request === requestRef.current) {
+            setPreviewError("Could not load the saved income budgets. Try again.");
+          }
+          return;
+        }
+        if (request !== requestRef.current) return;
+        for (const [month, state] of Object.entries(monthStates)) {
+          if (state) monthStates[month] = applyIncomeBudgetFallback(state, month, incomeBudgets);
+        }
+      }
       setPreviewRows(buildImportPreview(approved, groups, categoriesById, monthStates));
       setShowUnchanged(false);
       setStep("preview");
     } finally {
-      setIsWorking(false);
+      if (request === requestRef.current) setIsWorking(false);
     }
   };
 
@@ -507,7 +586,7 @@ export function BudgetImportDialog({
               <button
                 type="button"
                 onClick={() => setApprovedIds(new Set(matchableIds))}
-                disabled={approvedIds.size === matchableIds.length}
+                disabled={approvedIds.size === matchableIds.length || isWorking}
                 className="px-2 py-1 rounded border border-border hover:bg-muted disabled:opacity-40 transition-colors"
               >
                 Approve all matches
@@ -518,7 +597,8 @@ export function BudgetImportDialog({
                   onClick={() =>
                     setApprovedIds((prev) => new Set([...prev, ...unapprovedSuggestions]))
                   }
-                  className="px-2 py-1 rounded border border-border hover:bg-muted transition-colors"
+                  disabled={isWorking}
+                  className="px-2 py-1 rounded border border-border hover:bg-muted disabled:opacity-40 transition-colors"
                 >
                   Approve {unapprovedSuggestions.length} similar name{unapprovedSuggestions.length !== 1 ? "s" : ""}
                 </button>
@@ -526,7 +606,7 @@ export function BudgetImportDialog({
               <button
                 type="button"
                 onClick={() => setApprovedIds(new Set())}
-                disabled={approvedIds.size === 0}
+                disabled={approvedIds.size === 0 || isWorking}
                 className="px-2 py-1 rounded border border-border hover:bg-muted disabled:opacity-40 transition-colors"
               >
                 Clear
@@ -562,6 +642,7 @@ export function BudgetImportDialog({
                           {result.matchedCategoryId && result.matchStatus !== "unmatched" && (
                             <Checkbox
                               checked={isApproved}
+                              disabled={isWorking}
                               onCheckedChange={() => toggleApproval(rowId)}
                               aria-label={`Approve import of ${result.csvRow.categoryName}`}
                             />
@@ -604,8 +685,12 @@ export function BudgetImportDialog({
               </table>
             </div>
 
+            {previewError && (
+              <p className="text-xs text-destructive mb-2" role="alert">{previewError}</p>
+            )}
+
             <div className="flex gap-2 justify-end">
-              <button type="button" onClick={() => setStep("upload")} className="px-3 py-1.5 text-sm rounded border border-border hover:bg-muted transition-colors">
+              <button type="button" onClick={() => goToStep("upload")} className="px-3 py-1.5 text-sm rounded border border-border hover:bg-muted transition-colors">
                 Back
               </button>
               <button
@@ -662,6 +747,11 @@ export function BudgetImportDialog({
                 <tbody>
                   {visibleRows.map((row, i) => {
                     const delta = row.nextBudgeted - row.previousBudgeted;
+                    const staged = stagedEdits[`${row.month}:${row.categoryId}`];
+                    // Same as the saved value, but a different value is staged:
+                    // importing it replaces (undoes) that staged edit.
+                    const replacesStaged =
+                      delta === 0 && staged !== undefined && staged.nextBudgeted !== row.nextBudgeted;
                     return (
                       <tr
                         key={i}
@@ -680,7 +770,11 @@ export function BudgetImportDialog({
                           {formatAmount(row.nextBudgeted)}
                         </td>
                         <td className="px-2 py-1 text-right font-mono">
-                          {delta === 0 ? "No change" : formatDelta(delta)}
+                          {replacesStaged
+                            ? `Replaces staged ${formatAmount(staged.nextBudgeted)}`
+                            : delta === 0
+                              ? "No change"
+                              : formatDelta(delta)}
                         </td>
                       </tr>
                     );
@@ -690,7 +784,7 @@ export function BudgetImportDialog({
             </div>
 
             <div className="flex gap-2 justify-end">
-              <button type="button" onClick={() => setStep("match")} className="px-3 py-1.5 text-sm rounded border border-border hover:bg-muted transition-colors">
+              <button type="button" onClick={() => goToStep("match")} className="px-3 py-1.5 text-sm rounded border border-border hover:bg-muted transition-colors">
                 Back
               </button>
               <button

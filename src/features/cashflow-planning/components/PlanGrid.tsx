@@ -842,6 +842,8 @@ const GridLine = memo(function GridLine({ line, gridId, rowNumber, columns, kind
                 onFocus={(e) => { const end = e.target.value.length; e.target.setSelectionRange(end, end); }}
                 onBlur={(e) => handlers.commit(e.target.value, { line: line.key, col: column.key }, null)}
                 onKeyDown={(e) => {
+                  // Enter that confirms an IME composition is not a commit.
+                  if (e.nativeEvent.isComposing || e.keyCode === 229) return;
                   if (e.key === "Enter") { e.preventDefault(); handlers.commit(e.currentTarget.value, { line: line.key, col: column.key }, e.ctrlKey || e.metaKey ? "all" : "down"); }
                   else if (e.key === "Tab") { e.preventDefault(); handlers.commit(e.currentTarget.value, { line: line.key, col: column.key }, "right"); }
                   else if (e.key === "Escape") { e.preventDefault(); handlers.cancel(); }
