@@ -4,10 +4,12 @@ import { getBackupDestination, getBackupPolicy, listBackupDestinations } from "@
 import type { AutomationRunPhase } from "@/lib/automation/registry";
 import { openSecret, type SealedSecret } from "@/lib/sync/vault";
 import { discoverBackups, type DiscoveryResult } from "./discover";
+import { compareArtifact } from "./compare";
 import { inspectArtifact } from "./inspect";
 import { runBackup } from "./runBackup";
 import { takeSafetyRecoveryPoint } from "./safetyPoint";
 import { scrubAll } from "./scrub";
+import { BACKUP_SEARCH_KINDS, searchArtifact } from "./search";
 import { readParkedArchive } from "./uploadedArchive";
 
 /**
@@ -42,6 +44,22 @@ export const backupScrubInput = z.object({
 
 export const backupInspectInput = z.object({ artifactId: z.string().min(1), passphrase: sealed.nullable() });
 
+const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional();
+
+export const backupSearchInput = z.object({
+  artifactId: z.string().min(1),
+  passphrase: sealed.nullable(),
+  query: z.object({
+    kind: z.enum(BACKUP_SEARCH_KINDS as [string, ...string[]]),
+    text: z.string().max(200),
+    from: isoDate,
+    to: isoDate,
+    page: z.number().int().min(0).max(100_000).optional(),
+  }),
+});
+
+export const backupCompareInput = z.object({ artifactId: z.string().min(1), passphrase: sealed.nullable() });
+
 export const backupDiscoverInput = z.object({ destinationId: z.string().nullable() });
 
 export const backupRunInput = z.object({
@@ -74,6 +92,21 @@ export async function inspectTask(raw: unknown, signal?: AbortSignal) {
   const input = backupInspectInput.parse(raw);
   const passphrase = input.passphrase ? openSecret(input.passphrase as SealedSecret) : undefined;
   return inspectArtifact(getAppDb(), input.artifactId, { passphrase, signal });
+}
+
+export async function searchTask(raw: unknown, signal?: AbortSignal) {
+  const input = backupSearchInput.parse(raw);
+  const passphrase = input.passphrase ? openSecret(input.passphrase as SealedSecret) : undefined;
+  return searchArtifact(getAppDb(), input.artifactId, input.query as Parameters<typeof searchArtifact>[2], {
+    passphrase,
+    signal,
+  });
+}
+
+export async function compareTask(raw: unknown, signal?: AbortSignal) {
+  const input = backupCompareInput.parse(raw);
+  const passphrase = input.passphrase ? openSecret(input.passphrase as SealedSecret) : undefined;
+  return compareArtifact(getAppDb(), input.artifactId, { passphrase, signal });
 }
 
 export async function discoverTask(raw: unknown, signal?: AbortSignal): Promise<DiscoveryResult[]> {
@@ -138,6 +171,8 @@ export const backupTaskHandlers: Record<string, (input: unknown, ctx: TaskContex
   "backup.scrub": (input, ctx) => scrubTask(input, ctx.signal),
   "backup.inspect": (input, ctx) => inspectTask(input, ctx.signal),
   "backup.discover": (input, ctx) => discoverTask(input, ctx.signal),
+  "backup.search": (input, ctx) => searchTask(input, ctx.signal),
+  "backup.compare": (input, ctx) => compareTask(input, ctx.signal),
   "backup.run": (input, ctx) => runTask(input, ctx),
   "backup.safetyPoint": (input, ctx) => safetyPointTask(input, ctx),
 };

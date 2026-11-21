@@ -1,18 +1,10 @@
-import { getBackupCredential } from "@/lib/credentials/backupSecrets";
-import {
-  getBackupArtifact,
-  getBackupDestination,
-  listArtifactLocations,
-  type BackupArtifact,
-  type BackupArtifactLocation,
-  type BackupDestination,
-} from "@/lib/app-db/backupRepository";
+import type { BackupArtifact } from "@/lib/app-db/backupRepository";
 import type { SqliteDatabase } from "@/lib/app-db/types";
-import { createDestinationAdapter } from "./destinations";
-import { decryptArchive } from "./encryption";
-import { sha256 } from "./manifest";
+import { readArtifact, unopenedMessage } from "./openArtifact";
 import { verifyAppDbArchive, verifyBudgetArchive, type VerificationOutcome } from "./verify";
 import { recordReadOutcome } from "./verificationRecord";
+
+export { readableLocations } from "./openArtifact";
 
 /**
  * Looking inside a backup without restoring it (RD-077 / PR-047e).
@@ -44,93 +36,26 @@ export async function inspectArtifact(
   artifactId: string,
   options: { passphrase?: string; signal?: AbortSignal } = {}
 ): Promise<InspectionResult> {
-  const artifact = getBackupArtifact(db, artifactId);
-  if (!artifact) throw new Error("That backup is not in the inventory.");
-
-  // Every stored copy, healthiest destination first, until one can be read:
-  // trying only the first left a second, intact copy unused whenever the
-  // first destination was down.
-  const candidates = readableLocations(db, artifactId);
-  if (candidates.length === 0) {
-    throw new Error("Bench has no stored copy of this backup to open.");
-  }
-
-  // The first copy whose bytes match the checksum wins. A damaged copy is
-  // passed over for the next one, and reported as damaged only when every
-  // copy that could be read is.
-  let bytes: Buffer | null = null;
-  let damaged: { bytes: Buffer; candidate: (typeof candidates)[number] } | null = null;
-  let location = candidates[0].location;
-  let destination = candidates[0].destination;
-  const errors: string[] = [];
-  for (const candidate of candidates) {
-    let read: Buffer;
-    try {
-      read = await createDestinationAdapter(db, candidate.destination, { signal: options.signal }).get(
-        candidate.location.objectKey
-      );
-    } catch (error) {
-      options.signal?.throwIfAborted();
-      errors.push(`${candidate.destination.name}: ${error instanceof Error ? error.message : String(error)}`);
-      continue;
-    }
-    if (sha256(read) !== artifact.checksumSha256) {
-      damaged ??= { bytes: read, candidate };
-      continue;
-    }
-    bytes = read;
-    location = candidate.location;
-    destination = candidate.destination;
-    break;
-  }
-  if (!bytes && damaged) {
-    bytes = damaged.bytes;
-    location = damaged.candidate.location;
-    destination = damaged.candidate.destination;
-  }
-  if (!bytes) throw new Error(`No copy of this backup could be read. ${errors.join("; ")}`);
-
-  const checksumMatches = !damaged || bytes !== damaged.bytes;
-
+  const read = await readArtifact(db, artifactId, options);
+  const { artifact } = read;
   const base = {
     artifact,
-    objectKey: location.objectKey,
-    destinationName: destination.name,
-    checksumMatches,
+    objectKey: read.objectKey,
+    destinationName: read.destinationName,
+    checksumMatches: read.status !== "damaged",
     encrypted: artifact.encrypted,
   };
 
-  if (!checksumMatches) {
-    // Say it plainly and stop: opening bytes that are already known to be wrong
-    // tells the user nothing they can use.
-    return {
-      ...base,
-      opened: false,
-      verification: null,
-      message:
-        "The stored bytes no longer match the checksum recorded when this backup was written. Treat it as damaged.",
-    };
-  }
-
-  let plaintext: Uint8Array = bytes;
-  if (artifact.encrypted) {
-    const passphrase = options.passphrase ?? storedPassphrase(db, artifact);
-    if (!passphrase) {
-      return {
-        ...base,
-        opened: false,
-        verification: null,
-        message:
-          "This backup is encrypted and Bench has no stored passphrase for it. Enter the passphrase to look inside.",
-      };
-    }
-    plaintext = decryptArchive(bytes, passphrase);
+  // A damaged copy is said plainly and not opened: opening bytes already
+  // known to be wrong tells the user nothing they can use.
+  if (read.status !== "opened") {
+    return { ...base, opened: false, verification: null, message: unopenedMessage(read) };
   }
 
   const verification =
     artifact.kind === "budget"
-      ? verifyBudgetArchive(plaintext, "deep")
-      : verifyAppDbArchive(plaintext, "data");
+      ? verifyBudgetArchive(read.plaintext, "deep")
+      : verifyAppDbArchive(read.plaintext, "data");
 
   // An inspection is a verification, so it counts as one. Anything else would
   // mean a user could open a backup, see it is fine, and still be told on the
@@ -146,39 +71,6 @@ export async function inspectArtifact(
         ? describeContents(verification)
         : verification.findings[0] ?? "Bench could not read this backup.",
   };
-}
-
-/**
- * The stored copies of an artifact Bench can reach, healthiest destination
- * first: one whose last outcome was a success before one that last failed.
- */
-export function readableLocations(
-  db: SqliteDatabase,
-  artifactId: string
-): { location: BackupArtifactLocation; destination: BackupDestination }[] {
-  const healthy = (destination: BackupDestination) =>
-    !destination.lastFailureAt || (destination.lastSuccessAt ?? "") > destination.lastFailureAt;
-  return listArtifactLocations(db, artifactId)
-    .filter((location) => location.status === "stored" && location.destinationId)
-    .map((location) => ({ location, destination: getBackupDestination(db, location.destinationId as string) }))
-    .filter(
-      (entry): entry is { location: BackupArtifactLocation; destination: BackupDestination } =>
-        entry.destination !== null
-    )
-    .sort((a, b) => Number(healthy(b.destination)) - Number(healthy(a.destination)));
-}
-
-function storedPassphrase(db: SqliteDatabase, artifact: BackupArtifact): string | null {
-  // The artifact's own reference only: a rule's current passphrase cannot
-  // open a copy taken before it changed.
-  const ref = artifact.encryptionCredentialRef;
-  if (!ref) return null;
-  try {
-    const secret = getBackupCredential(db, ref);
-    return secret && "passphrase" in secret ? secret.passphrase : null;
-  } catch {
-    return null;
-  }
 }
 
 function describeContents(verification: VerificationOutcome): string {

@@ -194,7 +194,7 @@ export const ARCHIVE_LIMITS: ArchiveLimits = {
  * distinct entries and then collided in the map - the very "whichever is read
  * second wins" the duplicate check exists to prevent.
  */
-function entryKey(name: string): string {
+export function entryKey(name: string): string {
   return name.replace(/^\.?\//, "").toLowerCase();
 }
 

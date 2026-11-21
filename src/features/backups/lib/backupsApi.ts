@@ -13,6 +13,8 @@ import type { PruneResult } from "@/lib/backup/prune";
 import type { ScrubResult } from "@/lib/backup/scrub";
 import type { DiscoveryResult } from "@/lib/backup/discover";
 import type { InspectionResult } from "@/lib/backup/inspect";
+import type { BackupSearchInput, BackupSearchResult } from "@/lib/backup/search";
+import type { BackupComparison } from "@/lib/backup/compare";
 
 /** Client for the backup routes (RD-077 / PR-047e). */
 
@@ -329,6 +331,34 @@ export async function inspectBackup(
 ): Promise<InspectionResult> {
   const body = await json<{ result: InspectionResult }>(
     await fetch(`/api/backups/artifacts/${artifactId}/inspect`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(passphrase ? { passphrase } : {}),
+    })
+  );
+  return body.result;
+}
+
+/** Search inside a budget backup. Read-only; nothing is recorded. */
+export async function searchBackup(
+  artifactId: string,
+  query: BackupSearchInput,
+  passphrase?: string
+): Promise<BackupSearchResult> {
+  const body = await json<{ result: BackupSearchResult }>(
+    await fetch(`/api/backups/artifacts/${artifactId}/search`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...query, ...(passphrase ? { passphrase } : {}) }),
+    })
+  );
+  return body.result;
+}
+
+/** Compare a budget backup with the budget as it is now. */
+export async function compareBackup(artifactId: string, passphrase?: string): Promise<BackupComparison> {
+  const body = await json<{ result: BackupComparison }>(
+    await fetch(`/api/backups/artifacts/${artifactId}/compare`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(passphrase ? { passphrase } : {}),

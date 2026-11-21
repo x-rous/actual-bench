@@ -265,7 +265,7 @@ describe("worker task host", () => {
     });
 
     expect(posted).toEqual([{ type: "result", taskId: "t-scrub", output: [] }]);
-    for (const kind of ["backup.scrub", "backup.inspect", "backup.discover", "backup.run", "backup.safetyPoint"]) {
+    for (const kind of ["backup.scrub", "backup.inspect", "backup.discover", "backup.run", "backup.safetyPoint", "backup.search", "backup.compare"]) {
       expect(Object.keys(backupTaskHandlers)).toContain(kind);
     }
   });
