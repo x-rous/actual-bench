@@ -147,16 +147,21 @@ export function buildRecoverySheet(db: SqliteDatabase, now: Date = new Date()): 
     lines.push("```js");
     lines.push("const { readFileSync, writeFileSync } = require('node:fs');");
     lines.push("const { scryptSync, createDecipheriv } = require('node:crypto');");
-    lines.push("const passphrase = readFileSync(0, 'utf8').replace(/\\r?\\n$/, '');");
-    lines.push("const buf = readFileSync(process.argv[2]);");
-    lines.push("const [salt, iv, tag] = [buf.subarray(12, 28), buf.subarray(28, 40), buf.subarray(40, 56)];");
+    // One line, ended by Enter: reading standard input to the end waited for
+    // Ctrl-D, and looked like the script had hung.
+    lines.push("const rl = require('node:readline').createInterface({ input: process.stdin });");
+    lines.push("rl.once('line', (passphrase) => {");
+    lines.push("  rl.close();");
+    lines.push("  const buf = readFileSync(process.argv[2]);");
+    lines.push("  const [salt, iv, tag] = [buf.subarray(12, 28), buf.subarray(28, 40), buf.subarray(40, 56)];");
     lines.push(
-      "const key = scryptSync(passphrase.normalize('NFKC'), salt, 32, { N: 32768, r: 8, p: 1, maxmem: 67108864 });"
+      "  const key = scryptSync(passphrase.normalize('NFKC'), salt, 32, { N: 32768, r: 8, p: 1, maxmem: 67108864 });"
     );
-    lines.push("const d = createDecipheriv('aes-256-gcm', key, iv); d.setAuthTag(tag);");
+    lines.push("  const d = createDecipheriv('aes-256-gcm', key, iv); d.setAuthTag(tag);");
     lines.push(
-      "writeFileSync(process.argv[3], Buffer.concat([d.update(buf.subarray(56)), d.final()]));"
+      "  writeFileSync(process.argv[3], Buffer.concat([d.update(buf.subarray(56)), d.final()]));"
     );
+    lines.push("});");
     lines.push("```");
     lines.push("");
   }

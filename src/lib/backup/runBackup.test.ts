@@ -7,7 +7,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
-import { upsertBackupCredential } from "@/lib/credentials/backupSecrets";
+import { deleteBackupCredential, getBackupCredential, upsertBackupCredential } from "@/lib/credentials/backupSecrets";
 import {
   createBackupDestination,
   createBackupPolicy,
@@ -288,6 +288,20 @@ describe("running a backup", () => {
 
     const stored = readFileSync(join(volume, location.objectKey));
     expect(decryptArchive(stored, "correct horse").byteLength).toBe(BUDGET_ZIP.byteLength);
+  });
+
+  it("puts back a passphrase that was collected while the run was encrypting with it", async () => {
+    // The passphrase changed mid-run: clean-up saw no copy using the old one
+    // and removed it, while this run was encrypting with it.
+    upsertBackupCredential(db, { ref: "pol-secret", kind: "passphrase", secret: { passphrase: "correct horse" } });
+
+    await runBackup(db, policy({ encryption: "passphrase", encryptionCredentialRef: "pol-secret" }), {
+      onBeforeStore: () => deleteBackupCredential(db, "pol-secret"),
+    });
+
+    const [artifact] = listBackupArtifacts(db);
+    expect(artifact.encryptionCredentialRef).toBe("pol-secret");
+    expect(getBackupCredential(db, "pol-secret")).toEqual({ passphrase: "correct horse" });
   });
 
   it("records a stored-but-unverified copy rather than throwing it away", async () => {

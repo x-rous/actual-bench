@@ -146,8 +146,10 @@ export async function POST(request: Request, context: RouteContext) {
     }
     inFlight.add(policyId);
 
-    const parked = upload.archive ? await parkArchive(upload.archive) : null;
+    let parked: Awaited<ReturnType<typeof parkArchive>> | null = null;
     try {
+      // Inside the try, so a failure to park still clears the in-flight mark.
+      parked = upload.archive ? await parkArchive(upload.archive) : null;
       // In a worker: verifying and encrypting are synchronous and would
       // otherwise stall every other request while they ran.
       const outcome = await runBackupTask<{ stored: boolean; verified: boolean; message: string | null }>({

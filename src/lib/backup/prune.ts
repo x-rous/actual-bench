@@ -251,6 +251,10 @@ export async function prune(
 
   let cleaned = 0;
   for (const stray of strays(input, ctx)) {
+    // Stops with the rest of the run, and an apply from the preview removes
+    // only rows the preview listed.
+    if (input.signal?.aborted) break;
+    if (allowed && !allowed.has(stray.id)) continue;
     if (deleteBackupArtifact(db, stray.id)) cleaned += 1;
   }
 

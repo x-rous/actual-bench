@@ -183,3 +183,71 @@ describe("S3 destination behaviour", () => {
     await expect(adapter.put("a.zip", Buffer.from("x"))).rejects.toThrow(/minio\.lan:9000/);
   });
 });
+
+describe("S3 downloads", () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  /** A body that behaves like fetch's: it errors when the request is aborted. */
+  function streamingFetch(bodies: ((signal: AbortSignal) => ReadableStream<Uint8Array>)[]): { calls: number } {
+    const state = { calls: 0 };
+    global.fetch = jest.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      const body = bodies[Math.min(state.calls, bodies.length - 1)](init?.signal as AbortSignal);
+      state.calls += 1;
+      return new Response(body, { status: 200 });
+    }) as unknown as typeof fetch;
+    return state;
+  }
+
+  function chunks(count: number, everyMs: number) {
+    return (signal: AbortSignal) => {
+      let sent = 0;
+      return new ReadableStream<Uint8Array>({
+        start(controller) {
+          signal.addEventListener("abort", () => controller.error(new DOMException("aborted", "AbortError")));
+        },
+        pull(controller) {
+          return new Promise<void>((resolve) => {
+            if (sent >= count) {
+              controller.close();
+              return resolve();
+            }
+            setTimeout(() => {
+              if (signal.aborted) return resolve();
+              sent += 1;
+              controller.enqueue(Buffer.from("x"));
+              resolve();
+            }, everyMs);
+          });
+        },
+      });
+    };
+  }
+
+  it("keeps a slow download going for as long as data keeps arriving", async () => {
+    // Five chunks, thirty seconds apart: longer than a minute in all, but
+    // never quiet for one.
+    jest.useFakeTimers();
+    const state = streamingFetch([chunks(5, 30_000)]);
+    const adapter = new S3DestinationAdapter(destination({ bucket: "bench" }), credentials, FAST);
+
+    const pending = adapter.get("a.zip");
+    await jest.advanceTimersByTimeAsync(200_000);
+
+    await expect(pending).resolves.toEqual(Buffer.from("xxxxx"));
+    expect(state.calls).toBe(1);
+  });
+
+  it("gives up on a download that stops sending, and tries again", async () => {
+    jest.useFakeTimers();
+    const state = streamingFetch([chunks(1_000, 120_000), chunks(2, 0)]);
+    const adapter = new S3DestinationAdapter(destination({ bucket: "bench" }), credentials, FAST);
+
+    const pending = adapter.get("a.zip");
+    await jest.advanceTimersByTimeAsync(130_000);
+
+    await expect(pending).resolves.toEqual(Buffer.from("xx"));
+    expect(state.calls).toBe(2);
+  });
+});

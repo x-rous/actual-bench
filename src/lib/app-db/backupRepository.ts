@@ -816,7 +816,17 @@ export function setArtifactPinned(db: SqliteDatabase, id: string, pinned: boolea
 /** Attach a copy to a rule, so the rule's retention looks after it. */
 export function setArtifactPolicy(db: SqliteDatabase, id: string, policyId: string): BackupArtifact | null {
   if (!getBackupArtifact(db, id)) return null;
-  db.prepare("UPDATE backup_artifacts SET policy_id = ? WHERE id = ?").run(policyId, id);
+  // An older encrypted copy has no credential ref of its own: its rule's id
+  // names its passphrase. That is written down before the rule changes, or
+  // passphrase clean-up would look for the new rule's and delete the one this
+  // copy needs.
+  db.prepare(
+    `UPDATE backup_artifacts
+        SET encryption_credential_ref = CASE WHEN encrypted = 1
+              THEN COALESCE(encryption_credential_ref, policy_id) ELSE encryption_credential_ref END,
+            policy_id = ?
+      WHERE id = ?`
+  ).run(policyId, id);
   return getBackupArtifact(db, id);
 }
 

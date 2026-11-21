@@ -43,7 +43,8 @@ export type DiscoveryResult = {
 
 export async function discoverBackups(
   db: SqliteDatabase,
-  destination: BackupDestination
+  destination: BackupDestination,
+  options: { signal?: AbortSignal } = {}
 ): Promise<DiscoveryResult> {
   const result: DiscoveryResult = {
     destinationId: destination.id,
@@ -56,11 +57,13 @@ export async function discoverBackups(
     notes: [],
   };
 
-  const adapter = createDestinationAdapter(db, destination);
+  const adapter = createDestinationAdapter(db, destination, { signal: options.signal });
   const objects = await adapter.list("");
   const manifests = objects.filter((object) => object.key.endsWith(MANIFEST_SUFFIX));
 
   for (const object of manifests) {
+    // Before each read and the writes after it: a stopped scan stops here.
+    options.signal?.throwIfAborted();
     result.scanned += 1;
     const objectKey = object.key.slice(0, -MANIFEST_SUFFIX.length);
 

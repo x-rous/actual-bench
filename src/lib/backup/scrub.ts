@@ -147,6 +147,7 @@ export async function scrubDestination(
     // scrubbing it used to mark every real copy gone.
     adapter = await openDestination(db, destination, { signal: options.signal });
   } catch (error) {
+    options.signal?.throwIfAborted();
     result.error = error instanceof Error ? error.message : String(error);
     recordDestinationOutcome(db, destination.id, { success: false, at, reason: result.error });
     return result;
@@ -156,7 +157,8 @@ export async function scrubDestination(
   const locations = chooseLocations(db, destination.id, { rolling: newest, open: deepest > 0 });
 
   for (const { location, open } of locations) {
-    if (options.signal?.aborted) break;
+    // Thrown, not a quiet stop: a cancelled check is not a finished one.
+    options.signal?.throwIfAborted();
     const artifact = getBackupArtifact(db, location.artifactId);
     if (!artifact) continue;
     result.checked += 1;
@@ -164,7 +166,15 @@ export async function scrubDestination(
     try {
       const head = await adapter.head(location.objectKey);
       if (!head && location.status === "missing") {
-        // Still gone: counted again, but nothing new to record.
+        // Still gone. Its check is recorded, so the next scrub looks at the
+        // missing copies checked longest ago, not the same newest ones.
+        recordArtifactLocation(db, {
+          artifactId: artifact.id,
+          destinationId: destination.id,
+          objectKey: location.objectKey,
+          status: "missing",
+          lastError: location.lastError ?? "The object is no longer in this destination.",
+        });
         result.missing += 1;
         result.artifacts.push({
           artifactId: artifact.id,
@@ -334,6 +344,8 @@ export async function scrubDestination(
             : outcome.findings[0] ?? "Verification failed.",
       });
     } catch (error) {
+      // A read the run stopped is not damage: nothing is recorded for it.
+      options.signal?.throwIfAborted();
       result.failed += 1;
       const message = error instanceof Error ? error.message : String(error);
 
@@ -390,7 +402,7 @@ export async function scrubAll(
 ): Promise<ScrubResult[]> {
   const results: ScrubResult[] = [];
   for (const id of destinationIds) {
-    if (options.signal?.aborted) break;
+    options.signal?.throwIfAborted();
     const destination = getBackupDestination(db, id);
     if (!destination || !destination.enabled) continue;
     results.push(await scrubDestination(db, destination, options));
@@ -430,6 +442,7 @@ type LocationRow = {
   status: string;
   last_verified_at: string | null;
   created_at: string;
+  updated_at: string;
   policy_id: string | null;
   kind: string;
   source_budget_id: string | null;
@@ -454,7 +467,7 @@ function chooseLocations(
 ): { location: BackupArtifactLocation; open: boolean }[] {
   const rows = db
     .prepare(
-      `SELECT l.id, l.artifact_id, l.object_key, l.status, l.last_verified_at, l.created_at,
+      `SELECT l.id, l.artifact_id, l.object_key, l.status, l.last_verified_at, l.created_at, l.updated_at,
               a.policy_id, a.kind, a.source_budget_id
          FROM backup_artifact_locations l
          JOIN backup_artifacts a ON a.id = l.artifact_id
@@ -485,7 +498,13 @@ function chooseLocations(
     taken.add(row.id);
   }
 
-  for (const row of rows.filter((entry) => entry.status === "missing").slice(0, MISSING_RECHECK_LIMIT)) {
+  // Checked longest ago first: a fixed newest 50 would never reach a 51st
+  // missing copy that came back.
+  const missing = rows
+    .filter((entry) => entry.status === "missing")
+    .sort((a, b) => a.updated_at.localeCompare(b.updated_at))
+    .slice(0, MISSING_RECHECK_LIMIT);
+  for (const row of missing) {
     chosen.push({ id: row.id, open: false });
   }
 

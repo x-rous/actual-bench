@@ -1,3 +1,4 @@
+import { hasSyncCredential } from "@/lib/credentials/unattendedCredentials";
 import { getAppMeta, setAppMeta } from "@/lib/app-db/appMetaRepository";
 import { listBackupArtifacts, listBackupPolicies, type BackupPolicy } from "@/lib/app-db/backupRepository";
 import { logger } from "@/lib/logger";
@@ -101,9 +102,15 @@ export function ruleForConnection(db: SqliteDatabase, connectionFingerprint: str
   );
 }
 
-/** Whether a rule's budget can only come from the browser. */
-function takesArchiveFromBrowser(policy: BackupPolicy): boolean {
-  return policy.scheduleKind === "manual" || policy.sourceRef.data.sourceKind === "direct";
+/**
+ * Whether a rule's budget can only come from the browser: a Direct source, or
+ * one the server holds no enrolment for. Being a manual rule says nothing
+ * about that - an enrolled HTTP budget is exported by the server either way.
+ */
+function takesArchiveFromBrowser(db: SqliteDatabase, policy: BackupPolicy): boolean {
+  if (policy.sourceRef.data.sourceKind === "direct") return true;
+  const fingerprint = policy.sourceRef.data.connectionFingerprint;
+  return typeof fingerprint !== "string" || !hasSyncCredential(db, fingerprint);
 }
 
 /**
@@ -159,7 +166,7 @@ export async function takeSafetyRecoveryPoint(
     }
   }
 
-  if (takesArchiveFromBrowser(policy) && !input.budgetArchive) {
+  if (takesArchiveFromBrowser(db, policy) && !input.budgetArchive) {
     return { status: "needs-archive", message: "This budget's recovery point is exported by the browser." };
   }
 

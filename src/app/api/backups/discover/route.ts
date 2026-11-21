@@ -35,7 +35,7 @@ export async function POST(request: Request) {
       kind: "backup.discover",
       taskInput: { destinationId },
       deadlineMs: 290_000,
-      inThread: () => discoverTask({ destinationId }),
+      inThread: (signal) => discoverTask({ destinationId }, signal),
     });
     if (!outcome.ok) return NextResponse.json({ error: outcome.message }, { status: outcome.status });
     return NextResponse.json({ results: outcome.value });

@@ -55,25 +55,42 @@ export async function inspectArtifact(
     throw new Error("Bench has no stored copy of this backup to open.");
   }
 
+  // The first copy whose bytes match the checksum wins. A damaged copy is
+  // passed over for the next one, and reported as damaged only when every
+  // copy that could be read is.
   let bytes: Buffer | null = null;
+  let damaged: { bytes: Buffer; candidate: (typeof candidates)[number] } | null = null;
   let location = candidates[0].location;
   let destination = candidates[0].destination;
   const errors: string[] = [];
   for (const candidate of candidates) {
+    let read: Buffer;
     try {
-      bytes = await createDestinationAdapter(db, candidate.destination, { signal: options.signal }).get(
+      read = await createDestinationAdapter(db, candidate.destination, { signal: options.signal }).get(
         candidate.location.objectKey
       );
-      location = candidate.location;
-      destination = candidate.destination;
-      break;
     } catch (error) {
+      options.signal?.throwIfAborted();
       errors.push(`${candidate.destination.name}: ${error instanceof Error ? error.message : String(error)}`);
+      continue;
     }
+    if (sha256(read) !== artifact.checksumSha256) {
+      damaged ??= { bytes: read, candidate };
+      continue;
+    }
+    bytes = read;
+    location = candidate.location;
+    destination = candidate.destination;
+    break;
+  }
+  if (!bytes && damaged) {
+    bytes = damaged.bytes;
+    location = damaged.candidate.location;
+    destination = damaged.candidate.destination;
   }
   if (!bytes) throw new Error(`No copy of this backup could be read. ${errors.join("; ")}`);
 
-  const checksumMatches = sha256(bytes) === artifact.checksumSha256;
+  const checksumMatches = !damaged || bytes !== damaged.bytes;
 
   const base = {
     artifact,

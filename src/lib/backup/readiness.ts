@@ -5,7 +5,9 @@ import {
   listLocationsByArtifact,
   type BackupArtifact,
 } from "@/lib/app-db/backupRepository";
+import { listSyncCredentialMeta } from "@/lib/credentials/unattendedCredentials";
 import { plausibilityOf } from "./verificationRecord";
+import { ruleBudgetId } from "./ruleBudget";
 import { nextCronRun } from "@/lib/automation/schedule";
 import type { BackupPolicy } from "@/lib/app-db/backupRepository";
 import type { SqliteDatabase } from "@/lib/app-db/types";
@@ -143,13 +145,24 @@ export function buildBackupReadiness(db: SqliteDatabase, now: Date = new Date())
     )
   );
 
-  const rules = policies.map((policy) => ruleReadiness(policy, stored, now));
+  const enrolled = listSyncCredentialMeta(db);
+  const budgetIds = new Map(policies.map((policy) => [policy.id, ruleBudgetId(db, policy, enrolled)]));
+  // A rule's copies are the ones of its own budget: a copy of another budget
+  // attached to it must not make it look protected.
+  const belongsTo = (artifact: BackupArtifact, policyId: string) => {
+    if (artifact.policyId !== policyId) return false;
+    const budgetId = budgetIds.get(policyId);
+    return artifact.kind !== "budget" || !budgetId || !artifact.sourceBudgetId || artifact.sourceBudgetId === budgetId;
+  };
+  const rules = policies.map((policy) =>
+    ruleReadiness(policy, stored.filter((artifact) => belongsTo(artifact, policy.id)), now)
+  );
   const active = rules.filter((rule) => rule.enabled);
   const worst = worstRule(active.length > 0 ? active : rules);
   const worstArtifact = worst
     ? (stored.find(
         (artifact) =>
-          artifact.policyId === worst.policyId &&
+          belongsTo(artifact, worst.policyId) &&
           artifact.kind === worst.subject &&
           artifact.verificationStatus === "passed"
       ) ?? null)
@@ -260,7 +273,7 @@ function headlineFor(
   const age = describeAge(worst.ageHours);
   if (status === "protected") {
     return ruleCount > 1
-      ? `Every backup rule has a verified copy; the least recent is “${worst.name}”, from ${age}.`
+      ? `Every ${activeCount > 0 && activeCount < ruleCount ? "active " : ""}backup rule has a verified copy; the least recent is “${worst.name}”, from ${age}.`
       : `You could restore a verified backup from ${age}.`;
   }
   if (activeCount === 0) return `Your last verified backup is from ${age}, and every rule is paused.`;

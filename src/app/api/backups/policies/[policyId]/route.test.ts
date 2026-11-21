@@ -98,4 +98,24 @@ describe("PATCH /api/backups/policies/[policyId]", () => {
     expect(getBackupCredential(db, oldRef as string)).toEqual({ passphrase: "first passphrase" });
     expect(getBackupCredential(db, newRef as string)).toEqual({ passphrase: "second passphrase" });
   });
+  it("keeps a rule's budget fixed even after it is switched to settings only", async () => {
+    // Switching to settings first used to skip the check, and a second change
+    // could then point the rule at another budget.
+    const db = getAppDb();
+    const rule = createBackupPolicy(db, {
+      name: "Household",
+      contents: "budget",
+      sourceRef: { version: 1, data: { connectionFingerprint: "fp-a" } },
+    });
+    createBackupArtifact(db, { policyId: rule.id, kind: "budget", checksumSha256: "a".repeat(64), sizeBytes: 1 });
+    expect((await patch(rule.id, { contents: "app-db" })).status).toBe(200);
+
+    const response = await patch(rule.id, {
+      contents: "budget",
+      sourceRef: { version: 1, data: { connectionFingerprint: "fp-b" } },
+    });
+
+    expect(response.status).toBe(409);
+    expect(getBackupPolicy(db, rule.id)?.sourceRef.data.connectionFingerprint).toBe("fp-a");
+  });
 });

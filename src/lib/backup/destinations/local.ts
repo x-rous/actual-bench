@@ -1,6 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
 import { constants } from "node:fs";
-import { createReadStream } from "node:fs";
 import { access, mkdir, open, readFile, readdir, rename, rm, stat, statfs, writeFile } from "node:fs/promises";
 import { Readable } from "node:stream";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -222,7 +221,9 @@ export class LocalDestinationAdapter implements DestinationAdapter {
   async put(key: string, bytes: Uint8Array): Promise<StoredObject> {
     this.signal?.throwIfAborted();
     const target = resolveKey(this.root, key);
-    await mkdir(dirname(target), { recursive: true });
+    // The first folder this created, if any: its parent must be synced too,
+    // or a crash can lose the new folder and the copy inside it.
+    const created = await mkdir(dirname(target), { recursive: true });
     // Write to a sibling temp file and rename: a half-written backup that looks
     // complete is the one failure mode this whole feature exists to prevent.
     const temp = `${target}.${randomBytes(6).toString("hex")}.partial`;
@@ -238,7 +239,7 @@ export class LocalDestinationAdapter implements DestinationAdapter {
         await handle.close();
       }
       await rename(temp, target);
-      await syncDirectory(dirname(target));
+      for (const directory of directoriesToSync(dirname(target), created)) await syncDirectory(directory);
     } catch (error) {
       await rm(temp, { force: true }).catch(() => {});
       throw new DestinationError(
@@ -253,16 +254,23 @@ export class LocalDestinationAdapter implements DestinationAdapter {
   /** A stream of the object, for handing a copy back without holding it in memory. */
   async getStream(key: string): Promise<{ stream: ReadableStream<Uint8Array>; sizeBytes: number }> {
     const path = resolveKey(this.root, key);
+    // Opened here, before returning: a copy that cannot be opened then fails
+    // this call, and the caller can try another copy before it has started
+    // answering with this one.
+    let handle;
     let info;
     try {
-      info = await stat(path);
+      handle = await open(path, "r");
+      info = await handle.stat();
     } catch (error) {
+      await handle?.close().catch(() => {});
       throw new DestinationError(
         `Could not read ${key}: ${error instanceof Error ? error.message : String(error)}`,
         { cause: error }
       );
     }
-    const stream = Readable.toWeb(createReadStream(path)) as ReadableStream<Uint8Array>;
+    // The stream closes the handle when it ends or fails.
+    const stream = Readable.toWeb(handle.createReadStream({ autoClose: true })) as ReadableStream<Uint8Array>;
     return { stream, sizeBytes: info.size };
   }
 
@@ -414,14 +422,42 @@ export class LocalDestinationAdapter implements DestinationAdapter {
   }
 }
 
-/** fsync a directory so a rename into it survives a crash. Not every platform allows it. */
+/**
+ * The folders whose entries a write changed: the file's own folder, and the
+ * parent of every folder `mkdir` created on the way to it.
+ */
+function directoriesToSync(fileDirectory: string, firstCreated: string | undefined): string[] {
+  const directories = [fileDirectory];
+  if (!firstCreated) return directories;
+  const stop = dirname(firstCreated);
+  let current = fileDirectory;
+  while (current !== stop && dirname(current) !== current) {
+    current = dirname(current);
+    directories.push(current);
+  }
+  return directories;
+}
+
+/** What a platform answers when it does not support fsync on a directory. */
+const DIRECTORY_SYNC_UNSUPPORTED = new Set(["EINVAL", "ENOTSUP", "EOPNOTSUPP", "EPERM", "EISDIR", "EBADF"]);
+
+/**
+ * fsync a directory so a rename into it survives a crash. A platform that
+ * does not support it is tolerated; a real I/O error is not, because the
+ * write could not be confirmed durable.
+ */
 async function syncDirectory(path: string): Promise<void> {
-  const handle = await open(path, "r").catch(() => null);
+  const handle = await open(path, "r").catch((error: NodeJS.ErrnoException) => {
+    // Windows cannot open a folder for reading.
+    if (error.code && (DIRECTORY_SYNC_UNSUPPORTED.has(error.code) || error.code === "EACCES")) return null;
+    throw error;
+  });
   if (!handle) return;
   try {
     await handle.sync();
-  } catch {
-    // Some filesystems refuse fsync on a directory; the file itself is synced.
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (!code || !DIRECTORY_SYNC_UNSUPPORTED.has(code)) throw error;
   } finally {
     await handle.close();
   }

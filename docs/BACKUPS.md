@@ -58,8 +58,10 @@ Any absolute path the server can write to. Bench creates it if missing, and grad
 - **Warned**: the same device as Bench's data (good against mistakes, useless against losing the
   disk), and a volume low on space.
 
-Writes go to a temporary file that is flushed to disk (`fsync`) and then renamed into place, so a
-partly-written archive never looks like a complete one, even after a power cut. Temp files a stopped
+Writes go to a temporary file that is flushed to disk (`fsync`) and then renamed into place, and
+the folder (plus the parent of any folder the write created) is synced after the rename, so a
+partly-written archive never looks like a complete one, even after a power cut. A directory sync
+that fails with an I/O error fails the write; a filesystem that does not support one is tolerated. Temp files a stopped
 run left behind are swept by the weekly scrub.
 
 The folder carries a `.bench-destination.json` marker naming the destination. Before anything writes,
@@ -84,8 +86,10 @@ AWS's published GET Object test vector.
   whose credentials cannot be resolved **fails closed** — it never falls back to an
   unauthenticated attempt, which would surface as 403s that look like a broken bucket.
 
-Each request has a timeout (a minute plus time for the body at a slow uplink's pace), and network
-errors, timeouts, 5xx and throttling are retried twice with backoff. A refusal (4xx) is final.
+Each request has a timeout until the answer starts (a minute plus time for the body at a slow
+uplink's pace). A download is then bounded by progress: it fails only if no data arrives for a
+minute, so a large copy on a slow link is not cut off. Network errors, timeouts (including a
+download that stalls), 5xx and throttling are retried twice with backoff. A refusal (4xx) is final.
 
 Every save tests the destination by writing real bytes, reading them back, comparing checksums and
 deleting the probe. A bucket that refuses deletes is a **warning**: backups still work, only
@@ -144,8 +148,10 @@ is expected; if not, check the source budget before relying on this copy."*
 The copy is still stored and still restorable. It is shown as **Needs review**, not "Damaged": it
 opened fine. **Accept this change** on the copy (`PATCH /api/backups/artifacts/:id` with
 `{"acceptChange": true}`) marks it verified and makes it the new baseline. A later scrub or inspect
-re-checks readability only; it never clears an unaccepted plausibility finding, and it keeps the
-copy's recorded contents. The first backup of anything is never an anomaly.
+re-checks readability only; it never clears an unaccepted plausibility finding, and it never
+brings back one that was accepted while it was reading. It keeps the copy's recorded contents
+unless the re-read produces a new content summary, which then replaces them. The first backup of
+anything is never an anomaly.
 
 ### Scrub
 
@@ -153,7 +159,8 @@ Weekly (`backup-scrub`, Sundays at 04:00 by default), per destination, Bench ful
 copy of each rule, kind and budget — decrypting first where its passphrase is stored, so an encrypted
 backup is proved decryptable rather than merely present — and checksums three more, the ones verified
 longest ago, so every copy is re-read over successive weeks. Copies recorded missing are looked for
-again, and come back as stored when they reappear.
+again, up to 50 a scrub, those checked longest ago first, and come back as stored when they reappear.
+A cancelled scrub stops without recording anything about the copy it was reading.
 
 A scrub that finds damage **is** a failure and does count towards the streak. The reasoning is the
 mirror image of a backup run: a failed backup means today's copy is missing and tomorrow's run may
@@ -190,7 +197,8 @@ same function that performs the prune. Applying also removes rows for runs that 
 
 Copies with no rule (rule deleted, or discovered) are outside retention. Attach one to a rule from its
 detail (`PATCH /api/backups/artifacts/:id` with `{"policyId": "..."}`) and that rule's retention looks
-after it. Discovery attaches copies whose manifest names a rule that exists on this install.
+after it. A budget copy can only be attached to the rule for the same budget, and an older encrypted
+copy keeps the passphrase it was made with. Discovery attaches copies whose manifest names a rule that exists on this install.
 
 ## Safety recovery points
 

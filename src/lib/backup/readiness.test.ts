@@ -29,10 +29,17 @@ describe("backup readiness", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  function storedCopy(policyId: string, kind: "budget" | "app-db", hoursAgo: number, destinationId: string) {
+  function storedCopy(
+    policyId: string,
+    kind: "budget" | "app-db",
+    hoursAgo: number,
+    destinationId: string,
+    sourceBudgetId: string | null = null
+  ) {
     const artifact = createBackupArtifact(db, {
       policyId,
       kind,
+      sourceBudgetId,
       createdAt: new Date(now.getTime() - hoursAgo * 3_600_000).toISOString(),
       checksumSha256: "a".repeat(64),
       sizeBytes: 10,
@@ -80,5 +87,17 @@ describe("backup readiness", () => {
     storedCopy(rule.id, "budget", 24 * 60, destination.id);
 
     expect(buildBackupReadiness(db, now).rules[0].status).toBe("protected");
+  });
+  it("does not count a copy of another budget attached to a rule", () => {
+    // A fresh copy of budget B on budget A's rule made A look protected.
+    const destination = createBackupDestination(db, { name: "Volume", kind: "local", config: { version: 1, data: { path: root } } });
+    const rule = createBackupPolicy(db, { name: "Household", contents: "budget", destinationIds: [destination.id] });
+    storedCopy(rule.id, "budget", 24 * 20, destination.id, "budget-a");
+    storedCopy(rule.id, "budget", 1, destination.id, "budget-b");
+
+    const readiness = buildBackupReadiness(db, now);
+
+    expect(readiness.rules[0].status).toBe("at-risk");
+    expect(readiness.rules[0].ageHours).toBeGreaterThan(24 * 19);
   });
 });

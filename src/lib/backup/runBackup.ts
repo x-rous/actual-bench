@@ -1,6 +1,6 @@
 import { requireReadyVault } from "@/lib/credentials/vaultState";
 import { openServerTransport, resolveServerConnection } from "@/lib/actual/serverTransport";
-import { getBackupCredential } from "@/lib/credentials/backupSecrets";
+import { getBackupCredential, hasBackupCredential, upsertBackupCredential } from "@/lib/credentials/backupSecrets";
 import {
   createBackupArtifact,
   getBackupDestination,
@@ -408,7 +408,10 @@ export async function runBackup(
     const manifest = buildManifest({ record, policy, prepared, objectKey });
 
     options.onBeforeStore?.();
-    const results = await fanOut(db, destinations, objectKey, stored, manifest, record, signal);
+    const results = await fanOut(db, destinations, objectKey, stored, manifest, record, signal, {
+      passphrase: encrypted ? passphrase : null,
+      label: policy.name,
+    });
 
     const anyStored = results.some((result) => result.status === "stored");
     artifacts.push({
@@ -523,7 +526,8 @@ async function fanOut(
   bytes: Uint8Array,
   manifest: BackupManifest,
   record: ArtifactRecord,
-  signal: AbortSignal | undefined
+  signal: AbortSignal | undefined,
+  held: { passphrase: string | null; label: string }
 ): Promise<DestinationOutcome[]> {
   const results: DestinationOutcome[] = [];
   let artifactExists = false;
@@ -544,7 +548,19 @@ async function fanOut(
       await adapter.put(manifestKeyFor(objectKey), serializeManifest(manifest), "application/json");
 
       if (!artifactExists) {
-        createBackupArtifact(db, record);
+        db.transaction(() => {
+          createBackupArtifact(db, record);
+          /*
+           * The passphrase was read before the export. If it was changed in
+           * the meantime, clean-up saw no copy using the old one and removed
+           * it, while this copy was being encrypted with it. The run still
+           * holds it, so it is put back with the row that needs it.
+           */
+          const ref = record.encryptionCredentialRef;
+          if (ref && held.passphrase && !hasBackupCredential(db, ref)) {
+            upsertBackupCredential(db, { ref, kind: "passphrase", label: held.label, secret: { passphrase: held.passphrase } });
+          }
+        })();
         artifactExists = true;
       }
       recordArtifactLocation(db, {

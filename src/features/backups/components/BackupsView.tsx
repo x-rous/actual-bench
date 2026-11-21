@@ -291,13 +291,13 @@ export function BackupsView() {
    */
   const bulk = useMutation({
     mutationFn: async (input: { ids: string[]; action: "pin" | "unpin" | "delete" }) => {
-      const failures: string[] = [];
+      const failures: { id: string; message: string }[] = [];
       for (const id of input.ids) {
         try {
           if (input.action === "delete") await deleteArtifact(id);
           else await setPinned(id, input.action === "pin");
         } catch (error) {
-          failures.push(error instanceof Error ? error.message : String(error));
+          failures.push({ id, message: error instanceof Error ? error.message : String(error) });
         }
       }
       return { done: input.ids.length - failures.length, failures, action: input.action };
@@ -305,8 +305,9 @@ export function BackupsView() {
     onSuccess: ({ done, failures, action }) => {
       const verb = action === "delete" ? "Deleted" : action === "pin" ? "Pinned" : "Unpinned";
       if (failures.length === 0) toast.success(`${verb} ${done} backup(s)`);
-      else toast.warning(`${verb} ${done}; ${failures.length} could not be changed: ${failures[0]}`);
-      setChecked(new Set());
+      else toast.warning(`${verb} ${done}; ${failures.length} could not be changed: ${failures[0].message}`);
+      // The ones that failed stay ticked, so they can be tried again.
+      setChecked(new Set(failures.map((failure) => failure.id)));
       invalidate();
     },
     onError: (error: Error) => toast.error(error.message),

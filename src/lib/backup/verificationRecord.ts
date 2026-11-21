@@ -1,4 +1,4 @@
-import { recordArtifactVerification, type BackupArtifact } from "@/lib/app-db/backupRepository";
+import { getBackupArtifact, recordArtifactVerification, type BackupArtifact } from "@/lib/app-db/backupRepository";
 import type { JsonObject, SqliteDatabase } from "@/lib/app-db/types";
 import type { BackupContentSummary, BackupVerificationLevel } from "./manifest";
 import { plausibilityOf, strings } from "./plausibility";
@@ -51,6 +51,22 @@ export function recordReadOutcome(
   },
   at: string
 ): void {
+  // Merged with the record as it is now, not as it was when the read began:
+  // a scrub or "Look inside" can take minutes, and a change accepted in the
+  // meantime must not come back as unresolved. One transaction, so no other
+  // connection's write lands between the read and this one.
+  db.transaction(() => {
+    const current = getBackupArtifact(db, artifact.id);
+    if (current) writeReadOutcome(db, current, outcome, at);
+  })();
+}
+
+function writeReadOutcome(
+  db: SqliteDatabase,
+  artifact: BackupArtifact,
+  outcome: Parameters<typeof recordReadOutcome>[2],
+  at: string
+): void {
   const data = (artifact.verification?.data ?? {}) as JsonObject;
   const { unresolved } = plausibilityOf(artifact);
   const holdBack = outcome.status === "passed" && unresolved.length > 0;
@@ -84,6 +100,16 @@ export function recordReadOutcome(
  * so a genuine clean-up does not fail every backup after it.
  */
 export function acceptPlausibilityFindings(db: SqliteDatabase, artifact: BackupArtifact, at: string): boolean {
+  // Decided on the record as it is now, in the same transaction as the write:
+  // a read on another connection that found the copy unreadable since the
+  // page loaded must block the acceptance, not be overwritten by it.
+  return db.transaction(() => {
+    const current = getBackupArtifact(db, artifact.id);
+    return current ? writeAcceptance(db, current, at) : false;
+  })();
+}
+
+function writeAcceptance(db: SqliteDatabase, artifact: BackupArtifact, at: string): boolean {
   const { unresolved, readable } = plausibilityOf(artifact);
   if (unresolved.length === 0 || !readable) return false;
   const data = (artifact.verification?.data ?? {}) as JsonObject;

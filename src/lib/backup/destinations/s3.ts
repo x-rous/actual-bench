@@ -116,7 +116,34 @@ type SendOptions = {
   body?: Uint8Array;
   extraHeaders?: Record<string, string>;
   expectMissing?: boolean;
+  /** Read the whole body inside the attempt, so a body that stalls is retried like any other timeout. */
+  readBody?: boolean;
 };
+
+/**
+ * A response whose body may go quiet for at most `BASE_TIMEOUT_MS` between
+ * chunks. A download is bounded by progress, not by a total time: a large
+ * copy on a slow link keeps going for as long as bytes keep arriving.
+ */
+function withIdleTimeout(response: Response, arm: () => void, disarm: () => void): Response {
+  if (!response.body || [204, 205, 304].includes(response.status)) {
+    disarm();
+    return response;
+  }
+  arm();
+  const body = response.body.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        arm();
+        controller.enqueue(chunk);
+      },
+      flush() {
+        disarm();
+      },
+    })
+  );
+  return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
+}
 
 export class S3DestinationAdapter implements DestinationAdapter {
   readonly kind = "s3" as const;
@@ -208,8 +235,22 @@ export class S3DestinationAdapter implements DestinationAdapter {
       : "";
     const url = `${this.scheme}://${this.host}${path}${search}`;
 
-    const timeout = AbortSignal.timeout(requestTimeoutMs(body?.byteLength ?? 0));
-    const signal = this.signal ? AbortSignal.any([this.signal, timeout]) : timeout;
+    // Until the answer starts: long enough to send the body at the slowest
+    // speed allowed. After it: an idle limit that each chunk received resets.
+    const controller = new AbortController();
+    let timedOut = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const arm = (ms: number) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, ms);
+      timer.unref?.();
+    };
+    const disarm = () => clearTimeout(timer);
+    arm(requestTimeoutMs(body?.byteLength ?? 0));
+    const signal = this.signal ? AbortSignal.any([this.signal, controller.signal]) : controller.signal;
 
     let response: Response;
     try {
@@ -222,13 +263,14 @@ export class S3DestinationAdapter implements DestinationAdapter {
         signal,
       });
     } catch (error) {
+      disarm();
       if (error instanceof OutboundBlockedError) {
         throw new DestinationError(error.message, { cause: error, retryable: false });
       }
       if (this.signal?.aborted) {
         throw new DestinationError("Stopped before the request finished.", { cause: error, retryable: false });
       }
-      if (timeout.aborted) {
+      if (timedOut) {
         throw new DestinationError(`${this.host} did not answer in time.`, { cause: error, retryable: true });
       }
       throw new DestinationError(
@@ -237,7 +279,26 @@ export class S3DestinationAdapter implements DestinationAdapter {
       );
     }
 
-    if (response.ok) return response;
+    response = withIdleTimeout(response, () => arm(BASE_TIMEOUT_MS), disarm);
+
+    if (response.ok) {
+      if (!options.readBody) return response;
+      try {
+        const bytes = await response.arrayBuffer();
+        return new Response(bytes, { status: response.status, statusText: response.statusText, headers: response.headers });
+      } catch (error) {
+        disarm();
+        if (this.signal?.aborted) {
+          throw new DestinationError("Stopped before the download finished.", { cause: error, retryable: false });
+        }
+        throw new DestinationError(
+          timedOut
+            ? `${this.host} stopped sending data.`
+            : `The download from ${this.host} failed: ${error instanceof Error ? error.message : String(error)}`,
+          { cause: error, retryable: true }
+        );
+      }
+    }
     // Only 404 counts as absent. A 403 means Bench was refused, and treating
     // that as "gone" is the dangerous direction: scrub would report copies as
     // missing that are sitting safely in the bucket, and a delete that was
@@ -264,7 +325,7 @@ export class S3DestinationAdapter implements DestinationAdapter {
   }
 
   async get(key: string): Promise<Buffer> {
-    const response = await this.send({ method: "GET", key });
+    const response = await this.send({ method: "GET", key, readBody: true });
     return Buffer.from(await response.arrayBuffer());
   }
 

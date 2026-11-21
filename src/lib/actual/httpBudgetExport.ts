@@ -47,7 +47,7 @@ export async function exportHttpApiBudget(
   options: { timeoutMs?: number; signal?: AbortSignal } = {}
 ): Promise<HttpBudgetExport> {
   if (typeof window !== "undefined") {
-    const download = await apiDownload(connection, "/export");
+    const download = await apiDownload(connection, "/export", { signal: options.signal });
     return { bytes: new Uint8Array(download.bytes), filename: download.filename };
   }
 

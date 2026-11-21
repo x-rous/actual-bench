@@ -238,7 +238,8 @@ function parseContentDispositionFilename(disposition: string): string | null {
  */
 export async function apiDownload(
   connection: ConnectionInstance,
-  path: string
+  path: string,
+  options: { signal?: AbortSignal } = {}
 ): Promise<DownloadResult> {
   const httpConnection = requireHttpApiConnection(connection);
   let response: Response;
@@ -248,8 +249,11 @@ export async function apiDownload(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ connection: httpConnection, path, method: "GET" }),
+      signal: options.signal,
     });
   } catch (err) {
+    // A cancel is the caller's own doing, not a network error.
+    if (options.signal?.aborted) throw err;
     const error: ApiError = {
       kind: "api",
       status: 0,

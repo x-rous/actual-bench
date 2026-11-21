@@ -15,6 +15,7 @@ import { openDestination } from "@/lib/backup/destinations";
 import { acceptPlausibilityFindings } from "@/lib/backup/verificationRecord";
 import { manifestKeyFor } from "@/lib/backup/manifest";
 import { collectUnusedPassphrases } from "@/lib/backup/passphrases";
+import { ruleBudgetId } from "@/lib/backup/ruleBudget";
 
 type RouteContext = { params: Promise<{ artifactId: string }> };
 
@@ -60,6 +61,18 @@ export async function PATCH(request: Request, context: RouteContext) {
           { error: `"${policy.name}" does not back up ${existing.kind === "budget" ? "a budget" : "Bench's settings"}.` },
           { status: 400 }
         );
+      }
+      if (existing.kind === "budget") {
+        // A copy of another budget would count as this rule's backup.
+        const budgetId = ruleBudgetId(db, policy);
+        if (budgetId && existing.sourceBudgetId && existing.sourceBudgetId !== budgetId) {
+          return NextResponse.json(
+            {
+              error: `This copy is of ${existing.sourceBudgetName ? `“${existing.sourceBudgetName}”` : "another budget"}, not the budget the rule “${policy.name}” backs up.`,
+            },
+            { status: 400 }
+          );
+        }
       }
       return NextResponse.json({ artifact: setArtifactPolicy(db, artifactId, policy.id) });
     }

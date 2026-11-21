@@ -377,9 +377,16 @@ export function BackupDetail({
               <div className="text-xs text-muted-foreground">
                 SHA-256 of the {artifact.encrypted ? "archive inside, once decrypted" : "file"}
               </div>
-              <code className="block rounded-md bg-muted px-2 py-1.5 font-mono text-[11px] leading-relaxed break-all text-foreground/80">
-                {artifact.plaintextChecksumSha256 ?? artifact.checksumSha256}
-              </code>
+              {/* An encrypted copy found by discovery may not record the
+                  decrypted checksum; the encrypted file's is not shown in its
+                  place, because it would never match. */}
+              {(artifact.encrypted ? artifact.plaintextChecksumSha256 : artifact.checksumSha256) ? (
+                <code className="block rounded-md bg-muted px-2 py-1.5 font-mono text-[11px] leading-relaxed break-all text-foreground/80">
+                  {artifact.encrypted ? artifact.plaintextChecksumSha256 : artifact.checksumSha256}
+                </code>
+              ) : (
+                <p className="text-xs text-muted-foreground">Not recorded for this copy.</p>
+              )}
               <p className="text-xs text-muted-foreground">
                 {artifact.encrypted ? (
                   <>

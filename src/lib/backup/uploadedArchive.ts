@@ -66,6 +66,7 @@ export async function readArchiveRequest(request: Request): Promise<{
   if (!contentType.toLowerCase().includes("multipart/form-data")) {
     // An absent body means "no options". Malformed JSON is the caller's
     // mistake and is reported rather than treated as empty.
+    if (!request.body) return { archive: null, fields: {} };
     const raw = new TextDecoder().decode(await boundedBody(request));
     if (!raw.trim()) return { archive: null, fields: {} };
     let parsed: unknown;
@@ -130,7 +131,13 @@ export type ParkedArchive = { path: string; budgetId: string | null; budgetName:
 export async function parkArchive(archive: UploadedArchive): Promise<{ parked: ParkedArchive; release: () => Promise<void> }> {
   const folder = await mkdtemp(join(tmpdir(), "bench-upload-"));
   const path = join(folder, "budget.zip");
-  await writeFile(path, archive.bytes);
+  try {
+    await writeFile(path, archive.bytes);
+  } catch (error) {
+    // A half-written budget left in the temp folder would never be removed.
+    await rm(folder, { recursive: true, force: true }).catch(() => undefined);
+    throw error;
+  }
   return {
     parked: { path, budgetId: archive.budgetId, budgetName: archive.budgetName },
     release: () => rm(folder, { recursive: true, force: true }),

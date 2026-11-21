@@ -24,10 +24,20 @@ export const maxDuration = 300;
  */
 export async function POST(request: Request) {
   try {
-    const { archive, fields } = await readArchiveRequest(request).catch(() => ({
-      archive: null,
-      fields: {} as Record<string, unknown>,
-    }));
+    let request_: Awaited<ReturnType<typeof readArchiveRequest>>;
+    try {
+      request_ = await readArchiveRequest(request);
+    } catch (error) {
+      // Said plainly: carrying on without the request's fields would answer
+      // "no rule covers this budget" for an archive that was only too large.
+      return NextResponse.json({
+        outcome: {
+          status: "failed",
+          message: error instanceof Error ? error.message : "Bench could not read the uploaded budget.",
+        } satisfies SafetyPointOutcome,
+      });
+    }
+    const { archive, fields } = request_;
     const reason =
       typeof fields.reason === "string" && fields.reason ? fields.reason.slice(0, 200) : "a change in Bench";
     const connectionFingerprint =

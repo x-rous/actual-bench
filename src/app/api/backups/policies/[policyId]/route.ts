@@ -63,7 +63,7 @@ export async function PATCH(request: Request, context: RouteContext) {
      * and its history was pruned away. Backing up a different budget is a new
      * rule.
      */
-    if (payload.sourceRef !== undefined && existingPolicy.contents !== "app-db") {
+    if (payload.sourceRef !== undefined) {
       const before = existingPolicy.sourceRef.data.connectionFingerprint ?? null;
       const after = isRecord(payload.sourceRef) && isRecord(payload.sourceRef.data)
         ? (payload.sourceRef.data.connectionFingerprint ?? null)

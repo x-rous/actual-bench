@@ -76,7 +76,7 @@ export async function inspectTask(raw: unknown, signal?: AbortSignal) {
   return inspectArtifact(getAppDb(), input.artifactId, { passphrase, signal });
 }
 
-export async function discoverTask(raw: unknown): Promise<DiscoveryResult[]> {
+export async function discoverTask(raw: unknown, signal?: AbortSignal): Promise<DiscoveryResult[]> {
   const input = backupDiscoverInput.parse(raw);
   const db = getAppDb();
   const destinations = input.destinationId
@@ -85,9 +85,11 @@ export async function discoverTask(raw: unknown): Promise<DiscoveryResult[]> {
 
   const results: DiscoveryResult[] = [];
   for (const destination of destinations) {
+    signal?.throwIfAborted();
     try {
-      results.push(await discoverBackups(db, destination));
+      results.push(await discoverBackups(db, destination, { signal }));
     } catch (error) {
+      if (signal?.aborted) throw error;
       results.push({
         destinationId: destination.id,
         destinationName: destination.name,
@@ -135,7 +137,7 @@ export async function safetyPointTask(raw: unknown, ctx?: TaskContext) {
 export const backupTaskHandlers: Record<string, (input: unknown, ctx: TaskContext) => Promise<unknown>> = {
   "backup.scrub": (input, ctx) => scrubTask(input, ctx.signal),
   "backup.inspect": (input, ctx) => inspectTask(input, ctx.signal),
-  "backup.discover": (input) => discoverTask(input),
+  "backup.discover": (input, ctx) => discoverTask(input, ctx.signal),
   "backup.run": (input, ctx) => runTask(input, ctx),
   "backup.safetyPoint": (input, ctx) => safetyPointTask(input, ctx),
 };

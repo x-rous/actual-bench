@@ -24,8 +24,12 @@ export async function POST(request: Request) {
     const destinationIds = Array.isArray(body?.destinationIds)
       ? body.destinationIds.filter((id): id is string => typeof id === "string")
       : [];
-    const newest = typeof body?.newest === "number" ? Math.max(0, Math.round(body.newest)) : 3;
-    const deepest = typeof body?.deepest === "number" ? Math.max(0, Math.round(body.deepest)) : 1;
+    // The same bounds the worker task enforces, so neither path is handed a
+    // count the other would refuse.
+    const count = (value: unknown, fallback: number) =>
+      typeof value === "number" && Number.isFinite(value) ? Math.min(1000, Math.max(0, Math.round(value))) : fallback;
+    const newest = count(body?.newest, 3);
+    const deepest = count(body?.deepest, 1);
 
     const outcome = await runBackupTask<ScrubResult[]>({
       kind: "backup.scrub",

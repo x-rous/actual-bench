@@ -14,6 +14,8 @@ import {
   createBackupPolicy,
   deleteBackupArtifact,
   deleteBackupPolicy,
+  getBackupArtifact,
+  setArtifactPolicy,
 } from "@/lib/app-db/backupRepository";
 import type { SqliteDatabase } from "@/lib/app-db/types";
 import { collectUnusedPassphrases, forgetPassphrase, listHeldPassphrases } from "./passphrases";
@@ -135,5 +137,19 @@ describe("passphrases Bench is holding", () => {
 
     expect(getBackupCredential(db, policy.id)).toEqual({ passphrase: "correct horse" });
     expect(listHeldPassphrases(db).find((entry) => entry.ref === policy.id)?.artifactCount).toBe(1);
+  });
+  it("keeps an older copy's passphrase when the copy is attached to another rule", () => {
+    // A copy from before copies recorded their own ref is opened with its
+    // rule's. Attached to a new rule, clean-up looked for the new rule's
+    // passphrase and deleted the one this copy needs.
+    const { policy, artifact } = encryptedRule();
+    db.prepare("UPDATE backup_artifacts SET encryption_credential_ref = NULL WHERE id = ?").run(artifact.id);
+    const next = createBackupPolicy(db, { name: "Replacement" });
+
+    setArtifactPolicy(db, artifact.id, next.id);
+    collectUnusedPassphrases(db);
+
+    expect(getBackupArtifact(db, artifact.id)?.encryptionCredentialRef).toBe(policy.id);
+    expect(getBackupCredential(db, policy.id)).toEqual({ passphrase: "correct horse" });
   });
 });
