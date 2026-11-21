@@ -155,7 +155,12 @@ export function backupObjectKey(input: {
   const time = iso.slice(11, 19).replace(/:/g, "");
   const extension = input.kind === "budget" ? "zip" : "sqlite";
   const suffix = input.encrypted ? `${extension}.enc` : extension;
-  return `${input.kind}/${slug(input.label)}/${day.slice(0, 4)}/${day}T${time}-${input.artifactId.slice(0, 8)}.${suffix}`;
+  // Named for the product each copy belongs to, so someone browsing a bucket
+  // by hand can tell an Actual budget from Actual Bench's own data without
+  // knowing Bench's internal names. Copies written before this kept their
+  // keys (`budget/...`, `app-db/...`): every location records its own key.
+  const folder = input.kind === "budget" ? `actual-budget/${slug(input.label)}` : "actual-bench";
+  return `${folder}/${day.slice(0, 4)}/${day}T${time}-${input.artifactId.slice(0, 8)}.${suffix}`;
 }
 
 type PreparedArtifact = {
