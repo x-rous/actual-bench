@@ -2,11 +2,13 @@
 
 import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { MultiSearchableCombobox } from "@/components/ui/combobox";
 import type { ComboboxOption } from "@/components/ui/combobox";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { subtractMonths, formatMonthLabel } from "@/lib/budget/monthMath";
 import { exportToCsv, exportBlankTemplate } from "../lib/budgetCsv";
+import type { BudgetExportValue, CsvDelimiter } from "../lib/budgetCsv";
 import { budgetMonthDataQueryOptions } from "../hooks/useMonthData";
 import type { LoadedCategory, LoadedGroup, LoadedMonthState, StagedBudgetEdit, BudgetCellKey } from "../types";
 import { Select } from "@/components/ui/select";
@@ -67,6 +69,12 @@ function resolveQuickPreset(
 }
 
 
+const EXPORT_VALUES: { value: BudgetExportValue; label: string; fileLabel: string }[] = [
+  { value: "budgeted", label: "Budgeted amounts", fileLabel: "budget" },
+  { value: "actuals", label: "Spent / received", fileLabel: "spent" },
+  { value: "balance", label: "Balances", fileLabel: "balance" },
+];
+
 const QUICK_PRESETS: { id: QuickPreset; label: string }[] = [
   { id: "current-view", label: "Current View" },
   { id: "this-month",   label: "This Month" },
@@ -85,6 +93,10 @@ const QUICK_PRESETS: { id: QuickPreset; label: string }[] = [
  *   Quick Range – presets with count badges (default, "Current View" pre-selected)
  *   Date Range  – From / To dropdowns constrained to availableMonths
  *   Manual      – tag-chip input for individual YYYY-MM months with inline validation
+ *
+ * Writes budgeted amounts (re-importable), spent/received, or balances, as a
+ * CSV download or as tab-separated text on the clipboard for pasting into a
+ * spreadsheet.
  */
 export function BudgetExportDialog({
   availableMonths,
@@ -107,6 +119,7 @@ export function BudgetExportDialog({
   const [includeHidden, setIncludeHidden] = useState(false);
   const [includeIncome, setIncludeIncome] = useState(false);
   const [includeStagedView, setIncludeStagedView] = useState(false);
+  const [exportValue, setExportValue] = useState<BudgetExportValue>("budgeted");
   const [isExporting, setIsExporting] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
@@ -162,44 +175,77 @@ export function BudgetExportDialog({
     URL.revokeObjectURL(url);
   };
 
-  const handleExport = async () => {
-    if (!canExport || !connection) return;
+  /**
+   * Loads every selected month (cache hits for months the grid has loaded)
+   * and builds the export text, or returns null after reporting a failure.
+   */
+  const buildExport = async (delimiter: CsvDelimiter): Promise<string | null> => {
+    if (!canExport || !connection) return null;
     setFetchError(null);
     setIsExporting(true);
-
-    // Fetch all selected months in parallel. queryClient.fetchQuery returns the
-    // cached value immediately for months already loaded by the grid, so only
-    // months outside the current 12-month window incur a network request.
-    const results = await Promise.allSettled(
-      selectedMonths.map((m) =>
-        queryClient.fetchQuery(budgetMonthDataQueryOptions(connection, m))
-      )
-    );
-
-    const failedCount = results.filter((r) => r.status === "rejected").length;
-    if (failedCount > 0) {
-      setIsExporting(false);
-      setFetchError(
-        `Failed to load data for ${failedCount} month${failedCount !== 1 ? "s" : ""}. Please try again.`
+    try {
+      const results = await Promise.allSettled(
+        selectedMonths.map((m) =>
+          queryClient.fetchQuery(budgetMonthDataQueryOptions(connection, m))
+        )
       );
-      return;
-    }
 
-    const monthDataMap: Record<string, LoadedMonthState> = {};
-    for (let i = 0; i < selectedMonths.length; i++) {
-      const result = results[i];
-      if (result?.status === "fulfilled") {
-        monthDataMap[selectedMonths[i]!] = result.value;
+      const failedCount = results.filter((r) => r.status === "rejected").length;
+      if (failedCount > 0) {
+        setFetchError(
+          `Failed to load data for ${failedCount} month${failedCount !== 1 ? "s" : ""}. Please try again.`
+        );
+        return null;
       }
-    }
 
-    const opts = { months: selectedMonths, includeHidden, includeIncome };
-    const edits = includeStagedView ? stagedEdits : undefined;
-    const csv = exportToCsv(selectedMonths, groups, monthDataMap, opts, edits);
-    const filename = `budget-export-${selectedMonths[0]}-to-${selectedMonths[selectedMonths.length - 1]}.csv`;
+      const monthDataMap: Record<string, LoadedMonthState> = {};
+      for (let i = 0; i < selectedMonths.length; i++) {
+        const result = results[i];
+        if (result?.status === "fulfilled") {
+          monthDataMap[selectedMonths[i]!] = result.value;
+        }
+      }
+
+      const opts = {
+        months: selectedMonths,
+        includeHidden,
+        includeIncome,
+        value: exportValue,
+        delimiter,
+      };
+      // Staged values exist only for budgeted amounts.
+      const edits = includeStagedView && exportValue === "budgeted" ? stagedEdits : undefined;
+      return exportToCsv(selectedMonths, groups, monthDataMap, opts, edits);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const fileLabel = EXPORT_VALUES.find((v) => v.value === exportValue)?.fileLabel ?? "budget";
+
+  const handleExport = async () => {
+    const csv = await buildExport(",");
+    if (csv === null) return;
+    const filename = `${fileLabel}-export-${selectedMonths[0]}-to-${selectedMonths[selectedMonths.length - 1]}.csv`;
     triggerDownload(csv, filename);
-    setIsExporting(false);
     onClose();
+  };
+
+  // Tab-separated text pastes straight into spreadsheet cells.
+  const handleCopy = async () => {
+    const text = await buildExport("\t");
+    if (text === null) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      const rowCount = Math.max(0, text.split("\n").length - 1);
+      toast.success(
+        `Copied ${rowCount} row${rowCount !== 1 ? "s" : ""} × ${selectedMonths.length} month${selectedMonths.length !== 1 ? "s" : ""}`,
+        { description: "Paste into a spreadsheet; each value lands in its own cell." }
+      );
+      onClose();
+    } catch {
+      setFetchError("The clipboard is not available here. Use Export CSV instead.");
+    }
   };
 
   const handleTemplate = () => {
@@ -228,7 +274,7 @@ export function BudgetExportDialog({
       aria-label="Export budget data"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
     >
-      <div className="bg-background border border-border rounded-lg shadow-xl w-full max-w-md mx-4 p-5">
+      <div className="bg-background border border-border rounded-lg shadow-xl w-full max-w-lg mx-4 p-5">
         <h2 className="text-base font-semibold mb-4">Export Budget Data</h2>
 
         {/* Mode segmented control */}
@@ -354,6 +400,26 @@ export function BudgetExportDialog({
           )}
         </div>
 
+        {/* What to export */}
+        <div className="mb-4">
+          <label htmlFor="export-value" className="block text-xs text-muted-foreground mb-1">
+            Values
+          </label>
+          <Select
+            id="export-value"
+            size="sm"
+            value={exportValue}
+            onValueChange={(v) => setExportValue(v as BudgetExportValue)}
+            aria-label="Values to export"
+            options={EXPORT_VALUES.map(({ value, label }) => ({ value, label }))}
+          />
+          {exportValue !== "budgeted" && (
+            <p className="text-xs text-muted-foreground mt-1">
+              For analysis only: importing this file would set budgets to these figures.
+            </p>
+          )}
+        </div>
+
         {/* Options */}
         <fieldset className="mb-4 space-y-2">
           <legend className="text-sm font-medium mb-2">Options</legend>
@@ -376,7 +442,7 @@ export function BudgetExportDialog({
             Include income groups
           </label>
 
-          {stagedEdits && Object.keys(stagedEdits).length > 0 && (
+          {stagedEdits && Object.keys(stagedEdits).length > 0 && exportValue === "budgeted" && (
             <label className="flex items-center gap-2 text-xs cursor-pointer">
               <Checkbox
                 checked={includeStagedView}
@@ -409,6 +475,15 @@ export function BudgetExportDialog({
             className="px-3 py-1.5 text-sm rounded border border-border hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             Blank template
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleCopy()}
+            disabled={!canExport || isExporting}
+            aria-label={`Copy ${selectedMonths.length} month${selectedMonths.length !== 1 ? "s" : ""} for pasting into a spreadsheet`}
+            className="px-3 py-1.5 text-sm rounded border border-border hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            Copy for spreadsheet
           </button>
           <button
             type="button"

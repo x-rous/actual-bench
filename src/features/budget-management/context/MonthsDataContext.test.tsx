@@ -1,0 +1,145 @@
+import React from "react";
+import { act, render } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useBudgetEditsStore } from "@/store/budgetEdits";
+import {
+  MonthsDataProvider,
+  useEffectiveCategory,
+  useMonthsStructure,
+} from "./MonthsDataContext";
+import type { LoadedCategory, LoadedMonthState } from "../types";
+
+jest.mock("@/store/connection", () => ({
+  useConnectionStore: jest.fn(() => ({ id: "conn-1" })),
+  selectActiveInstance: jest.fn(),
+}));
+jest.mock("../hooks/useBudgetMode", () => ({
+  useBudgetMode: () => ({ data: "envelope" }),
+}));
+jest.mock("../hooks/useIncomeBudgets", () => ({
+  useIncomeBudgets: () => ({ data: undefined }),
+}));
+
+function category(id: string, budgeted: number): LoadedCategory {
+  return {
+    id,
+    name: id,
+    groupId: "g1",
+    groupName: "Group",
+    isIncome: false,
+    hidden: false,
+    budgeted,
+    actuals: 0,
+    balance: budgeted,
+    carryover: false,
+  };
+}
+
+function monthState(month: string): LoadedMonthState {
+  return {
+    summary: {
+      month,
+      incomeAvailable: 0,
+      lastMonthOverspent: 0,
+      forNextMonth: 0,
+      totalBudgeted: 0,
+      toBudget: 1000,
+      fromLastMonth: 0,
+      totalIncome: 0,
+      totalSpent: 0,
+      totalBalance: 0,
+    },
+    groupsById: {
+      g1: {
+        id: "g1",
+        name: "Group",
+        isIncome: false,
+        hidden: false,
+        categoryIds: ["a", "b"],
+        budgeted: 200,
+        actuals: 0,
+        balance: 200,
+      },
+    },
+    categoriesById: { a: category("a", 100), b: category("b", 100) },
+    groupOrder: ["g1"],
+    incomeBudgetFallbackIds: [],
+  };
+}
+
+describe("MonthsDataProvider re-renders (P1)", () => {
+  beforeEach(() => useBudgetEditsStore.getState().discardAll());
+
+  it("re-renders only the cells whose figures change", () => {
+    const months = ["2026-01", "2026-02"];
+    const client = new QueryClient({
+      defaultOptions: { queries: { staleTime: Infinity, retry: false } },
+    });
+    for (const m of months) {
+      client.setQueryData(["budget-month-data", "conn-1", m], monthState(m));
+    }
+
+    const renders: Record<string, number> = {};
+    function Cell({ month, id }: { month: string; id: string }) {
+      const cat = useEffectiveCategory(month, id);
+      const key = `${month}:${id}`;
+      renders[key] = (renders[key] ?? 0) + 1;
+      return <span data-testid={key}>{cat?.budgeted}</span>;
+    }
+    let shellRenders = 0;
+    function Shell() {
+      useMonthsStructure();
+      shellRenders++;
+      return (
+        <>
+          {months.flatMap((m) =>
+            ["a", "b"].map((id) => <Cell key={`${m}:${id}`} month={m} id={id} />)
+          )}
+        </>
+      );
+    }
+
+    const view = render(
+      <QueryClientProvider client={client}>
+        <MonthsDataProvider months={months} availableMonths={months}>
+          <Shell />
+        </MonthsDataProvider>
+      </QueryClientProvider>
+    );
+    const before = { ...renders };
+    const shellBefore = shellRenders;
+
+    // Stage Jan "a": Jan "a" changes, and its balance carries into Feb "a".
+    act(() => {
+      useBudgetEditsStore.getState().stageEdit({
+        month: "2026-01",
+        categoryId: "a",
+        nextBudgeted: 150,
+        previousBudgeted: 100,
+        source: "manual",
+      });
+    });
+    expect(view.getByTestId("2026-01:a").textContent).toBe("150");
+    expect(renders["2026-01:a"]).toBeGreaterThan(before["2026-01:a"]!);
+    expect(renders["2026-02:a"]).toBeGreaterThan(before["2026-02:a"]!);
+    expect(renders["2026-01:b"]).toBe(before["2026-01:b"]);
+    expect(renders["2026-02:b"]).toBe(before["2026-02:b"]);
+    expect(shellRenders).toBe(shellBefore);
+
+    // A second edit elsewhere must not re-render Feb "a", whose carried
+    // figures are unchanged (structural sharing).
+    const afterFirst = { ...renders };
+    act(() => {
+      useBudgetEditsStore.getState().stageEdit({
+        month: "2026-02",
+        categoryId: "b",
+        nextBudgeted: 120,
+        previousBudgeted: 100,
+        source: "manual",
+      });
+    });
+    expect(renders["2026-02:b"]).toBeGreaterThan(afterFirst["2026-02:b"]!);
+    expect(renders["2026-02:a"]).toBe(afterFirst["2026-02:a"]);
+    expect(renders["2026-01:a"]).toBe(afterFirst["2026-01:a"]);
+  });
+});

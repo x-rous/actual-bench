@@ -8,7 +8,9 @@ import { GroupMonthAggregate } from "./GroupRows";
 let monthState: unknown;
 
 jest.mock("../../context/MonthsDataContext", () => ({
-  useEffectiveMonthFromContext: () => monthState,
+  useEffectiveGroup: (_month: string, groupId: string) =>
+    (monthState as { groupsById?: Record<string, unknown> } | undefined)?.groupsById?.[groupId],
+  useEffectiveSelector: () => 0,
 }));
 
 function renderAggregate() {

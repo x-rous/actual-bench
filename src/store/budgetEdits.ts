@@ -16,6 +16,22 @@ function makeKey(edit: StagedBudgetEdit): BudgetCellKey {
   return `${edit.month}:${edit.categoryId}`;
 }
 
+/**
+ * `previousBudgeted` always means "the server value when this cell was first
+ * staged". A later edit to the same cell (typed value, transfer, paste, bulk
+ * action) replaces the staged value but must keep that baseline: the save
+ * pipeline and the cascade both read `next - previous` as the cell's change
+ * against the server, and a transfer leg is only sent as a relative transfer
+ * when that change mirrors the other leg (useBudgetSave).
+ */
+function withServerBaseline(
+  existing: StagedBudgetEdit | undefined,
+  edit: StagedBudgetEdit
+): StagedBudgetEdit {
+  if (!existing || existing.previousBudgeted === edit.previousBudgeted) return edit;
+  return { ...edit, previousBudgeted: existing.previousBudgeted };
+}
+
 function sameEdit(
   a: StagedBudgetEdit | undefined,
   b: StagedBudgetEdit | undefined
@@ -122,10 +138,11 @@ export const useBudgetEditsStore = create<BudgetEditsStore>()((set, get) => ({
     // every mutation, so callers no longer need to pre-stage an undo entry.
   },
 
-  stageEdit(edit) {
+  stageEdit(incoming) {
     const { edits, undoStack } = get();
-    const key = makeKey(edit);
+    const key = makeKey(incoming);
     const existing = edits[key];
+    const edit = withServerBaseline(existing, incoming);
     if (sameEdit(existing, edit)) {
       if (existing?.saveError && edit.saveError == null) {
         // Clearing a stale save error is metadata cleanup, not a user edit.
@@ -150,10 +167,11 @@ export const useBudgetEditsStore = create<BudgetEditsStore>()((set, get) => ({
     const next: Record<BudgetCellKey, StagedBudgetEdit> = { ...edits };
     const keys = new Set<BudgetCellKey>();
     let clearedSaveError = false;
-    for (const edit of newEdits) {
-      const key = makeKey(edit);
+    for (const incoming of newEdits) {
+      const key = makeKey(incoming);
       keys.add(key);
       const existing = edits[key];
+      const edit = withServerBaseline(existing, incoming);
       if (sameEdit(existing, edit) && existing?.saveError && edit.saveError == null) {
         // Clearing stale save errors is metadata cleanup, not a user edit.
         // Do not include it in undo/redo patch calculation.

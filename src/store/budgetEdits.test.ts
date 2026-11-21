@@ -206,3 +206,23 @@ describe("budgetEdits store — patch-based undo/redo (BM-19)", () => {
     });
   });
 });
+
+describe("budgetEdits store — server baseline (C1)", () => {
+  it("keeps the first edit's server value when a cell is staged again", () => {
+    const store = useBudgetEditsStore.getState();
+    store.stageEdit(edit("2026-01", "c1", 200, 0));
+    // A transfer staged on the same cell passes the current value as "previous".
+    store.stageBulkEdits([
+      { ...edit("2026-01", "c1", 150, 200), source: "transfer", transferGroupId: "t1" },
+    ]);
+    const saved = useBudgetEditsStore.getState().edits[key("2026-01", "c1")]!;
+    expect(saved.nextBudgeted).toBe(150);
+    expect(saved.previousBudgeted).toBe(0);
+
+    // Undo restores the hand edit with its own baseline.
+    useBudgetEditsStore.getState().undo();
+    expect(useBudgetEditsStore.getState().edits[key("2026-01", "c1")]).toEqual(
+      edit("2026-01", "c1", 200, 0)
+    );
+  });
+});

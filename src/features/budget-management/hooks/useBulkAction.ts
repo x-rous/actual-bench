@@ -2,7 +2,7 @@
 
 import { useCallback } from "react";
 import { useBudgetEditsStore } from "@/store/budgetEdits";
-import { addMonths } from "@/lib/budget/monthMath";
+import { addMonths, currentMonth } from "@/lib/budget/monthMath";
 import { resolveSelectionCells, type ResolvedCell } from "../lib/budgetSelectionUtils";
 import type {
   BudgetCellSelection,
@@ -48,6 +48,22 @@ export function averageBasis(action: BulkActionType): "budgeted" | "actuals" {
 }
 
 /**
+ * The month an average looks back from (exclusive). Budgeted averages look
+ * back from the cell's own month. Actuals averages only use complete months
+ * (H3): the current month is still in progress and later months have no
+ * spending yet, so averaging them would read as spending nothing. For a cell
+ * in the current month or later, the average covers the last complete months.
+ */
+export function averageLookbackEnd(
+  action: BulkActionType,
+  cellMonth: string,
+  thisMonth: string = currentMonth()
+): string {
+  if (averageBasis(action) === "actuals" && cellMonth > thisMonth) return thisMonth;
+  return cellMonth;
+}
+
+/**
  * Every month an action needs loaded in order to resolve `cells`.
  *
  * Callers pass this to `ensureMonthsData` before previewing. Keeping it here
@@ -64,7 +80,8 @@ export function requiredSourceMonths(
   const avgWindow = averageWindowLength(action);
   if (avgWindow !== null) {
     for (const month of cellMonths) {
-      for (let i = 1; i <= avgWindow; i++) months.add(addMonths(month, -i));
+      const end = averageLookbackEnd(action, month);
+      for (let i = 1; i <= avgWindow; i++) months.add(addMonths(end, -i));
     }
     return [...months];
   }
@@ -123,7 +140,15 @@ export type BulkPreviewResult = {
    * fewest actually resolved for any single cell. A short average is a valid
    * answer; an unlabelled one is not.
    */
-  averageWindow?: { requested: number; resolved: number };
+  averageWindow?: {
+    requested: number;
+    resolved: number;
+    /**
+     * Actuals averages only: true when some cell's average had to stop at the
+     * last complete month instead of the month before the cell (H3).
+     */
+    usedCompleteMonthsOnly?: boolean;
+  };
 };
 
 type UseBulkActionReturn = {
@@ -186,6 +211,14 @@ export function useBulkAction(): UseBulkActionReturn {
       if (cells.length === 0) return { rows: [], skipped };
 
       const rows: BulkPreviewRow[] = [];
+      // H2: budgeted values are read through the staged edits, so "copy
+      // previous month" after editing that month copies the value on screen.
+      // `monthDataMap` holds saved values only; actuals are never staged.
+      const staged = useBudgetEditsStore.getState().edits;
+      const stagedOr = (month: string, categoryId: string, saved: number) =>
+        staged[`${month}:${categoryId}`]?.nextBudgeted ?? saved;
+      let usedCompleteMonthsOnly = false;
+      const thisMonth = currentMonth();
 
       /**
        * Reads one category's budgeted value out of a source month.
@@ -206,7 +239,7 @@ export function useBulkAction(): UseBulkActionReturn {
           skipped["missing-category"] += 1;
           return undefined;
         }
-        return sourceCat.budgeted;
+        return stagedOr(sourceMonth, categoryId, sourceCat.budgeted);
       };
 
       /** Copy multiplier. Absent percentage means an exact copy. */
@@ -220,7 +253,13 @@ export function useBulkAction(): UseBulkActionReturn {
         const cat = targetMonthCat ?? metadataCat;
         if (!cat) continue;
 
-        const currentBudgeted = targetMonthCat?.budgeted ?? cat.budgeted;
+        // The value on screen. The store keeps the saved value as the edit's
+        // baseline when this replaces an existing staged edit.
+        const currentBudgeted = stagedOr(
+          cell.month,
+          cell.categoryId,
+          targetMonthCat?.budgeted ?? cat.budgeted
+        );
         let nextBudgeted: number | null = null;
 
         switch (action) {
@@ -276,14 +315,19 @@ export function useBulkAction(): UseBulkActionReturn {
             const basis = averageBasis(action);
             const vals: number[] = [];
             let anyMonthLoaded = false;
-            let m = cell.month;
+            let m = averageLookbackEnd(action, cell.month, thisMonth);
+            if (m !== cell.month) usedCompleteMonthsOnly = true;
             for (let i = 0; i < n; i++) {
               m = addMonths(m, -1);
               const cats = monthDataMap[m];
               if (cats) anyMonthLoaded = true;
               const found = cats?.find((c) => c.id === cell.categoryId);
               if (found !== undefined) {
-                vals.push(basis === "actuals" ? found.actuals : found.budgeted);
+                vals.push(
+                  basis === "actuals"
+                    ? found.actuals
+                    : stagedOr(m, cell.categoryId, found.budgeted)
+                );
               }
             }
             if (vals.length === 0) {
@@ -334,7 +378,13 @@ export function useBulkAction(): UseBulkActionReturn {
         rows,
         skipped,
         ...(avgWindow !== null
-          ? { averageWindow: { requested: avgWindow, resolved: minResolved } }
+          ? {
+              averageWindow: {
+                requested: avgWindow,
+                resolved: minResolved,
+                ...(usedCompleteMonthsOnly ? { usedCompleteMonthsOnly } : {}),
+              },
+            }
           : {}),
       };
     },

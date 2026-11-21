@@ -28,7 +28,7 @@ describe("BudgetCarryoverProgressDialog", () => {
 
     const request: CarryoverToggleInput = {
       categoryIds: ["cat-1"],
-      months: ["2026-01", "2026-02"],
+      fromMonth: "2026-01",
       newValue: true,
     };
 
@@ -37,15 +37,15 @@ describe("BudgetCarryoverProgressDialog", () => {
     );
 
     expect(await screen.findByText("Rollover update failed")).toBeInTheDocument();
-    expect(screen.getByText("2 months could not be updated.")).toBeInTheDocument();
-    expect(screen.getAllByText("No active connection")).toHaveLength(2);
+    expect(screen.getByText("1 category could not be updated.")).toBeInTheDocument();
+    expect(screen.getAllByText("No active connection")).toHaveLength(1);
     expect(consoleError).toHaveBeenCalledWith("Carryover toggle failed", error);
 
     rerender(<BudgetCarryoverProgressDialog request={request} onClose={jest.fn()} />);
     expect(run).toHaveBeenCalledTimes(1);
   });
 
-  it("calls run with all category-month pairs when multi-category request is given", async () => {
+  it("calls run once with every category and reports the forward range", async () => {
     const run = jest.fn().mockResolvedValue([
       { categoryId: "cat-1", month: "2026-01", status: "success" },
       { categoryId: "cat-2", month: "2026-01", status: "success" },
@@ -59,7 +59,7 @@ describe("BudgetCarryoverProgressDialog", () => {
 
     const request: CarryoverToggleInput = {
       categoryIds: ["cat-1", "cat-2"],
-      months: ["2026-01"],
+      fromMonth: "2026-01",
       newValue: true,
     };
 
@@ -73,10 +73,10 @@ describe("BudgetCarryoverProgressDialog", () => {
     expect(await screen.findByText("Rollover enabled")).toBeInTheDocument();
     expect(run).toHaveBeenCalledTimes(1);
     expect(run).toHaveBeenCalledWith(request);
-    expect(screen.getByText(/2 category-months/)).toBeInTheDocument();
+    expect(screen.getByText(/Rollover enabled from Jan 2026 onward for 2 categories/)).toBeInTheDocument();
   });
 
-  it("shows multi-category failure list with categoryId and month", async () => {
+  it("shows multi-category failure list by category", async () => {
     const error = new Error("PATCH failed");
     const run = jest.fn().mockRejectedValue(error);
     jest.spyOn(console, "error").mockImplementation(() => {});
@@ -89,7 +89,7 @@ describe("BudgetCarryoverProgressDialog", () => {
 
     const request: CarryoverToggleInput = {
       categoryIds: ["cat-1", "cat-2"],
-      months: ["2026-01"],
+      fromMonth: "2026-01",
       newValue: false,
     };
 
@@ -98,7 +98,7 @@ describe("BudgetCarryoverProgressDialog", () => {
     );
 
     expect(await screen.findByText("Rollover update failed")).toBeInTheDocument();
-    expect(screen.getByText("cat-1: 2026-01")).toBeInTheDocument();
-    expect(screen.getByText("cat-2: 2026-01")).toBeInTheDocument();
+    expect(screen.getByText("cat-1")).toBeInTheDocument();
+    expect(screen.getByText("cat-2")).toBeInTheDocument();
   });
 });

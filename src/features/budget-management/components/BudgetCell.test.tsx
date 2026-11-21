@@ -15,7 +15,9 @@ import type { LoadedCategory } from "../types";
 let monthState: { categoriesById: Record<string, LoadedCategory> } | undefined;
 
 jest.mock("../context/MonthsDataContext", () => ({
-  useEffectiveMonthFromContext: () => monthState,
+  useHasEffectiveMonth: () => monthState != null,
+  useEffectiveCategory: (_month: string, categoryId: string) =>
+    monthState?.categoriesById[categoryId],
 }));
 
 jest.mock("@/hooks/useAllNotes", () => ({ useAllNotes: () => ({ data: {} }) }));

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { useBudgetEditsStore } from "@/store/budgetEdits";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { parseBudgetExpression } from "../lib/budgetMath";
+import { isIncomeBlocked } from "../lib/budgetValidation";
 import { buildReadOnlyMissingBudgetMonthSet } from "../lib/monthAvailability";
 import { formatMonthLabel } from "@/lib/budget/monthMath";
 import {
@@ -55,7 +56,8 @@ import {
 } from "../lib/categorySearch";
 import {
   MonthsDataProvider,
-  useMonthsData,
+  useEffectiveCategory,
+  useMonthsStructure,
 } from "../context/MonthsDataContext";
 import type { CarryoverToggleInput } from "../hooks/useCarryoverToggle";
 import type {
@@ -186,6 +188,13 @@ function BudgetWorkspaceInner({
   const [rowSelection, setRowSelectionLocal] = useState<RowSelection | null>(null);
   const [monthSelection, setMonthSelection] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
+  // The right-clicked cell's effective balance picks Cover vs Transfer.
+  const contextMenuCell =
+    contextMenu?.target.kind === "cell" ? contextMenu.target : null;
+  const contextMenuCategory = useEffectiveCategory(
+    contextMenuCell?.month,
+    contextMenuCell?.categoryId
+  );
   const [pendingBulk, setPendingBulk] = useState<{
     action: BulkActionType;
     cells: ResolvedCell[];
@@ -244,7 +253,8 @@ function BudgetWorkspaceInner({
   );
 
   // Provider-supplied data (BM-01, BM-13).
-  const { raw: rawMonthsMap, merged, effective: effectiveMonthsMap } = useMonthsData();
+  // P1: structure only, so the workspace does not re-render on each edit.
+  const { raw: rawMonthsMap, merged } = useMonthsStructure();
 
   // Categories in visual order — derived from the cross-month merged structure
   // so categories that exist in any visible month are reachable in every month.
@@ -262,6 +272,31 @@ function BudgetWorkspaceInner({
           .filter((cat) => showHidden || !cat.hidden)
       );
   }, [merged, showHidden]);
+
+  // H8: the rows on screen. A selection rectangle, paste, fill, Delete and
+  // copy act on what the user can see, so a collapsed group between two
+  // selected rows is skipped instead of edited out of sight. `categories`
+  // (all rows, collapsed or not) stays for explicit group and month targets.
+  const rowCategories = useMemo(
+    () =>
+      collapsedGroups.size === 0
+        ? categories
+        : categories.filter((cat) => !collapsedGroups.has(cat.groupId)),
+    [categories, collapsedGroups]
+  );
+
+  // H7: one rule for every multi-cell staging path (the single-cell editor
+  // already applies it): no edits in read-only months, and no Envelope income
+  // budgets, which Actual does not use and never shows.
+  const isCellEditable = useCallback(
+    (month: string, categoryId: string): boolean => {
+      if (readOnlyMonths.has(month)) return false;
+      const cat = merged?.categoriesById[categoryId];
+      if (cat && isIncomeBlocked(cat, budgetMode)) return false;
+      return true;
+    },
+    [readOnlyMonths, merged, budgetMode]
+  );
 
   // Interleaved nav list: group row followed by its visible (and expanded) categories.
   // Used for Up/Down/Tab keyboard navigation so group rows are reachable.
@@ -587,8 +622,8 @@ function BudgetWorkspaceInner({
   const handleCopySelection = useCallback(() => {
     if (!selection) return;
 
-    const anchorCatIdx = categories.findIndex((c) => c.id === selection.anchorCategoryId);
-    const focusCatIdx = categories.findIndex((c) => c.id === selection.focusCategoryId);
+    const anchorCatIdx = rowCategories.findIndex((c) => c.id === selection.anchorCategoryId);
+    const focusCatIdx = rowCategories.findIndex((c) => c.id === selection.focusCategoryId);
     const anchorMonthIdx = activeMonths.indexOf(selection.anchorMonth);
     const focusMonthIdx = activeMonths.indexOf(selection.focusMonth);
 
@@ -603,7 +638,7 @@ function BudgetWorkspaceInner({
 
     const rows: string[] = [];
     for (let ci = minCat; ci <= maxCat; ci++) {
-      const cat = categories[ci];
+      const cat = rowCategories[ci];
       if (!cat) continue;
       const cols: string[] = [];
       for (let mi = minMonth; mi <= maxMonth; mi++) {
@@ -630,7 +665,7 @@ function BudgetWorkspaceInner({
       const message = err instanceof Error ? err.message : "Could not copy to clipboard";
       toast.error("Copy failed", { description: message });
     });
-  }, [selection, categories, activeMonths, rawMonthsMap]);
+  }, [selection, rowCategories, activeMonths, rawMonthsMap]);
 
   // Context menu handler
   const handleCellContextMenu = useCallback(
@@ -642,7 +677,7 @@ function BudgetWorkspaceInner({
       // contrast - they always say what they will change.
       const insideSelection =
         selection != null &&
-        resolveSelectionCells(selection, activeMonths, categories).some(
+        resolveSelectionCells(selection, activeMonths, rowCategories).some(
           (cell) => cell.month === month && cell.categoryId === catId
         );
       if (!insideSelection) {
@@ -659,7 +694,7 @@ function BudgetWorkspaceInner({
         target: { kind: "cell", categoryId: catId, month, carryover },
       });
     },
-    [selection, activeMonths, categories, setSelection]
+    [selection, activeMonths, rowCategories, setSelection]
   );
 
   /**
@@ -674,7 +709,7 @@ function BudgetWorkspaceInner({
       switch (target.kind) {
         case "cell":
           return selection
-            ? resolveSelectionCells(selection, activeMonths, categories)
+            ? resolveSelectionCells(selection, activeMonths, rowCategories)
             : [{ month: target.month, categoryId: target.categoryId }];
         case "group":
           return resolveGroupCells(target.groupId, [target.month], categories);
@@ -684,7 +719,7 @@ function BudgetWorkspaceInner({
           return resolveMonthCells(target.month, categories);
       }
     },
-    [selection, activeMonths, categories]
+    [selection, activeMonths, categories, rowCategories]
   );
 
   /** Plain-language description of what a group or column action will change. */
@@ -732,17 +767,18 @@ function BudgetWorkspaceInner({
   const handleCarryoverToggle = useCallback(() => {
     if (!connection || contextMenu?.target.kind !== "cell") return;
     const { categoryId, month, carryover } = contextMenu.target;
-    const monthsToUpdate = activeMonths.filter(
+    // Actual applies the flag from this month through every later month.
+    const fromMonth = activeMonths.find(
       (m) => m >= month && !readOnlyMonths.has(m)
     );
-    if (monthsToUpdate.length === 0) return;
+    if (!fromMonth) return;
 
     const cat = rawMonthsMap.get(month)?.categoriesById[categoryId];
 
     setCarryoverRequest({
       input: {
         categoryIds: [categoryId],
-        months: monthsToUpdate,
+        fromMonth,
         newValue: !carryover,
       },
       categoryLabel: cat?.name,
@@ -796,11 +832,13 @@ function BudgetWorkspaceInner({
    */
   const runBulkAction = useCallback(
     async (action: BulkActionType, target?: ContextMenuTarget) => {
-      const cells = target
-        ? resolveContextTargetCells(target)
-        : selection
-          ? resolveSelectionCells(selection, activeMonths, categories)
-          : [];
+      const cells = (
+        target
+          ? resolveContextTargetCells(target)
+          : selection
+            ? resolveSelectionCells(selection, activeMonths, rowCategories)
+            : []
+      ).filter((cell) => isCellEditable(cell.month, cell.categoryId));
       if (cells.length === 0) return;
 
       const isCellScope = !target || target.kind === "cell";
@@ -871,6 +909,8 @@ function BudgetWorkspaceInner({
       selection,
       activeMonths,
       categories,
+      rowCategories,
+      isCellEditable,
       rawMonthsMap,
       ensureMonths,
       previewBulk,
@@ -893,10 +933,10 @@ function BudgetWorkspaceInner({
   // handler can do its work.
   const zeroMultiCellSelection = useCallback((): boolean => {
     if (!selection) return false;
-    const cells = resolveSelectionCells(selection, activeMonths, categories);
+    const cells = resolveSelectionCells(selection, activeMonths, rowCategories);
     if (cells.length <= 1) return false;
     const newEdits: StagedBudgetEdit[] = cells.flatMap((cell) => {
-      if (readOnlyMonths.has(cell.month)) return [];
+      if (!isCellEditable(cell.month, cell.categoryId)) return [];
       const serverCat = rawMonthsMap.get(cell.month)?.categoriesById[cell.categoryId];
       return [{
         month: cell.month,
@@ -909,14 +949,14 @@ function BudgetWorkspaceInner({
     if (newEdits.length === 0) return false;
     stageBulkEdits(newEdits);
     return true;
-  }, [selection, activeMonths, categories, readOnlyMonths, rawMonthsMap, stageBulkEdits]);
+  }, [selection, activeMonths, rowCategories, isCellEditable, rawMonthsMap, stageBulkEdits]);
 
   // Lookup used by the rectangle-fill helpers. Reads non-reactively from the
   // edits store so the workspace doesn't re-render on every keystroke.
   const buildFillLookup = useCallback((): FillSourceLookup => {
     const edits = useBudgetEditsStore.getState().edits;
     return (month, categoryId) => {
-      if (readOnlyMonths.has(month)) return null;
+      if (!isCellEditable(month, categoryId)) return null;
       const serverCat = rawMonthsMap.get(month)?.categoriesById[categoryId];
       if (!serverCat) return null;
       const editKey: BudgetCellKey = `${month}:${categoryId}`;
@@ -924,31 +964,31 @@ function BudgetWorkspaceInner({
       const current = stagedEdit?.nextBudgeted ?? serverCat.budgeted;
       return { current, server: serverCat.budgeted };
     };
-  }, [readOnlyMonths, rawMonthsMap]);
+  }, [isCellEditable, rawMonthsMap]);
 
   const fillFromActive = useCallback((): boolean => {
     if (!selection) return false;
-    const newEdits = buildFillFromActiveEdits(selection, activeMonths, categories, buildFillLookup());
+    const newEdits = buildFillFromActiveEdits(selection, activeMonths, rowCategories, buildFillLookup());
     if (!newEdits || newEdits.length === 0) return false;
     stageBulkEdits(newEdits);
     return true;
-  }, [selection, activeMonths, categories, buildFillLookup, stageBulkEdits]);
+  }, [selection, activeMonths, rowCategories, buildFillLookup, stageBulkEdits]);
 
   const fillDown = useCallback((): boolean => {
     if (!selection) return false;
-    const newEdits = buildFillDownEdits(selection, activeMonths, categories, buildFillLookup());
+    const newEdits = buildFillDownEdits(selection, activeMonths, rowCategories, buildFillLookup());
     if (!newEdits || newEdits.length === 0) return false;
     stageBulkEdits(newEdits);
     return true;
-  }, [selection, activeMonths, categories, buildFillLookup, stageBulkEdits]);
+  }, [selection, activeMonths, rowCategories, buildFillLookup, stageBulkEdits]);
 
   const fillRight = useCallback((): boolean => {
     if (!selection) return false;
-    const newEdits = buildFillRightEdits(selection, activeMonths, categories, buildFillLookup());
+    const newEdits = buildFillRightEdits(selection, activeMonths, rowCategories, buildFillLookup());
     if (!newEdits || newEdits.length === 0) return false;
     stageBulkEdits(newEdits);
     return true;
-  }, [selection, activeMonths, categories, buildFillLookup, stageBulkEdits]);
+  }, [selection, activeMonths, rowCategories, buildFillLookup, stageBulkEdits]);
 
   // Alt+L / Alt+A — wrap the existing bulk-action path. Returns false on
   // no-selection so the dispatcher doesn't preventDefault and the keystroke
@@ -986,8 +1026,8 @@ function BudgetWorkspaceInner({
     return true;
   }, [selection, runBulkAction]);
 
-  // Alt+C: toggle carryover for all selected categories across the selected
-  // month range. newValue is derived from the anchor cell's current carryover state.
+  // Alt+C: toggle carryover for all selected categories, from the first
+  // selected month onward. newValue is derived from the anchor cell's state.
   const toggleCarryoverForSelection = useCallback((): boolean => {
     if (!selection || !connection) return false;
     const anchorCatId = selection.anchorCategoryId;
@@ -996,31 +1036,33 @@ function BudgetWorkspaceInner({
     if (anchorMonthIdx === -1 || focusMonthIdx === -1) return false;
     const minMonthIdx = Math.min(anchorMonthIdx, focusMonthIdx);
     const maxMonthIdx = Math.max(anchorMonthIdx, focusMonthIdx);
-    const monthsToUpdate = activeMonths
+    // Actual applies the flag from the first selected month through every
+    // later month (H6), so the selection's end month does not bound it.
+    const fromMonth = activeMonths
       .slice(minMonthIdx, maxMonthIdx + 1)
-      .filter((month) => !readOnlyMonths.has(month));
-    if (monthsToUpdate.length === 0) return false;
+      .find((month) => !readOnlyMonths.has(month));
+    if (!fromMonth) return false;
 
     const anchorCat = rawMonthsMap.get(selection.anchorMonth)?.categoriesById[anchorCatId];
     if (!anchorCat) return false;
 
-    const anchorCatIdx = categories.findIndex((c) => c.id === selection.anchorCategoryId);
-    const focusCatIdx = categories.findIndex((c) => c.id === selection.focusCategoryId);
+    const anchorCatIdx = rowCategories.findIndex((c) => c.id === selection.anchorCategoryId);
+    const focusCatIdx = rowCategories.findIndex((c) => c.id === selection.focusCategoryId);
     if (anchorCatIdx === -1 || focusCatIdx === -1) return false;
     const minCatIdx = Math.min(anchorCatIdx, focusCatIdx);
     const maxCatIdx = Math.max(anchorCatIdx, focusCatIdx);
-    const categoryIds = categories.slice(minCatIdx, maxCatIdx + 1).map((c) => c.id);
+    const categoryIds = rowCategories.slice(minCatIdx, maxCatIdx + 1).map((c) => c.id);
 
     setCarryoverRequest({
       input: {
         categoryIds,
-        months: monthsToUpdate,
+        fromMonth,
         newValue: !anchorCat.carryover,
       },
       categoryLabel: categoryIds.length === 1 ? anchorCat.name : undefined,
     });
     return true;
-  }, [selection, connection, activeMonths, readOnlyMonths, rawMonthsMap, categories]);
+  }, [selection, connection, activeMonths, readOnlyMonths, rawMonthsMap, rowCategories]);
 
   const handleKeyDown = useWorkspaceKeymap({
     undo,
@@ -1086,9 +1128,9 @@ function BudgetWorkspaceInner({
 
       if (isSingleValue && singleResult?.ok) {
         // Single value pasted: fill every cell in the current selection rectangle.
-        const cells = resolveSelectionCells(selection, activeMonths, categories);
+        const cells = resolveSelectionCells(selection, activeMonths, rowCategories);
         for (const cell of cells) {
-          if (readOnlyMonths.has(cell.month)) continue;
+          if (!isCellEditable(cell.month, cell.categoryId)) continue;
           const serverCat = rawMonthsMap.get(cell.month)?.categoriesById[cell.categoryId];
           newEdits.push({
             month: cell.month,
@@ -1100,7 +1142,7 @@ function BudgetWorkspaceInner({
         }
       } else {
         // Multi-value paste: fill from anchor, expand as far as the paste grid.
-        const anchorCatIdx = categories.findIndex(
+        const anchorCatIdx = rowCategories.findIndex(
           (c) => c.id === selection.anchorCategoryId
         );
         const anchorMonthIdx = activeMonths.indexOf(selection.anchorMonth);
@@ -1114,10 +1156,10 @@ function BudgetWorkspaceInner({
             const result = parseBudgetExpression(cellStr);
             if (!result.ok) continue;
 
-            const cat = categories[anchorCatIdx + ri];
+            const cat = rowCategories[anchorCatIdx + ri];
             const month = activeMonths[anchorMonthIdx + ci];
             if (!cat || !month) continue;
-            if (readOnlyMonths.has(month)) continue;
+            if (!isCellEditable(month, cat.id)) continue;
 
             const serverCat = rawMonthsMap.get(month)?.categoriesById[cat.id];
 
@@ -1137,7 +1179,7 @@ function BudgetWorkspaceInner({
         stageBulkEdits(newEdits);
       }
     },
-    [selection, categories, activeMonths, readOnlyMonths, stageBulkEdits, rawMonthsMap]
+    [selection, rowCategories, activeMonths, isCellEditable, stageBulkEdits, rawMonthsMap]
   );
 
   return (
@@ -1229,7 +1271,7 @@ function BudgetWorkspaceInner({
         const target = contextMenu.target;
         const cell = target.kind === "cell" ? target : null;
         const contextMenuBalance = cell
-          ? effectiveMonthsMap.get(cell.month)?.categoriesById[cell.categoryId]?.balance
+          ? contextMenuCategory?.balance
             ?? rawMonthsMap.get(cell.month)?.categoriesById[cell.categoryId]?.balance
             ?? 0
           : 0;

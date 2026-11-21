@@ -16,12 +16,13 @@ type Props = {
  * after the current 12-month window. Fires as a background side-effect so
  * that «/» navigation renders from cache without a loading state.
  *
- * prefetchQuery is a no-op if the data is already fresh — safe to call on
- * every windowStart change. staleTime of 2 minutes keeps prefetched months
- * fresh across typical month-by-month navigation so repeated adjacent-window
- * shifts don't trigger redundant network requests. Saves and carryover toggles
- * explicitly invalidate affected query keys, so stale data is never silently
- * retained after a write.
+ * P2: only months that are not cached, or that a write invalidated, are
+ * requested. The query keeps the app-wide infinite stale time (AGENTS §5), so
+ * `prefetchQuery` is a no-op for a cached month and is safe to call on every
+ * windowStart change. An earlier 2-minute override made every pan after the
+ * first two minutes reload up to 24 months through the serialized request
+ * queue, ahead of any Save. Saves and carryover toggles invalidate every
+ * month they change, so a skipped month is never stale.
  */
 export function usePrefetchAdjacentMonths({ windowStart, availableMonths }: Props) {
   const connection = useConnectionStore(selectActiveInstance);
@@ -44,10 +45,7 @@ export function usePrefetchAdjacentMonths({ windowStart, availableMonths }: Prop
 
     for (const month of monthsToPrefetch) {
       if (!availableSet.has(month)) continue;
-      queryClient.prefetchQuery({
-        ...budgetMonthDataQueryOptions(connection, month),
-        staleTime: 2 * 60 * 1000, // 2 min - keeps prefetched months fresh across navigation
-      });
+      void queryClient.prefetchQuery(budgetMonthDataQueryOptions(connection, month));
     }
   }, [windowStart, availableMonths, connection, queryClient]);
 }

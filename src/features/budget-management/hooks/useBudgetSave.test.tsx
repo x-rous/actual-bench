@@ -385,6 +385,119 @@ describe("useBudgetSave", () => {
     ]);
   });
 
+  it("writes absolute values when a transfer leg also carries a hand edit (C1)", async () => {
+    const transport = makeTransport();
+    mockGetTransport.mockReturnValue(transport);
+    const client = new QueryClient();
+    const { result } = renderHook(() => useBudgetSave(), {
+      wrapper: makeWrapper(client),
+    });
+
+    // Server: cat-1 = 100, cat-2 = 50. The user typed 200 into cat-1, then
+    // transferred 50 from cat-1 to cat-2. The store keeps the server baseline.
+    const src: StagedBudgetEdit = {
+      month: "2026-01",
+      categoryId: "cat-1",
+      previousBudgeted: 100,
+      nextBudgeted: 150,
+      source: "transfer",
+      transferGroupId: "transfer-1",
+    };
+    const dst: StagedBudgetEdit = {
+      month: "2026-01",
+      categoryId: "cat-2",
+      previousBudgeted: 50,
+      nextBudgeted: 100,
+      source: "transfer",
+      transferGroupId: "transfer-1",
+    };
+
+    await act(async () => {
+      await result.current.save({
+        ["2026-01:cat-1" as BudgetCellKey]: src,
+        ["2026-01:cat-2" as BudgetCellKey]: dst,
+      });
+    });
+
+    expect(transport.transferBudget).not.toHaveBeenCalled();
+    expect(transport.setBudgetAmount).toHaveBeenCalledWith("2026-01", "cat-1", 150);
+    expect(transport.setBudgetAmount).toHaveBeenCalledWith("2026-01", "cat-2", 100);
+  });
+
+  it("sets holds outside the budget batch from the current hold and reports a capped hold (C2, H5)", async () => {
+    const transport = makeTransport();
+    let inBatch = false;
+    const calls: string[] = [];
+    transport.batchBudgetUpdates.mockImplementation(async (operation: () => Promise<unknown>) => {
+      inBatch = true;
+      try {
+        return await operation();
+      } finally {
+        inBatch = false;
+      }
+    });
+    transport.resetBudgetHold.mockImplementation(async () => {
+      calls.push(`reset:${inBatch}`);
+    });
+    transport.holdBudgetForNextMonth.mockImplementation(async (_m: string, amount: number) => {
+      calls.push(`hold:${amount}:${inBatch}`);
+    });
+    // The server already holds 100 (the staged previousAmount says 0). Raising
+    // it to 300 must add only 200; Actual then caps the total at 250.
+    transport.getBudgetMonth
+      .mockResolvedValueOnce({ ...makeRawMonth(), forNextMonth: 100 })
+      .mockResolvedValueOnce({ ...makeRawMonth(), forNextMonth: 250 });
+    mockGetTransport.mockReturnValue(transport);
+    const client = new QueryClient();
+    const { result } = renderHook(() => useBudgetSave(), {
+      wrapper: makeWrapper(client),
+    });
+
+    let saveResults: BudgetSaveResult[] = [];
+    await act(async () => {
+      saveResults = await result.current.save(
+        {},
+        { "2026-01": { month: "2026-01", previousAmount: 0, nextAmount: 300 } }
+      );
+    });
+
+    expect(calls).toEqual(["hold:200:false"]);
+    expect(saveResults).toHaveLength(1);
+    expect(saveResults[0]).toMatchObject({ month: "2026-01", status: "error" });
+    expect(saveResults[0]!.message).toMatch(/held 2\.50 instead of 3\.00/);
+    expect(result.current.isSaving).toBe(false);
+  });
+
+  it("lowers a hold by resetting first, outside the batch", async () => {
+    const transport = makeTransport();
+    const calls: string[] = [];
+    transport.resetBudgetHold.mockImplementation(async () => {
+      calls.push("reset");
+    });
+    transport.holdBudgetForNextMonth.mockImplementation(async (_m: string, amount: number) => {
+      calls.push(`hold:${amount}`);
+    });
+    transport.getBudgetMonth
+      .mockResolvedValueOnce({ ...makeRawMonth(), forNextMonth: 300 })
+      .mockResolvedValueOnce({ ...makeRawMonth(), forNextMonth: 100 });
+    mockGetTransport.mockReturnValue(transport);
+    const client = new QueryClient();
+    const { result } = renderHook(() => useBudgetSave(), {
+      wrapper: makeWrapper(client),
+    });
+
+    let saveResults: BudgetSaveResult[] = [];
+    await act(async () => {
+      saveResults = await result.current.save(
+        {},
+        { "2026-01": { month: "2026-01", previousAmount: 300, nextAmount: 100 } }
+      );
+    });
+
+    expect(calls).toEqual(["reset", "hold:100"]);
+    expect(saveResults).toEqual([{ month: "2026-01", categoryId: "", status: "success" }]);
+  });
+
   it("keeps rejected staged edits in the store with a save error", async () => {
     const transport = makeTransport();
     transport.setBudgetAmount.mockRejectedValue(new Error("write failed"));

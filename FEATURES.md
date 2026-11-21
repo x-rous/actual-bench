@@ -636,7 +636,7 @@ A multi-month budget editing workspace with staged cell editing, a draft review 
 - Income categories are hard-blocked (non-interactive) in envelope mode
 - Undo / Redo with Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z; up to 50 undo steps
 - Delete or Backspace on a focused cell sets it to zero; if the original value is already zero the staged edit is removed
-- **Pre-save balance cascade** — staging a budget edit in month M immediately updates the *effective* per-category balance for all visible and future months (M+1, M+2, …) without writing to the server. In envelope mode this applies to every spending category (the server always chains `balance(M) = budgeted(M) + actuals(M) + balance(M−1)`); in tracking mode only categories with `carryover = true` cascade. Any month fetched later by scrolling forward automatically receives the correct cascade delta because it is derived purely from the in-memory staged edits map.
+- **Pre-save balance cascade** — staging a budget edit in month M immediately updates the *effective* per-category balance for all visible and future months (M+1, M+2, …) without writing to the server. In envelope mode it follows Actual's rules: a positive balance carries into the next month, while a negative balance resets to zero and is charged to the next month's To Budget as Overspent Last Month (rollover categories carry the full balance), so covering an overspend does not raise the next month's balance or lower its To Budget; in tracking mode only categories with `carryover = true` cascade. Any month fetched later by scrolling forward automatically receives the correct cascade delta because it is derived purely from the in-memory staged edits map.
 
 ### Selection & Keyboard Shortcuts
 
@@ -683,7 +683,7 @@ Spreadsheet-grade keyboard support — every shortcut is data-driven from a sing
 - `Space` (on a group label or group month aggregate) — toggle that group's collapse state
 
 **Selection actions:**
-- `Alt+C` — toggle carryover (rollover) on the anchor's category across the selected month range; opens the same progress dialog as the right-click menu
+- `Alt+C` — toggle carryover (rollover) on the selected categories from the first selected month onward (Actual applies the flag to every later month); opens the same progress dialog as the right-click menu
 
 **History:**
 - `Ctrl/Cmd+Z` — undo
@@ -706,7 +706,10 @@ Bare-letter shortcuts (`V`, `F`, `H`, `E`, `[`, `]`) are scoped so they never fi
     - *Average past actuals*: Avg. 3-, 6-, or 12-month spent/received
   - **Editable preview** before anything is staged: the proposed amounts can be adjusted by hand (arithmetic accepted, arrow keys to move between rows), with income and expense totals shown separately and skipped cells reported
 - No-input actions (copy previous, set to zero, the three averages) execute immediately and are staged as one undo step; input-required actions (copy specific month, set fixed, apply %) open a two-step dialog (parameters → preview)
-- Average actions use the **budgeted** amount from each prior month (not actual spending); they look back N months using TanStack Query cache — pre-window months are included if previously loaded
+- Budgeted averages use each prior month's budgeted amount, including staged edits; actuals averages use only complete months, so for the current or a future month they cover the last N complete months (the result says so). Months outside the window are loaded when needed
+- Copy and percentage actions read the value on screen, including staged edits
+- Range actions (selection rectangle, paste, fill, Delete, `Alt+C`) act only on rows that are on screen; rows inside a collapsed group are skipped. Group-row and month-column actions still cover every category they name
+- No multi-cell path (paste, fill, Delete, bulk actions, import) stages an Envelope income budget, which Actual does not use
 - Selecting a new cell or group dismisses the context menu
 
 ### Budget Details Panel (right side)
@@ -730,7 +733,7 @@ Bare-letter shortcuts (`V`, `F`, `H`, `E`, `[`, `]`) are scoped so they never fi
 
 ### Save Flow
 - Clicking Save first opens a compact review summary grouped by month with total change count (cell edits + holds), affected month count, and net budget delta; individual months show a sub-line for any staged hold; users can skip this review on future saves
-- Confirming the review opens a non-dismissible progress dialog that processes changes sequentially (never in parallel) to avoid server race conditions: complete transfer pairs are sent first via the atomic `POST /months/{month}/categorytransfers` endpoint (one request per pair); remaining standalone edits and any incomplete transfer legs are sent as individual `PATCH /months/{month}/categories/{id}` requests; holds are processed last — DELETE-before-POST when replacing an existing server hold, or DELETE alone when freeing
+- Confirming the review opens a non-dismissible progress dialog that processes changes sequentially (never in parallel) to avoid server race conditions: holds are processed first, each from a fresh read of the month's current hold (raising a hold POSTs only the difference; lowering or freeing it DELETEs first, then POSTs the new amount), and each read back: Actual caps a hold at the saved To Budget, and a hold it cut short is reported as a failure with the amount actually held; transfer pairs whose legs change by exactly the transfer are then sent via the atomic `POST /months/{month}/categorytransfers` endpoint (one request per pair); every other edit, including a transfer leg that also carries a hand edit, is sent as an absolute `PATCH /months/{month}/categories/{id}` request
   - In-progress state: "Saving budget changes — N of M changes saved…" with a live progress bar
   - All-success state: change count and affected months; dialog auto-closes after 3 seconds (manual close also available)
   - Partial or full failure state: amber header with a scrollable list of failed changes (month / category ID / error message); "Retry Failed" button re-reads only the still-failed keys and hold months from the store and re-sends them
@@ -743,17 +746,25 @@ Bare-letter shortcuts (`V`, `F`, `H`, `E`, `[`, `]`) are scoped so they never fi
   - **Date Range**: From / To dropdowns constrained to available months; auto-corrects if From > To
   - **Select**: searchable multi-select combobox (same component as Rules payee picker) — search and pick individual months as chips; only existing months are selectable
 - Always-visible resolution summary: "N months selected: Jan '26 – Dec '26" updates live as the selection changes
-- Options: include hidden categories, include income groups, export with staged (unsaved) values
+- Values: budgeted amounts (the default, and the only kind that can be imported back), spent / received, or balances
+- Options: include hidden categories, include income groups, export with staged (unsaved) values (budgeted amounts only)
+- Rows cover every exported month, so a category created part-way through the range is included (0.00 before it existed)
+- **Copy for spreadsheet** puts the same data on the clipboard as tab-separated text, so it pastes into Excel or Google Sheets one value per cell
 - Download blank CSV template (same structure, all amount cells empty)
 - Exported files include a UTF-8 BOM for correct rendering in Excel and Google Sheets
 
 ### CSV Import
-- Upload a CSV file → parser strips UTF-8 BOM if present → review exact / suggested / unmatched rows with approval checkboxes → preview proposed changes with before/after values → confirm → all changes staged in the grid as one undo step
+- Upload a CSV file (or a .tsv / .txt file), or paste cells copied from a spreadsheet including the header row → review exact / similar-name / unmatched rows with approval checkboxes → preview the cells that change → confirm → all changes staged in the grid as one undo step
+- Reads what spreadsheets make of an exported file: comma, semicolon or tab separated (and Excel's `sep=` line); month headers such as `2026-01`, `2026-01-01`, `Jan-26`, `Jan 2026`, `January 2026` or a first-of-month date such as `1/1/2026`; amounts such as `1,234.50`, `1.234,50`, `150,00`, `$150`, `USD 150`, `(150.00)` or `150-` (the last two negative)
+- The review step reports what it could not use instead of dropping it silently: columns that are not months, cells that are not amounts (line, category, column and value), months outside the visible range, months the budget does not have, and approved rows that map to the same category (the last row wins)
+- Categories are matched against every visible month the file covers, so a category created after the first visible month is found
+- "Approve all matches", "Approve N similar names" and "Clear" set the approvals in one click
 - Levenshtein-distance fuzzy matching (distance ≤ 2) offers suggestions for near-miss category names
-- Out-of-range months (exist in budget but outside the current 12-month window) shown with an "Extend visible range" option; absent months (not in `GET /months`) rejected with a clear error
+- The preview compares each cell with its own month's saved value, lists only the cells that change with the difference and a net total (cells that already match can be shown), and stages only those
+- Out-of-range months (exist in budget but outside the current 12-month window) shown with a "Move the visible range" option; absent months (not in `GET /months`) are reported and not imported
 
 ### Envelope-Mode Hold (Staged)
-- **Hold toggle**: the "Hold for next month" summary row shows the currently held amount as a positive magnitude (e.g. `$350.00`) beside its `−` operator, with a free-hold icon to its left. Clicking the toggle when no hold is active opens the "Hold for next month - YYYY-MM" dialog; the amount input auto-focuses with the existing value fully selected so the user can type immediately. Pressing `Enter` or clicking "Stage Hold" stages the hold; `Escape` closes without staging.
+- **Hold toggle**: the "Hold for next month" summary row shows the currently held amount as a positive magnitude (e.g. `$350.00`) beside its `−` operator, with a free-hold icon to its left. Clicking the toggle when no hold is active opens the "Hold for next month - YYYY-MM" dialog; the amount input auto-focuses with the existing value fully selected so the user can type immediately. Pressing `Enter` or clicking "Stage Hold" stages the hold; `Escape` closes without staging. The dialog shows how much can be held (the saved To Budget plus any existing hold) and refuses more, because Actual would cap it; money freed by unsaved edits can be held after those edits are saved. Amounts accept thousands separators.
 - Clicking the toggle stages a free hold (hold amount = 0). If the hold was only staged locally, the staged hold entry is removed; if a server hold exists, a staged clear remains in the draft panel until Save so the delete can be persisted.
 - Staged holds appear in the draft panel alongside cell edits and are saved in the same batch when the user clicks Save. Undo/redo applies to hold staging on the same history stack as cell edits (up to 50 steps).
 - The staged hold is immediately overlaid on the effective month state — `To Budget` and `Hold for next month` in the summary row update without writing to the server.
@@ -773,9 +784,9 @@ Bare-letter shortcuts (`V`, `F`, `H`, `E`, `[`, `]`) are scoped so they never fi
 - Entry guard: if unsaved entity changes exist on another page, the workspace shows a blocking screen with a "Discard changes and continue" option rather than silently mixing two edit stores
 
 ### v1 Limitations
-- Carryover is read-only in this release; shown in the context panel but not editable via the grid (toggle via the right-click menu in tracking mode)
+- Carryover is not edited in a cell; it is toggled from the right-click menu (tracking mode) or `Alt+C`, and always applies from the chosen month onward
 - Category-to-pool transfers (omitting source or destination category) are not supported in v1
-- No virtualization; very large category lists may scroll slowly in the grid
+- No virtualization; very large category lists may scroll slowly in the grid (a staged edit re-renders only the cells whose figures change)
 
 ## ActualQL Queries
 

@@ -12,7 +12,10 @@ import {
   getMonthDataErrorMessage,
   isMissingBudgetMonthError,
 } from "../../lib/monthDataQuery";
-import { computeEffectiveMonthState } from "../../lib/effectiveMonth";
+import {
+  computeEffectiveMonthState,
+  computeEnvelopeCarry,
+} from "../../lib/effectiveMonth";
 import { incomeCategoryIdsNeedingBudgetFallback } from "../../lib/monthAuthority";
 import { buildBudgetDetailsModel } from "../../lib/budgetDetailsModel";
 import {
@@ -120,6 +123,10 @@ export function BudgetDetailsPanel() {
   const statesByMonth = useMemo(() => {
     const result = new Map<string, LoadedMonthState>();
     if (hasMonthQueryError || hasIncomeBudgetsError) return result;
+    // Same Envelope carry as the grid (MonthsDataProvider), so both agree.
+    const envelopeCarry = isTracking
+      ? undefined
+      : computeEnvelopeCarry(displayMonths, dataArr, edits);
 
     for (let i = 0; i < displayMonths.length; i++) {
       const month = displayMonths[i];
@@ -134,6 +141,7 @@ export function BudgetDetailsPanel() {
         // Match the grid (MonthsDataProvider): the Details panel must reflect
         // the same staged holds so its effective state never diverges.
         stagedHolds: holds,
+        envelopeCarry: envelopeCarry?.get(month),
       });
       if (effective) result.set(month, effective);
     }

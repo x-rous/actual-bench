@@ -97,7 +97,14 @@ export function describeAverageWindow(
   averageWindow: BulkPreviewResult["averageWindow"]
 ): string | null {
   if (!averageWindow) return null;
-  const { requested, resolved } = averageWindow;
-  if (resolved >= requested) return null;
-  return `Averaged ${resolved} of ${requested} months - the rest have no budget data.`;
+  const { requested, resolved, usedCompleteMonthsOnly } = averageWindow;
+  const shortNote =
+    resolved < requested
+      ? `Averaged ${resolved} of ${requested} months - the rest have no budget data.`
+      : null;
+  const completeNote = usedCompleteMonthsOnly
+    ? "Spending is averaged over the last complete months; the current month and later months are left out."
+    : null;
+  if (!shortNote && !completeNote) return null;
+  return [shortNote, completeNote].filter(Boolean).join(" ");
 }
