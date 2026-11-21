@@ -10,7 +10,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { InfoHint } from "@/components/ui/info-hint";
 import { Input } from "@/components/ui/input";
 import { SearchInput } from "@/components/ui/search-input";
-import { NAME_MAX, formatAmountInput, parseAmount } from "@/lib/cashflow-planning/document";
+import { NAME_MAX, formatAmountInput, parseAmount, parseAmountExpression } from "@/lib/cashflow-planning/document";
 import type { Computed, MonthKind } from "@/lib/cashflow-planning/engine";
 import { monthShort } from "@/lib/cashflow-planning/months";
 import { type Month, type PlanDocument, type SectionId } from "@/lib/cashflow-planning/types";
@@ -242,7 +242,7 @@ export function PlanGrid({ doc, computed, lines, columns, cents, pastMode, selec
     setEditing(null);
     if (line?.kind === "row" && column?.kind === "month") {
       const trimmed = text.trim();
-      const amount = trimmed === "" ? null : parseAmount(trimmed);
+      const amount = trimmed === "" ? null : parseAmountExpression(trimmed);
       if (trimmed !== "" && amount === null) onNotice(`"${trimmed}" is not an amount`);
       // Ctrl+Enter types the amount into every cell of the selection.
       else if (move === "all" && range) onEdit(editableInRange().map((c) => ({ rowId: c.rowId, month: c.month, amount })));
@@ -837,7 +837,7 @@ const GridLine = memo(function GridLine({ line, gridId, rowNumber, columns, kind
           return (
             <td key={column.key} id={cellId(gridId, line.key, column.key)} data-cell={cellKey} role="gridcell" aria-selected className="h-7 border-b border-border/40 p-0">
               <Input
-                autoFocus value={editing.text} aria-label={`${label}, ${column.month}`} inputMode="decimal"
+                autoFocus value={editing.text} aria-label={`${label}, ${column.month}`} inputMode="text"
                 onChange={(e) => handlers.editText(e.target.value)}
                 onFocus={(e) => { const end = e.target.value.length; e.target.setSelectionRange(end, end); }}
                 onBlur={(e) => handlers.commit(e.target.value, { line: line.key, col: column.key }, null)}

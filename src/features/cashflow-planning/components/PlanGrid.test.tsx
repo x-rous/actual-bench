@@ -1,5 +1,5 @@
 /** @jest-environment jsdom */
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { createPlanDocument, createRow, setCells } from "@/lib/cashflow-planning/document";
 import { computePlan } from "@/lib/cashflow-planning/engine";
 import { buildColumns, buildLines } from "../lib/view";
@@ -9,7 +9,7 @@ jest.mock("sonner", () => ({ toast: { message: jest.fn() } }));
 // jsdom does not scroll.
 beforeAll(() => { Element.prototype.scrollIntoView = jest.fn(); });
 
-function grid(selection: GridSelection | null, rowId?: string) {
+function grid(selection: GridSelection | null, rowId?: string, onEdit: (edits: unknown[]) => void = () => {}) {
   const row = createRow({ name: "Rent", section: "expenses" });
   const other = createRow({ name: "Pay", section: "income" });
   let doc = { ...createPlanDocument({ name: "T", startMonth: "2026-01", years: 1 }), useActuals: false, rows: [row, other] };
@@ -18,7 +18,7 @@ function grid(selection: GridSelection | null, rowId?: string) {
   const columns = buildColumns(computed.months, { mode: "months", fromYear: 2026, span: 1 });
   const lines = buildLines(doc, computed, new Set());
   const sel = selection ?? null;
-  render(<PlanGrid doc={doc} computed={computed} lines={lines} columns={columns} cents={false} pastMode="actual" selection={sel && rowId ? { ...sel, line: `row:${row.id}`, anchor: sel.anchor ? { ...sel.anchor, line: `row:${row.id}` } : undefined } : sel} problems={new Map()} linkNotes={new Map()} shiftedCells={new Set()} find="" onFind={() => {}} scrollToken={0} onSelect={() => {}} onCollapseAll={() => {}} onToggle={() => {}} onEdit={() => {}} onCommand={() => {}} onNotice={() => {}} />);
+  render(<PlanGrid doc={doc} computed={computed} lines={lines} columns={columns} cents={false} pastMode="actual" selection={sel && rowId ? { ...sel, line: `row:${row.id}`, anchor: sel.anchor ? { ...sel.anchor, line: `row:${row.id}` } : undefined } : sel} problems={new Map()} linkNotes={new Map()} shiftedCells={new Set()} find="" onFind={() => {}} scrollToken={0} onSelect={() => {}} onCollapseAll={() => {}} onToggle={() => {}} onEdit={onEdit} onCommand={() => {}} onNotice={() => {}} />);
 }
 
 describe("the selection bar under the grid", () => {
@@ -35,5 +35,27 @@ describe("the selection bar under the grid", () => {
     expect(bar).toHaveTextContent("Min100.00");
     expect(bar).toHaveTextContent("Max200.00");
     expect(bar).toHaveTextContent("2 cells · 1 row × 2 months");
+  });
+});
+
+describe("typing an amount in a cell", () => {
+  const typeInto = (text: string) => {
+    const onEdit = jest.fn();
+    grid({ line: "x", col: "2026-06" }, "row", onEdit);
+    fireEvent.keyDown(screen.getByRole("grid", { name: "Cash plan" }), { key: "Enter" });
+    const input = screen.getByRole("textbox", { name: /Rent, 2026-06/ });
+    fireEvent.change(input, { target: { value: text } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    return { onEdit };
+  };
+
+  it("works out basic arithmetic", () => {
+    const { onEdit } = typeInto("30+600");
+    expect(onEdit).toHaveBeenCalledWith([expect.objectContaining({ month: "2026-06", amount: 63_000 })]);
+  });
+
+  it("does not save text that is not an amount", () => {
+    const { onEdit } = typeInto("30+");
+    expect(onEdit).not.toHaveBeenCalled();
   });
 });

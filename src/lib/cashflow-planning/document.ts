@@ -375,6 +375,63 @@ export function parseAmount(source: string): number | null {
   return negative && minor !== 0 ? -minor : minor;
 }
 
+/**
+ * An amount typed as basic arithmetic, such as `30+600`, `1,200*12`, `(50+25)/3` or `-40+10` (+, -, *, /, × and ÷ with brackets).
+ * A plain amount is read by `parseAmount` first, so `(300)` still means -300. Each number is rounded to cents as `parseAmount` does,
+ * and the result is rounded to the nearest cent. Returns `null` for anything else, a division by zero or a result out of range.
+ */
+export function parseAmountExpression(source: string): number | null {
+  const plain = parseAmount(source);
+  if (plain !== null) return plain;
+  const src = source.trim().replace(/[\s,_']/g, "").replace(/−/g, "-").replace(/×/g, "*").replace(/÷/g, "/");
+  if (src === "") return null;
+  let pos = 0;
+  // Values are kept in minor units; multiplying or dividing by a literal scales by 100 to stay in minor units.
+  const expression = (): number => {
+    let value = term();
+    while (src[pos] === "+" || src[pos] === "-") value = src[pos++] === "+" ? value + term() : value - term();
+    return value;
+  };
+  const term = (): number => {
+    let value = factor();
+    while (src[pos] === "*" || src[pos] === "/") {
+      const op = src[pos++];
+      const right = factor();
+      if (op === "*") value = (value * right) / 100;
+      else if (right === 0) throw new Error("division by zero");
+      else value = (value * 100) / right;
+    }
+    return value;
+  };
+  const factor = (): number => {
+    const ch = src[pos];
+    if (ch === "-") { pos++; return -factor(); }
+    if (ch === "+") { pos++; return factor(); }
+    if (ch === "(") {
+      pos++;
+      const value = expression();
+      if (src[pos] !== ")") throw new Error("missing bracket");
+      pos++;
+      return value;
+    }
+    const match = /^\d*(?:\.\d*)?/.exec(src.slice(pos));
+    const literal = match?.[0] ?? "";
+    const minor = literal === "" || literal === "." ? null : parseAmount(literal);
+    if (minor === null) throw new Error("not a number");
+    pos += literal.length;
+    return minor;
+  };
+  try {
+    const value = expression();
+    if (pos !== src.length || !Number.isFinite(value)) return null;
+    const minor = Math.round(value);
+    if (!Number.isSafeInteger(minor) || Math.abs(minor) > MAX_AMOUNT) return null;
+    return minor === 0 ? 0 : minor;
+  } catch {
+    return null;
+  }
+}
+
 /** Counts an Actual transaction in another month (`null` puts it back where its date, or its tag, says). */
 export function setMove(doc: PlanDocument, transactionId: string, month: Month | null): PlanDocument {
   const moves = { ...doc.moves };
