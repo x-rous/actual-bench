@@ -67,7 +67,15 @@ type Settings = {
   preflightTimeoutMs: number;
   /** How long after a failed preflight before trying again. */
   preflightRetryMs: number;
-  spawn: SpawnWorker;
+  /**
+   * A replacement for starting a worker; tests only. Left unset, each spawn
+   * uses this module's own `spawnBenchWorker`. Stored here it would outlive
+   * the module: the state lives on `globalThis` across dev-server reloads,
+   * and every task kept starting the worker from the first compiled copy of
+   * the code - so a change to anything a worker runs did nothing until the
+   * server was restarted.
+   */
+  spawn?: SpawnWorker;
 };
 
 type State = {
@@ -93,7 +101,6 @@ function defaultSettings(): Settings {
     graceMs: 10_000,
     preflightTimeoutMs: 20_000,
     preflightRetryMs: 5 * 60_000,
-    spawn: spawnBenchWorker,
   };
 }
 
@@ -237,7 +244,7 @@ export function runWorkerTask(kind: string, input: unknown, options: { signal: A
 
     let workerThreadId: number | undefined;
     try {
-      worker = settings.spawn({ heapMb: settings.heapMb });
+      worker = (settings.spawn ?? spawnBenchWorker)({ heapMb: settings.heapMb });
       // Read now: Node resets it once the thread has exited.
       workerThreadId = worker.threadId;
     } catch (error) {
@@ -346,7 +353,7 @@ export function ensureWorkerPreflight(nowMs = Date.now()): Promise<PreflightStat
     );
 
     try {
-      worker = settings.spawn({ heapMb: settings.heapMb });
+      worker = (settings.spawn ?? spawnBenchWorker)({ heapMb: settings.heapMb });
     } catch (error) {
       failed(error instanceof Error ? error.message : String(error));
       return;
