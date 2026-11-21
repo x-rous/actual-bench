@@ -28,7 +28,8 @@ describe("the overview header state", () => {
   });
 
   it("counts on from the first read as time passes", () => {
-    const { result } = renderHook(() => useOverviewHeaderState({ loadedAt: Date.now(), refresh }));
+    const loadedAt = Date.now();
+    const { result } = renderHook(() => useOverviewHeaderState({ loadedAt, refresh }));
     expect(result.current.refreshStatusLabel).toBe("Updated just now");
     act(() => { jest.advanceTimersByTime(45_000); });
     expect(result.current.refreshStatusLabel).toBe("Updated 45s ago");

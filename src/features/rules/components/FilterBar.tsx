@@ -1,6 +1,6 @@
 "use client";
 
-import { X, Merge } from "lucide-react";
+import { X, Merge, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PillGroup } from "@/components/ui/pill-group";
 import { cn } from "@/lib/utils";
@@ -44,6 +44,7 @@ export function FilterBar({
   rowCount, totalVisible,
   selectedCount,
   onDeleteSelected, onMerge, onDeselect,
+  issuesOnly, onIssuesOnlyChange, issueCount,
 }: {
   search: string; onSearchChange: (v: string) => void;
   stageFilter: StageFilter; onStageFilterChange: (v: StageFilter) => void;
@@ -60,8 +61,14 @@ export function FilterBar({
   onDeleteSelected: () => void;
   onMerge: () => void;
   onDeselect: () => void;
+  /** Show only rules with a problem (see ruleHealth). */
+  issuesOnly: boolean;
+  onIssuesOnlyChange: (v: boolean) => void;
+  /** Live rules with at least one problem. */
+  issueCount: number;
 }) {
   const hasFilters =
+    issuesOnly ||
     Boolean(search) ||
     stageFilter !== "all" ||
     actionTypeFilter !== "all" ||
@@ -120,6 +127,24 @@ export function FilterBar({
       </div>
 
       <PillGroup options={ACTION_TYPE_OPTIONS} value={actionTypeFilter} onChange={onActionTypeFilterChange} />
+
+      {(issueCount > 0 || issuesOnly) && (
+        <button
+          type="button"
+          aria-pressed={issuesOnly}
+          onClick={() => onIssuesOnlyChange(!issuesOnly)}
+          title="Rules that refer to a deleted payee, category or account, duplicate another rule, or have no conditions"
+          className={cn(
+            "flex items-center gap-1 rounded border px-2 py-0.5 text-xs transition-colors",
+            issuesOnly
+              ? "border-amber-500/60 bg-amber-500/10 font-medium text-amber-800 dark:text-amber-300"
+              : "border-border text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <AlertTriangle className="h-3 w-3" aria-hidden />
+          Needs attention ({issueCount})
+        </button>
+      )}
 
       {payeeId && (
         <div className="flex items-center gap-1.5 rounded-md border border-primary/30 bg-primary/5 px-2 py-0.5 text-xs text-primary">

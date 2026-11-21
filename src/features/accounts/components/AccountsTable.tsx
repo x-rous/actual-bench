@@ -104,6 +104,7 @@ export function AccountsTable({
   const stagedRules = useStagedStore((s) => s.rules);
   const stageNew = useStagedStore((s) => s.stageNew);
   const stageUpdate = useStagedStore((s) => s.stageUpdate);
+  const stageAccountCloseTransfer = useStagedStore((s) => s.stageAccountCloseTransfer);
   const stageDelete = useStagedStore((s) => s.stageDelete);
   const revertEntity = useStagedStore((s) => s.revertEntity);
   const clearSaveError = useStagedStore((s) => s.clearSaveError);
@@ -502,7 +503,7 @@ export function AccountsTable({
   function handleBulkReopen() {
     pushUndo();
     for (const id of selectedIds) {
-      if (staged[id] && !staged[id].isDeleted) stageUpdate("accounts", id, { closed: false });
+      if (staged[id] && !staged[id].isDeleted) { stageUpdate("accounts", id, { closed: false }); stageAccountCloseTransfer(id, null); }
     }
   }
 
@@ -631,6 +632,7 @@ export function AccountsTable({
   function handleReopen(accountId: string) {
     pushUndo();
     stageUpdate("accounts", accountId, { closed: false });
+    stageAccountCloseTransfer(accountId, null);
   }
 
   function handleRequestClose(entity: Account, balance: number, isNew: boolean) {
@@ -640,9 +642,17 @@ export function AccountsTable({
       title: "Close account?",
       label: entity.name || "Unnamed",
       balance,
+      accountId: entity.id,
+      offBudget: entity.offBudget,
+      canTransfer: !isNew,
       onConfirm: () => {
         pushUndo();
         stageUpdate("accounts", entity.id, { closed: true });
+      },
+      onConfirmClose: (transfer) => {
+        pushUndo();
+        stageUpdate("accounts", entity.id, { closed: true });
+        stageAccountCloseTransfer(entity.id, transfer);
       },
     });
   }

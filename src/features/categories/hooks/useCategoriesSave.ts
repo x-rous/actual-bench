@@ -68,7 +68,12 @@ export function useCategoriesSave() {
       const updateResults = await settleTransportWrites(
         transport,
         toUpdate,
-        (c) => transport.updateCategory(c.id, { name: c.name, hidden: c.hidden })
+        (c) => {
+          const patch: Parameters<typeof transport.updateCategory>[1] = { name: c.name, hidden: c.hidden };
+          // A move to another group; a new group's temp id maps to its real one.
+          if (c.groupId !== staged[c.id]?.original?.groupId) patch.groupId = groupIdMap[c.groupId] ?? c.groupId;
+          return transport.updateCategory(c.id, patch);
+        }
       );
       for (let i = 0; i < toUpdate.length; i++) {
         const id = toUpdate[i].id;
@@ -84,7 +89,7 @@ export function useCategoriesSave() {
       const deleteResults = await settleTransportWrites(
         transport,
         toDelete,
-        (id) => transport.deleteCategory(id)
+        (id) => transport.deleteCategory(id, staged[id]?.transferCategoryId ?? null)
       );
       for (let i = 0; i < toDelete.length; i++) {
         const id = toDelete[i];

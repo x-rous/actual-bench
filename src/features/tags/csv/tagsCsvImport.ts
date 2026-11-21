@@ -1,3 +1,4 @@
+import { normalizeTagName } from "../utils/tagName";
 import { parseCsvLine } from "@/lib/csv";
 import type { Tag } from "@/types/entities";
 
@@ -35,7 +36,7 @@ export function importTagsFromCsv(text: string): TagsImportResult | TagsImportEr
     const line = nonEmpty[i];
 
     const fields = parseCsvLine(line);
-    const name = fields[nameIdx]?.trim() ?? "";
+    const name = normalizeTagName(fields[nameIdx] ?? "");
     if (!name) { skipped++; continue; }
 
     const rawColor = colorIdx >= 0 ? (fields[colorIdx]?.trim() ?? "") : "";

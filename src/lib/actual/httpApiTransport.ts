@@ -10,6 +10,7 @@ import {
   getAccounts,
   getAccountBalances,
   updateAccount,
+  closeAccount,
 } from "../api/accounts";
 import {
   createCategory,
@@ -126,6 +127,7 @@ export function createHttpApiTransport(
     createAccount: (input) => createAccount(connection, input),
     updateAccount: (id, patch) => updateAccount(connection, id, patch),
     deleteAccount: (id) => deleteAccount(connection, id),
+    closeAccount: (id, transfer) => closeAccount(connection, id, transfer),
     getAccountGroups: () => getAccountGroups(connection),
     createAccountGroup: (input) => createAccountGroup(connection, input),
     updateAccountGroup: (id, patch) => updateAccountGroup(connection, id, patch),
@@ -140,10 +142,10 @@ export function createHttpApiTransport(
     getCategoryGroups: () => getCategoryGroups(connection),
     createCategoryGroup: (input) => createCategoryGroup(connection, input),
     updateCategoryGroup: (id, patch) => updateCategoryGroup(connection, id, patch),
-    deleteCategoryGroup: (id) => deleteCategoryGroup(connection, id),
+    deleteCategoryGroup: (id, transferCategoryId) => deleteCategoryGroup(connection, id, transferCategoryId),
     createCategory: (input) => createCategory(connection, input),
     updateCategory: (id, patch) => updateCategory(connection, id, patch),
-    deleteCategory: (id) => deleteCategory(connection, id),
+    deleteCategory: (id, transferCategoryId) => deleteCategory(connection, id, transferCategoryId),
 
     getTags: () => getTags(connection),
     createTag: (input) => createTag(connection, input),

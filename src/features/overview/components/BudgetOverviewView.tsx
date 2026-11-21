@@ -11,9 +11,10 @@ import { OverviewNavigationSection } from "./OverviewNavigationSection";
 import { OverviewStatsSection } from "./OverviewStatsSection";
 
 export function BudgetOverviewView() {
-  const { snapshot, isLoading, dataUpdatedAt, refresh } = useBudgetOverview();
+  const { snapshot, isLoading, hasPartialFailure, dataUpdatedAt, refresh } = useBudgetOverview();
   const headerState = useOverviewHeaderState({
     loadedAt: snapshot ? dataUpdatedAt : null,
+    hasPartialFailure,
     refresh,
   });
   const [exportOpen, setExportOpen] = useState(false);
@@ -36,14 +37,17 @@ export function BudgetOverviewView() {
             onImportBundle={() => setImportOpen(true)}
           />
 
+          {/* A refresh keeps the figures in place, dimmed, rather than blanking the whole row. */}
           <OverviewStatsSection
-            snapshot={
-              headerState.isRefreshing
-                ? undefined
-                : snapshot ?? undefined
-            }
-            isLoading={isLoading || headerState.isRefreshing}
+            snapshot={snapshot ?? undefined}
+            isLoading={isLoading}
+            isRefreshing={headerState.isRefreshing}
           />
+          {hasPartialFailure && !isLoading && !headerState.isRefreshing && (
+            <p role="status" className="text-xs text-amber-700 dark:text-amber-400">
+              Some figures could not be read (shown as -). Press Refresh to try again.
+            </p>
+          )}
         </div>
 
         <OverviewNavigationSection />

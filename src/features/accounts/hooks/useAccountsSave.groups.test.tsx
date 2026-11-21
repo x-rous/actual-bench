@@ -135,8 +135,8 @@ describe("useAccountsSave with account groups", () => {
     });
 
     expect(calls).toEqual([
-      'updateAccount:a1:{"name":"Checking 2","offBudget":false,"closed":false}',
-      'updateAccount:a2:{"name":"Cash","offBudget":false,"closed":false,"groupId":"g2"}',
+      'updateAccount:a1:{"name":"Checking 2","offBudget":false}',
+      'updateAccount:a2:{"name":"Cash","offBudget":false,"groupId":"g2"}',
     ]);
   });
 
@@ -267,7 +267,7 @@ describe("useAccountsSave with account groups", () => {
     });
 
     expect(calls).toEqual([
-      'updateAccount:server-account-1:{"name":"ETF","offBudget":true,"closed":false,"groupId":"g1"}',
+      'updateAccount:server-account-1:{"name":"ETF","offBudget":true,"groupId":"g1"}',
     ]);
     // A saved update is cleared from the draft; the refetch then shows the server row.
     expect(store().accounts["server-account-1"]).toBeUndefined();
@@ -289,6 +289,63 @@ describe("useAccountsSave with account groups", () => {
       await result.current.save();
     });
 
-    expect(calls).toEqual(['updateAccount:a1:{"name":"Renamed","offBudget":false,"closed":false}']);
+    expect(calls).toEqual(['updateAccount:a1:{"name":"Renamed","offBudget":false}']);
+  });
+});
+
+describe("useAccountsSave closing accounts", () => {
+  beforeEach(() => {
+    store().discardAll();
+    mockGetTransport.mockReset();
+  });
+  afterEach(() => store().discardAll());
+
+  it("sends a plain close, or closes through Actual's close when the balance moves", async () => {
+    const calls: Calls = [];
+    const closeAccount = jest.fn(async (id, transfer) => {
+      calls.push(`closeAccount:${id}:${JSON.stringify(transfer)}`);
+    });
+    mockGetTransport.mockReturnValue(makeTransport(calls, { closeAccount }));
+    loadServerState();
+    store().loadAccounts([
+      { id: "a1", name: "Checking", offBudget: false, closed: false, groupId: "g1" },
+      { id: "a2", name: "Cash", offBudget: false, closed: false, groupId: null },
+      { id: "a3", name: "Old card", offBudget: false, closed: false, groupId: null },
+    ]);
+    store().stageUpdate("accounts", "a3", { closed: true });
+    store().stageUpdate("accounts", "a2", { closed: true });
+    store().stageAccountCloseTransfer("a2", { transferAccountId: "a1", transferCategoryId: null });
+
+    const { result } = renderSave();
+    let summary!: Awaited<ReturnType<typeof result.current.save>>;
+    await act(async () => {
+      summary = await result.current.save();
+    });
+
+    expect(calls).toContain('updateAccount:a3:{"name":"Old card","offBudget":false,"closed":true}');
+    // The flag is left to Actual's close, which also records the transfer.
+    expect(calls).toContain('updateAccount:a2:{"name":"Cash","offBudget":false}');
+    expect(calls).toContain('closeAccount:a2:{"transferAccountId":"a1","transferCategoryId":null}');
+    expect(summary.failed).toEqual([]);
+  });
+
+  it("refuses, before writing anything, to move a balance into an account the same Save closes", async () => {
+    const calls: Calls = [];
+    mockGetTransport.mockReturnValue(makeTransport(calls, { closeAccount: jest.fn() }));
+    loadServerState();
+    store().stageUpdate("accounts", "a1", { closed: true });
+    store().stageUpdate("accounts", "a2", { closed: true });
+    store().stageAccountCloseTransfer("a2", { transferAccountId: "a1", transferCategoryId: null });
+
+    const { result } = renderSave();
+    let summary!: Awaited<ReturnType<typeof result.current.save>>;
+    await act(async () => {
+      summary = await result.current.save();
+    });
+
+    expect(calls).toEqual(['updateAccount:a1:{"name":"Checking","offBudget":false,"closed":true}']);
+    expect(summary.failed).toEqual([
+      expect.objectContaining({ id: "a2", message: expect.stringMatching(/which this Save also closes/) }),
+    ]);
   });
 });

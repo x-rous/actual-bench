@@ -9,6 +9,7 @@ import {
 } from "@tanstack/react-virtual";
 import { usePersistedFilters } from "@/hooks/usePersistedFilters";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { useHighlight } from "@/hooks/useHighlight";
 import { isFormField, useEditableGrid } from "@/hooks/useEditableGrid";
 import { useTableSelection } from "@/hooks/useTableSelection";
@@ -20,6 +21,7 @@ import { TableBulkAddBar } from "@/components/ui/table-bulk-add-bar";
 import { useStagedStore } from "@/store/staged";
 import { generateId } from "@/lib/uuid";
 import { buildRuleReferenceMap } from "@/lib/referenceCheck";
+import { useAllTransactionCounts } from "@/hooks/useTransactionCountsForIds";
 import type { StagedEntity } from "@/types/staged";
 import type { Payee } from "@/types/entities";
 import { FilterBar } from "./FilterBar";
@@ -202,15 +204,24 @@ export function PayeesTable({
 
   // Apply the rules filter as a second step so it only invalidates when
   // rulesFilter is active or payeeRuleCount changes.
+  // "Unused" needs every payee's transaction count, read only while it is chosen.
+  const { data: txCounts, isLoading: txCountsLoading, error: txCountsError, refetch: retryTxCounts } =
+    useAllTransactionCounts("payee", { enabled: rulesFilter === "unused" });
   const rows: PayeeRow[] = useMemo(() => {
     if (rulesFilter === "all") return baseRows;
+    if (rulesFilter === "unused" && !txCounts) return [];
     return baseRows.filter((r) => {
       const rc = payeeRuleCount.get(r.entity.id) ?? 0;
       if (rulesFilter === "with_rules" && rc === 0) return false;
       if (rulesFilter === "no_rules"   && rc  >  0) return false;
+      if (rulesFilter === "unused") {
+        // Transfer payees belong to their account; a draft has no history yet.
+        if (r.isNew || r.entity.transferAccountId || rc > 0) return false;
+        if ((txCounts?.get(r.entity.id) ?? 0) > 0) return false;
+      }
       return true;
     });
-  }, [baseRows, rulesFilter, payeeRuleCount]);
+  }, [baseRows, rulesFilter, payeeRuleCount, txCounts]);
 
   const rowIds = useMemo(() => rows.map((row) => row.entity.id), [rows]);
 
@@ -372,7 +383,11 @@ export function PayeesTable({
   function handleNameDone(rowId: string, value: string, action: DoneAction) {
     if (action !== "cancel") {
       const trimmed = value.trim();
-      if (trimmed !== staged[rowId]?.entity.name) {
+      const entry = staged[rowId];
+      if (!trimmed && entry && !entry.isNew) {
+        // Actual needs a name, and Save would skip a blank one without a word.
+        toast.error("A payee needs a name. The previous name was kept.");
+      } else if (trimmed !== entry?.entity.name) {
         pushUndo();
         stageUpdate("payees", rowId, { name: trimmed });
       }
@@ -386,6 +401,8 @@ export function PayeesTable({
 
   // ── Bulk add ─────────────────────────────────────────────────────────────────
   function addRows(count: number, focusFirst = false) {
+    // "Unused" never lists drafts, so new rows would be hidden (and the first could not take focus).
+    if (rulesFilter === "unused") setRulesFilter("all");
     pushUndo();
     const firstId = generateId();
     stageNew("payees", { id: firstId, name: "" });
@@ -519,6 +536,11 @@ export function PayeesTable({
         pushUndo();
         stageDelete("payees", entity.id);
       },
+      payeeId: isNew ? undefined : entity.id,
+      onMergeInto: isNew ? undefined : (targetId) => {
+        pushUndo();
+        stagePayeeMerge(targetId, [entity.id]);
+      },
     });
   }
 
@@ -548,7 +570,14 @@ export function PayeesTable({
         <div ref={setScrollEl} className="min-h-0 flex-1 overflow-auto">
         {rows.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
-            <span>{search || typeFilter !== "all" || rulesFilter !== "all" ? "No payees match the current filters." : "No payees yet."}</span>
+            {rulesFilter === "unused" && txCountsError && !txCounts ? (
+              <span role="alert" className="flex items-center gap-2 text-destructive">
+                Could not count transactions, so unused payees cannot be listed.
+                <button type="button" className="text-xs underline hover:text-foreground" onClick={retryTxCounts}>Retry</button>
+              </span>
+            ) : (
+              <span>{rulesFilter === "unused" && txCountsLoading ? "Counting transactions…" : search || typeFilter !== "all" || rulesFilter !== "all" ? "No payees match the current filters." : "No payees yet."}</span>
+            )}
             {(search || typeFilter !== "all" || rulesFilter !== "all") && (
               <button
                 className="text-xs underline hover:text-foreground"

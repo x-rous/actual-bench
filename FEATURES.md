@@ -38,10 +38,11 @@
 ## Budget Overview
 
 - `/overview` is the default landing page after connecting or reconnecting to a budget
-- Compact snapshot row showing live saved-state metrics for transactions, accounts, payees, categories, schedules, and rules
-- Derived snapshot context includes **Budget Mode** (`Envelope`, `Tracking`, or `Unidentified`) and **Budgeting since** from the oldest transaction date
-- Manual refresh button with loading state and last-refreshed status
-- Snapshot values switch to loading placeholders immediately during budget switching or manual refresh
+- Compact snapshot row showing live saved-state metrics for transactions, accounts, payees, categories, schedules, and rules. Deleted items are never counted. A short line under a count names what it includes (closed accounts, transfer payees, hidden categories, completed schedules, rules kept by schedules), and hovering a count explains it (for example, each line of a split counts as one transaction)
+- Derived snapshot context includes **Budget Mode** (`Envelope`, `Tracking`, or `Unidentified`) and **First transaction**, the month of the oldest transaction (starting balances included)
+- A figure that could not be read shows "-" with a note to refresh, rather than an endless "..."
+- Manual refresh button with loading state and last-refreshed status; the time also moves on when the figures are read again after a Save or bundle import, and stays put after an incomplete read
+- Snapshot values show loading placeholders while a budget is first read; a manual refresh keeps the previous figures on screen, dimmed, until the new ones arrive
 - Main navigation hub with all 19 implemented features, grouped consistently with the sidebar, with descriptions and direct resource links; Actual access summaries are available from the feature information control
 - Budget File Health opens a read-only exported-snapshot workspace for inspecting budget health locally in the browser
 - Data Browser opens the exported budget's raw SQLite tables, views, and rows directly (its own page, sharing the cached snapshot)
@@ -50,7 +51,7 @@
 
 **Financial Management → Financial Insights** (experimental) joins your accounts into one read-only picture of what you own and owe, what came in and went out, and why your cash and wealth changed. It reads Actual through Direct or HTTP and never writes to it.
 
-- **Statements:** Cash Flow, Income Statement (P&L) and a period-end Balance Sheet share the global reporting period in Tracking and Envelope budgets. Flat sections keep headings, indented transaction lines and subtotals together; compact category groups start collapsed, with controls to expand or collapse all groups and separate transaction links. Cash equivalents exclude fixed / restricted deposits. P&L follows the existing Insights rules: categories determine income/expense, with uncategorized on-budget receipts and payments counted by sign in their own groups, including card purchases. Uncategorized non-transfer entries in off-budget Investment / Retirement accounts appear in a neutral **Investment activity** card with their own drill-down and CSV, outside P&L and classification exceptions. Transfers, principal, starting balances, classified asset capital, value changes and linked sales stay outside P&L; for a loan tracked in Loans whose lender charges interest and fees as their own entries, the charges are recorded P&L expenses (a Loans group) and, where payments were made in the period, the cash flow shows them as interest and fees paid with the rest as principal; genuinely unidentified movements, unmatched cash transfers even when they net to zero, and other loan allocations remain separate. The balance sheet groups included account balances by account class, with the same classes, names and order as Summary’s What you own and owe (so each class total and net worth match it exactly), with account groups visible and their accounts collapsed by default, including a No Group section and each account’s Financial Reporting label and expand-all / collapse-all controls, and calculates net worth as assets less liabilities. Income and expense totals appear in their section headers; final net totals use matching gray footers at the bottom of the cards. The P&L-to-cash bridge sits beside classification exceptions and investment activity. Opening and closing cash open a cash-account breakdown grouped by account class and Actual account group, with expandable accounts and its own CSV; balance reconciliation and individual card exports explain the result. Detailed statement evidence loads per reporting period and is refreshed with the shared snapshot. No schedules or estimated accruals supply missing amounts.
+- **Statements:** Cash Flow, Income Statement (P&L) and a period-end Balance Sheet share the global reporting period in Tracking and Envelope budgets. Flat sections keep headings, indented transaction lines and subtotals together; compact category groups start collapsed, with controls to expand or collapse all groups and separate transaction links. Cash equivalents exclude fixed / restricted deposits. P&L follows the existing Insights rules: categories determine income/expense, with uncategorized on-budget receipts and payments counted by sign in their own groups, including card purchases. Uncategorized non-transfer entries in off-budget Investment / Retirement accounts appear in a neutral **Investment activity** card with their own drill-down and CSV, outside P&L and classification exceptions. Transfers, principal, starting balances, classified asset capital, value changes and linked sales stay outside P&L; for a loan tracked in Loans whose lender charges interest and fees as their own entries, the charges are recorded P&L expenses (a Loans group) and, where payments were made in the period, the cash flow shows them as interest and fees paid with the rest as principal; genuinely unidentified movements, unmatched cash transfers even when they net to zero, and other loan allocations remain separate. The balance sheet groups included account balances by account class, with the same classes, names and order as Summary’s What you own and owe (so each class total and net worth match it exactly), with account groups visible and their accounts collapsed by default, including a No Group section (a class whose accounts all sit in one account group, or in none, skips the group level and lists its accounts directly under the class) and each account’s Financial Reporting label and expand-all / collapse-all controls, and calculates net worth as assets less liabilities. Income and expense totals appear in their section headers; final net totals use matching gray footers at the bottom of the cards. The P&L-to-cash bridge sits beside classification exceptions and investment activity. Opening and closing cash open a cash-account breakdown grouped by account class and Actual account group, with expandable accounts and its own CSV; balance reconciliation and individual card exports explain the result. Detailed statement evidence loads per reporting period and is refreshed with the shared snapshot. No schedules or estimated accruals supply missing amounts.
 
 - **Progress:** shareable cards that show shapes, percentages, months and counts, never a money amount, currency or the name of an account, payee, loan or asset: a net worth journey, asset composition, debt payoff progress (credit cards, loans or all debt), the savings rate, savings consistency, the cash buffer in months, a cash buffer journey, a property value and loan-to-value card for each property or other fixed asset (value as a shape, never an amount; the loan-to-value always shown). The figures are the ones on Summary, Loans & cards and Property & assets. **Copy image** and **Download PNG** at the top right of each card copy it to the clipboard or download it as a 1200 × 675 PNG, drawn in the browser in the theme the app is in (light or dark), with dates shown or replaced by Month 1, Month 2…, the words and percentages on the cards shown or removed, and the Actual Bench icon at the top left of every picture, with the title beside it. No drill links, CSV or hover values; nothing is written to Actual or the app database.
 - **Account setup first:** nothing is shown until every account has a class and a placement that class accepts (a credit card must be on budget; a house, car, investment, pension or loan off budget), set in the Accounts table. No Financial Reporting choice is required. An off-budget account can be switched out of Financial Insights instead, and then needs no class. The page lists the accounts that need attention, with the reason, and links to Accounts; it checks again on its own, re-locks if a new unclassified account appears, and never shows a partial figure. A closed account with no transactions and a zero balance needs nothing.
@@ -412,6 +413,8 @@ A standalone page (own navigation item) for browsing the active budget's exporte
 - Merge multiple selected rules into one via a dedicated merge dialog; split rules are excluded, since flattening two of them would produce a rule nobody wrote
 - Merge dialog now shares the same editor sections, row identity model, and validation behavior as the main rule drawer, avoiding combobox state jumps when rows are added or removed
 - Duplicate a rule with one click
+- **Needs attention** filter (shown when any rule qualifies, with its count): rules that refer to a deleted or unknown payee, category, account or category group, rules identical to another rule (same stage and operator, the same conditions in any order, and the same actions in the same order, since Actual runs actions in sequence), and rules with no conditions. Each affected row says what is wrong under its conditions, naming the kind of item that is gone. In the rule editor, an id the budget no longer has shows as a "[deleted account]" (payee, category, group) chip or value, listed first in the picker, so it can be removed or replaced The checks are read-only and use the staged data, so a payee deleted in the current draft already counts; `contains`, `does not contain` and `matches` conditions compare raw text and are not treated as references
+- Only the rules in view are rendered, and the search follows typing a moment later, so budgets with thousands of rules stay responsive; a deep link to a rule scrolls it into view first
 - Filter the rules list by stage, payee, category, **Splits**, or **Linked to Schedule** - the rules a schedule owns, matched on the `link-schedule` action the row's calendar badge marks, since no action field names a schedule
 - Search resolves entity names in condition values — searching "Groceries" finds rules where a `oneOf` condition references that payee or category by ID
 - Links from Payees and Categories pages filter the rules list to that entity automatically
@@ -457,7 +460,9 @@ A standalone page (own navigation item) for browsing the active budget's exporte
 - Duplicate name detection with visual warning
 - Rules count displayed per account — click it to jump to the rules list filtered to that account
 - Every account row has a note button beside the name (filled when a note exists, faint otherwise); click it to read the note (Markdown-rendered) or to add, edit, and clear it inline without leaving the table — note changes save immediately, independent of the staged account edits
-- Every delete and close action (single and bulk) shows a confirmation dialog pre-populated with the account's outstanding balance, transaction count, and rule reference count before staging the mutation; accounts with non-zero balances receive an explicit warning about budget consistency
+- Every delete and close action (single and bulk) shows a confirmation dialog pre-populated with the account's outstanding balance, transaction count, and rule reference count before staging the mutation
+- **Closing with a balance:** closing a saved account that has a balance offers **Move the balance to** another open account, as Actual's own close does; when that moves money from an on-budget account to an off-budget one, a category is required. Save closes the account through Actual's close, which records the transfer. Without a choice (and in bulk close) the account is closed with its balance left in place. A balance cannot move into an account the same Save closes or deletes: that account is reported on its row before anything is written. Balances refresh right after the Save. Both connection modes close the same way: Direct mode no longer uses Actual's close for a plain close, which refused an account with a balance and deleted one with no transactions, and a new account created as closed is no longer reported as failed (and created again on retry)
+- Save only sends an account's open/closed state when it changed
 - Info button on each row opens the Usage Inspector drawer (see below)
 
 ## Payees
@@ -466,7 +471,9 @@ A standalone page (own navigation item) for browsing the active budget's exporte
 - Transfer payees (auto-generated for inter-account transfers) shown as a separate filterable type
 - Transfer payees show a disabled selection checkbox in the bulk-select column to make their non-selectable status explicit
 - Rules count displayed per payee — click it to jump to the rules list filtered to that payee
-- Filter by name, type (regular / transfer / all), and whether a payee has associated rules
+- Filter by name, type (regular / transfer / all), and whether a payee has associated rules, or **Unused**: regular, saved payees with no rules and no transactions (counted with one query, only while the filter is on); select all and delete to clean them up
+- Deleting a single payee that has transactions offers **Merge into another payee instead**, which moves its transactions and rules to the chosen payee (staged like any merge)
+- Clearing a saved payee's name is refused with a message instead of being staged; a blank name that reaches Save some other way is reported on its row
 - Bulk delete and bulk merge — select 2 or more regular payees, click Merge; the **first payee you check** becomes the merge target (survives) regardless of table sort order, the rest are absorbed; the operation is staged and shown in the Changes panel as "Merge Deleted" before being sent to the server on Save; supports Ctrl+Z undo
 - Inline editing with keyboard navigation
 - CSV import and export
@@ -535,7 +542,8 @@ counts rules that *set* a payee.
 - Create and manage category groups (income or expense type)
 - Create categories within groups
 - Category group reassignment opens an on-demand editor instead of rendering every group dropdown up front, keeping large category tables responsive when many groups are expanded
-- Income categories stay locked to the single income parent group; only expense categories can be moved between groups
+- Income categories stay locked to the single income parent group; only expense categories can be moved between groups. A move is saved to Actual (it previously reverted after Save), including a move into a group created in the same draft
+- Select several expense categories and use **Move to group…** to move them at once
 - Rename groups and categories inline
 - Toggle visibility (hidden / visible) per category or per entire group
 - Collapsible group rows — expand or collapse all groups with a single button
@@ -545,6 +553,8 @@ counts rules that *set* a payee.
 - Duplicate group name prevention
 - Every category and category group row has a note button beside the name (filled when a note exists, faint otherwise); click it to read the note (Markdown-rendered) or to add, edit, and clear it inline from the table — note changes save immediately, independent of the staged category edits
 - Every delete action confirms with an impact dialog: single category shows transaction count and rule references; group delete additionally shows the child category count and aggregated transaction count across all children with a cascade warning; bulk delete computes effective group and category sets, deduplicates implicit deletions, and aggregates totals
+- Deleting saved categories or groups offers **Move transactions and budget amounts to** another category on the same side (income or expense), as Actual's own delete does; for income categories it offers **Move transactions to**, since Actual does not move an income category's budget amounts. Without a choice the transactions are left uncategorized. Bulk delete offers it when everything selected is on one side
+- Save writes category group creates and renames first, then categories, then group deletes, so a category moved out of a group is never deleted with it; if that move fails, the group is kept and reported, and its delete stays staged
 - Info button on each category and group row opens the Usage Inspector drawer (see below)
 
 ## Schedules
@@ -568,6 +578,8 @@ counts rules that *set* a payee.
 - Opening a schedule-linked rule in the drawer keeps a single editable `Payee is` row and a single editable `Account is` row (plus the schedule-managed conditions), and changes to those values stay in sync with the linked schedule draft
 - Schedule-generated rules are excluded from bulk selection and cannot be merged; manage them from the Schedules page instead
 - Filter schedules by name, payee, account, frequency, auto-add state, and completion status
+- Schedule names must be unique in Actual (ignoring case): duplicates show a warning beside the name and are reported on their rows at Save, and **Duplicate** names the copy "Name (copy)", "Name (copy 2)" and so on
+- A schedule can use a payee or account created in the same draft: Save writes accounts and payees first and passes the new ids on; if that payee or account failed to save, the schedule reports it instead of being written with an id Actual does not know. A schedule without a date is reported on its row rather than skipped
 - Bulk select with bulk delete
 - CSV import and export
 - Every delete action confirms with an impact dialog showing the schedule's linked rule status, auto-post flag, and transaction count; bulk delete aggregates totals across all selected schedules
@@ -580,6 +592,8 @@ counts rules that *set* a payee.
 - Add an optional description per tag
 - Inline editing: click any name or description cell to edit in place; Enter or Escape to confirm or cancel
 - Filter by name or description, and by color presence (All / Has Color / No Color) with live counts per pill
+- **Used / Unused** filter: whether any transaction's notes carry the tag (`#name`, as Actual reads it; `##` is an escaped literal). Counted from the notes that contain `#` with one query, only while the filter is on
+- Tag names drop whitespace and `#` signs wherever a tag is named (inline, CSV import, Quick Create), since notes could never match such a name (`#food#rent` reads as two tags); a name with nothing else is refused
 - Bulk select with bulk delete
 - Duplicate name detection with visual warning
 - CSV import and export
@@ -817,7 +831,7 @@ Transaction counts are fetched lazily when the drawer opens, gated by the same `
 
 - All changes (creates, updates, deletes) are held locally until explicitly saved — nothing touches the server until you confirm
 - Colour-coded rows: green = new, amber = updated, strikethrough = deleted, red = validation error
-- Save all staged changes to the server in one action from the pending-changes panel header
+- Save all staged changes to the server in one action from the pending-changes panel header. Entity types are written one at a time, in dependency order (accounts, payees and tags; category groups, categories, then group deletes; schedules; rules), so each step can use the ids the steps before it created
 - Discard all staged changes to revert to the last server state
 - Full undo / redo history for all staged edits within a session
 - Refresh reloads data from the server — if unsaved changes exist, a confirmation prompt lets you choose to discard them and continue, or cancel
