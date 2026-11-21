@@ -165,7 +165,7 @@ export function BackupsTable({
                     <span>
                       {artifact.kind === "budget"
                         ? artifact.sourceBudgetName ?? "Budget"
-                        : "Bench settings"}
+                        : "Bench data"}
                     </span>
                     {artifact.encrypted && (
                       <Lock className="size-3.5 text-muted-foreground" aria-label="Encrypted" />

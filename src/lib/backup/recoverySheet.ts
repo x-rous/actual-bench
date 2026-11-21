@@ -88,7 +88,7 @@ export function buildRecoverySheet(db: SqliteDatabase, now: Date = new Date()): 
         });
       lines.push(
         `| ${artifact.createdAt.slice(0, 16).replace("T", " ")} | ${
-          artifact.kind === "budget" ? artifact.sourceBudgetName ?? "Budget" : "Bench settings"
+          artifact.kind === "budget" ? artifact.sourceBudgetName ?? "Budget" : "Bench data"
         } | ${formatBytes(artifact.sizeBytes)} | ${
           artifact.verificationStatus === "passed" ? "yes" : "no"
         } | ${locations.join("<br>") || "-"} |`
@@ -189,10 +189,10 @@ export function buildRecoverySheet(db: SqliteDatabase, now: Date = new Date()): 
   lines.push("```");
   lines.push("");
 
-  lines.push("## Getting Bench's own settings back");
+  lines.push("## Getting Actual Bench's own data back");
   lines.push("");
   lines.push(
-    "Copies marked *Bench settings* are the metadata database: sync rules, mappings, reconciliation sessions, automations and cleanup decisions. Restore it by stopping Bench, putting the file where `ACTUAL_BENCH_DB_PATH` points (default `/data/actual-bench.sqlite`), and starting it again."
+    "Copies marked *Bench data* are Actual Bench's own database: everything it stores apart from your budget, such as sync flows and mappings, reconciliation sessions, credit cards, plans, assets, automations and cleanup decisions. Restore it by stopping Bench, putting the file where `ACTUAL_BENCH_DB_PATH` points (default `/data/actual-bench.sqlite`), and starting it again."
   );
   lines.push("");
   lines.push(

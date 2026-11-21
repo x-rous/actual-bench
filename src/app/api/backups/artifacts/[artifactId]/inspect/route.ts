@@ -3,8 +3,7 @@ import { appDbErrorResponse, readJsonBody } from "@/lib/app-db/routeResponses";
 import { getAppDb } from "@/lib/app-db/connection";
 import { inspectArtifact, type InspectionResult } from "@/lib/backup/inspect";
 import { runBackupTask } from "@/lib/backup/tasks";
-import { getAutomationExecutor } from "@/lib/automation/executor";
-import { sealSecret, type SealedSecret } from "@/lib/sync/vault";
+import { prepareTypedPassphrase, typedPassphraseFrom } from "@/lib/backup/typedPassphrase";
 
 type RouteContext = { params: Promise<{ artifactId: string }> };
 
@@ -28,20 +27,9 @@ export const maxDuration = 120;
 export async function POST(request: Request, context: RouteContext) {
   try {
     const { artifactId } = await context.params;
-    const body = (await readJsonBody(request).catch(() => ({}))) as { passphrase?: string };
-    const passphrase = typeof body?.passphrase === "string" && body.passphrase ? body.passphrase : undefined;
-
-    let sealed: SealedSecret | null = null;
-    let sealable = true;
-    if (passphrase) {
-      try {
-        sealed = sealSecret(passphrase);
-      } catch {
-        sealable = false;
-      }
-    }
-
-    if (!sealable && getAutomationExecutor().name === "worker") {
+    const passphrase = typedPassphraseFrom(await readJsonBody(request).catch(() => ({})));
+    const { sealed, runHere } = prepareTypedPassphrase(passphrase);
+    if (runHere) {
       const result = await inspectArtifact(getAppDb(), artifactId, { passphrase });
       return NextResponse.json({ result });
     }

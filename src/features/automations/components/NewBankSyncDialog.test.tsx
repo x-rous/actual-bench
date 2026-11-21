@@ -100,10 +100,9 @@ describe("scheduling a bank sync", () => {
     // Wait for the account list to have loaded, not for any one name in it.
     await screen.findByText(/accounts will sync/);
 
-    const cadence = screen.getByLabelText("How often");
     expect(screen.queryByLabelText("Cron expression")).not.toBeInTheDocument();
 
-    await chooseSelectOption(cadence, "Every day");
+    fireEvent.click(screen.getByRole("button", { name: "Daily" }));
     fireEvent.change(screen.getByLabelText("Time of day"), { target: { value: "07:30" } });
     fireEvent.click(screen.getByRole("button", { name: /schedule sync/i }));
 
@@ -120,7 +119,7 @@ describe("scheduling a bank sync", () => {
     // Wait for the account list to have loaded, not for any one name in it.
     await screen.findByText(/accounts will sync/);
 
-    await chooseSelectOption(screen.getByLabelText("How often"), "Custom (cron)");
+    fireEvent.click(screen.getByRole("button", { name: "Cron" }));
     fireEvent.change(screen.getByLabelText("Cron expression"), { target: { value: "@daily" } });
 
     expect(screen.getByText(/Five fields/)).toBeInTheDocument();
@@ -164,7 +163,7 @@ describe("scheduling a bank sync", () => {
     // asking a question whose answer cannot matter.
     expect(screen.queryByLabelText("Time zone")).not.toBeInTheDocument();
 
-    await chooseSelectOption(screen.getByLabelText("How often"), "Every day");
+    fireEvent.click(screen.getByRole("button", { name: "Daily" }));
 
     const zone = screen.getByLabelText("Time zone");
     // A mistyped zone is a schedule that silently runs at the wrong hour, so it
@@ -187,7 +186,7 @@ describe("scheduling a bank sync", () => {
     // Wait for the account list to have loaded, not for any one name in it.
     await screen.findByText(/accounts will sync/);
 
-    await chooseSelectOption(screen.getByLabelText("How often"), "Every day");
+    fireEvent.click(screen.getByRole("button", { name: "Daily" }));
     fireEvent.change(screen.getByLabelText("Time of day"), { target: { value: "" } });
 
     // An empty time used to become `0 0 * * *` — a schedule nobody chose.

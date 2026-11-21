@@ -1,11 +1,11 @@
 ---
 title: Backups
-description: Create scheduled, verified backups of your budget and Actual Bench settings.
+description: Create scheduled, verified backups of your budget and Actual Bench's own data.
 sidebar:
   order: 12
 ---
 
-Use Backups to create scheduled copies of your budget and Actual Bench settings. Actual Bench verifies
+Use Backups to create scheduled copies of your budget and Actual Bench's own data. Actual Bench verifies
 each copy before marking it as verified. You can use multiple destinations, including a server folder or an S3-compatible
 bucket.
 
@@ -28,6 +28,12 @@ The page has two tabs:
 
 A fresh install opens on Setup, because there is nothing else to look at yet.
 
+Setup is laid out in the order things are decided, each at full width: **destinations**, then
+**backup rules**, then recovery points. A rule
+needs somewhere to write, so the rules side stays empty, with **New backup rule** disabled, until
+there is a destination. Each side names the other: a destination shows how many rules use it, and
+a rule shows the destinations it writes to, with a warning when one was removed or is failing.
+
 ## Check backup status
 
 The summary shows the newest copies, their verification status, destination health, and any problem
@@ -36,6 +42,15 @@ headline is about the rule worst off, so one healthy rule can never hide a budge
 stopped.
 
 ## Setup: Backup Destinations
+
+Each destination is one row: its name, the folder or bucket, its state in words (*OK · wrote 2h
+ago*, *Failed 1d ago* with the reason on hover, *Disabled*), and how many rules write to it.
+**Test**, **Edit** and **Remove** are in the row's menu; **Scan** finds backups already in your
+destinations that Bench has no record of.
+
+Inside a destination, copies of a budget go under `actual-budget/<budget name>/` and Actual Bench's
+own data under `actual-bench/`, each by year. Copies made by earlier versions stay where they were,
+under `budget/` and `app-db/`, and keep working.
 
 Choose one or both destination types:
 
@@ -69,11 +84,15 @@ and says plainly when a budget can only be copied on request.*
 
 ## Setup: Backup Rules
 
-A rule says what to copy, where to put it, how often, and how long to keep it.
+A rule says what to copy, where to put it, how often, and how long to keep it. In the table each
+rule shows its **status** (*Active*, *Running*, *Paused*, *Paused in Automations*, or *Auto-paused*
+after repeated failures, with the reason on hover), what it copies (a lock for encrypted), where it
+writes, its schedule and next run, what it keeps and when it last ran.
 
-- **What** - the budget, Bench's own settings, or both. Bench's settings are your sync flows and
-  mappings, reconciliation sessions, automations, saved queries and payee-cleanup decisions:
-  everything you have taught Bench, which lives nowhere else.
+- **What** - the budget, Actual Bench's own data, or both. Bench data is everything Actual Bench
+  stores apart from your budget: sync flows and mappings, reconciliation sessions, credit cards,
+  plans, assets and loans, automations, saved queries and payee-cleanup decisions. It lives nowhere
+  else.
 - **Which budget** - any budget you have connected to, or any saved budget (it connects when you
   choose it). A *scheduled* backup runs with your browser
   closed, so it needs an **enrolled** connection whose credentials the server can use on its own; the
@@ -91,16 +110,28 @@ A rule says what to copy, where to put it, how often, and how long to keep it.
   One difference worth knowing: a manual rule has no automation behind it, so it does not appear on
   the Automations page and keeps no run history. You get the result of each backup when you press the
   button; the copies themselves are listed under **Backups** like all the others.
-- **When** - for a scheduled rule: every few hours, every day at a time you pick, on chosen days of
-  the week, once a month, or a cron expression for the people who want one. Whichever you choose,
-  Bench says back what it understood and when the next run actually lands. A manual rule has no
+- **When** - for a scheduled rule, the app's schedule picker: repeating, daily, weekly or monthly,
+  or a cron expression for the people who want one. Bench says back what it understood and when the next
+  run lands (see Automations → Schedules). A manual rule has no
   schedule and nothing to say here.
+- **How long to keep it** - old copies are thinned out rather than all kept: the newest copy of each
+  of the last few days, weeks, months and years. *7 daily* means one a day for the last 7 days, *4
+  weekly* one a week for the last 4 weeks, and so on; one copy can count for more than one of these.
 - **Encryption** - off by default, because for most self-hosted setups the copy lands on a volume you
   already control and encryption mainly adds a way to lose the data permanently. Turn it on when a
   copy goes somewhere you do not control. **Bench cannot recover an encrypted backup without the
   passphrase, and neither can anyone else.** You type it twice, so a typo cannot slip through.
   Changing it later applies to new copies only: older copies keep opening with the passphrase they
   were taken with, and Bench keeps that one for them.
+
+The dialog fits on one screen in two columns of framed sections: what to copy, where to store it,
+how long to keep it and encryption on the left; the schedule and how each copy is checked on the
+right. Explanations sit behind the (i) beside each title or label. **How long to keep it** sets how
+many daily, weekly, monthly and yearly copies to keep, each said in words under its box (*one a day,
+last 7 days*), with the total and the age of the oldest copy below.
+Below them, the whole rule is said back in one sentence before you save it: *This rule copies
+Household and Actual Bench's own data to NAS volume, daily at 02:00, keeping up to 26 copies
+reaching back about 3 years.*
 
 A rule's budget is fixed once the rule has backed it up. To back up a different budget, create a new
 rule, so the two budgets' histories never mix.
@@ -190,7 +221,7 @@ Recovery points are off until you turn them on with the checkbox under the rules
 
 ## Backing up Bench itself
 
-A rule set to copy **Bench settings** snapshots Bench's own metadata database - your sync flows and
+A rule set to copy **Bench data** snapshots Bench's own metadata database - your sync flows and
 mappings, reconciliation sessions, automations, saved queries and payee-cleanup decisions. It needs
 no budget connection at all, because it is a local database copy.
 
@@ -203,6 +234,20 @@ and why the vault key has to travel with it.
 **Look inside** opens a copy and tells you what is in it - accounts, payees, transactions and the
 date range - without restoring anything. That is usually the real question: not "is this file
 intact" but "is *this* the one".
+
+For a budget copy, two more tabs help answer it:
+
+- **Search inside** finds transactions, payees, categories or accounts in the copy and shows them as
+  they were when it was taken: date, account, payee, category, amount and notes. Type a name, some
+  notes or an amount (`12.50` matches either sign), and narrow transactions to a date range. Rows
+  Actual had already deleted are not included, and split transactions are listed line by line.
+- **Compare with now** puts the copy beside the budget as it is today: accounts added or removed
+  since, and each account's transactions and balance then and now. Open a changed account to see
+  the transactions behind the difference: only in the copy, only in the budget now, or edited since. It reads the live budget with the
+  credentials Bench stores for unattended use, so it works for budgets enrolled for scheduled backups
+  or sync. A Direct budget that is not enrolled cannot be compared yet.
+
+Neither changes anything, and an encrypted copy asks for its passphrase if Bench does not hold it.
 
 **Download** hands you the file. Put it into Actual Budget with **Import file → Actual**: it creates
 a **new** budget from the copy, and the budget you are using is untouched.

@@ -144,8 +144,8 @@ export function describeSchedule(policy: BackupPolicy): string {
 
 export function describeContents(policy: BackupPolicy): string {
   if (policy.contents === "budget") return "Budget";
-  if (policy.contents === "app-db") return "Bench settings";
-  return "Budget + Bench settings";
+  if (policy.contents === "app-db") return "Bench data";
+  return "Budget + Bench data";
 }
 
 /** Newest first - the default order, before anyone sorts a column. */
@@ -220,7 +220,7 @@ export function sortArtifacts(
       case "taken":
         return artifact.createdAt;
       case "contents":
-        return artifact.kind === "budget" ? artifact.sourceBudgetName ?? "Budget" : "Bench settings";
+        return artifact.kind === "budget" ? artifact.sourceBudgetName ?? "Budget" : "Bench data";
       case "inside":
         return artifactContents(artifact).transactions;
       case "covers":
@@ -266,7 +266,7 @@ export function filterArtifacts(
     // hunting for "the one on the NAS" is searching for the destination.
     return [
       artifact.sourceBudgetName,
-      artifact.kind === "app-db" ? "Bench settings" : "budget",
+      artifact.kind === "app-db" ? "Bench data" : "budget",
       artifact.policyId ? policyNames.get(artifact.policyId) : null,
       artifact.takenBefore,
       ...artifact.locations.map((location) => location.destinationName),
@@ -286,4 +286,56 @@ export function budgetsInArtifacts(artifacts: ArtifactWithLocations[]): string[]
         .filter((name): name is string => typeof name === "string" && name.length > 0)
     ),
   ].sort((a, b) => a.localeCompare(b));
+}
+
+/**
+ * An amount Actual stores (minor units, cents) for display: two decimals,
+ * locale grouping, the sign kept. `signed` adds a "+" to a positive value,
+ * for differences.
+ */
+export function formatMinorAmount(minor: number, options: { signed?: boolean } = {}): string {
+  const text = (minor / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return options.signed && minor > 0 ? `+${text}` : text;
+}
+
+export type RetentionTier = "daily" | "weekly" | "monthly" | "yearly";
+
+const TIER_SPAN: Record<RetentionTier, { one: string; many: string }> = {
+  daily: { one: "day", many: "days" },
+  weekly: { one: "week", many: "weeks" },
+  monthly: { one: "month", many: "months" },
+  yearly: { one: "year", many: "years" },
+};
+
+/**
+ * What a retention setting keeps, said as a reader would: how many copies at
+ * most, and how far back the oldest reaches. "Up to" because the tiers can
+ * only keep copies the schedule actually made: a weekly rule has no daily
+ * copies to keep.
+ */
+export function describeRetentionReach(retention: Record<RetentionTier, number>): {
+  copies: number;
+  reach: string | null;
+  tiers: { tier: RetentionTier; count: number; span: string }[];
+} {
+  const order: RetentionTier[] = ["daily", "weekly", "monthly", "yearly"];
+  const tiers = order
+    .filter((tier) => retention[tier] > 0)
+    .map((tier) => ({
+      tier,
+      count: retention[tier],
+      span: `${retention[tier]} ${retention[tier] === 1 ? TIER_SPAN[tier].one : TIER_SPAN[tier].many}`,
+    }));
+  // The tier that reaches furthest back, by its span in days: 30 daily
+  // copies reach further than 1 weekly one, whatever order the tiers are in.
+  const days: Record<RetentionTier, number> = { daily: 1, weekly: 7, monthly: 30, yearly: 365 };
+  const longest = tiers.reduce<(typeof tiers)[number] | null>(
+    (best, tier) => (!best || tier.count * days[tier.tier] > best.count * days[best.tier] ? tier : best),
+    null
+  );
+  return {
+    copies: tiers.reduce((sum, tier) => sum + tier.count, 0),
+    reach: longest ? `about ${longest.span}` : null,
+    tiers,
+  };
 }

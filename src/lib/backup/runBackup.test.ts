@@ -442,7 +442,10 @@ describe("running a backup", () => {
       encrypted: false,
     });
 
-    expect(key).toBe("budget/household-budget/2026/2026-08-27T040506-abcdef12.zip");
+    expect(key).toBe("actual-budget/household-budget/2026/2026-08-27T040506-abcdef12.zip");
+    expect(
+      backupObjectKey({ kind: "app-db", label: "actual-bench", createdAt: new Date("2026-08-27T04:05:06Z"), artifactId: "abcdef123456", encrypted: true })
+    ).toBe("actual-bench/2026/2026-08-27T040506-abcdef12.sqlite.enc");
   });
 
   it("leaves no manifest behind for an artifact that failed to upload", async () => {

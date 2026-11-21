@@ -107,7 +107,7 @@ describe("a backup rule, end to end", () => {
 
     const [artifact] = listBackupArtifacts(db);
     expect(artifact.verificationStatus).toBe("passed");
-    expect(readFileSync(join(volume, `budget/household/2026/${artifact.createdAt.slice(0, 10)}T${artifact.createdAt.slice(11, 19).replace(/:/g, "")}-${artifact.id.slice(0, 8)}.zip`)).byteLength).toBe(
+    expect(readFileSync(join(volume, `actual-budget/household/2026/${artifact.createdAt.slice(0, 10)}T${artifact.createdAt.slice(11, 19).replace(/:/g, "")}-${artifact.id.slice(0, 8)}.zip`)).byteLength).toBe(
       artifact.sizeBytes
     );
 

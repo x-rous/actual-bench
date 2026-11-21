@@ -114,7 +114,18 @@ flow - all four write the same list. This works the same for HTTP API and Direct
 
 ## Schedules
 
-Choose an interval, a daily, weekly, or monthly schedule, or a cron expression.
+Every scheduled thing in Bench (bank sync, backups, Cross Budget Sync) uses the same schedule picker,
+with two ways in:
+
+- **Simple** - *Repeating* every so many minutes or hours (at least 15 minutes apart), *Daily* at a
+  time, *Weekly* on the days you tick, or *Monthly* on a day from the 1st to the 28th.
+- **Cron** - a five-field expression (`minute hour day month weekday`), with presets to start from.
+  Each field is read back underneath on its own (`*/15` → *every 15 minutes*, `1-5` → *Mon–Fri*), so
+  a mistake shows which field it is in.
+
+Switching carries the schedule across: a simple schedule becomes its cron expression, and a cron
+expression the simple modes can express opens in them. Cross Budget Sync runs on an interval only,
+so its picker shows just that.
 
 Whatever you pick, the picker says back **what it understood** and **when the next runs land**. That
 second line is the one that catches mistakes: `0 0 * * *` reads like a fair guess at midnight until
