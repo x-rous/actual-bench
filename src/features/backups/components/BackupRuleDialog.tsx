@@ -2,13 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { Loader2 } from "lucide-react";
+import { Cloud, HardDrive, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -25,8 +26,11 @@ import { isHttpApiConnection, useConnectionStore } from "@/store/connection";
 import { createPolicy, patchPolicy, type BackupSource } from "../lib/backupsApi";
 import type { BackupDestination, BackupPolicy } from "@/lib/app-db/backupRepository";
 import { isVaultReady, type VaultSummary } from "@/lib/credentials/vaultSummary";
-import { Select } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { PillGroup } from "@/components/ui/pill-group";
+import { Select } from "@/components/ui/select";
+import { InfoHint } from "@/components/ui/info-hint";
+import { describeRetentionReach, describeSchedule, type RetentionTier } from "../lib/presentation";
 
 /**
  * A backup rule (RD-077 / PR-047e).
@@ -151,7 +155,6 @@ export function BackupRuleDialog({
   const [passphrase, setPassphrase] = useState("");
   const [passphraseAgain, setPassphraseAgain] = useState("");
   const [scrubEnabled, setScrubEnabled] = useState(existing?.scrubEnabled ?? true);
-  const [showMore, setShowMore] = useState(false);
 
   const [retention, setRetention] = useState(
     existing?.retention ?? {
@@ -216,260 +219,275 @@ export function BackupRuleDialog({
     (!encrypt || (editing && passphrase.length === 0) || (passphrase.length >= 8 && passphrase === passphraseAgain)) &&
     (manualOnly || scheduleValid);
 
+  const chosenDestinations = destinations.filter((destination) => destinationIds.includes(destination.id));
+  const reach = describeRetentionReach(retention);
+  const scheduleText = manualOnly
+    ? "when you press Back up now"
+    : scheduleValid
+      ? describeSchedule({
+          scheduleKind: schedule.scheduleKind,
+          cronExpression: schedule.cronExpression,
+          intervalMinutes: schedule.intervalMinutes,
+          timezone: schedule.timezone,
+        } as BackupPolicy).replace(/^./, (first) => first.toLowerCase())
+      : null;
+  const whatText =
+    contents === "app-db"
+      ? "Actual Bench's own data"
+      : `${chosen?.label ?? "the budget"}${contents === "both" ? " and Actual Bench's own data" : ""}`;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      {/* Two columns, so the whole rule fits on one screen: what and where
+          with how long and encryption on the left, the schedule and how
+          each copy is checked on the right. */}
+      <DialogContent className="flex max-h-[92dvh] flex-col overflow-hidden sm:max-w-5xl">
         <DialogHeader>
           <DialogTitle>{editing ? "Edit backup rule" : "New backup rule"}</DialogTitle>
+          <DialogDescription>What to copy, where it goes, when, and how long to keep it.</DialogDescription>
         </DialogHeader>
 
-        <div className="max-h-[65vh] space-y-3 overflow-y-auto pr-1 text-xs">
-          <label className="block space-y-1">
-            <span className="font-medium">Name</span>
-            <Input value={name} onChange={(event) => setName(event.target.value)} />
-          </label>
-
-          <label className="block space-y-1">
-            <span className="font-medium">What to copy</span>
-            <Select
-              value={contents}
-              onValueChange={(next) => setContents(next as BackupPolicy["contents"])}
-              options={[
-                { value: "both", label: "The budget and Bench’s own settings" },
-                { value: "budget", label: "Just the budget" },
-                { value: "app-db", label: "Just Bench’s settings" },
-              ]}
-            />
-            <span className="block text-muted-foreground">
-              Bench&rsquo;s settings are your sync rules, mappings, reconciliation sessions and
-              automations - everything you have taught it, which lives nowhere else.
-            </span>
-          </label>
-
-          {/* Only shown when there is a budget to name: a copy of Bench's own
-              settings is a local database export and needs no connection at
-              all, so asking for one would be asking a question with no bearing
-              on the answer. */}
-          {needsSource && (
-            <div className="space-y-1">
-              <div className="space-y-1">
-                <span className="block font-medium">Budget</span>
-                <BudgetSelect
-                  aria-label="Budget"
-                  options={budgetChoices.options}
-                  value={source}
-                  disabled={budgetChoices.connecting || sourceLocked}
-                  emptyLabel="No budget connections saved"
-                  onValueChange={async (value) => {
-                    // A saved budget joins the session in the background, then
-                    // is offered like any connected one (PR-071b).
-                    const instance = await budgetChoices.resolve(value);
-                    if (instance) setSource(connectionFingerprint(instance));
-                  }}
-                />
-                {budgetChoices.dialog}
-                {sourceLocked && (
-                  <span className="block text-muted-foreground">
-                    Fixed: this rule already has backups of this budget. To back up a different budget,
-                    create a new rule.
-                  </span>
+        <div className="grid min-h-0 flex-1 content-start gap-4 overflow-y-auto px-0.5 pb-1 text-xs md:grid-cols-2">
+          <div className="flex min-w-0 flex-col gap-4">
+            <Frame title="What to copy">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block space-y-1">
+                  <span className="font-medium">Rule name</span>
+                  <Input value={name} onChange={(event) => setName(event.target.value)} />
+                </label>
+                {needsSource && (
+                  <div className="space-y-1">
+                    <span className="block font-medium">Budget</span>
+                    <BudgetSelect
+                      aria-label="Budget"
+                      options={budgetChoices.options}
+                      value={source}
+                      disabled={budgetChoices.connecting || sourceLocked}
+                      emptyLabel="No budget connections saved"
+                      onValueChange={async (value) => {
+                        // A saved budget joins the session in the background, then
+                        // is offered like any connected one (PR-071b).
+                        const instance = await budgetChoices.resolve(value);
+                        if (instance) setSource(connectionFingerprint(instance));
+                      }}
+                    />
+                    {budgetChoices.dialog}
+                  </div>
                 )}
               </div>
-
-              {/* Every budget you have connected to is listed, not only the
-                  enrolled ones - the budget you are working in should appear in
-                  the list of budgets you can back up, with the reason it cannot
-                  be used yet and the button that fixes it. */}
-              {chosen && !chosen.enrolled && (
-                <EnrolConnection connection={chosen.connection} onEnrolled={onSaved} allowDirect />
-              )}
-
-              {/* Said once, where the consequence is: this rule will not run on
-                  its own. Not an apology - the copy is the same copy, stored and
-                  verified the same way. */}
-              {manualOnly && (
-                <span className="block text-muted-foreground">
-                  Until this budget is enrolled, the rule has no schedule: use{" "}
-                  <span className="font-medium">Back up now</span> and the copy is exported in this
-                  browser, then stored and verified like any other.
-                </span>
-              )}
-
-              {choices.length === 0 && (
-                <span className="block text-muted-foreground">
-                  Connect to a budget first - there is nothing to copy yet.
-                </span>
-              )}
-            </div>
-          )}
-
-          <fieldset className="space-y-1">
-            <legend className="font-medium">Where to put it</legend>
-            {destinations.length === 0 ? (
-              <p className="text-muted-foreground">Add a destination first.</p>
-            ) : (
-              destinations.map((destination) => (
-                <label key={destination.id} className="flex items-center gap-2">
-                  <Checkbox
-                    checked={destinationIds.includes(destination.id)}
-                    onCheckedChange={(checked) =>
-                      setDestinationIds((current) =>
-                        checked
-                          ? [...current, destination.id]
-                          : current.filter((id) => id !== destination.id)
-                      )
-                    }
-                  />
-                  <span>{destination.name}</span>
-                  <span className="text-muted-foreground">
-                    {destination.kind === "local" ? "folder" : "bucket"}
-                  </span>
-                </label>
-              ))
-            )}
-            {destinationIds.length === 1 && destinations.length > 1 && (
-              <p className="text-muted-foreground">
-                One destination protects you from mistakes. Two protect you from losing the machine.
-              </p>
-            )}
-          </fieldset>
-
-          {/* Hidden rather than disabled: a schedule this rule can never keep is
-              not a setting the reader should have to evaluate and dismiss. */}
-          {!manualOnly && (
-            <div className="space-y-1">
-              <span className="font-medium">When</span>
-              <SchedulePicker
-                value={schedule}
-                onChange={setSchedule}
-                onValidityChange={setScheduleValid}
-                nowMs={nowMs}
-              />
-            </div>
-          )}
-
-          <label className="flex items-start gap-2">
-            <Checkbox className="mt-0.5"
-              checked={encrypt}
-              disabled={!vaultReady}
-              onCheckedChange={(checked) => setEncrypt(checked)}
-            />
-            <span>
-              <span className="font-medium">Encrypt these backups</span>
-              <span className="block text-muted-foreground">
-                {vaultReady
-                  ? "Worth it when a copy goes somewhere you do not control. Bench cannot recover an encrypted backup without the passphrase - nobody can."
-                  : "Unavailable while stored credentials are locked. See App Health."}
-              </span>
-            </span>
-          </label>
-
-          {encrypt && (
-            <label className="block space-y-1">
-              <span className="font-medium">Passphrase</span>
-              <Input
-                type="password"
-                value={passphrase}
-                onChange={(event) => setPassphrase(event.target.value)}
-                placeholder={editing ? "unchanged" : "at least 8 characters"}
-                autoComplete="new-password"
-              />
-              <span className="block text-muted-foreground">
-                Write this down somewhere that is not on this server. It is the single point of
-                failure in the whole arrangement.
-                {editing &&
-                  " A new passphrase applies to new copies only: copies already taken keep opening with the one they were taken with, and Bench keeps that one for them."}
-              </span>
-            </label>
-          )}
-
-          {encrypt && passphrase.length > 0 && (
-            <label className="block space-y-1">
-              <span className="font-medium">Passphrase again</span>
-              <Input
-                type="password"
-                value={passphraseAgain}
-                onChange={(event) => setPassphraseAgain(event.target.value)}
-                autoComplete="new-password"
-                aria-invalid={passphraseAgain.length > 0 && passphraseAgain !== passphrase}
-              />
-              {passphrase.length > 0 && passphrase.length < 8 && (
-                <span className="block text-destructive">Use at least 8 characters.</span>
-              )}
-              {passphraseAgain.length > 0 && passphraseAgain !== passphrase && (
-                <span className="block text-destructive">The two passphrases do not match.</span>
-              )}
-            </label>
-          )}
-
-          <button
-            type="button"
-            className="text-muted-foreground underline-offset-4 hover:underline"
-            onClick={() => setShowMore((current) => !current)}
-          >
-            {showMore ? "Fewer options" : "More options"}
-          </button>
-
-          {showMore && (
-            <div className="space-y-3 rounded-md border border-border p-2">
-              <label className="block space-y-1">
-                <span className="font-medium">How thoroughly to check each copy</span>
-                <Select
-                  value={verificationLevel}
-                  onValueChange={(next) => setVerificationLevel(next as BackupPolicy["verificationLevel"])}
+              <div className="space-y-1">
+                <Label
+                  text="Contents"
+                  hint="Bench data is everything Actual Bench stores apart from your budget: sync flows and mappings, reconciliations, credit cards, plans, assets and loans, automations and saved queries. It lives nowhere else."
+                />
+                <PillGroup
+                  className="w-fit"
+                  value={contents}
+                  onChange={setContents}
                   options={[
-                    { value: "archive", label: "Quick - it is a valid archive" },
-                    { value: "data", label: "Normal - open the database and count what is inside" },
-                    { value: "deep", label: "Thorough - the full Budget File Health check" },
+                    { value: "both", label: "Budget + Bench data" },
+                    { value: "budget", label: "Budget only" },
+                    { value: "app-db", label: "Bench data only" },
                   ]}
                 />
-              </label>
+              </div>
+              {needsSource && sourceLocked && (
+                <p className="text-muted-foreground">Fixed: this rule already has backups of this budget.</p>
+              )}
+              {/* Every budget you have connected to is listed, not only the
+                  enrolled ones, with the reason it cannot be used yet and the
+                  button that fixes it. */}
+              {needsSource && chosen && !chosen.enrolled && (
+                <EnrolConnection connection={chosen.connection} onEnrolled={onSaved} allowDirect />
+              )}
+              {needsSource && choices.length === 0 && (
+                <p className="text-muted-foreground">Connect to a budget first - there is nothing to copy yet.</p>
+              )}
+            </Frame>
 
-              <fieldset className="space-y-1">
-                <legend className="font-medium">How many to keep</legend>
-                <div className="grid grid-cols-4 gap-2">
-                  {(["daily", "weekly", "monthly", "yearly"] as const).map((tier) => (
-                    <label key={tier} className="space-y-1">
-                      <span className="block capitalize text-muted-foreground">{tier}</span>
-                      <Input
-                        type="number"
-                        min={0}
-                        step={1}
-                        value={retention[tier]}
-                        onChange={(event) =>
-                          setRetention((current) => ({
-                            ...current,
-                            // Whole copies only: the server refuses a fraction.
-                            [tier]: Math.max(0, Math.round(Number(event.target.value) || 0)),
-                          }))
-                        }
-                      />
-                    </label>
-                  ))}
+            <Frame
+              title="Where to store it"
+              hint="One destination protects you from mistakes. Two, in different places, protect you from losing the machine."
+            >
+              {destinations.length === 0 ? (
+                <p className="text-muted-foreground">Add a destination first.</p>
+              ) : (
+                <div className="flex flex-wrap gap-x-5 gap-y-1.5" role="group" aria-label="Destinations">
+                  {destinations.map((destination) => {
+                    const Icon = destination.kind === "local" ? HardDrive : Cloud;
+                    const failing =
+                      !!destination.lastFailureAt &&
+                      (!destination.lastSuccessAt || destination.lastFailureAt > destination.lastSuccessAt);
+                    return (
+                      <label key={destination.id} className="flex items-center gap-1.5">
+                        <Checkbox
+                          checked={destinationIds.includes(destination.id)}
+                          onCheckedChange={(next) =>
+                            setDestinationIds((current) =>
+                              next ? [...current, destination.id] : current.filter((id) => id !== destination.id)
+                            )
+                          }
+                        />
+                        <Icon className="size-3.5 text-muted-foreground" aria-hidden />
+                        <span className="font-medium">{destination.name}</span>
+                        <span className={failing ? "text-destructive" : "text-muted-foreground"}>
+                          {destination.kind === "local" ? "folder" : "bucket"}
+                          {!destination.enabled ? ", disabled" : failing ? ", last write failed" : ""}
+                        </span>
+                      </label>
+                    );
+                  })}
                 </div>
-                <p className="text-muted-foreground">
-                  Bench never deletes a pinned copy, anything newer than{" "}
-                  {retention.minimumAgeHours}h, or the newest verified copy - whatever these numbers
-                  say.
-                </p>
-              </fieldset>
+              )}
+              {destinationIds.length === 0 && destinations.length > 0 && (
+                <p className="text-destructive">Choose at least one destination.</p>
+              )}
+            </Frame>
 
-              <label className="flex items-start gap-2">
-                <Checkbox className="mt-0.5"
-                  checked={scrubEnabled}
-                  onCheckedChange={(checked) => setScrubEnabled(checked)}
-                />
-                <span>
-                  <span className="font-medium">Re-check stored copies weekly</span>
-                  <span className="block text-muted-foreground">
-                    Storage rots quietly. This re-reads the newest few copies and tells you if one
-                    has stopped being readable.
-                  </span>
-                </span>
+            <Frame
+              title="How long to keep it"
+              hint={`Old copies are thinned out, not all kept: Bench keeps the newest copy of each of the last few days, weeks, months and years, and deletes the rest. One copy can count for more than one of these. Never deleted whatever these say: a pinned copy, one you took by hand, anything newer than ${retention.minimumAgeHours}h, and the newest verified copy.`}
+            >
+              <div className="grid grid-cols-4 gap-2">
+                {(["daily", "weekly", "monthly", "yearly"] as const).map((tier) => (
+                  <label key={tier} className="space-y-1">
+                    <span className="block font-medium">{TIER_LABEL[tier]}</span>
+                    <Input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={retention[tier]}
+                      onChange={(event) =>
+                        setRetention((current) => ({
+                          ...current,
+                          // Whole copies only: the server refuses a fraction.
+                          [tier]: Math.max(0, Math.round(Number(event.target.value) || 0)),
+                        }))
+                      }
+                    />
+                    <span className="block text-[11px] text-muted-foreground">{tierCoverage(tier, retention[tier])}</span>
+                  </label>
+                ))}
+              </div>
+              <p className="text-muted-foreground">
+                {reach.copies > 0
+                  ? `Up to ${reach.copies} copies at any time; the oldest is ${reach.reach} old.`
+                  : "Only the newest verified copy is kept."}
+              </p>
+            </Frame>
+
+            <Frame
+              title="Encryption"
+              hint="Worth it when a copy goes somewhere you do not control. Without the passphrase nobody can recover an encrypted backup, Bench included."
+            >
+              <label className="flex items-center gap-2">
+                <Checkbox checked={encrypt} disabled={!vaultReady} onCheckedChange={(checked) => setEncrypt(checked)} />
+                <span className="font-medium">Encrypt these backups</span>
+                {!vaultReady && <span className="text-muted-foreground">- unavailable while stored credentials are locked</span>}
               </label>
-            </div>
-          )}
+
+              {encrypt && (
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <label className="block space-y-1">
+                    <Label
+                      text="Passphrase"
+                      hint={`Write it down somewhere that is not this server.${
+                        editing
+                          ? " A new passphrase applies to new copies only; older copies keep opening with the one they were taken with."
+                          : ""
+                      }`}
+                    />
+                    <Input
+                      type="password"
+                      value={passphrase}
+                      onChange={(event) => setPassphrase(event.target.value)}
+                      placeholder={editing ? "unchanged" : "at least 8 characters"}
+                      autoComplete="new-password"
+                    />
+                  </label>
+                  <label className="block space-y-1">
+                    <span className="block font-medium">Passphrase again</span>
+                    <Input
+                      type="password"
+                      value={passphraseAgain}
+                      onChange={(event) => setPassphraseAgain(event.target.value)}
+                      autoComplete="new-password"
+                      disabled={passphrase.length === 0}
+                      aria-invalid={passphraseAgain.length > 0 && passphraseAgain !== passphrase}
+                    />
+                  </label>
+                  {passphrase.length > 0 && passphrase.length < 8 && (
+                    <span className="text-destructive sm:col-span-2">Use at least 8 characters.</span>
+                  )}
+                  {passphraseAgain.length > 0 && passphraseAgain !== passphrase && (
+                    <span className="text-destructive sm:col-span-2">The two passphrases do not match.</span>
+                  )}
+                </div>
+              )}
+            </Frame>
+          </div>
+
+          <div className="flex min-w-0 flex-col gap-4">
+            <Frame title="When">
+              {/* Said once, where the consequence is: this rule will not run on
+                  its own. The picker is hidden rather than disabled: a schedule
+                  this rule can never keep is not a setting to evaluate. */}
+              {manualOnly ? (
+                <p className="text-muted-foreground">
+                  Until this budget is enrolled, the rule has no schedule: use{" "}
+                  <span className="font-medium text-foreground">Back up now</span> and the copy is exported in
+                  this browser, then stored and verified like any other.
+                </p>
+              ) : (
+                <SchedulePicker value={schedule} onChange={setSchedule} onValidityChange={setScheduleValid} nowMs={nowMs} />
+              )}
+            </Frame>
+
+            <Frame title="Checking each copy">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block space-y-1">
+                  <Label
+                    text="How thoroughly"
+                    hint="Quick checks it is a valid archive. Normal opens the database, checks its integrity and counts what is inside. Thorough also runs the full Budget File Health check."
+                  />
+                  <Select
+                    value={verificationLevel}
+                    onValueChange={(next) => setVerificationLevel(next as BackupPolicy["verificationLevel"])}
+                    options={[
+                      { value: "archive", label: "Quick" },
+                      { value: "data", label: "Normal" },
+                      { value: "deep", label: "Thorough" },
+                    ]}
+                  />
+                </label>
+                <div className="flex items-center gap-2 sm:pt-5">
+                  <label className="flex items-center gap-2">
+                    <Checkbox checked={scrubEnabled} onCheckedChange={(checked) => setScrubEnabled(checked)} />
+                    <span className="font-medium">Re-check stored copies weekly</span>
+                  </label>
+                  <InfoHint label="Re-check stored copies weekly">
+                    Storage can go bad quietly. Each week Bench re-reads the newest copies and tells you if one has
+                    stopped being readable.
+                  </InfoHint>
+                </div>
+              </div>
+            </Frame>
+          </div>
         </div>
+
+        {/* The whole rule in one sentence, so what is about to be saved is
+            read, not reconstructed from the fields above. */}
+        <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs leading-relaxed" aria-live="polite">
+          <span className="font-medium">This rule copies</span> {whatText}{" "}
+          {chosenDestinations.length > 0 ? (
+            <>to {chosenDestinations.map((destination) => destination.name).join(" and ")}</>
+          ) : (
+            <span className="text-destructive">to no destination yet</span>
+          )}
+          {scheduleText ? <>, {scheduleText}</> : <span className="text-destructive">, on a schedule that is not complete</span>}
+          {reach.copies > 0 ? <>, keeping up to {reach.copies} copies reaching back {reach.reach}</> : <>, keeping only the newest verified copy</>}
+          {encrypt ? ", encrypted." : "."}
+        </p>
 
         <DialogFooter>
           <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
@@ -483,4 +501,54 @@ export function BackupRuleDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+/**
+ * A framed group of the rule's fields, the way the loan settings are framed:
+ * a rounded border with the title cutting through its top edge, and an (i)
+ * for the explanation instead of a paragraph.
+ */
+function Frame({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <fieldset className="flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-background px-4 pt-1 pb-4">
+      <legend className="px-1">
+        <span className="inline-flex items-center gap-1 text-sm font-semibold">
+          {title}
+          {hint && <InfoHint label={title}>{hint}</InfoHint>}
+        </span>
+      </legend>
+      {children}
+    </fieldset>
+  );
+}
+
+/** A field label with its explanation behind an (i). */
+function Label({ text, hint }: { text: string; hint: string }) {
+  return (
+    <span className="flex items-center gap-1 font-medium">
+      {text}
+      <InfoHint label={text}>{hint}</InfoHint>
+    </span>
+  );
+}
+
+const TIER_LABEL: Record<RetentionTier, string> = {
+  daily: "Daily copies",
+  weekly: "Weekly copies",
+  monthly: "Monthly copies",
+  yearly: "Yearly copies",
+};
+
+const TIER_UNIT: Record<RetentionTier, [string, string]> = {
+  daily: ["day", "days"],
+  weekly: ["week", "weeks"],
+  monthly: ["month", "months"],
+  yearly: ["year", "years"],
+};
+
+/** What one retention number means, in words: "one a day, last 7 days". */
+function tierCoverage(tier: RetentionTier, count: number): string {
+  if (count === 0) return "none kept";
+  const [one, many] = TIER_UNIT[tier];
+  return count === 1 ? `one, for the latest ${one}` : `one a ${one}, last ${count} ${many}`;
 }

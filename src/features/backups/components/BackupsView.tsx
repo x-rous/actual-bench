@@ -6,7 +6,7 @@ import { usePersistedFilters } from "@/hooks/usePersistedFilters";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog";
-import { Plus, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { cn } from "@/lib/utils";
@@ -407,20 +407,6 @@ export function BackupsView() {
               <RefreshCw className={cn(refreshing && "animate-spin")} aria-hidden />
               Refresh
             </Button>
-            <Button
-              size="sm"
-              className="h-6 shrink-0 text-xs"
-              onClick={() => setRuleDialog({ open: true, existing: null })}
-              disabled={(data?.destinations.length ?? 0) === 0}
-              title={
-                (data?.destinations.length ?? 0) === 0
-                  ? "Add a destination first - a rule needs somewhere to write"
-                  : "Choose what to copy, where to put it, how often, and how long to keep it"
-              }
-            >
-              <Plus aria-hidden />
-              New backup rule
-            </Button>
           </div>
           <VaultLockedNotice vault={data?.vault} className="mx-3 mt-3" />
           </>
@@ -455,6 +441,7 @@ export function BackupsView() {
               }
               onTestDestination={(destinationId) => test.mutate(destinationId)}
               onScanDestinations={() => discover.mutate()}
+              onAddRule={() => setRuleDialog({ open: true, existing: null })}
               onEditRule={(policy) => setRuleDialog({ open: true, existing: policy })}
               onDeleteRule={(policy) =>
                 setConfirm({

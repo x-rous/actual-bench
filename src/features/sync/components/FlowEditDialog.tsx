@@ -26,6 +26,7 @@ import {
 } from "../lib/flowForm";
 import { exportFlowDefinition, importFlowDefinition, FlowImportError } from "../lib/flowPortability";
 import { UnattendedEnrollment } from "./UnattendedEnrollment";
+import { SchedulePicker } from "@/features/automations/components/SchedulePicker";
 import { BudgetSelect, useBudgetChoices } from "@/features/connect/BudgetSelect";
 import type { ConnectionInstance } from "@/store/connection";
 import { Select } from "@/components/ui/select";
@@ -172,6 +173,8 @@ export function FlowEditDialog({
   onRan,
 }: FlowEditDialogProps) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  // The schedule preview's clock, read once: reading it during render is impure.
+  const [pickerNowMs] = useState(() => Date.now());
   const [importError, setImportError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -358,20 +361,23 @@ export function FlowEditDialog({
                 </label>
                 <p className="text-xs text-muted-foreground">{automationHelp[form.automation.reviewPolicy]}</p>
                 {(form.automation.reviewPolicy === "auto_sync_on_interval" || form.automation.reviewPolicy === "auto_sync_unattended") && (
-                  <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-                    Run every (minutes)
-                    <Input
-                      size="sm"
-                      type="number"
-                      min={15}
-                      step={5}
-                      aria-label="Auto-sync interval in minutes"
-                      value={form.automation.intervalMinutes}
-                      onChange={(e) => setAutomation({ intervalMinutes: e.target.value })}
-                      onBlur={(e) => setAutomation({ intervalMinutes: String(clampSyncInterval(e.target.value)) })}
+                  <div className="flex flex-col gap-1 text-xs">
+                    <span className="text-muted-foreground">How often</span>
+                    {/* The app's schedule picker, limited to what a flow's engine
+                        runs on: an interval. Each run re-opens and syncs the whole
+                        budget, which is why the floor is there. */}
+                    <SchedulePicker
+                      intervalOnly
+                      nowMs={pickerNowMs}
+                      value={{
+                        scheduleKind: "interval",
+                        cronExpression: null,
+                        intervalMinutes: clampSyncInterval(form.automation.intervalMinutes),
+                        timezone: "UTC",
+                      }}
+                      onChange={(next) => setAutomation({ intervalMinutes: String(clampSyncInterval(next.intervalMinutes ?? "")) })}
                     />
-                    <span className="text-[11px]">Minimum 15 minutes. Each run re-opens and syncs the whole budget.</span>
-                  </label>
+                  </div>
                 )}
                 {form.automation.reviewPolicy === "auto_sync_unattended" && (
                   <UnattendedEnrollment

@@ -4,7 +4,7 @@ Actual Bench takes verified copies of your budget — and of its own metadata da
 schedule, stores them in one or more destinations, and re-checks them so you find out about a bad
 backup before you need it rather than after.
 
-The page is two tabs: **Setup** (destinations, backup rules, recovery points) and **Backups** (the
+The page is two tabs: **Setup** (destinations, then backup rules, then recovery points, each at full width) and **Backups** (the
 artifacts that exist, with their readiness banner, filters and detail drawer). Runtime detail on a
 rule is deliberately thin and links to Automations rather than restating it.
 
@@ -28,10 +28,15 @@ moment.
 Object keys are human-navigable on purpose:
 
 ```
-budget/household-budget/2026/2026-08-27T020000-3f9c1ab2.zip
-budget/household-budget/2026/2026-08-27T020000-3f9c1ab2.zip.manifest.json
-app-db/actual-bench/2026/2026-08-27T020000-77b41e05.sqlite
+actual-budget/household-budget/2026/2026-08-27T020000-3f9c1ab2.zip
+actual-budget/household-budget/2026/2026-08-27T020000-3f9c1ab2.zip.manifest.json
+actual-bench/2026/2026-08-27T020000-77b41e05.sqlite
 ```
+
+`actual-budget/` holds copies of Actual budgets, one folder per budget; `actual-bench/` holds Actual
+Bench's own data (its app database). Copies written by earlier versions sit under `budget/` and
+`app-db/` and stay there: each copy records its own key, so retention, the weekly check, downloads
+and **Find backups** work across both layouts.
 
 The day someone is browsing a destination by hand is the day Bench is not available to help.
 
@@ -44,7 +49,7 @@ The day someone is browsing a destination by hand is the day Bench is not availa
 | **An unlocked vault** | Enrolled credentials, S3 access keys and a stored encryption passphrase are sealed with Bench's vault key, generated on first start. While the vault is locked, Bench refuses to store any of them rather than writing them in the clear. |
 | A writable destination | A folder path on the server, or an S3-compatible bucket. |
 
-Backing up **only** Bench's own settings (`contents: app-db`) needs none of the above beyond a
+Backing up **only** Actual Bench's own data (`contents: app-db`) needs none of the above beyond a
 destination — it is a local `VACUUM INTO`.
 
 ## Destinations
@@ -230,6 +235,32 @@ To restore:
 **Look inside** (`POST /api/backups/artifacts/:id/inspect`) opens a copy server-side and reports its
 contents without restoring anything. An inspection counts as a verification.
 
+**Search inside** (`POST /api/backups/artifacts/:id/search`, body `{kind, text, from, to, page}`)
+queries a budget copy's own database, read-only: `kind` is `transactions`, `payees`, `categories`
+or `accounts`; `text` matches names, notes and imported descriptions case-insensitively, and a
+number also matches an amount (`12.50` → 1250 minor units, either sign); `from`/`to` are ISO dates
+for transactions. Results come 100 to a page with the total. Deleted rows (`tombstone = 1`), split
+parents and transactions in deleted accounts are left out; payee and category ids go through
+`payee_mapping` and `category_mapping`, so a merged payee shows as the one it became, and a
+transfer shows the other account. Columns a copy's Actual version does not have are read as empty.
+A search records nothing.
+
+**Compare with now** (`POST /api/backups/artifacts/:id/compare`) sums each account in the copy and
+reads the live budget through ActualQL (`accounts`, and `transactions` grouped by account), then
+lists accounts added, removed, changed (balance, count or closed) and unchanged. For up to 10
+changed accounts it also reads both sides' transactions and lists, matched by id, the rows only in
+the copy, only in the live budget, and edited since (amount or date), 50 of each at most. Both sides
+count transactions by the rules of Actual's `v_transactions_internal_alive` view: not deleted, with a
+date and an account, split parents left out, and a split line only while its parent exists and is
+not deleted. The live budget is
+read through an enrolment whose budget id matches the copy's, preferring the copy's rule's
+connection. Without one the answer says so and the copy is not downloaded. A Direct budget that is
+not enrolled lives only in a browser tab, so it cannot be compared yet.
+
+Search and compare each fetch and decrypt the copy again on every request; nothing decrypted is
+cached. Each is a worker task (`backup.search`, `backup.compare`), and a typed passphrase travels
+sealed, as for Look inside.
+
 ## Passphrases Bench holds
 
 A rule's passphrase is sealed under the vault key and stored against the rule's id. Two rules
@@ -293,7 +324,7 @@ that retention happens to keep says nothing about whether the rule works today.
 
 ## Where the work runs
 
-Verify now, Look inside, Find backups, **Back up now** on a manual rule and recovery points run in a
+Verify now, Look inside, Search inside, Compare with now, Find backups, **Back up now** on a manual rule and recovery points run in a
 disposable worker thread, like scheduled runs, so a large verification does not stall the web server.
 An uploaded archive is parked in a private temp folder for the worker and removed afterwards; a
 passphrase typed for one Look inside travels to the worker sealed with the vault key. With

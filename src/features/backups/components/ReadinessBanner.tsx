@@ -82,7 +82,7 @@ export function ReadinessBanner({ readiness }: { readiness: BackupReadiness }) {
                     <tr key={rule.policyId} className="border-t border-border/40">
                       <td className="py-0.5 pr-4 whitespace-nowrap">{rule.name}</td>
                       <td className="py-0.5 pr-4 whitespace-nowrap text-muted-foreground">
-                        {rule.subject === "app-db" ? "Bench settings" : (rule.budgetName ?? "Budget")}
+                        {rule.subject === "app-db" ? "Bench data" : (rule.budgetName ?? "Budget")}
                       </td>
                       <td className="py-0.5 pr-4 whitespace-nowrap text-muted-foreground">
                         {rule.newestVerifiedAt ? relativeTime(rule.newestVerifiedAt) : "-"}

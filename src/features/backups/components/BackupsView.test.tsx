@@ -397,11 +397,11 @@ describe("the Recovery Center", () => {
 
     renderView();
     await openSetup();
-    // The reason sits inline with the destination name, so it spans nodes.
-    await screen.findByText("NAS volume", { selector: "span.font-medium" });
-    await waitFor(() =>
-      expect(document.body.textContent).toContain("No space left on device")
-    );
+    // The state says it failed in words; the reason is on hover and for
+    // screen readers.
+    const state = await screen.findByText(/^Failed /);
+    expect(state.closest("[title]")).toHaveAttribute("title", "No space left on device");
+    expect(document.body.textContent).toContain("No space left on device");
   });
 
   it("opens on Setup when there is nothing to look at", async () => {
@@ -492,9 +492,59 @@ describe("the Recovery Center", () => {
 
     renderView();
     await openSetup();
-    expect(
-      await screen.findByText(/paused after repeated failures: The destination could not be written to 5 times/)
-    ).toBeInTheDocument();
+    const status = await screen.findByText("Auto-paused");
+    expect(status).toHaveAttribute(
+      "title",
+      "Paused after repeated failures: The destination could not be written to 5 times"
+    );
+  });
+
+  it("holds rules back until there is a destination, and says why", async () => {
+    mockedApi.fetchRecoveryCenter.mockResolvedValue(data({ artifacts: [], policies: [], destinations: [] }));
+    renderView();
+    await openSetup();
+
+    expect(await screen.findByText(/Rules write to a destination, so add one first/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /new backup rule/i })).toBeDisabled();
+  });
+
+  it("offers the first rule once a destination exists", async () => {
+    mockedApi.fetchRecoveryCenter.mockResolvedValue(data({ artifacts: [], policies: [] }));
+    renderView();
+    await openSetup();
+
+    expect(await screen.findByRole("button", { name: /create your first backup rule/i })).toBeEnabled();
+  });
+
+  it("names where a rule writes, and how many rules use a destination", async () => {
+    mockedApi.fetchRecoveryCenter.mockResolvedValue(
+      data({ policies: [data().policies[0], { ...data().policies[0], id: "pol-2", name: "Orphaned", destinationIds: ["gone"] }] })
+    );
+    renderView();
+    await openSetup();
+
+    const rules = within(await screen.findByRole("region", { name: /backup rules/i }));
+    expect(rules.getByText("NAS volume")).toBeInTheDocument();
+    expect(rules.getByText(/1 of its destinations was removed/)).toBeInTheDocument();
+    const destinations = within(screen.getByRole("region", { name: /destinations/i }));
+    expect(destinations.getByTitle("Used by 1 rule")).toHaveTextContent("1 rule");
+  });
+
+  it("says back the whole rule in one sentence while it is being set up", async () => {
+    renderView();
+    await openSetup();
+
+    fireEvent.click(await screen.findByRole("button", { name: /new backup rule/i }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/This rule copies/).closest("p")).toHaveTextContent(
+      /to NAS volume, daily at 02:00.*keeping up to 26 copies reaching back about 3 years\./
+    );
+    expect(within(dialog).getByText("Up to 26 copies at any time; the oldest is about 3 years old.")).toBeInTheDocument();
+    expect(within(dialog).getByText("one a day, last 7 days")).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Bench data only" }));
+    expect(within(dialog).getByText(/This rule copies/).closest("p")).toHaveTextContent(/copies Actual Bench's own data to/);
   });
 
   it("asks before deleting a rule, and says what survives it", async () => {
@@ -519,14 +569,19 @@ describe("the Recovery Center", () => {
     for (const name of [
       /back up now/i,
       /retention/i,
-      /^test$/i,
       // Edit and delete are icon-only, so their labels are the accessible ones.
       /edit nightly/i,
       /delete nightly/i,
-      /edit nas volume/i,
-      /remove nas volume/i,
+      /new backup rule/i,
+      /add destination/i,
     ]) {
       expect(await screen.findByRole("button", { name })).toBeInTheDocument();
+    }
+
+    // A destination's actions are in its row menu.
+    fireEvent.click(screen.getByRole("button", { name: /actions for nas volume/i }));
+    for (const name of [/^test$/i, /^edit$/i, /^remove$/i]) {
+      expect(await screen.findByRole("menuitem", { name })).toBeInTheDocument();
     }
   });
 

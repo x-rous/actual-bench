@@ -161,7 +161,7 @@ export function InventoryTab({
               <Link href="/sync" className="underline underline-offset-4">
                 Enrol one in Cross Budget Sync
               </Link>
-              . Without that you can still back up Bench&rsquo;s own settings.
+              . Without that you can still back up Actual Bench&rsquo;s own data.
             </p>
           )}
 
@@ -214,7 +214,7 @@ export function InventoryTab({
               options={[
                 { value: "all", label: "Anything" },
                 { value: "budget", label: "Budgets" },
-                { value: "app-db", label: "Bench settings" },
+                { value: "app-db", label: "Bench data" },
               ]}
             />
 
