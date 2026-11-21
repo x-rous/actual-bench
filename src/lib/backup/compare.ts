@@ -188,7 +188,11 @@ export function compareAccounts(
       ? "added"
       : !now
         ? "removed"
-        : then.balanceMinor !== now.balanceMinor || then.transactions !== now.transactions || then.closed !== now.closed
+        : then.balanceMinor !== now.balanceMinor ||
+            then.transactions !== now.transactions ||
+            then.closed !== now.closed ||
+            then.name !== now.name ||
+            then.offBudget !== now.offBudget
           ? "changed"
           : "same";
     rows.push({

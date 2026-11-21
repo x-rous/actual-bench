@@ -175,6 +175,7 @@ export function FlowEditDialog({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   // The schedule preview's clock, read once: reading it during render is impure.
   const [pickerNowMs] = useState(() => Date.now());
+  const [importCount, setImportCount] = useState(0);
   const [importError, setImportError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -195,6 +196,9 @@ export function FlowEditDialog({
     setImportError(null);
     try {
       onChange(importFlowDefinition(await file.text()));
+      // The picker keeps its own draft of the interval; an import replaces
+      // the value from outside, so it starts over from the imported one.
+      setImportCount((count) => count + 1);
     } catch (err) {
       setImportError(err instanceof FlowImportError ? err.message : "Could not import that file.");
     }
@@ -367,6 +371,7 @@ export function FlowEditDialog({
                         runs on: an interval. Each run re-opens and syncs the whole
                         budget, which is why the floor is there. */}
                     <SchedulePicker
+                      key={importCount}
                       intervalOnly
                       nowMs={pickerNowMs}
                       value={{

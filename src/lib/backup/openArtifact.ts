@@ -2,6 +2,8 @@ import Database from "better-sqlite3";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { threadId } from "node:worker_threads";
+import { createWorkspace } from "@/lib/actual/runtime/workspace";
 import { getBackupCredential } from "@/lib/credentials/backupSecrets";
 import {
   getBackupArtifact,
@@ -147,8 +149,8 @@ export type BudgetDatabase = InstanceType<typeof Database>;
 /**
  * Open a budget export's `db.sqlite` read-only for the length of `work`.
  *
- * better-sqlite3 needs a file, so the database is written to a private temp
- * folder that is removed afterwards, whatever `work` does. Nothing is ever
+ * better-sqlite3 needs a file, so the database is written to a private
+ * workspace folder that is removed afterwards, whatever `work` does. Nothing is ever
  * written to the copy.
  */
 export function withBudgetDatabase<T>(plaintext: Uint8Array, work: (database: BudgetDatabase) => T): T {
@@ -157,7 +159,11 @@ export function withBudgetDatabase<T>(plaintext: Uint8Array, work: (database: Bu
   const entry = Object.entries(files).find(([name]) => entryKey(name) === "db.sqlite");
   if (!entry) throw new Error("The archive does not contain db.sqlite, so it is not an Actual export.");
 
-  const scratch = mkdtempSync(join(tmpdir(), "bench-read-"));
+  // In a worker workspace rather than the OS temp folder: a worker ended
+  // mid-read never reaches the `finally` below, and the decrypted budget
+  // would outlive it. The supervisor removes a stopped worker's workspaces,
+  // and stale ones are swept.
+  const scratch = scratchFolder();
   let database: BudgetDatabase | null = null;
   try {
     const path = join(scratch, "db.sqlite");
@@ -167,6 +173,16 @@ export function withBudgetDatabase<T>(plaintext: Uint8Array, work: (database: Bu
   } finally {
     database?.close();
     rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
+function scratchFolder(): string {
+  try {
+    return createWorkspace(threadId);
+  } catch {
+    // The runtime folder cannot be created (no data volume, as in tests):
+    // a private temp folder, still removed by the `finally` below.
+    return mkdtempSync(join(tmpdir(), "bench-read-"));
   }
 }
 

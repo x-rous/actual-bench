@@ -96,24 +96,31 @@ export function modeForSchedule(value: ScheduleValue): Mode {
   if (!simpleTime || month !== "*") return "cron";
 
   if (dayOfMonth === "*" && dayOfWeek === "*") return "daily";
-  if (dayOfMonth === "*" && /^[0-6](,[0-6])*$/.test(dayOfWeek)) return "weekly";
+  // Weekday lists and ranges both: `1-5` is "weekdays", which Weekly shows.
+  if (dayOfMonth === "*" && /^[0-7](-[0-7])?(,[0-7](-[0-7])?)*$/.test(dayOfWeek)) return "weekly";
   if (dayOfWeek === "*" && /^\d{1,2}$/.test(dayOfMonth) && Number(dayOfMonth) <= 28) return "monthly";
   return "cron";
 }
 
 function readWeekdays(expression: string | null): number[] {
   const dayOfWeek = (expression ?? "").trim().split(/\s+/)[4] ?? "";
-  const days = dayOfWeek
-    .split(",")
-    .map((entry) => Number(entry))
-    .filter((entry) => Number.isInteger(entry) && entry >= 0 && entry <= 6);
-  return days.length > 0 ? days : [1];
+  const days = new Set<number>();
+  for (const term of dayOfWeek.split(",")) {
+    const [from, to] = term.split("-").map(Number);
+    if (!Number.isInteger(from)) continue;
+    const end = Number.isInteger(to) ? to : from;
+    for (let day = from; day <= end && day <= 7; day += 1) days.add(day % 7);
+  }
+  return days.size > 0 ? [...days] : [1];
 }
 
 /** The cron expression an interval is, when one exists: every 6 hours is `0 *\/6 * * *`. */
 function intervalAsCron(minutes: number): string | null {
   if (minutes < 60 && 60 % minutes === 0) return `*/${minutes} * * * *`;
-  if (minutes % 60 === 0 && 24 % (minutes / 60) === 0) return minutes === 60 ? "0 * * * *" : `0 */${minutes / 60} * * *`;
+  if (minutes === 60) return "0 * * * *";
+  // Cron's hour step stops at 23: once a day is midnight, not `*/24`.
+  if (minutes === 1440) return "0 0 * * *";
+  if (minutes % 60 === 0 && minutes < 1440 && 24 % (minutes / 60) === 0) return `0 */${minutes / 60} * * *`;
   return null;
 }
 
@@ -217,8 +224,14 @@ export function SchedulePicker({ value, onChange, nowMs, onValidityChange, inter
       const expression = exact || cron;
       // Said, not done silently: "every 90 minutes" has no cron form, and the
       // expression left in the box is a different schedule.
+      // An interval counts from the last run; cron runs on the clock. Even
+      // an equivalent expression moves the next run, so that is said too.
       setConversionNote(
-        exact ? null : "That interval has no exact cron form, so this is not the same schedule. Check it before saving."
+        !exact
+          ? "That interval has no exact cron form, so this is not the same schedule. Check it before saving."
+          : current.scheduleKind === "interval"
+            ? "Cron runs at fixed clock times rather than a set time after the last run, so the next run may move."
+            : null
       );
       setCron(expression);
       setMode("cron");

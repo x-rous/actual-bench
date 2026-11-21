@@ -326,7 +326,13 @@ export function describeRetentionReach(retention: Record<RetentionTier, number>)
       count: retention[tier],
       span: `${retention[tier]} ${retention[tier] === 1 ? TIER_SPAN[tier].one : TIER_SPAN[tier].many}`,
     }));
-  const longest = tiers[tiers.length - 1];
+  // The tier that reaches furthest back, by its span in days: 30 daily
+  // copies reach further than 1 weekly one, whatever order the tiers are in.
+  const days: Record<RetentionTier, number> = { daily: 1, weekly: 7, monthly: 30, yearly: 365 };
+  const longest = tiers.reduce<(typeof tiers)[number] | null>(
+    (best, tier) => (!best || tier.count * days[tier.tier] > best.count * days[best.tier] ? tier : best),
+    null
+  );
   return {
     copies: tiers.reduce((sum, tier) => sum + tier.count, 0),
     reach: longest ? `about ${longest.span}` : null,

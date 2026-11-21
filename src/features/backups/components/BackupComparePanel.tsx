@@ -98,6 +98,10 @@ export function BackupComparePanel({ artifactId, passphrase }: { artifactId: str
             transactions in {opened.totals.backup.accounts} accounts. The budget now has{" "}
             {opened.totals.live.transactions.toLocaleString()} in {opened.totals.live.accounts}.
           </p>
+          <p className="text-muted-foreground">
+            An account counts as changed when its balance, transaction count, name, budget type or open
+            state differs; open one to see the transactions behind it.
+          </p>
 
           {rows.length === 0 ? (
             <p className="text-muted-foreground">Every account is the same as in this copy.</p>

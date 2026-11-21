@@ -538,9 +538,12 @@ describe("the Recovery Center", () => {
 
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText(/This rule copies/).closest("p")).toHaveTextContent(
-      /to NAS volume, daily at 02:00.*keeping up to 26 copies reaching back about 3 years\./
+      /to NAS volume, daily at 02:00.*keeping about 26 scheduled copies going back about 3 years\./
     );
-    expect(within(dialog).getByText("Up to 26 copies at any time; the oldest is about 3 years old.")).toBeInTheDocument();
+    // Not promised as a cap: pinned copies and copies taken by hand are kept on top.
+    expect(
+      within(dialog).getByText("About 26 scheduled copies, the oldest about 3 years old. Copies you pin or take by hand are kept as well.")
+    ).toBeInTheDocument();
     expect(within(dialog).getByText("one a day, last 7 days")).toBeInTheDocument();
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Bench data only" }));

@@ -247,9 +247,12 @@ A search records nothing.
 
 **Compare with now** (`POST /api/backups/artifacts/:id/compare`) sums each account in the copy and
 reads the live budget through ActualQL (`accounts`, and `transactions` grouped by account), then
-lists accounts added, removed, changed (balance, count or closed) and unchanged. For up to 10
-changed accounts it also reads both sides' transactions and lists, matched by id, the rows only in
-the copy, only in the live budget, and edited since (amount or date), 50 of each at most. Both sides
+lists accounts added, removed, changed (balance, transaction count, closed, name or on/off budget)
+and unchanged. For up to 10 changed accounts it also reads both sides' transactions and lists,
+matched by id, the rows only in the copy, only in the live budget, and edited since (amount or
+date), 50 of each at most. Only changed accounts are read this way: an account whose totals and
+details all match is reported unchanged, so a date edit, or edits that cancel each other out, in
+such an account are not listed. Both sides
 count transactions by the rules of Actual's `v_transactions_internal_alive` view: not deleted, with a
 date and an account, split parents left out, and a split line only while its parent exists and is
 not deleted. The live budget is

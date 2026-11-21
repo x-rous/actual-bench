@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, Loader2, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -47,6 +47,11 @@ export function BackupSearchPanel({ artifactId, passphrase }: { artifactId: stri
   // What the shown result was asked with, so paging repeats it exactly and
   // the empty state knows whether filters were in play.
   const [asked, setAsked] = useState<BackupSearchInput | null>(null);
+  // Whether each date field holds a date. Read at submit, after the field has
+  // committed its text on blur, so a typed non-date blocks the search instead
+  // of the last good date being used in its place.
+  const datesValid = useRef({ from: true, to: true });
+  const [dateError, setDateError] = useState(false);
 
   const search = useMutation({
     mutationFn: (query: BackupSearchInput) => searchBackup(artifactId, query, passphrase || undefined),
@@ -59,12 +64,19 @@ export function BackupSearchPanel({ artifactId, passphrase }: { artifactId: stri
   const dated = kind === "transactions";
   function run(event?: FormEvent) {
     event?.preventDefault();
+    if (dated && (!datesValid.current.from || !datesValid.current.to)) {
+      setDateError(true);
+      return;
+    }
+    setDateError(false);
     search.mutate({ kind, text: text.trim(), from: dated ? from || null : null, to: dated ? to || null : null, page: 0 });
   }
   function clearFilters() {
     setText("");
     setFrom("");
     setTo("");
+    datesValid.current = { from: true, to: true };
+    setDateError(false);
     search.mutate({ kind, text: "", from: null, to: null, page: 0 });
   }
 
@@ -93,11 +105,25 @@ export function BackupSearchPanel({ artifactId, passphrase }: { artifactId: stri
           <>
             <label className="flex items-center gap-1 text-muted-foreground">
               From
-              <DateInput size="sm" className="w-32" value={from} onValueChange={setFrom} aria-label="From date" />
+              <DateInput
+                size="sm"
+                className="w-32"
+                value={from}
+                onValueChange={setFrom}
+                onValidityChange={(valid) => (datesValid.current.from = valid)}
+                aria-label="From date"
+              />
             </label>
             <label className="flex items-center gap-1 text-muted-foreground">
               To
-              <DateInput size="sm" className="w-32" value={to} onValueChange={setTo} aria-label="To date" />
+              <DateInput
+                size="sm"
+                className="w-32"
+                value={to}
+                onValueChange={setTo}
+                onValidityChange={(valid) => (datesValid.current.to = valid)}
+                aria-label="To date"
+              />
             </label>
           </>
         )}
@@ -106,6 +132,12 @@ export function BackupSearchPanel({ artifactId, passphrase }: { artifactId: stri
           Search
         </Button>
       </form>
+
+      {dateError && (
+        <p role="alert" className="text-destructive">
+          A date could not be read. Correct it, or clear it to search without that bound.
+        </p>
+      )}
 
       {search.isError && (
         <p role="alert" className="text-destructive">
@@ -129,7 +161,7 @@ export function BackupSearchPanel({ artifactId, passphrase }: { artifactId: stri
               {filtered ? (
                 <>
                   <span>No results match your filters</span>
-                  <Button size="sm" variant="outline" onClick={clearFilters}>
+                  <Button size="sm" variant="outline" onClick={clearFilters} disabled={search.isPending}>
                     Clear filters
                   </Button>
                 </>

@@ -277,19 +277,21 @@ export function BackupRuleDialog({
               </div>
               <div className="space-y-1">
                 <Label
+                  id="backup-rule-contents"
                   text="Contents"
                   hint="Bench data is everything Actual Bench stores apart from your budget: sync flows and mappings, reconciliations, credit cards, plans, assets and loans, automations and saved queries. It lives nowhere else."
                 />
-                <PillGroup
-                  className="w-fit"
-                  value={contents}
-                  onChange={setContents}
-                  options={[
-                    { value: "both", label: "Budget + Bench data" },
-                    { value: "budget", label: "Budget only" },
-                    { value: "app-db", label: "Bench data only" },
-                  ]}
-                />
+                <div role="group" aria-labelledby="backup-rule-contents-label" className="w-fit">
+                  <PillGroup
+                    value={contents}
+                    onChange={setContents}
+                    options={[
+                      { value: "both", label: "Budget + Bench data" },
+                      { value: "budget", label: "Budget only" },
+                      { value: "app-db", label: "Bench data only" },
+                    ]}
+                  />
+                </div>
               </div>
               {needsSource && sourceLocked && (
                 <p className="text-muted-foreground">Fixed: this rule already has backups of this budget.</p>
@@ -370,9 +372,11 @@ export function BackupRuleDialog({
                 ))}
               </div>
               <p className="text-muted-foreground">
-                {reach.copies > 0
-                  ? `Up to ${reach.copies} copies at any time; the oldest is ${reach.reach} old.`
-                  : "Only the newest verified copy is kept."}
+                {manualOnly
+                  ? "This rule only takes copies when you ask, and those are kept until you delete them: these numbers do not apply to it."
+                  : reach.copies > 0
+                    ? `About ${reach.copies} scheduled copies, the oldest about ${(reach.reach ?? "").replace(/^about /, "")} old. Copies you pin or take by hand are kept as well.`
+                    : "Of the scheduled copies, only the newest verified one is kept."}
               </p>
             </Frame>
 
@@ -388,8 +392,9 @@ export function BackupRuleDialog({
 
               {encrypt && (
                 <div className="grid gap-2 sm:grid-cols-2">
-                  <label className="block space-y-1">
+                  <div className="space-y-1">
                     <Label
+                      id="backup-rule-passphrase"
                       text="Passphrase"
                       hint={`Write it down somewhere that is not this server.${
                         editing
@@ -398,13 +403,14 @@ export function BackupRuleDialog({
                       }`}
                     />
                     <Input
+                      id="backup-rule-passphrase"
                       type="password"
                       value={passphrase}
                       onChange={(event) => setPassphrase(event.target.value)}
                       placeholder={editing ? "unchanged" : "at least 8 characters"}
                       autoComplete="new-password"
                     />
-                  </label>
+                  </div>
                   <label className="block space-y-1">
                     <span className="block font-medium">Passphrase again</span>
                     <Input
@@ -445,12 +451,15 @@ export function BackupRuleDialog({
 
             <Frame title="Checking each copy">
               <div className="grid gap-3 sm:grid-cols-2">
-                <label className="block space-y-1">
+                <div className="space-y-1">
                   <Label
+                    id="backup-rule-verification"
                     text="How thoroughly"
                     hint="Quick checks it is a valid archive. Normal opens the database, checks its integrity and counts what is inside. Thorough also runs the full Budget File Health check."
                   />
                   <Select
+                    id="backup-rule-verification"
+                    aria-labelledby="backup-rule-verification-label"
                     value={verificationLevel}
                     onValueChange={(next) => setVerificationLevel(next as BackupPolicy["verificationLevel"])}
                     options={[
@@ -459,7 +468,7 @@ export function BackupRuleDialog({
                       { value: "deep", label: "Thorough" },
                     ]}
                   />
-                </label>
+                </div>
                 <div className="flex items-center gap-2 sm:pt-5">
                   <label className="flex items-center gap-2">
                     <Checkbox checked={scrubEnabled} onCheckedChange={(checked) => setScrubEnabled(checked)} />
@@ -485,7 +494,13 @@ export function BackupRuleDialog({
             <span className="text-destructive">to no destination yet</span>
           )}
           {scheduleText ? <>, {scheduleText}</> : <span className="text-destructive">, on a schedule that is not complete</span>}
-          {reach.copies > 0 ? <>, keeping up to {reach.copies} copies reaching back {reach.reach}</> : <>, keeping only the newest verified copy</>}
+          {manualOnly ? (
+            <>, keeping each copy until you delete it</>
+          ) : reach.copies > 0 ? (
+            <>, keeping about {reach.copies} scheduled copies going back {reach.reach}</>
+          ) : (
+            <>, keeping only the newest verified scheduled copy</>
+          )}
           {encrypt ? ", encrypted." : "."}
         </p>
 
@@ -523,10 +538,15 @@ function Frame({ title, hint, children }: { title: string; hint?: string; childr
 }
 
 /** A field label with its explanation behind an (i). */
-function Label({ text, hint }: { text: string; hint: string }) {
+function Label({ id, text, hint }: { id: string; text: string; hint: string }) {
+  // The (i) is a button, so it sits beside the label rather than inside it:
+  // inside, it would be the label's first control and the field would lose
+  // its name.
   return (
-    <span className="flex items-center gap-1 font-medium">
-      {text}
+    <span className="flex items-center gap-1">
+      <label id={`${id}-label`} htmlFor={id} className="font-medium">
+        {text}
+      </label>
       <InfoHint label={text}>{hint}</InfoHint>
     </span>
   );

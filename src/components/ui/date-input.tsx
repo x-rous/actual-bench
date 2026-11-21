@@ -34,6 +34,7 @@ function DateInput({
   "aria-label": ariaLabel,
   "aria-invalid": ariaInvalid,
   "aria-describedby": ariaDescribedBy,
+  onValidityChange,
   ...dataProps
 }: {
   value: string
@@ -51,6 +52,12 @@ function DateInput({
   "aria-label"?: string
   "aria-invalid"?: boolean
   "aria-describedby"?: string
+  /**
+   * Told whether the text in the field is a date (or empty). Called as the
+   * text is committed, so a form can refuse to submit text that the field
+   * itself has refused, rather than submitting the last good value.
+   */
+  onValidityChange?: (valid: boolean) => void
   [dataAttribute: `data-${string}`]: string | undefined
 }) {
   const budgetFormat = useBudgetDateFormat()
@@ -83,15 +90,18 @@ function DateInput({
   function commit(text: string) {
     if (!text.trim()) {
       setInvalid(false)
+      onValidityChange?.(true)
       if (value) save("")
       return
     }
     const iso = parseTypedDate(text, dateFormat)
     if (!iso) {
       setInvalid(true)
+      onValidityChange?.(false)
       return
     }
     setInvalid(false)
+    onValidityChange?.(true)
     // The same date written another way still tidies up on screen.
     setDraft(formatTypedDate(iso, dateFormat))
     save(iso)
