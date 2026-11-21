@@ -12,21 +12,32 @@ const COLOR_OPTIONS: { value: ColorFilter; label: string }[] = [
   { value: "no_color",  label: "No Color" },
 ];
 
+/** Whether a tag appears in any transaction's notes. */
+export type UsageFilter = "all" | "used" | "unused";
+
+const USAGE_OPTIONS: { value: UsageFilter; label: string }[] = [
+  { value: "all",    label: "Any Use" },
+  { value: "used",   label: "Used" },
+  { value: "unused", label: "Unused" },
+];
+
 export function FilterBar({
   search, onSearchChange,
   colorFilter, onColorFilterChange,
+  usageFilter, onUsageFilterChange,
   filteredCount, totalCount,
   selectedCount,
   onBulkDelete, onDeselect,
 }: {
   search: string; onSearchChange: (v: string) => void;
   colorFilter: ColorFilter; onColorFilterChange: (v: ColorFilter) => void;
+  usageFilter: UsageFilter; onUsageFilterChange: (v: UsageFilter) => void;
   filteredCount: number; totalCount: number;
   selectedCount: number;
   onBulkDelete: () => void;
   onDeselect: () => void;
 }) {
-  const hasFilters = search || colorFilter !== "all";
+  const hasFilters = search || colorFilter !== "all" || usageFilter !== "all";
 
   if (selectedCount > 0) {
     return (
@@ -49,10 +60,11 @@ export function FilterBar({
       />
 
       <PillGroup options={COLOR_OPTIONS} value={colorFilter} onChange={onColorFilterChange} />
+      <PillGroup options={USAGE_OPTIONS} value={usageFilter} onChange={onUsageFilterChange} />
 
       {hasFilters && (
         <button
-          onClick={() => { onSearchChange(""); onColorFilterChange("all"); }}
+          onClick={() => { onSearchChange(""); onColorFilterChange("all"); onUsageFilterChange("all"); }}
           className="text-xs text-muted-foreground underline hover:text-foreground"
         >
           Clear

@@ -20,16 +20,21 @@ export const runtime = "nodejs";
 export async function POST(request: Request, context: RouteContext) {
   try {
     const { policyId } = await context.params;
-    const body = (await readJsonBody(request).catch(() => ({}))) as { apply?: boolean };
+    const body = (await readJsonBody(request).catch(() => ({}))) as { apply?: boolean; artifactIds?: unknown };
+    // What the preview showed, when the caller is applying one.
+    const onlyIds = Array.isArray(body?.artifactIds)
+      ? body.artifactIds.filter((id): id is string => typeof id === "string")
+      : undefined;
 
     const db = getAppDb();
     const policy = getBackupPolicy(db, policyId);
     if (!policy) return NextResponse.json({ error: "Backup rule not found" }, { status: 404 });
 
     const result = await prune(db, {
-      artifacts: listBackupArtifacts(db, { policyId, limit: 500 }),
+      artifacts: listBackupArtifacts(db, { policyId, limit: "all" }),
       retention: policy.retention,
       dryRun: body?.apply !== true,
+      onlyIds,
     });
 
     // A prune can remove the last encrypted copy a stored passphrase existed

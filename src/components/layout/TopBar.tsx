@@ -333,10 +333,13 @@ export function TopBar() {
       // to have something from five minutes ago rather than from last night.
       if (shouldTakeRecoveryPoint(change)) {
         setTakingRecoveryPoint(true);
-        const outcome = await takeRecoveryPoint(describeRiskyChange(change)).finally(() =>
+        const outcome = await takeRecoveryPoint(describeRiskyChange(change), activeInstance ?? null).finally(() =>
           setTakingRecoveryPoint(false)
         );
         if (outcome.status === "taken") toast.success(outcome.message);
+        // Said out loud, so nobody saves believing a copy was taken when one
+        // was reused, or when no rule covers this budget at all.
+        if (outcome.status === "reused" || outcome.status === "unavailable") toast.info(outcome.message);
         if (outcome.status === "failed") {
           // Ask rather than decide. Proceeding silently would remove the safety
           // net the user thinks they have; refusing outright would hold their

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isRecord } from "@/lib/app-db/jsonEnvelope";
 import { getAppDb } from "@/lib/app-db/connection";
 import { appDbErrorResponse, readJsonBody } from "@/lib/app-db/routeResponses";
 import {
@@ -8,7 +9,13 @@ import {
   listBackupPolicies,
   updateBackupPolicy,
 } from "@/lib/app-db/backupRepository";
-import { upsertBackupCredential } from "@/lib/credentials/backupSecrets";
+import {
+  getBackupCredential,
+  hasBackupCredential,
+  upsertBackupCredential,
+} from "@/lib/credentials/backupSecrets";
+import { requireReadyVault } from "@/lib/credentials/vaultState";
+import { generateId } from "@/lib/uuid";
 import { collectUnusedPassphrases } from "@/lib/backup/passphrases";
 import { reconcileBackupAutomations } from "@/lib/automation/jobs/backupReconcile";
 
@@ -47,15 +54,71 @@ export async function PATCH(request: Request, context: RouteContext) {
       }
     }
 
+    /*
+     * A rule's source is fixed once it has taken copies.
+     *
+     * Retention and the plausibility check both treat a rule's copies as one
+     * series. Pointing the rule at another budget mixed two budgets in it: the
+     * new budget's copies took the old one's daily, weekly and monthly slots
+     * and its history was pruned away. Backing up a different budget is a new
+     * rule.
+     */
+    if (payload.sourceRef !== undefined) {
+      const before = existingPolicy.sourceRef.data.connectionFingerprint ?? null;
+      const after = isRecord(payload.sourceRef) && isRecord(payload.sourceRef.data)
+        ? (payload.sourceRef.data.connectionFingerprint ?? null)
+        : null;
+      if (before !== after && listBackupArtifacts(db, { policyId, kind: "budget", limit: 1 }).length > 0) {
+        return NextResponse.json(
+          {
+            error:
+              "This rule already has backups of its budget, so its source cannot change. Create a new rule to back up a different budget.",
+          },
+          { status: 409 }
+        );
+      }
+    }
+
     if (passphrase) {
-      upsertBackupCredential(db, { ref: policyId, kind: "passphrase", secret: { passphrase } });
-      payload.encryptionCredentialRef = policyId;
+      if (passphrase.length < 8) {
+        return NextResponse.json({ error: "Use a passphrase of at least 8 characters." }, { status: 400 });
+      }
+      requireReadyVault(db);
+
+      const currentRef = existingPolicy.encryptionCredentialRef;
+      const current = currentRef ? getBackupCredential(db, currentRef) : null;
+      const unchanged = current !== null && "passphrase" in current && current.passphrase === passphrase;
+
+      if (!unchanged) {
+        /*
+         * A new passphrase gets a new ref; the old one is left exactly where
+         * it is.
+         *
+         * Every encrypted copy records the ref that opens it. Overwriting the
+         * secret under the same ref made all of those copies resolve to the
+         * new passphrase, which cannot open them: Bench lost the old one, the
+         * weekly check marked them damaged, and anyone who had not written
+         * the old passphrase down lost those backups. The old ref is
+         * collected on its own once no copy needs it.
+         */
+        const ref =
+          currentRef || hasBackupCredential(db, policyId) ? `${policyId}.${generateId()}` : policyId;
+        upsertBackupCredential(db, {
+          ref,
+          kind: "passphrase",
+          label: existingPolicy.name,
+          secret: { passphrase },
+        });
+        payload.encryptionCredentialRef = ref;
+      }
     }
 
     const policy = updateBackupPolicy(db, policyId, payload);
     if (!policy) return NextResponse.json({ error: "Backup rule not found" }, { status: 404 });
 
     reconcileBackupAutomations(db, listBackupPolicies(db));
+    // The ref a changed passphrase replaced goes once nothing needs it.
+    collectUnusedPassphrases(db);
     return NextResponse.json({ policy });
   } catch (error) {
     return appDbErrorResponse(error);
@@ -78,11 +141,12 @@ export async function DELETE(_request: Request, context: RouteContext) {
   try {
     const { policyId } = await context.params;
     const db = getAppDb();
-    if (!getBackupPolicy(db, policyId)) {
+    const existing = getBackupPolicy(db, policyId);
+    if (!existing) {
       return NextResponse.json({ error: "Backup rule not found" }, { status: 404 });
     }
 
-    const artifacts = listBackupArtifacts(db, { policyId, limit: 500 });
+    const artifacts = listBackupArtifacts(db, { policyId, limit: "all" });
     const encryptedArtifacts = artifacts.filter((artifact) => artifact.encrypted).length;
 
     deleteBackupPolicy(db, policyId);
@@ -94,7 +158,8 @@ export async function DELETE(_request: Request, context: RouteContext) {
       deleted: true,
       keptArtifacts: artifacts.length,
       encryptedArtifacts,
-      keptPassphrase: encryptedArtifacts > 0 && !forgottenPassphrases.includes(policyId),
+      keptPassphrase:
+        encryptedArtifacts > 0 && !forgottenPassphrases.includes(existing.encryptionCredentialRef ?? policyId),
     });
   } catch (error) {
     return appDbErrorResponse(error);

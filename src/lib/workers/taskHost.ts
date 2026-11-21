@@ -10,6 +10,7 @@ import { verifyConnection, verifyConnectionInput } from "@/lib/actual/verifyConn
 import { getAppDb } from "@/lib/app-db/connection";
 import { ensureAutomationJobTypesRegistered } from "@/lib/automation/bootstrap";
 import { executeJob } from "@/lib/automation/jobExecution";
+import { backupTaskHandlers } from "@/lib/backup/workerTasks";
 import { redactSecrets } from "@/lib/automation/runLogger";
 import type { AutomationRunPhase } from "@/lib/automation/registry";
 import {
@@ -72,6 +73,10 @@ async function connectionTask<T>(
 }
 
 const handlers: Record<string, TaskHandler> = {
+  // The Backups page's verify, inspect, discover, upload and recovery-point
+  // work, kept off the web server's thread.
+  ...backupTaskHandlers,
+
   /**
    * Prove a worker can do real work, not merely start: load every job type,
    * and make one request through the same `fetch` a job uses - Next patches

@@ -14,6 +14,8 @@ import {
   createBackupPolicy,
   deleteBackupArtifact,
   deleteBackupPolicy,
+  getBackupArtifact,
+  setArtifactPolicy,
 } from "@/lib/app-db/backupRepository";
 import type { SqliteDatabase } from "@/lib/app-db/types";
 import { collectUnusedPassphrases, forgetPassphrase, listHeldPassphrases } from "./passphrases";
@@ -110,5 +112,56 @@ describe("passphrases Bench is holding", () => {
     expect(collectUnusedPassphrases(db)).toEqual([]);
     expect(listHeldPassphrases(db)).toHaveLength(0);
     expect(getBackupCredential(db, "dest-1")).not.toBeNull();
+  });
+
+  it("keeps a passphrase whose copies are older than the newest few hundred", async () => {
+    // Deciding "unused" from a capped list deleted secrets that old encrypted
+    // copies still needed once there were more than 500 newer artifacts.
+    const { policy } = encryptedRule();
+    const other = createBackupPolicy(db, { name: "Hourly" });
+    const insert = db.transaction(() => {
+      for (let index = 0; index < 600; index += 1) {
+        createBackupArtifact(db, {
+          policyId: other.id,
+          kind: "budget",
+          checksumSha256: "b".repeat(64),
+          sizeBytes: 10,
+          createdAt: new Date(Date.UTC(2030, 0, 1, 0, index)).toISOString(),
+        });
+      }
+    });
+    insert();
+    deleteBackupPolicy(db, policy.id);
+
+    collectUnusedPassphrases(db);
+
+    expect(getBackupCredential(db, policy.id)).toEqual({ passphrase: "correct horse" });
+    expect(listHeldPassphrases(db).find((entry) => entry.ref === policy.id)?.artifactCount).toBe(1);
+  });
+  it("keeps an older copy's passphrase when the copy is attached to another rule", () => {
+    // A copy from before copies recorded their own ref is opened with its
+    // rule's. Attached to a new rule, clean-up looked for the new rule's
+    // passphrase and deleted the one this copy needs.
+    const { policy, artifact } = encryptedRule();
+    db.prepare("UPDATE backup_artifacts SET encryption_credential_ref = NULL WHERE id = ?").run(artifact.id);
+    const next = createBackupPolicy(db, { name: "Replacement" });
+
+    setArtifactPolicy(db, artifact.id, next.id);
+    collectUnusedPassphrases(db);
+
+    expect(getBackupArtifact(db, artifact.id)?.encryptionCredentialRef).toBe(policy.id);
+    expect(getBackupCredential(db, policy.id)).toEqual({ passphrase: "correct horse" });
+  });
+  it("keeps an older copy's passphrase when its rule is deleted", () => {
+    // A copy with no ref of its own is opened with its rule's id; deleting
+    // the rule cleared that link, and clean-up then removed the passphrase.
+    const { policy, artifact } = encryptedRule();
+    db.prepare("UPDATE backup_artifacts SET encryption_credential_ref = NULL WHERE id = ?").run(artifact.id);
+
+    deleteBackupPolicy(db, policy.id);
+    collectUnusedPassphrases(db);
+
+    expect(getBackupArtifact(db, artifact.id)?.encryptionCredentialRef).toBe(policy.id);
+    expect(getBackupCredential(db, policy.id)).toEqual({ passphrase: "correct horse" });
   });
 });

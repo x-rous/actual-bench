@@ -11,7 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { previewRetention } from "../lib/backupsApi";
+import { applyRetention } from "../lib/backupsApi";
 import { formatBytes, formatDateTime } from "../lib/presentation";
 import type { BackupPolicy } from "@/lib/app-db/backupRepository";
 import type { PruneResult } from "@/lib/backup/prune";
@@ -37,7 +37,7 @@ export function RetentionPreviewDialog({
   onApplied: () => void;
 }) {
   const apply = useMutation({
-    mutationFn: () => previewRetention(policy.id, true),
+    mutationFn: () => applyRetention(policy.id, result.pruned.map((entry) => entry.artifactId)),
     onSuccess: (applied) => {
       const removed = applied.pruned.filter((entry) => entry.removed).length;
       if (applied.failed > 0) {

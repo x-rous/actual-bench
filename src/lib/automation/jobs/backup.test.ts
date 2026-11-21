@@ -287,7 +287,7 @@ describe("how a backup run is reported", () => {
 
     const pruned = backupJobType.summarize({
       policyId: "pol-1",
-      prune: { dryRun: false, kept: 7, failed: 0, freedBytes: 2048, pruned: [{ artifactId: "old", reason: "r", createdAt: "", kind: "budget", sizeBytes: 2048, locations: [], removed: true }] },
+      prune: { dryRun: false, kept: 7, failed: 0, freedBytes: 2048, cleaned: 0, pruned: [{ artifactId: "old", reason: "r", createdAt: "", kind: "budget", sizeBytes: 2048, locations: [], removed: true }] },
       run: { ...base, stored: true, verified: true, artifacts: [artifact()] },
     });
     expect(pruned.message).toMatch(/removed 1 older/);

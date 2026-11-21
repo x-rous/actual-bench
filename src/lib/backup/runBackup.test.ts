@@ -7,7 +7,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
-import { upsertBackupCredential } from "@/lib/credentials/backupSecrets";
+import { deleteBackupCredential, getBackupCredential, upsertBackupCredential } from "@/lib/credentials/backupSecrets";
 import {
   createBackupDestination,
   createBackupPolicy,
@@ -24,7 +24,9 @@ import {
 import type { SqliteDatabase } from "@/lib/app-db/types";
 import { decryptArchive } from "./encryption";
 import { parseManifest } from "./manifest";
+import { LocalDestinationAdapter } from "./destinations/local";
 import { backupObjectKey, runBackup } from "./runBackup";
+import { acceptPlausibilityFindings, plausibilityOf } from "./verificationRecord";
 
 function budgetDbBytes(options: { transactions?: number } = {}): Uint8Array {
   const root = mkdtempSync(join(tmpdir(), "bench-run-fixture-"));
@@ -289,6 +291,20 @@ describe("running a backup", () => {
     expect(decryptArchive(stored, "correct horse").byteLength).toBe(BUDGET_ZIP.byteLength);
   });
 
+  it("puts back a passphrase that was collected while the run was encrypting with it", async () => {
+    // The passphrase changed mid-run: clean-up saw no copy using the old one
+    // and removed it, while this run was encrypting with it.
+    upsertBackupCredential(db, { ref: "pol-secret", kind: "passphrase", secret: { passphrase: "correct horse" } });
+
+    await runBackup(db, policy({ encryption: "passphrase", encryptionCredentialRef: "pol-secret" }), {
+      onBeforeStore: () => deleteBackupCredential(db, "pol-secret"),
+    });
+
+    const [artifact] = listBackupArtifacts(db);
+    expect(artifact.encryptionCredentialRef).toBe("pol-secret");
+    expect(getBackupCredential(db, "pol-secret")).toEqual({ passphrase: "correct horse" });
+  });
+
   it("records a stored-but-unverified copy rather than throwing it away", async () => {
     // A backup Bench distrusts beats no backup, as long as nobody is allowed to
     // believe it is fine.
@@ -328,6 +344,60 @@ describe("running a backup", () => {
     expect(second.verified).toBe(false);
     expect(second.message).toMatch(/fewer transactions/);
     expect(listBackupArtifacts(db)[0].verificationStatus).toBe("failed");
+  });
+
+  it("does not let a second short export pass by matching the first one", async () => {
+    // The baseline is the last copy that passed. Comparing with whatever came
+    // last let two truncated exports in a row call the second one verified.
+    const withTransactions = (count: number) =>
+      zipSync({
+        "db.sqlite": budgetDbBytes({ transactions: count }),
+        "metadata.json": Buffer.from(JSON.stringify({ budgetName: "Household", id: "budget-1" })),
+      });
+    const rule = policy();
+    mockExport(withTransactions(100));
+    expect((await runBackup(db, rule)).verified).toBe(true);
+
+    mockExport(withTransactions(10));
+    expect((await runBackup(db, rule)).verified).toBe(false);
+    mockExport(withTransactions(10));
+    const third = await runBackup(db, rule);
+
+    expect(third.verified).toBe(false);
+    expect(third.message).toMatch(/fewer transactions/);
+  });
+
+  it("compares with an accepted copy once someone says the change was theirs", async () => {
+    const withTransactions = (count: number) =>
+      zipSync({
+        "db.sqlite": budgetDbBytes({ transactions: count }),
+        "metadata.json": Buffer.from(JSON.stringify({ budgetName: "Household", id: "budget-1" })),
+      });
+    const rule = policy();
+    mockExport(withTransactions(100));
+    await runBackup(db, rule);
+    mockExport(withTransactions(10));
+    await runBackup(db, rule);
+
+    const flagged = listBackupArtifacts(db)[0];
+    expect(plausibilityOf(flagged)).toMatchObject({ readable: true });
+    expect(acceptPlausibilityFindings(db, flagged, new Date().toISOString())).toBe(true);
+
+    mockExport(withTransactions(10));
+    expect((await runBackup(db, rule)).verified).toBe(true);
+  });
+
+  it("leaves no record behind for a run that stored nothing", async () => {
+    // Such rows were never removed by retention and piled up one per failed night.
+    const blocked = join(root, "blocked");
+    writeFileSync(blocked, "x");
+    const destination = localDestination("Blocked", blocked);
+    mockExport();
+
+    const result = await runBackup(db, policy({ destinationIds: [destination.id] }));
+
+    expect(result.stored).toBe(false);
+    expect(listBackupArtifacts(db)).toHaveLength(0);
   });
 
   it("says what went wrong when the export itself fails", async () => {
@@ -387,6 +457,31 @@ describe("running a backup", () => {
 
     expect(result.stored).toBe(false);
     expect(statSync(readOnly).isFile()).toBe(true);
+  });
+
+  it("records a stored copy even when its manifest cannot be written", async () => {
+    // Unrecorded, the copy would sit in the destination where retention, the
+    // scrub and passphrase clean-up cannot see it.
+    const original = LocalDestinationAdapter.prototype.put;
+    const spy = jest.spyOn(LocalDestinationAdapter.prototype, "put").mockImplementation(function (
+      this: LocalDestinationAdapter,
+      key: string,
+      bytes: Uint8Array
+    ) {
+      if (key.endsWith(".manifest.json")) return Promise.reject(new Error("disk full"));
+      return original.call(this, key, bytes);
+    });
+    try {
+      const result = await runBackup(db, policy());
+
+      expect(result.stored).toBe(true);
+      const [artifact] = listBackupArtifacts(db);
+      const [location] = listArtifactLocations(db, artifact.id);
+      expect(location.status).toBe("stored");
+      expect(location.lastError).toMatch(/manifest could not be written: disk full/);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("writes nothing outside the destination root", async () => {

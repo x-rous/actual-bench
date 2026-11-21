@@ -98,15 +98,32 @@ export function buildRecoverySheet(db: SqliteDatabase, now: Date = new Date()): 
   }
 
   const encrypted = policies.filter((policy) => policy.encryption === "passphrase");
-  if (encrypted.length > 0) {
+  // Encrypted copies outlive the rules that made them; they need their
+  // passphrase just as much.
+  const strandedEncrypted = (
+    db
+      .prepare(
+        "SELECT COUNT(*) AS n FROM backup_artifacts WHERE encrypted = 1 AND (policy_id IS NULL OR policy_id NOT IN (SELECT id FROM backup_policies))"
+      )
+      .get<{ n: number }>()?.n ?? 0
+  );
+  if (encrypted.length > 0 || strandedEncrypted > 0) {
     lines.push("## Encryption");
     lines.push("");
-    lines.push(
-      `These rules encrypt their backups: ${encrypted
-        .map((policy) => `**${policy.name}**`)
-        .join(", ")}. Their files end in \`.enc\` and begin with the ASCII marker \`BENCHBK1\`.`
-    );
-    lines.push("");
+    if (encrypted.length > 0) {
+      lines.push(
+        `These rules encrypt their backups: ${encrypted
+          .map((policy) => `**${policy.name}**`)
+          .join(", ")}. Their files end in \`.enc\` and begin with the ASCII marker \`BENCHBK1\`.`
+      );
+      lines.push("");
+    }
+    if (strandedEncrypted > 0) {
+      lines.push(
+        `${strandedEncrypted} encrypted ${strandedEncrypted === 1 ? "copy belongs" : "copies belong"} to no current rule (the rule was deleted, or the copy was found in a destination). ${strandedEncrypted === 1 ? "It needs" : "They need"} the passphrase of the rule that took ${strandedEncrypted === 1 ? "it" : "them"}, and a rule whose passphrase was changed has older copies that need the old one.`
+      );
+      lines.push("");
+    }
     lines.push(
       "Without the passphrase these files cannot be recovered by anyone, including you. Bench cannot reset it. If you do not know where that passphrase is written down, stop and fix that now - it is the single point of failure in this entire arrangement."
     );
@@ -123,20 +140,28 @@ export function buildRecoverySheet(db: SqliteDatabase, now: Date = new Date()): 
     lines.push("key            scrypt(passphrase, salt, N=32768, r=8, p=1) → 32 bytes");
     lines.push("```");
     lines.push("");
-    lines.push("Decrypting one with Node and nothing else installed:");
+    lines.push(
+      "Decrypting one with Node and nothing else installed. The passphrase is read from standard input, so it does not end up in your shell history (`node decrypt.js backup.zip.enc backup.zip`, then type it and press Enter):"
+    );
     lines.push("");
     lines.push("```js");
     lines.push("const { readFileSync, writeFileSync } = require('node:fs');");
     lines.push("const { scryptSync, createDecipheriv } = require('node:crypto');");
-    lines.push("const buf = readFileSync(process.argv[2]);");
-    lines.push("const [salt, iv, tag] = [buf.subarray(12, 28), buf.subarray(28, 40), buf.subarray(40, 56)];");
+    // One line, ended by Enter: reading standard input to the end waited for
+    // Ctrl-D, and looked like the script had hung.
+    lines.push("const rl = require('node:readline').createInterface({ input: process.stdin });");
+    lines.push("rl.once('line', (passphrase) => {");
+    lines.push("  rl.close();");
+    lines.push("  const buf = readFileSync(process.argv[2]);");
+    lines.push("  const [salt, iv, tag] = [buf.subarray(12, 28), buf.subarray(28, 40), buf.subarray(40, 56)];");
     lines.push(
-      "const key = scryptSync(process.argv[3].normalize('NFKC'), salt, 32, { N: 32768, r: 8, p: 1, maxmem: 67108864 });"
+      "  const key = scryptSync(passphrase.normalize('NFKC'), salt, 32, { N: 32768, r: 8, p: 1, maxmem: 67108864 });"
     );
-    lines.push("const d = createDecipheriv('aes-256-gcm', key, iv); d.setAuthTag(tag);");
+    lines.push("  const d = createDecipheriv('aes-256-gcm', key, iv); d.setAuthTag(tag);");
     lines.push(
-      "writeFileSync(process.argv[4], Buffer.concat([d.update(buf.subarray(56)), d.final()]));"
+      "  writeFileSync(process.argv[3], Buffer.concat([d.update(buf.subarray(56)), d.final()]));"
     );
+    lines.push("});");
     lines.push("```");
     lines.push("");
   }

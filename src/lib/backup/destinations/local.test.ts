@@ -53,6 +53,32 @@ describe("local destination", () => {
     expect(listed.map((entry) => entry.key)).toEqual(["blocked/keep.txt"]);
   });
 
+  it("writes into folders it has to create", async () => {
+    const adapter = new LocalDestinationAdapter(destination(root));
+
+    await adapter.put("budget/2026/11/a.zip", Buffer.from("payload"));
+
+    expect((await adapter.get("budget/2026/11/a.zip")).toString()).toBe("payload");
+  });
+
+  it("fails a download stream it cannot open before handing it back", async () => {
+    // Rejecting here is what lets a download fall back to another copy
+    // before its response has started.
+    const adapter = new LocalDestinationAdapter(destination(root));
+
+    await expect(adapter.getStream("budget/absent.zip")).rejects.toThrow(/Could not read/);
+  });
+
+  it("streams a copy that is there", async () => {
+    const adapter = new LocalDestinationAdapter(destination(root));
+    await adapter.put("a.zip", Buffer.from("streamed"));
+
+    const { stream, sizeBytes } = await adapter.getStream("a.zip");
+
+    expect(sizeBytes).toBe(8);
+    expect(Buffer.from(await new Response(stream).arrayBuffer()).toString()).toBe("streamed");
+  });
+
   it("refuses to escape the destination root", async () => {
     const adapter = new LocalDestinationAdapter(destination(join(root, "inner")));
     await expect(adapter.put("../escaped.zip", Buffer.from("x"))).rejects.toThrow(
@@ -142,5 +168,27 @@ describe("inspecting a candidate path", () => {
       if (previous === undefined) delete process.env.ACTUAL_BENCH_DB_PATH;
       else process.env.ACTUAL_BENCH_DB_PATH = previous;
     }
+  });
+
+  it("refuses a folder that has lost its marker and its copies, which is what an unmounted volume looks like", async () => {
+    // An unmounted volume leaves an empty, writable directory behind. Writing
+    // into it looked like a backup; scrubbing it called every copy missing.
+    const adapter = new LocalDestinationAdapter(destination(root));
+    await adapter.put("budget/a.zip", Buffer.from("copy"));
+    await adapter.confirmIdentity({ expectCopies: true, sampleKey: "budget/a.zip" });
+
+    rmSync(root, { recursive: true, force: true });
+    await expect(
+      adapter.confirmIdentity({ expectCopies: true, sampleKey: "budget/a.zip" })
+    ).rejects.toThrow(/mounted/);
+  });
+
+  it("writes its marker on first use and accepts the folder from then on", async () => {
+    const adapter = new LocalDestinationAdapter(destination(root));
+    await adapter.confirmIdentity({ expectCopies: false, sampleKey: null });
+
+    // The marker alone is enough later, even before the copy it would sample.
+    await expect(adapter.confirmIdentity({ expectCopies: true, sampleKey: "missing.zip" })).resolves.toBeUndefined();
+    expect((await adapter.list("")).map((entry) => entry.key)).not.toContain(".bench-destination.json");
   });
 });

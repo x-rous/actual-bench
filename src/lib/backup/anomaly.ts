@@ -48,7 +48,12 @@ export function detectBackupAnomalies(input: AnomalyInput): string[] {
   const { previous, previousContent } = input;
   if (!previous) return findings;
 
-  const before = previousContent?.transactions;
+  // Counts made on different bases (with and without deleted rows) say
+  // nothing about each other; comparing them reported a "drop" that was only
+  // the deleted rows no longer being counted.
+  const comparable = (previousContent?.countBasis ?? null) === (input.content.countBasis ?? null);
+
+  const before = comparable ? previousContent?.transactions : undefined;
   const after = input.content.transactions;
   if (typeof before === "number" && typeof after === "number" && before > 0) {
     const drop = (before - after) / before;
@@ -61,7 +66,7 @@ export function detectBackupAnomalies(input: AnomalyInput): string[] {
     }
   }
 
-  const beforeAccounts = previousContent?.accounts;
+  const beforeAccounts = comparable ? previousContent?.accounts : undefined;
   const afterAccounts = input.content.accounts;
   if (
     typeof beforeAccounts === "number" &&

@@ -31,7 +31,9 @@ A fresh install opens on Setup, because there is nothing else to look at yet.
 ## Check backup status
 
 The summary shows the newest copies, their verification status, destination health, and any problem
-that needs attention.
+that needs attention. With more than one backup rule it lists each rule on its own line, and the
+headline is about the rule worst off, so one healthy rule can never hide a budget whose backups have
+stopped.
 
 ## Setup: Backup Destinations
 
@@ -96,7 +98,12 @@ A rule says what to copy, where to put it, how often, and how long to keep it.
 - **Encryption** - off by default, because for most self-hosted setups the copy lands on a volume you
   already control and encryption mainly adds a way to lose the data permanently. Turn it on when a
   copy goes somewhere you do not control. **Bench cannot recover an encrypted backup without the
-  passphrase, and neither can anyone else.**
+  passphrase, and neither can anyone else.** You type it twice, so a typo cannot slip through.
+  Changing it later applies to new copies only: older copies keep opening with the passphrase they
+  were taken with, and Bench keeps that one for them.
+
+A rule's budget is fixed once the rule has backed it up. To back up a different budget, create a new
+rule, so the two budgets' histories never mix.
 
 Deleting a rule stops it running and keeps the backups it already took - including the passphrase
 that opens the encrypted ones. Bench forgets that passphrase on its own once the last copy needing it
@@ -121,10 +128,12 @@ Every copy is checked before it is trusted, at one of three depths:
 Verification runs on the plaintext, **before** encryption. Verifying afterwards would only prove
 bytes survived a round trip, which is the least interesting thing that can go wrong.
 
-Bench also compares each copy with the one before it. A copy with far fewer transactions, fewer
-accounts, or less than half the size does not pass verification, because a cut-short export is a
-perfectly valid file containing the wrong budget. If you deleted those transactions yourself, that is
-expected and the copy is still there - Bench just will not tell you it checked out.
+Bench also compares each copy with the last copy of the same budget that passed. A copy with far
+fewer transactions, fewer accounts, or less than half the size is marked **Needs review**, because a
+cut-short export is a perfectly valid file containing the wrong budget. Deleted transactions and
+accounts are not counted, so the numbers are what your budget actually holds. If you deleted those
+things yourself, open the copy and choose **Accept this change**: it then counts as verified and
+becomes the copy the next backup is compared with.
 
 A copy that fails verification is still stored, and clearly marked. A backup Bench distrusts is more
 useful than no backup - as long as nobody is allowed to believe it is fine.
@@ -132,10 +141,15 @@ useful than no backup - as long as nobody is allowed to believe it is fine.
 ### Weekly verification
 
 Storage rots quietly. A full volume truncates a file, a failing disk flips a bit, somebody tidies a
-bucket, and nothing announces any of it. Once a week Bench re-reads the newest few copies in every
-destination, re-computes their checksums, and opens the newest one properly - decrypting it first
-where it has the passphrase, so an encrypted backup is proved to be **decryptable** rather than
-merely present.
+bucket, and nothing announces any of it. Once a week Bench opens the newest copy of each rule in
+every destination properly - decrypting it first where it has the passphrase, so an encrypted backup
+is proved to be **decryptable** rather than merely present - and re-computes the checksums of the
+copies it checked longest ago, so over a few weeks every copy is re-read, old monthly and yearly
+ones included. Copies marked missing are looked for again.
+
+A folder destination carries a small `.bench-destination.json` marker. If the folder's volume is not
+mounted, Bench sees the marker is gone and says so, instead of writing backups into the empty
+directory left behind or calling every copy missing.
 
 **Verify now** does the same thing on demand.
 
@@ -149,7 +163,12 @@ written as a set of refusals first:
 3. Nothing **newer than the minimum age** is deleted, whatever the rules say.
 4. The **newest verified copy always survives**. If none has verified, the newest copy survives
    instead.
-5. A backup you took **by hand** is never expired on your behalf.
+5. A backup you took **by hand** - including **Back up now** on a scheduled rule - is never expired
+   on your behalf.
+
+Within each day, week, month or year, a copy that verified is kept in preference to one that did not.
+A copy with no rule (its rule was deleted, or Bench found it in a destination) is never expired; open
+it and attach it to a rule if you want that rule's retention to look after it.
 
 There is no combination of settings that empties a destination.
 
@@ -159,14 +178,15 @@ than an approximation of it.
 
 ## Recovery points
 
-Before Bench saves a batch of deletions or payee merges, it copies the budget first, so there is
-something from five minutes ago rather than only from last night. Several changes in one session
+Before Bench saves a batch of deletions or payee merges, it copies the budget you are saving - using
+the backup rule for that budget - so there is something from five minutes ago rather than only from
+last night. If no rule covers the budget, Bench says so and saves without one. Several changes in one session
 share a recovery point, and these expire on their own instead of piling up forever.
 
 If a recovery point cannot be taken, Bench **asks** rather than deciding for you: your changes stay
 unsaved, the reason is shown, and you can save anyway.
 
-Turn it off from the checkbox under the rules if you would rather it did not.
+Recovery points are off until you turn them on with the checkbox under the rules.
 
 ## Backing up Bench itself
 

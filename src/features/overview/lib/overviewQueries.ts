@@ -1,12 +1,13 @@
 import { runQuery } from "@/lib/api/query";
 import { fetchBudgetPreferences } from "@/lib/api/preferences";
 import type { ConnectionInstance } from "@/store/connection";
-import type { BudgetMode, BudgetOverviewSnapshot, OverviewStatKey } from "../types";
+import type { BudgetMode, BudgetOverviewDetails, BudgetOverviewSnapshot, OverviewDetailKey, OverviewStatKey } from "../types";
 import { BudgetNotOpenError } from "@/lib/actual/browser/runtime";
 
 type ScalarCountQuery = {
   ActualQLquery: {
     table: string;
+    filter?: Record<string, unknown>;
     calculate: { $count: "$id" };
   };
 };
@@ -41,10 +42,6 @@ export const PAYEE_COUNT_QUERY = {
   ActualQLquery: { table: "payees", calculate: { $count: "$id" } },
 } as const satisfies ScalarCountQuery;
 
-export const CATEGORY_GROUP_COUNT_QUERY = {
-  ActualQLquery: { table: "category_groups", calculate: { $count: "$id" } },
-} as const satisfies ScalarCountQuery;
-
 export const CATEGORY_COUNT_QUERY = {
   ActualQLquery: { table: "categories", calculate: { $count: "$id" } },
 } as const satisfies ScalarCountQuery;
@@ -70,13 +67,22 @@ export const COUNT_QUERIES = {
   transactions: TRANSACTION_COUNT_QUERY,
   accounts: ACCOUNT_COUNT_QUERY,
   payees: PAYEE_COUNT_QUERY,
-  categoryGroups: CATEGORY_GROUP_COUNT_QUERY,
   categories: CATEGORY_COUNT_QUERY,
   rules: RULE_COUNT_QUERY,
   schedules: SCHEDULE_COUNT_QUERY,
 } as const;
 
 const COUNT_QUERY_KEYS = Object.keys(COUNT_QUERIES) as OverviewCountKey[];
+
+/** The parts of a headline count worth naming beside it. Cheap filtered counts, read with the rest. */
+export const DETAIL_QUERIES = {
+  closedAccounts: { ActualQLquery: { table: "accounts", filter: { closed: true }, calculate: { $count: "$id" } } },
+  transferPayees: { ActualQLquery: { table: "payees", filter: { transfer_acct: { $ne: null } }, calculate: { $count: "$id" } } },
+  hiddenCategories: { ActualQLquery: { table: "categories", filter: { hidden: true }, calculate: { $count: "$id" } } },
+  completedSchedules: { ActualQLquery: { table: "schedules", filter: { completed: true }, calculate: { $count: "$id" } } },
+} as const satisfies Record<OverviewDetailKey, ScalarCountQuery>;
+
+const DETAIL_QUERY_KEYS = Object.keys(DETAIL_QUERIES) as OverviewDetailKey[];
 
 async function runScalarCountQuery(
   connection: ConnectionInstance,
@@ -122,9 +128,11 @@ function formatBudgetingSince(dateString: string): string {
 
 async function fetchOverviewCountWithRetry(
   connection: ConnectionInstance,
-  statKey: OverviewCountKey
+  statKey: OverviewCountKey | OverviewDetailKey
 ): Promise<number | null> {
-  const query = COUNT_QUERIES[statKey];
+  const query: ScalarCountQuery = statKey in COUNT_QUERIES
+    ? COUNT_QUERIES[statKey as OverviewCountKey]
+    : DETAIL_QUERIES[statKey as OverviewDetailKey];
 
   for (let attempt = 1; attempt <= OVERVIEW_QUERY_MAX_ATTEMPTS; attempt += 1) {
     try {
@@ -146,7 +154,7 @@ async function fetchBudgetModeWithRetry(
   for (let attempt = 1; attempt <= OVERVIEW_QUERY_MAX_ATTEMPTS; attempt += 1) {
     try {
       // Detected from the `budgetType` preference (see fetchBudgetPreferences),
-      // not from budget-table row counts — correct even for empty budgets.
+      // not from budget-table row counts - correct even for empty budgets.
       const { budgetMode } = await fetchBudgetPreferences(connection);
       return budgetMode === "tracking" ? "Tracking" : "Envelope";
     } catch (error) {
@@ -198,12 +206,15 @@ export async function fetchEntityCount(
 export async function fetchAllOverviewStats(
   connection: ConnectionInstance
 ): Promise<BudgetOverviewSnapshot> {
-  const [entries, budgetMode, budgetingSince] = await Promise.all([
+  const [entries, detailEntries, budgetMode, budgetingSince] = await Promise.all([
     Promise.all(
       COUNT_QUERY_KEYS.map(async (statKey) => {
         const value = await fetchOverviewCountWithRetry(connection, statKey);
         return [statKey, value] as const;
       })
+    ),
+    Promise.all(
+      DETAIL_QUERY_KEYS.map(async (key) => [key, await fetchOverviewCountWithRetry(connection, key)] as const)
     ),
     fetchBudgetModeWithRetry(connection),
     fetchBudgetingSinceWithRetry(connection),
@@ -211,6 +222,7 @@ export async function fetchAllOverviewStats(
 
   return {
     stats: Object.fromEntries(entries) as Record<OverviewStatKey, number | null>,
+    details: Object.fromEntries(detailEntries) as BudgetOverviewDetails,
     budgetMode,
     budgetingSince,
   };

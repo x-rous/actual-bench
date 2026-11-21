@@ -73,4 +73,13 @@ export interface DestinationAdapter {
   facts(): Promise<DestinationFacts>;
   /** Write, read back, compare, delete — the only honest way to test a destination. */
   test(): Promise<DestinationTestResult>;
+  /** The object as a stream, when the destination can provide one without buffering. */
+  getStream?(key: string): Promise<{ stream: ReadableStream<Uint8Array>; sizeBytes: number }>;
+  /**
+   * Confirm the place being written to is this destination (local folders:
+   * a volume can come unmounted and leave an empty directory behind).
+   */
+  confirmIdentity?(input: { expectCopies: boolean; sampleKey: string | null }): Promise<void>;
+  /** Remove temp files an interrupted write left behind. */
+  sweepPartials?(): Promise<number>;
 }

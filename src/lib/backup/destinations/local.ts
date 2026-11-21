@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { constants } from "node:fs";
-import { access, mkdir, readFile, readdir, rm, stat, statfs, writeFile } from "node:fs/promises";
+import { access, mkdir, open, readFile, readdir, rename, rm, stat, statfs, writeFile } from "node:fs/promises";
+import { Readable } from "node:stream";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { resolveAppDbPath } from "@/lib/app-db/connection";
 import type { BackupDestination } from "@/lib/app-db/backupRepository";
@@ -37,6 +38,19 @@ import {
 export type LocalDestinationConfig = {
   path: string;
 };
+
+/**
+ * The file that says "this folder is that destination".
+ *
+ * A bind mount that has gone away leaves an empty directory at the same path,
+ * and an empty directory is writable: backups landed in the container's own
+ * layer and looked fine, while the weekly check marked every real copy
+ * missing. The marker turns that into a refusal that names the likely cause.
+ */
+export const DESTINATION_MARKER = ".bench-destination.json";
+
+/** Leftover temp files older than this are swept; a live write never takes a day. */
+const PARTIAL_MAX_AGE_MS = 24 * 3_600_000;
 
 /** Refuse traversal: a key must stay inside the destination root. */
 function resolveKey(root: string, key: string): string {
@@ -195,32 +209,126 @@ export class LocalDestinationAdapter implements DestinationAdapter {
   readonly destinationId: string;
   readonly name: string;
   private readonly root: string;
+  private readonly signal: AbortSignal | undefined;
 
-  constructor(destination: BackupDestination) {
+  constructor(destination: BackupDestination, options: { signal?: AbortSignal } = {}) {
     this.destinationId = destination.id;
     this.name = destination.name;
     this.root = readLocalConfig(destination).path;
+    this.signal = options.signal;
   }
 
   async put(key: string, bytes: Uint8Array): Promise<StoredObject> {
+    this.signal?.throwIfAborted();
     const target = resolveKey(this.root, key);
-    await mkdir(dirname(target), { recursive: true });
+    // The first folder this created, if any: its parent must be synced too,
+    // or a crash can lose the new folder and the copy inside it.
+    const created = await mkdir(dirname(target), { recursive: true });
     // Write to a sibling temp file and rename: a half-written backup that looks
     // complete is the one failure mode this whole feature exists to prevent.
     const temp = `${target}.${randomBytes(6).toString("hex")}.partial`;
     try {
-      await writeFile(temp, bytes);
-      const { rename } = await import("node:fs/promises");
+      const handle = await open(temp, "w");
+      try {
+        await handle.writeFile(bytes, { signal: this.signal });
+        // Flushed before the rename, not after: without it a power cut can
+        // leave the renamed name pointing at an empty or short file, and the
+        // manifest beside it would still say the copy verified.
+        await handle.sync();
+      } finally {
+        await handle.close();
+      }
       await rename(temp, target);
+      for (const directory of directoriesToSync(dirname(target), created)) await syncDirectory(directory);
     } catch (error) {
       await rm(temp, { force: true }).catch(() => {});
       throw new DestinationError(
         `Could not write ${key}: ${error instanceof Error ? error.message : String(error)}`,
-        { cause: error, retryable: true }
+        { cause: error, retryable: !this.signal?.aborted }
       );
     }
     const info = await stat(target);
     return { key, sizeBytes: info.size, lastModified: info.mtime.toISOString() };
+  }
+
+  /** A stream of the object, for handing a copy back without holding it in memory. */
+  async getStream(key: string): Promise<{ stream: ReadableStream<Uint8Array>; sizeBytes: number }> {
+    const path = resolveKey(this.root, key);
+    // Opened here, before returning: a copy that cannot be opened then fails
+    // this call, and the caller can try another copy before it has started
+    // answering with this one.
+    let handle;
+    let info;
+    try {
+      handle = await open(path, "r");
+      info = await handle.stat();
+    } catch (error) {
+      await handle?.close().catch(() => {});
+      throw new DestinationError(
+        `Could not read ${key}: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
+      );
+    }
+    // The stream closes the handle when it ends or fails.
+    const stream = Readable.toWeb(handle.createReadStream({ autoClose: true })) as ReadableStream<Uint8Array>;
+    return { stream, sizeBytes: info.size };
+  }
+
+  /**
+   * Confirm this folder is the destination Bench has been writing to.
+   *
+   * The marker names the destination. When it is missing (or names another
+   * destination) and Bench expects copies here, one recorded copy is looked
+   * for: if it is there the volume is plainly mounted - an install from before
+   * the marker existed - and the marker is written; if not, nothing is
+   * written and the caller is told the volume looks unmounted. An empty
+   * destination simply gets its marker.
+   */
+  async confirmIdentity(input: { expectCopies: boolean; sampleKey: string | null }): Promise<void> {
+    const markerPath = join(this.root, DESTINATION_MARKER);
+    const marker = await readFile(markerPath, "utf8")
+      .then((text) => JSON.parse(text) as { destinationId?: unknown })
+      .catch(() => null);
+    if (marker?.destinationId === this.destinationId) return;
+
+    if (input.expectCopies) {
+      const sample = input.sampleKey ? await this.head(input.sampleKey) : null;
+      if (!sample) {
+        throw new DestinationError(
+          `${this.root} does not look like the folder Bench has been writing to: its marker file and its copies are missing. If this is a mounted volume, check that it is mounted, then try again.`,
+          { retryable: true }
+        );
+      }
+    }
+
+    await mkdir(this.root, { recursive: true });
+    await writeFile(
+      markerPath,
+      JSON.stringify({ destinationId: this.destinationId, name: this.name, writtenAt: new Date().toISOString() }, null, 2)
+    );
+  }
+
+  /** Remove temp files a stopped write left behind. Best effort. */
+  async sweepPartials(now = Date.now()): Promise<number> {
+    let removed = 0;
+    const walk = async (dir: string): Promise<void> => {
+      const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+      for (const entry of entries) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          await walk(full);
+          continue;
+        }
+        if (!entry.name.endsWith(".partial")) continue;
+        const info = await stat(full).catch(() => null);
+        if (info && now - info.mtimeMs > PARTIAL_MAX_AGE_MS) {
+          await rm(full, { force: true }).catch(() => {});
+          removed += 1;
+        }
+      }
+    };
+    await walk(this.root);
+    return removed;
   }
 
   async get(key: string): Promise<Buffer> {
@@ -255,6 +363,7 @@ export class LocalDestinationAdapter implements DestinationAdapter {
           continue;
         }
         if (!entry.isFile()) continue;
+        if (entry.name === DESTINATION_MARKER || entry.name.endsWith(".partial")) continue;
         const key = relative(this.root, full).split(sep).join("/");
         if (prefix && !key.startsWith(prefix)) continue;
         const info = await stat(full).catch(() => null);
@@ -310,5 +419,46 @@ export class LocalDestinationAdapter implements DestinationAdapter {
     }
 
     return { ok: !checks.some((check) => check.status === "fail"), checks, facts };
+  }
+}
+
+/**
+ * The folders whose entries a write changed: the file's own folder, and the
+ * parent of every folder `mkdir` created on the way to it.
+ */
+function directoriesToSync(fileDirectory: string, firstCreated: string | undefined): string[] {
+  const directories = [fileDirectory];
+  if (!firstCreated) return directories;
+  const stop = dirname(firstCreated);
+  let current = fileDirectory;
+  while (current !== stop && dirname(current) !== current) {
+    current = dirname(current);
+    directories.push(current);
+  }
+  return directories;
+}
+
+/** What a platform answers when it does not support fsync on a directory. */
+const DIRECTORY_SYNC_UNSUPPORTED = new Set(["EINVAL", "ENOTSUP", "EOPNOTSUPP", "EPERM", "EISDIR", "EBADF"]);
+
+/**
+ * fsync a directory so a rename into it survives a crash. A platform that
+ * does not support it is tolerated; a real I/O error is not, because the
+ * write could not be confirmed durable.
+ */
+async function syncDirectory(path: string): Promise<void> {
+  const handle = await open(path, "r").catch((error: NodeJS.ErrnoException) => {
+    // Windows cannot open a folder for reading.
+    if (error.code && (DIRECTORY_SYNC_UNSUPPORTED.has(error.code) || error.code === "EACCES")) return null;
+    throw error;
+  });
+  if (!handle) return;
+  try {
+    await handle.sync();
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (!code || !DIRECTORY_SYNC_UNSUPPORTED.has(code)) throw error;
+  } finally {
+    await handle.close();
   }
 }

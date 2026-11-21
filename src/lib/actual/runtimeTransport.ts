@@ -1462,7 +1462,11 @@ export function createActualRuntimeTransport(
           ? Math.round(input.initialBalance * 100)
           : undefined
       );
-      if (input.closed) await api.closeAccount(id);
+      // Closed through the plain flag, as in updateAccount: Actual's
+      // closeAccount refuses a balance without a transfer account, so a new
+      // account with a starting balance would be created and then reported
+      // as failed (and created again on retry).
+      if (input.closed) await api.updateAccount(id, { closed: true });
       return { id, ...input };
     },
     updateAccount: async (id, patch) => {
@@ -1471,9 +1475,15 @@ export function createActualRuntimeTransport(
       if (patch.name !== undefined) fields.name = patch.name;
       if (patch.offBudget !== undefined) fields.offbudget = patch.offBudget;
       if (patch.groupId !== undefined) fields.account_group_id = patch.groupId;
+      // The plain flag, as actual-http-api's PATCH uses. Actual's closeAccount
+      // deletes an account that has no transactions and refuses one with a
+      // balance; moving a balance on close goes through closeAccount below.
+      if (patch.closed !== undefined) fields.closed = patch.closed;
       if (Object.keys(fields).length > 0) await api.updateAccount(id, fields);
-      if (patch.closed === true) await api.closeAccount(id);
-      if (patch.closed === false) await api.reopenAccount(id);
+    },
+    closeAccount: async (id, transfer) => {
+      const api = await host.getRuntime(connection);
+      await api.closeAccount(id, transfer.transferAccountId, transfer.transferCategoryId ?? undefined);
     },
     deleteAccount: async (id) => {
       const api = await host.getRuntime(connection);
@@ -1523,9 +1533,9 @@ export function createActualRuntimeTransport(
       if (patch.hidden !== undefined) fields.hidden = patch.hidden;
       await api.updateCategoryGroup(id, fields);
     },
-    deleteCategoryGroup: async (id) => {
+    deleteCategoryGroup: async (id, transferCategoryId) => {
       const api = await host.getRuntime(connection);
-      await api.deleteCategoryGroup(id);
+      await api.deleteCategoryGroup(id, transferCategoryId ?? undefined);
     },
     createCategory: async (input) => {
       const api = await host.getRuntime(connection);
@@ -1541,11 +1551,12 @@ export function createActualRuntimeTransport(
       const fields: Partial<ApiCategory> = {};
       if (patch.name !== undefined) fields.name = patch.name;
       if (patch.hidden !== undefined) fields.hidden = patch.hidden;
+      if (patch.groupId !== undefined) fields.group_id = patch.groupId;
       await api.updateCategory(id, fields);
     },
-    deleteCategory: async (id) => {
+    deleteCategory: async (id, transferCategoryId) => {
       const api = await host.getRuntime(connection);
-      await api.deleteCategory(id);
+      await api.deleteCategory(id, transferCategoryId ?? undefined);
     },
 
     getTags: async () => {

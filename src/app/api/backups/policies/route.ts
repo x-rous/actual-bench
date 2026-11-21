@@ -37,6 +37,9 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+    if (passphrase !== null && passphrase.length < 8) {
+      return NextResponse.json({ error: "Use a passphrase of at least 8 characters." }, { status: 400 });
+    }
     const db = getAppDb();
     // Bench will not store a passphrase it cannot encrypt.
     if (passphrase) requireReadyVault(db);

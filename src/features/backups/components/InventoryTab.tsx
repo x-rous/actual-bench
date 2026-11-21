@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { FileText, Loader2, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -24,7 +25,7 @@ import { SearchInput } from "@/components/ui/search-input";
  * them to work out which of the two tabs to start on.
  */
 
-export type StateFilter = "all" | "verified" | "unverified" | "problem";
+export type StateFilter = "all" | "verified" | "unverified" | "review" | "problem";
 export type KindFilter = "all" | "budget" | "app-db";
 
 type Props = {
@@ -51,7 +52,16 @@ type Props = {
   onClearFilters: () => void;
   onOpenArtifact: (artifactId: string) => void;
   onGoToSetup: () => void;
+  /** Ticked rows, for a bulk action. */
+  checked: Set<string>;
+  onCheckedChange: (next: Set<string>) => void;
+  onBulkPin: (ids: string[], pinned: boolean) => void;
+  onBulkDelete: (ids: string[]) => void;
+  bulkPending: boolean;
 };
+
+/** Rows shown at a time; more on request. */
+const PAGE_SIZE = 200;
 
 export function InventoryTab({
   data,
@@ -77,7 +87,20 @@ export function InventoryTab({
   onClearFilters,
   onOpenArtifact,
   onGoToSetup,
+  checked,
+  onCheckedChange,
+  onBulkPin,
+  onBulkDelete,
+  bulkPending,
 }: Props) {
+  // Every copy is loaded; the table shows them a page at a time so a long
+  // history stays quick to render, with the count saying how many there are.
+  const [visible, setVisible] = useState(PAGE_SIZE);
+  const shown = filtered.slice(0, visible);
+  // Only ticked rows that are still in the filtered set count, so a bulk
+  // action never reaches a copy the user can no longer see.
+  const filteredIds = new Set(filtered.map((artifact) => artifact.id));
+  const selectedIds = [...checked].filter((id) => filteredIds.has(id));
   const budgets = budgetsInArtifacts(artifacts);
   const filtering =
     search.trim() !== "" ||
@@ -178,7 +201,8 @@ export function InventoryTab({
                 { value: "all", label: "Any state" },
                 { value: "verified", label: "Verified" },
                 { value: "unverified", label: "Not checked" },
-                { value: "problem", label: "Damaged or missing" },
+                { value: "review", label: "Needs review" },
+                { value: "problem", label: "Any problem" },
               ]}
             />
 
@@ -252,7 +276,7 @@ export function InventoryTab({
               className="h-6 text-xs"
               onClick={onVerify}
               disabled={verifying || artifacts.length === 0}
-              title="Re-read the newest copies in every destination: are they present, the right size, and still readable?"
+              title="Open the newest copy of each rule to confirm it is still readable, and checksum the copies checked longest ago, in every destination"
             >
               {verifying ? (
                 <Loader2 className="animate-spin" aria-hidden />
@@ -273,19 +297,89 @@ export function InventoryTab({
             </Button>
           </div>
 
+          {selectedIds.length > 0 && (
+            <div
+              className="flex flex-wrap items-center gap-2 border-b border-border bg-muted/40 px-4 py-1.5 text-xs"
+              role="region"
+              aria-label="Bulk actions"
+            >
+              <span className="font-medium">
+                {selectedIds.length} of {filtered.length} {filtered.length === 1 ? "copy" : "copies"} selected
+              </span>
+              <Button size="sm" variant="outline" className="h-6 text-xs" disabled={bulkPending} onClick={() => onBulkPin(selectedIds, true)}>
+                Pin
+              </Button>
+              <Button size="sm" variant="outline" className="h-6 text-xs" disabled={bulkPending} onClick={() => onBulkPin(selectedIds, false)}>
+                Unpin
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-6 text-xs text-destructive"
+                disabled={bulkPending}
+                onClick={() => onBulkDelete(selectedIds)}
+              >
+                Delete…
+              </Button>
+              <button
+                type="button"
+                className="text-muted-foreground underline-offset-4 hover:underline"
+                onClick={() => onCheckedChange(new Set())}
+              >
+                Clear selection
+              </button>
+              {bulkPending && <Loader2 className="size-3.5 animate-spin text-muted-foreground" aria-label="Working" />}
+            </div>
+          )}
+
           {filtered.length === 0 ? (
-            <p className="px-4 py-10 text-center text-sm text-muted-foreground">
-              No copy matches those filters.
-            </p>
+            <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+              <p>No results match your filters.</p>
+              <button type="button" className="mt-1 underline-offset-4 hover:underline" onClick={onClearFilters}>
+                Clear filters
+              </button>
+            </div>
           ) : (
+          <>
           <BackupsTable
-            artifacts={filtered}
+            artifacts={shown}
             policies={data.policies}
             selectedId={selectedArtifactId}
             sort={sort}
             onSort={onSort}
             onOpen={onOpenArtifact}
+            checked={checked}
+            onCheck={(id, value) => {
+              const next = new Set(checked);
+              if (value) next.add(id);
+              else next.delete(id);
+              onCheckedChange(next);
+            }}
+            onCheckAll={(value) => {
+              const next = new Set(checked);
+              for (const artifact of shown) {
+                if (value) next.add(artifact.id);
+                else next.delete(artifact.id);
+              }
+              onCheckedChange(next);
+            }}
           />
+          <div className="flex items-center gap-3 border-t border-border px-4 py-1.5 text-xs text-muted-foreground">
+            <span>
+              Showing {shown.length} of {filtered.length}
+              {filtered.length !== artifacts.length ? ` matching (${artifacts.length} in total)` : ""}
+            </span>
+            {shown.length < filtered.length && (
+              <button
+                type="button"
+                className="text-foreground underline-offset-4 hover:underline"
+                onClick={() => setVisible((current) => current + PAGE_SIZE)}
+              >
+                Show {Math.min(PAGE_SIZE, filtered.length - shown.length)} more
+              </button>
+            )}
+          </div>
+          </>
           )}
         </>
       )}

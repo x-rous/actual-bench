@@ -2,9 +2,12 @@ import {
   listBackupArtifacts,
   listBackupDestinations,
   listBackupPolicies,
-  listArtifactLocations,
+  listLocationsByArtifact,
   type BackupArtifact,
 } from "@/lib/app-db/backupRepository";
+import { listSyncCredentialMeta } from "@/lib/credentials/unattendedCredentials";
+import { plausibilityOf } from "./verificationRecord";
+import { ruleBudgetId } from "./ruleBudget";
 import { nextCronRun } from "@/lib/automation/schedule";
 import type { BackupPolicy } from "@/lib/app-db/backupRepository";
 import type { SqliteDatabase } from "@/lib/app-db/types";
@@ -25,11 +28,28 @@ import type { SqliteDatabase } from "@/lib/app-db/types";
 
 export type ReadinessStatus = "protected" | "at-risk" | "unprotected";
 
+/** One rule's answer to "what would I get back, and how old would it be?". */
+export type RuleReadiness = {
+  policyId: string;
+  name: string;
+  /** What this rule's readiness is judged on: its budget, or Bench's settings for a settings-only rule. */
+  subject: "budget" | "app-db";
+  status: ReadinessStatus;
+  enabled: boolean;
+  manual: boolean;
+  budgetName: string | null;
+  newestVerifiedAt: string | null;
+  ageHours: number | null;
+  /** The rule's problems, worst first; empty when it is protected. */
+  issues: string[];
+};
+
 export type BackupReadiness = {
   status: ReadinessStatus;
   /** The headline sentence. Written to be read on its own. */
   headline: string;
   detail: string;
+  /** The newest verified copy of the rule that is worst off (the one the headline is about). */
   newestVerified: {
     artifactId: string;
     createdAt: string;
@@ -41,6 +61,12 @@ export type BackupReadiness = {
   /** More than one destination holding at least one copy. */
   redundant: boolean;
   issues: string[];
+  /**
+   * Each rule on its own. A readiness worked out across everything let one
+   * healthy rule - or a fresh copy of Bench's own settings - say "protected"
+   * while another budget had not been backed up for weeks.
+   */
+  rules: RuleReadiness[];
 };
 
 function hoursSince(iso: string, now: Date): number {
@@ -56,6 +82,8 @@ function hoursSince(iso: string, now: Date): number {
  * reading, which is the only way this page can truly fail.
  */
 function periodHours(policy: BackupPolicy, now: Date): number | null {
+  // A manual rule runs when someone presses the button; it is never late.
+  if (policy.scheduleKind === "manual") return null;
   if (policy.scheduleKind === "interval") {
     return policy.intervalMinutes ? policy.intervalMinutes / 60 : null;
   }
@@ -100,28 +128,52 @@ function describeAge(hours: number): string {
 export function buildBackupReadiness(db: SqliteDatabase, now: Date = new Date()): BackupReadiness {
   const policies = listBackupPolicies(db);
   const destinations = listBackupDestinations(db);
-  const artifacts = listBackupArtifacts(db, { limit: 500 });
+  // Two queries for the whole inventory, not two per artifact.
+  const artifacts = listBackupArtifacts(db, { limit: "all" });
+  const locations = listLocationsByArtifact(db);
   const issues: string[] = [];
 
-  const stored = artifacts.filter((artifact) =>
-    listArtifactLocations(db, artifact.id).some((location) => location.status === "stored")
-  );
-  const verified = stored.filter((artifact) => artifact.verificationStatus === "passed");
-  const newest = verified[0] ?? null;
+  const isStored = (artifact: BackupArtifact) =>
+    (locations.get(artifact.id) ?? []).some((location) => location.status === "stored");
+  const stored = artifacts.filter(isStored);
 
   const destinationsHoldingCopies = new Set(
     stored.flatMap((artifact) =>
-      listArtifactLocations(db, artifact.id)
+      (locations.get(artifact.id) ?? [])
         .filter((location) => location.status === "stored" && location.destinationId)
         .map((location) => location.destinationId as string)
     )
   );
 
+  const enrolled = listSyncCredentialMeta(db);
+  const budgetIds = new Map(policies.map((policy) => [policy.id, ruleBudgetId(db, policy, enrolled)]));
+  // A rule's copies are the ones of its own budget: a copy of another budget
+  // attached to it must not make it look protected.
+  const belongsTo = (artifact: BackupArtifact, policyId: string) => {
+    if (artifact.policyId !== policyId) return false;
+    const budgetId = budgetIds.get(policyId);
+    return artifact.kind !== "budget" || !budgetId || !artifact.sourceBudgetId || artifact.sourceBudgetId === budgetId;
+  };
+  const rules = policies.map((policy) =>
+    ruleReadiness(policy, stored.filter((artifact) => belongsTo(artifact, policy.id)), now)
+  );
+  const active = rules.filter((rule) => rule.enabled);
+  const worst = worstRule(active.length > 0 ? active : rules);
+  const worstArtifact = worst
+    ? (stored.find(
+        (artifact) =>
+          belongsTo(artifact, worst.policyId) &&
+          artifact.kind === worst.subject &&
+          artifact.verificationStatus === "passed"
+      ) ?? null)
+    : null;
+
   const base = {
-    newestVerified: newest ? verifiedSummary(newest, now) : null,
+    newestVerified: worstArtifact ? verifiedSummary(worstArtifact, now) : null,
     totalCopies: stored.length,
     destinationCount: destinationsHoldingCopies.size,
     redundant: destinationsHoldingCopies.size > 1,
+    rules,
   };
 
   if (policies.length === 0 || destinations.length === 0) {
@@ -147,16 +199,6 @@ export function buildBackupReadiness(db: SqliteDatabase, now: Date = new Date())
     };
   }
 
-  // Anything Bench cannot prove counts against readiness.
-  const failedVerification = stored.filter((artifact) => artifact.verificationStatus === "failed");
-  if (failedVerification.length > 0) {
-    issues.push(
-      `${failedVerification.length} stored ${
-        failedVerification.length === 1 ? "copy" : "copies"
-      } failed verification and should not be relied on.`
-    );
-  }
-
   const brokenDestinations = destinations.filter(
     (destination) =>
       destination.enabled &&
@@ -171,39 +213,25 @@ export function buildBackupReadiness(db: SqliteDatabase, now: Date = new Date())
     issues.push("Every copy is in one destination. Losing it loses all of them.");
   }
 
-  const disabledPolicies = policies.filter((policy) => !policy.enabled);
-  if (disabledPolicies.length === policies.length) {
+  if (active.length === 0) {
     issues.push("Every backup rule is paused, so no new copies are being taken.");
   }
 
-  if (!newest) {
-    return {
-      ...base,
-      status: "at-risk",
-      headline: "There are copies, but none Bench has been able to read.",
-      detail:
-        "A stored copy that has never verified might restore and might not. Run “Verify now” to find out which.",
-      issues,
-    };
-  }
+  // A single rule's problems are listed here; with several, each rule's row
+  // carries its own, so the list keeps to what affects them all.
+  if (rules.length === 1) issues.push(...rules[0].issues);
 
-  const ageHours = hoursSince(newest.createdAt, now);
-  const threshold = stalenessThresholdHours(policies, now);
-  const stale = ageHours > threshold;
-  if (stale) {
-    issues.push(
-      `The newest verified copy is ${describeAge(ageHours)}, which is more than this schedule should allow.`
-    );
-  }
-
-  const atRisk = stale || failedVerification.length > 0 || brokenDestinations.length > 0;
+  const status: ReadinessStatus =
+    worst?.status === "unprotected"
+      ? "unprotected"
+      : worst?.status === "at-risk" || brokenDestinations.length > 0 || active.length === 0
+        ? "at-risk"
+        : "protected";
 
   return {
     ...base,
-    status: atRisk ? "at-risk" : "protected",
-    headline: atRisk
-      ? `Your last verified backup is from ${describeAge(ageHours)}, and something needs attention.`
-      : `You could restore a verified backup from ${describeAge(ageHours)}.`,
+    status,
+    headline: headlineFor(status, rules.length, worst, active.length),
     detail: `${base.totalCopies} stored ${base.totalCopies === 1 ? "copy" : "copies"} across ${
       base.destinationCount
     } destination${base.destinationCount === 1 ? "" : "s"}${
@@ -211,6 +239,103 @@ export function buildBackupReadiness(db: SqliteDatabase, now: Date = new Date())
     }`,
     issues,
   };
+}
+
+const RANK: Record<ReadinessStatus, number> = { unprotected: 2, "at-risk": 1, protected: 0 };
+
+function worstRule(rules: RuleReadiness[]): RuleReadiness | null {
+  let worst: RuleReadiness | null = null;
+  for (const rule of rules) {
+    if (
+      !worst ||
+      RANK[rule.status] > RANK[worst.status] ||
+      (RANK[rule.status] === RANK[worst.status] && (rule.ageHours ?? Infinity) > (worst.ageHours ?? Infinity))
+    ) {
+      worst = rule;
+    }
+  }
+  return worst;
+}
+
+function headlineFor(
+  status: ReadinessStatus,
+  ruleCount: number,
+  worst: RuleReadiness | null,
+  activeCount: number
+): string {
+  if (!worst) return "Nothing is being backed up.";
+  const subject = ruleCount > 1 ? `“${worst.name}”` : "Your";
+  if (worst.ageHours === null) {
+    return ruleCount > 1
+      ? `${subject} has no verified copy, so its budget cannot be restored with confidence.`
+      : "There are copies, but none Bench has been able to read.";
+  }
+  const age = describeAge(worst.ageHours);
+  if (status === "protected") {
+    return ruleCount > 1
+      ? `Every ${activeCount > 0 && activeCount < ruleCount ? "active " : ""}backup rule has a verified copy; the least recent is “${worst.name}”, from ${age}.`
+      : `You could restore a verified backup from ${age}.`;
+  }
+  if (activeCount === 0) return `Your last verified backup is from ${age}, and every rule is paused.`;
+  return ruleCount > 1
+    ? `${subject} needs attention: its last verified copy is from ${age}.`
+    : `Your last verified backup is from ${age}, and something needs attention.`;
+}
+
+/**
+ * One rule's readiness, judged on the thing it protects: its budget (even
+ * when it also copies Bench's settings), or Bench's settings for a rule that
+ * copies only those.
+ */
+function ruleReadiness(policy: BackupPolicy, stored: BackupArtifact[], now: Date): RuleReadiness {
+  const subject: RuleReadiness["subject"] = policy.contents === "app-db" ? "app-db" : "budget";
+  const mine = stored.filter((artifact) => artifact.policyId === policy.id && artifact.kind === subject);
+  const newest = mine[0] ?? null;
+  const verified = mine.find((artifact) => artifact.verificationStatus === "passed") ?? null;
+  const issues: string[] = [];
+  const base = {
+    policyId: policy.id,
+    name: policy.name,
+    subject,
+    enabled: policy.enabled,
+    manual: policy.scheduleKind === "manual",
+    budgetName: newest?.sourceBudgetName ?? null,
+    newestVerifiedAt: verified?.createdAt ?? null,
+    ageHours: verified ? hoursSince(verified.createdAt, now) : null,
+  };
+
+  if (!policy.enabled) issues.push("This rule is paused.");
+
+  if (!newest) {
+    issues.unshift("No copy has been stored yet.");
+    return { ...base, status: "unprotected", issues };
+  }
+
+  // Only the newest copy's state matters here: an old failure that retention
+  // happens to keep says nothing about whether the rule works today.
+  if (newest.verificationStatus === "failed") {
+    const { unresolved, readable } = plausibilityOf(newest);
+    issues.unshift(
+      unresolved.length > 0 && readable
+        ? "The newest copy is noticeably smaller than the last good one. Review it, and accept the change if you made it."
+        : "The newest copy failed verification and should not be relied on."
+    );
+  }
+
+  if (!verified) {
+    issues.unshift("No copy has been verified, so none can be relied on.");
+    return { ...base, status: "at-risk", issues };
+  }
+
+  const threshold = policy.enabled ? stalenessThresholdHours([policy], now) : null;
+  const manual = policy.scheduleKind === "manual";
+  if (!manual && threshold !== null && base.ageHours !== null && base.ageHours > threshold) {
+    issues.unshift(
+      `The newest verified copy is ${describeAge(base.ageHours)}, which is more than this schedule should allow.`
+    );
+  }
+
+  return { ...base, status: issues.some((issue) => issue !== "This rule is paused.") ? "at-risk" : "protected", issues };
 }
 
 function verifiedSummary(artifact: BackupArtifact, now: Date) {

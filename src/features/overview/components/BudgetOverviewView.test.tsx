@@ -46,7 +46,6 @@ const loadedStats: BudgetOverviewStats = {
   transactions: 17,
   accounts: 12,
   payees: 30,
-  categoryGroups: 4,
   categories: 31,
   rules: 9,
   schedules: 3,
@@ -54,6 +53,7 @@ const loadedStats: BudgetOverviewStats = {
 
 const loadedSnapshot: BudgetOverviewSnapshot = {
   stats: loadedStats,
+  details: { closedAccounts: 2, transferPayees: 12, hiddenCategories: 5, completedSchedules: 1 },
   budgetMode: "Envelope",
   budgetingSince: "Jan 2019",
 };
@@ -112,7 +112,7 @@ describe("BudgetOverviewView", () => {
     expect(screen.getAllByLabelText("Loading snapshot metric")).toHaveLength(8);
   });
 
-  it("shows loading placeholders while a manual refresh is in progress and updates the timestamp on success", async () => {
+  it("keeps the figures, dimmed, while a manual refresh is in progress and updates the timestamp on success", async () => {
     let resolveRefresh: ((value: OverviewRefreshResult) => void) | undefined;
     const refresh = jest.fn(
       () =>
@@ -132,7 +132,9 @@ describe("BudgetOverviewView", () => {
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
 
     expect(screen.getByRole("button", { name: "Refreshing" })).toBeDisabled();
-    expect(screen.getAllByLabelText("Loading snapshot metric")).toHaveLength(8);
+    // The old figures stay readable instead of eight placeholders.
+    expect(screen.queryByLabelText("Loading snapshot metric")).not.toBeInTheDocument();
+    expect(screen.getByText("17")).toBeInTheDocument();
 
     await act(async () => {
       resolveRefresh?.({ ok: true, hasPartialFailure: false });
@@ -175,5 +177,31 @@ describe("BudgetOverviewView", () => {
     await waitFor(() => {
       expect(screen.getByText("Last refreshed 1m ago")).toBeInTheDocument();
     });
+  });
+
+  it("names what the counts include, and marks a figure that could not be read instead of showing it as loading", () => {
+    mockUseBudgetOverview.mockReturnValue(
+      buildHookResult({ snapshot: { ...loadedSnapshot, stats: { ...loadedStats, payees: null } }, hasPartialFailure: true })
+    );
+
+    render(<BudgetOverviewView />);
+
+    expect(screen.getByText("2 closed")).toBeInTheDocument();
+    expect(screen.getByText("5 hidden")).toBeInTheDocument();
+    expect(screen.getByText("3 from schedules")).toBeInTheDocument();
+    expect(screen.getByText("First transaction")).toBeInTheDocument();
+    expect(screen.getByLabelText("Could not be read. Press Refresh to try again.")).toHaveTextContent("-");
+    expect(screen.getByText(/Some figures could not be read/)).toBeInTheDocument();
+  });
+
+  it("moves the timestamp on when the statistics are read again without the Refresh button", () => {
+    mockUseBudgetOverview.mockReturnValue(buildHookResult({ dataUpdatedAt: Date.now() - 10 * 60_000 }));
+    const { rerender } = render(<BudgetOverviewView />);
+    expect(screen.getByText("Last refreshed 10m ago")).toBeInTheDocument();
+
+    // A Save elsewhere reloads the statistics.
+    mockUseBudgetOverview.mockReturnValue(buildHookResult({ dataUpdatedAt: Date.now() }));
+    rerender(<BudgetOverviewView />);
+    expect(screen.getByText("Updated just now")).toBeInTheDocument();
   });
 });

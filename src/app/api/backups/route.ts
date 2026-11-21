@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { getAppDb } from "@/lib/app-db/connection";
 import { appDbErrorResponse } from "@/lib/app-db/routeResponses";
 import {
-  listArtifactLocations,
   listBackupArtifacts,
+  listLocationsByArtifact,
   listBackupDestinations,
   listBackupPolicies,
 } from "@/lib/app-db/backupRepository";
@@ -64,18 +64,34 @@ export async function GET() {
           ] as const;
         })
     );
-    const artifacts = listBackupArtifacts(db, { limit: 200 }).map((artifact) => ({
+    // Every copy, not the newest 200: the oldest ones are the monthly and
+    // yearly history, and an inventory that cannot show them hides exactly
+    // the copies someone goes looking for. Locations come in one query.
+    const destinationNames = new Map(destinations.map((destination) => [destination.id, destination.name]));
+    const locationsByArtifact = listLocationsByArtifact(db);
+    const artifacts = listBackupArtifacts(db, { limit: "all" }).map((artifact) => ({
       ...artifact,
-      locations: listArtifactLocations(db, artifact.id).map((location) => ({
+      locations: (locationsByArtifact.get(artifact.id) ?? []).map((location) => ({
         ...location,
-        destinationName:
-          destinations.find((destination) => destination.id === location.destinationId)?.name ?? null,
+        destinationName: (location.destinationId && destinationNames.get(location.destinationId)) || null,
       })),
     }));
+    // Which destinations hold copies: their location cannot be changed in
+    // place without stranding those copies.
+    const destinationsWithCopies = new Set(
+      artifacts.flatMap((artifact) =>
+        artifact.locations
+          .filter((location) => location.status === "stored" || location.status === "missing")
+          .map((location) => location.destinationId)
+      )
+    );
 
     return NextResponse.json({
       readiness: buildBackupReadiness(db),
-      destinations,
+      destinations: destinations.map((destination) => ({
+        ...destination,
+        holdsCopies: destinationsWithCopies.has(destination.id),
+      })),
       policies: listBackupPolicies(db).map((policy) => ({
         ...policy,
         automation: automationByPolicy.get(policy.id) ?? null,

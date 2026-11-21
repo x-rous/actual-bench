@@ -48,8 +48,9 @@ type Grouped = Map<string, BackupArtifact[]>;
 function groupKey(artifact: BackupArtifact): string {
   // Grouped by policy *and* kind: a budget and a copy of Bench's own database
   // are different things, and keeping seven of one must not count towards the
-  // other's seven.
-  return `${artifact.policyId ?? "orphan"}::${artifact.kind as BackupArtifactKind}`;
+  // other's seven. And by source budget: copies of two budgets are two
+  // histories, and one must never take the other's daily or monthly slots.
+  return `${artifact.policyId ?? "orphan"}::${artifact.kind as BackupArtifactKind}::${artifact.sourceBudgetId ?? ""}`;
 }
 
 function group(artifacts: BackupArtifact[]): Grouped {
@@ -143,6 +144,9 @@ export function planRetention(
         .map((artifact) => artifact.id)
     );
 
+    // First the refusals, which decide some copies outright; what is left is
+    // what the tiers choose between.
+    const eligible: BackupArtifact[] = [];
     for (const artifact of list) {
       const decide = (reason: string, shouldKeep: boolean) => {
         (shouldKeep ? keep : prune).push({ artifactId: artifact.id, keep: shouldKeep, reason });
@@ -183,22 +187,51 @@ export function planRetention(
         decide("Recovery point past its protection window.", false);
         continue;
       }
+      eligible.push(artifact);
+    }
 
+    // An unverified copy does not take a period's slot while an older copy
+    // in the same period verified and is still waiting for one: that one is
+    // kept instead. Taking the newest regardless let a run of failed copies
+    // fill every slot and push the verified copies out.
+    const verifiedIn = new Map<string, Map<string, string[]>>(
+      TIERS.map((tier) => {
+        const byBucket = new Map<string, string[]>();
+        for (const artifact of eligible) {
+          if (artifact.verificationStatus !== "passed") continue;
+          const bucket = tier.bucket(artifact.createdAt);
+          const dates = byBucket.get(bucket);
+          if (dates) dates.push(artifact.createdAt);
+          else byBucket.set(bucket, [artifact.createdAt]);
+        }
+        return [tier.name, byBucket];
+      })
+    );
+    const olderVerifiedWaiting = (tierName: string, bucket: string, artifact: BackupArtifact) =>
+      artifact.verificationStatus !== "passed" &&
+      (verifiedIn.get(tierName)!.get(bucket) ?? []).some((createdAt) => createdAt < artifact.createdAt);
+
+    for (const artifact of eligible) {
       const matched = TIERS.find((tier) => {
         const limit = tier.limit(retention);
         if (limit <= 0) return false;
         const buckets = filled.get(tier.name)!;
         const bucket = tier.bucket(artifact.createdAt);
         if (buckets.has(bucket)) return false;
+        if (olderVerifiedWaiting(tier.name, bucket, artifact)) return false;
         if (buckets.size >= limit) return false;
         buckets.add(bucket);
         return true;
       });
 
       if (matched) {
-        decide(`Kept as this ${matched.label}'s copy.`, true);
+        keep.push({ artifactId: artifact.id, keep: true, reason: `Kept as this ${matched.label}'s copy.` });
       } else {
-        decide("Superseded by newer copies under the retention rules.", false);
+        prune.push({
+          artifactId: artifact.id,
+          keep: false,
+          reason: "Superseded by newer copies under the retention rules.",
+        });
       }
     }
   }

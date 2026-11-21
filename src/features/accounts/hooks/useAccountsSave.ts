@@ -168,8 +168,24 @@ export function useAccountsSave() {
           const patch: Parameters<typeof transport.updateAccount>[1] = {
             name: a.name,
             offBudget: a.offBudget,
-            closed: a.closed,
           };
+          // Only a change of state is sent. A close that moves the balance goes
+          // through Actual's own close after the other fields are written.
+          const wasClosed = staged[a.id]?.original?.closed ?? false;
+          const transfer = a.closed && !wasClosed ? staged[a.id]?.closeTransfer : null;
+          // Checked before anything is written. A balance moved into an account
+          // that this Save also closes or deletes would land somewhere already
+          // being shut (Actual's close does not refuse a closed target), and the
+          // order of the two closes would decide where the money ends up.
+          if (transfer) {
+            const target = staged[transfer.transferAccountId];
+            if (target && (target.isDeleted || target.entity.closed)) {
+              throw new Error(
+                `The balance is set to move to "${target.entity.name || "an account"}", which this Save also ${target.isDeleted ? "deletes" : "closes"}. Choose another account, or close that one in a later Save.`
+              );
+            }
+          }
+          if (a.closed !== wasClosed && !transfer) patch.closed = a.closed;
           // Only touch the group when it changed, so servers without account
           // groups never see the field.
           const before = staged[a.id]?.original?.groupId ?? null;
@@ -179,7 +195,11 @@ export function useAccountsSave() {
             if (groupId === undefined) throw new Error("Its group could not be created.");
             patch.groupId = groupId;
           }
-          return transport.updateAccount(a.id, patch);
+          await transport.updateAccount(a.id, patch);
+          if (transfer) {
+            const target = idMap[transfer.transferAccountId] ?? transfer.transferAccountId;
+            await transport.closeAccount(a.id, { ...transfer, transferAccountId: target });
+          }
         }
       );
       for (let i = 0; i < accountUpdates.length; i++) {
@@ -375,6 +395,8 @@ export function useAccountsSave() {
       await queryClient.invalidateQueries({ queryKey: ["accounts", connection.id] });
       await queryClient.invalidateQueries({ queryKey: ["accountGroups", connection.id] });
       await queryClient.invalidateQueries({ queryKey: ["transactionCounts", "account", connection.id] });
+      // A close that moves a balance changes two balances; refresh them now rather than at the next poll.
+      if (actualChanged) await queryClient.invalidateQueries({ queryKey: ["accountBalances", connection.budgetSyncId] });
       await queryClient.invalidateQueries({ queryKey: ["budget-overview", connection.id] });
 
       return { succeeded, failed, idMap };

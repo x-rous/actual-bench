@@ -86,7 +86,7 @@ describe("recovery points before risky changes", () => {
     // is the failure mode of every "safety snapshot" that never cleans up.
     setUpPolicy();
 
-    const outcome = await takeSafetyRecoveryPoint(db, { reason: "merging 40 payees" });
+    const outcome = await takeSafetyRecoveryPoint(db, { connectionFingerprint: "conn-1", reason: "merging 40 payees" });
 
     expect(outcome.status).toBe("taken");
     const [artifact] = listBackupArtifacts(db);
@@ -98,15 +98,15 @@ describe("recovery points before risky changes", () => {
 
   it("copies only the budget, so the user is not kept waiting for settings too", async () => {
     setUpPolicy();
-    await takeSafetyRecoveryPoint(db, { reason: "a bulk edit" });
+    await takeSafetyRecoveryPoint(db, { connectionFingerprint: "conn-1", reason: "a bulk edit" });
 
     expect(listBackupArtifacts(db).map((artifact) => artifact.kind)).toEqual(["budget"]);
   });
 
   it("reuses a recent one instead of copying the same budget twice in a session", async () => {
     setUpPolicy();
-    const first = await takeSafetyRecoveryPoint(db, { reason: "first change" });
-    const second = await takeSafetyRecoveryPoint(db, { reason: "second change" });
+    const first = await takeSafetyRecoveryPoint(db, { connectionFingerprint: "conn-1", reason: "first change" });
+    const second = await takeSafetyRecoveryPoint(db, { connectionFingerprint: "conn-1", reason: "second change" });
 
     expect(second.status).toBe("reused");
     expect(second.artifactId).toBe(first.artifactId);
@@ -115,10 +115,10 @@ describe("recovery points before risky changes", () => {
 
   it("takes a fresh one once the debounce window has passed", async () => {
     setUpPolicy();
-    await takeSafetyRecoveryPoint(db, { reason: "first" });
+    await takeSafetyRecoveryPoint(db, { connectionFingerprint: "conn-1", reason: "first" });
 
     const later = new Date(Date.now() + 61 * 60_000);
-    const outcome = await takeSafetyRecoveryPoint(db, { reason: "much later", now: later });
+    const outcome = await takeSafetyRecoveryPoint(db, { connectionFingerprint: "conn-1", reason: "much later", now: later });
 
     expect(outcome.status).toBe("taken");
     expect(listBackupArtifacts(db)).toHaveLength(2);
@@ -127,7 +127,7 @@ describe("recovery points before risky changes", () => {
   it("does nothing when it has not been turned on", async () => {
     setUpPolicy({ safetyPoints: false });
 
-    const outcome = await takeSafetyRecoveryPoint(db, { reason: "a change" });
+    const outcome = await takeSafetyRecoveryPoint(db, { connectionFingerprint: "conn-1", reason: "a change" });
 
     expect(outcome.status).toBe("disabled");
     expect(listBackupArtifacts(db)).toHaveLength(0);
@@ -135,7 +135,7 @@ describe("recovery points before risky changes", () => {
 
   it("says plainly when there is no rule it can use", async () => {
     writeSafetySettings(db, { enabled: true });
-    const outcome = await takeSafetyRecoveryPoint(db, { reason: "a change" });
+    const outcome = await takeSafetyRecoveryPoint(db, { connectionFingerprint: "conn-1", reason: "a change" });
 
     expect(outcome.status).toBe("unavailable");
     expect(outcome.message).toMatch(/no backup rule/i);
@@ -149,7 +149,7 @@ describe("recovery points before risky changes", () => {
       throw new Error("connection refused");
     }) as unknown as typeof fetch;
 
-    const outcome = await takeSafetyRecoveryPoint(db, { reason: "a change" });
+    const outcome = await takeSafetyRecoveryPoint(db, { connectionFingerprint: "conn-1", reason: "a change" });
 
     expect(outcome.status).toBe("failed");
     expect(outcome.message).toMatch(/connection refused/);
@@ -164,5 +164,45 @@ describe("recovery points before risky changes", () => {
 
     writeSafetySettings(db, { enabled: true });
     expect(readSafetySettings(db).enabled).toBe(true);
+  });
+
+  it("backs up the budget being saved, not whichever rule comes first", async () => {
+    // Taking the first enabled rule copied another budget and reported a
+    // recovery point for the one about to change.
+    setUpPolicy();
+    upsertSyncCredential(db, {
+      connectionFingerprint: "conn-2",
+      mode: "http-api",
+      baseUrl: "https://actual.example.com",
+      budgetSyncId: "budget-2",
+      label: "Business",
+      secret: { apiKey: "key", encryptionPassword: "" },
+    });
+    const destination = createBackupDestination(db, {
+      name: "Second volume",
+      kind: "local",
+      config: { version: 1, data: { path: join(root, "volume-2") } },
+    });
+    const second = createBackupPolicy(db, {
+      name: "Business nightly",
+      contents: "budget",
+      destinationIds: [destination.id],
+      sourceRef: { version: 1, data: { connectionFingerprint: "conn-2" } },
+    });
+
+    const outcome = await takeSafetyRecoveryPoint(db, { connectionFingerprint: "conn-2", reason: "a change" });
+
+    expect(outcome.status).toBe("taken");
+    const [artifact] = listBackupArtifacts(db);
+    expect(artifact.policyId).toBe(second.id);
+    expect(artifact.sourceBudgetId).toBe("budget-2");
+  });
+
+  it("takes nothing for a budget no rule covers, and says so", async () => {
+    setUpPolicy();
+    const outcome = await takeSafetyRecoveryPoint(db, { connectionFingerprint: "someone-else", reason: "a change" });
+
+    expect(outcome.status).toBe("unavailable");
+    expect(listBackupArtifacts(db)).toHaveLength(0);
   });
 });

@@ -2,12 +2,16 @@
 
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { Download, Loader2, Pin, PinOff, Search, Trash2 } from "lucide-react";
+import { Check, Download, Loader2, Pin, PinOff, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
+import { plausibilityOf } from "@/lib/backup/plausibility";
+import type { BackupPolicy } from "@/lib/app-db/backupRepository";
 import {
   Sheet,
   SheetContent,
@@ -16,6 +20,8 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import {
+  acceptChange,
+  attachToRule,
   deleteArtifact,
   downloadUrl,
   inspectBackup,
@@ -42,14 +48,20 @@ import type { InspectionResult } from "@/lib/backup/inspect";
 
 export function BackupDetail({
   artifact,
+  policies,
   onClose,
   onChanged,
 }: {
   artifact: ArtifactWithLocations;
+  policies: { id: string; name: string; contents: BackupPolicy["contents"] }[];
   onClose: () => void;
   onChanged: () => void;
 }) {
   const [passphrase, setPassphrase] = useState("");
+  // A copy with no rule: its rule was deleted, or it was found by discovery.
+  const ownerless = !artifact.policyId || !policies.some((policy) => policy.id === artifact.policyId);
+  const candidates = policies.filter((policy) => policy.contents === "both" || policy.contents === artifact.kind);
+  const [ruleChoice, setRuleChoice] = useState("");
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [inspection, setInspection] = useState<InspectionResult | null>(null);
   const state = copyState(artifact);
@@ -61,6 +73,24 @@ export function BackupDetail({
       if (result.opened && result.verification?.status === "passed") toast.success(result.message);
       else if (!result.opened) toast.warning(result.message);
       else toast.error(result.message);
+      onChanged();
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const accept = useMutation({
+    mutationFn: () => acceptChange(artifact.id),
+    onSuccess: () => {
+      toast.success("Accepted. This copy now counts as verified, and the next backup is compared with it.");
+      onChanged();
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const attach = useMutation({
+    mutationFn: (policyId: string) => attachToRule(artifact.id, policyId),
+    onSuccess: () => {
+      toast.success("Attached. The rule's retention now looks after this copy.");
       onChanged();
     },
     onError: (error: Error) => toast.error(error.message),
@@ -87,6 +117,10 @@ export function BackupDetail({
 
   const stored = artifact.locations.filter((location) => location.status === "stored");
   const findings = (artifact.verification?.data.findings ?? []) as string[];
+  const { unresolved } = plausibilityOf(artifact);
+  // A copy that passed can still carry advisory notes (no metadata.json, an
+  // accepted change); they are information, not alarms.
+  const findingsTone = state === "damaged" ? "text-destructive" : state === "review" ? "text-amber-800 dark:text-amber-300" : "text-muted-foreground";
   const contents = (artifact.verification?.data.content ?? {}) as Record<string, number | string>;
 
   return (
@@ -105,7 +139,11 @@ export function BackupDetail({
 
         <div className="space-y-5 px-4 pb-6 text-xs">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant={state === "verified" ? "status-active" : state === "unverified" ? "secondary" : "destructive"}>
+            <Badge
+              variant={
+                state === "verified" ? "status-active" : state === "unverified" || state === "review" ? "secondary" : "destructive"
+              }
+            >
               {COPY_STATE_COPY[state].label}
             </Badge>
             {artifact.encrypted && <Badge variant="secondary">Encrypted</Badge>}
@@ -157,14 +195,63 @@ export function BackupDetail({
 
           {findings.length > 0 && (
             <section className="space-y-1">
-              <h3 className="text-sm font-semibold text-destructive">What Bench found</h3>
+              <h3 className={cn("text-sm font-semibold", findingsTone)}>
+                {state === "damaged" || state === "review" ? "What Bench found" : "Notes"}
+              </h3>
               <ul className="space-y-1">
                 {findings.slice(0, 8).map((finding) => (
-                  <li key={finding} className="text-destructive">
+                  <li key={finding} className={findingsTone}>
                     {finding}
                   </li>
                 ))}
               </ul>
+            </section>
+          )}
+
+          {state === "review" && unresolved.length > 0 && (
+            <section className="space-y-1.5 rounded-md border border-amber-400/40 bg-amber-50 p-2 dark:bg-amber-950/20">
+              <p className="text-[13px] leading-relaxed">
+                Did you delete these yourself? Accepting marks this copy verified and makes it the one
+                the next backup is compared with. If you did not, leave it and check the budget.
+              </p>
+              <Button size="sm" variant="outline" onClick={() => accept.mutate()} disabled={accept.isPending}>
+                {accept.isPending ? <Loader2 className="animate-spin" aria-hidden /> : <Check aria-hidden />}
+                Accept this change
+              </Button>
+            </section>
+          )}
+
+          {ownerless && (
+            <section className="space-y-1.5">
+              <h3 className="text-sm font-semibold">No rule looks after this copy</h3>
+              <p className="text-muted-foreground">
+                Its rule was deleted, or Bench found it in a destination. Retention never removes a copy
+                with no rule; attach it to one and that rule&rsquo;s retention keeps or expires it.
+              </p>
+              {candidates.length === 0 ? (
+                <p className="text-muted-foreground">No rule backs up this kind of copy.</p>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <Select
+                    className="h-7 w-auto"
+                    value={ruleChoice}
+                    onValueChange={setRuleChoice}
+                    aria-label="Rule to attach this copy to"
+                    options={[
+                      { value: "", label: "Choose a rule…" },
+                      ...candidates.map((policy) => ({ value: policy.id, label: policy.name })),
+                    ]}
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!ruleChoice || attach.isPending}
+                    onClick={() => attach.mutate(ruleChoice)}
+                  >
+                    Attach
+                  </Button>
+                </div>
+              )}
             </section>
           )}
 
@@ -277,8 +364,8 @@ export function BackupDetail({
               {artifact.encrypted && (
                 <p>
                   This copy is encrypted. Decrypt it before restoring - it carries its own salt, IV
-                  and tag, so the passphrase is all you need. The recovery sheet documents the
-                  format.
+                  and tag, so the passphrase is all you need: the one its rule had when this copy
+                  was taken. The recovery sheet documents the format.
                 </p>
               )}
             </div>
@@ -288,14 +375,31 @@ export function BackupDetail({
                 wrapped mid-paragraph are unreadable and unselectable. */}
             <div className="space-y-1 pt-1">
               <div className="text-xs text-muted-foreground">
-                SHA-256 of the {artifact.encrypted ? "archive inside" : "file"}
+                SHA-256 of the {artifact.encrypted ? "archive inside, once decrypted" : "file"}
               </div>
-              <code className="block rounded-md bg-muted px-2 py-1.5 font-mono text-[11px] leading-relaxed break-all text-foreground/80">
-                {artifact.plaintextChecksumSha256 ?? artifact.checksumSha256}
-              </code>
+              {/* An encrypted copy found by discovery may not record the
+                  decrypted checksum; the encrypted file's is not shown in its
+                  place, because it would never match. */}
+              {(artifact.encrypted ? artifact.plaintextChecksumSha256 : artifact.checksumSha256) ? (
+                <code className="block rounded-md bg-muted px-2 py-1.5 font-mono text-[11px] leading-relaxed break-all text-foreground/80">
+                  {artifact.encrypted ? artifact.plaintextChecksumSha256 : artifact.checksumSha256}
+                </code>
+              ) : (
+                <p className="text-xs text-muted-foreground">Not recorded for this copy.</p>
+              )}
               <p className="text-xs text-muted-foreground">
-                Compare it with <code className="font-mono">sha256sum</code> on the downloaded file
-                to prove nothing changed on the way here.
+                {artifact.encrypted ? (
+                  <>
+                    Compare it with <code className="font-mono">sha256sum</code> on the file you get
+                    after decrypting; the downloaded <code className="font-mono">.enc</code> file itself
+                    has a different checksum (<code className="font-mono break-all">{artifact.checksumSha256}</code>).
+                  </>
+                ) : (
+                  <>
+                    Compare it with <code className="font-mono">sha256sum</code> on the downloaded file
+                    to prove nothing changed on the way here.
+                  </>
+                )}
               </p>
             </div>
           </section>

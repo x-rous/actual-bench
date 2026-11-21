@@ -6,6 +6,8 @@ import type { OverviewRefreshResult } from "../types";
 type UseOverviewHeaderStateParams = {
   /** When the statistics shown were first read, in milliseconds; null while there are none. */
   loadedAt: number | null;
+  /** Whether the statistics as read are incomplete: a newer read like that does not move the time on. */
+  hasPartialFailure?: boolean;
   refresh: () => Promise<OverviewRefreshResult>;
 };
 
@@ -31,6 +33,7 @@ const ELLIPSIS_FRAMES = [".", "..", "..."] as const;
 
 export function useOverviewHeaderState({
   loadedAt,
+  hasPartialFailure = false,
   refresh,
 }: UseOverviewHeaderStateParams) {
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -40,7 +43,9 @@ export function useOverviewHeaderState({
 
   // The first time the statistics were read is when they were last refreshed, until a refresh here says otherwise. It is taken
   // as the data arrives, from the time the read finished, rather than stamped from an effect afterwards.
-  if (loadedAt !== null && !lastRefreshedAt) {
+  // A later complete read (a reload after a Save or a bundle import, not only the Refresh button) moves it on too; it
+  // used to stay at the first read for as long as the page was open.
+  if (loadedAt !== null && (!lastRefreshedAt || (!hasPartialFailure && loadedAt > lastRefreshedAt.getTime()))) {
     setLastRefreshedAt(new Date(loadedAt));
   }
 
