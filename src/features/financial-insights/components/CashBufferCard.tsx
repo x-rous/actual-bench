@@ -106,7 +106,7 @@ function SpendingBreakdownTip({ groups, spendingMinor, months }: { groups: Ready
 const GOAL_PRESETS = [3, 6, 12];
 
 /** The goal and how a typical month is worked out: each change is saved as it is made and applies to the real buffer and every scenario. */
-function BufferSettingsPopover({ settings, onChange }: { settings: BufferSettings; onChange: (next: BufferSettings) => void }) {
+function BufferSettingsPopover({ settings, onChange, disabled = false }: { settings: BufferSettings; onChange: (next: BufferSettings) => void; /** The saved settings are not read yet. */ disabled?: boolean }) {
   const [goalText, setGoalText] = useState<string | null>(null);
   const commitGoal = () => {
     if (goalText === null) return;
@@ -118,7 +118,7 @@ function BufferSettingsPopover({ settings, onChange }: { settings: BufferSetting
   };
   return (
     <Popover>
-      <PopoverTrigger render={<Button size="icon-sm" variant="outline" aria-label="Goal and how a typical month is worked out" title="Goal and typical month" />}><SlidersHorizontal className="size-3.5" aria-hidden /></PopoverTrigger>
+      <PopoverTrigger disabled={disabled} render={<Button size="icon-sm" variant="outline" aria-label="Goal and how a typical month is worked out" title={disabled ? "Reading your saved settings…" : "Goal and typical month"} />}><SlidersHorizontal className="size-3.5" aria-hidden /></PopoverTrigger>
       <PopoverContent align="end" className="w-80 space-y-3 p-3 text-xs">
         <div>
           <p className="font-medium">Months of cover I aim for</p>
@@ -151,7 +151,7 @@ const savedOn = (iso: string) => formatDay(iso.slice(0, 10));
  */
 export function CashBuffer({ buffer, groups, today, data }: { buffer: Ready["buffer"]; groups: Ready["bufferSpending"]; today: string; /** The page's data: the group colours of the Spending tab, and what lists the transactions behind an amount. */ data?: Ready }) {
   const scenarios = useCashBufferScenarios();
-  const { settings, save: saveSettings } = useCashBufferSettings();
+  const { settings, save: saveSettings, loaded: settingsLoaded } = useCashBufferSettings();
   const [dialog, setDialog] = useState<"new" | "edit" | null>(null);
   const categories = groups?.categories ?? [];
   const canSimulate = buffer.state === "ready" && categories.length > 0;
@@ -171,7 +171,7 @@ export function CashBuffer({ buffer, groups, today, data }: { buffer: Ready["buf
             <Button size="icon-sm" variant="outline" aria-label="New scenario" title="New scenario" onClick={() => setDialog("new")}><Plus className="size-3.5" aria-hidden /></Button>
           </>
         : <Button size="sm" variant="outline" onClick={() => setDialog("new")}><FlaskConical className="size-3.5" aria-hidden />Simulate</Button>)}
-      <BufferSettingsPopover settings={settings} onChange={saveSettings} />
+      <BufferSettingsPopover settings={settings} onChange={saveSettings} disabled={!settingsLoaded} />
     </div>
   );
 

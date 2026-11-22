@@ -33,7 +33,7 @@ describe("the cash buffer settings", () => {
       return new Promise((resolve) => releases.push(() => resolve(json({ settings: next }))));
     }) as jest.Mock;
     const { result } = renderHook(() => useCashBufferSettings(), { wrapper });
-    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    await waitFor(() => expect(result.current.loaded).toBe(true));
 
     act(() => { result.current.save(goal(3)); });
     act(() => { result.current.save(goal(6)); });
@@ -60,11 +60,23 @@ describe("the cash buffer settings", () => {
       return json({ settings: DEFAULT_BUFFER_SETTINGS });
     }) as jest.Mock;
     const { result } = renderHook(() => useCashBufferSettings(), { wrapper });
-    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    await waitFor(() => expect(result.current.loaded).toBe(true));
     act(() => { result.current.save(goal(3)); result.current.save(goal(6)); });
     await waitFor(() => expect(order).toEqual(["3", "6"]));
     await waitFor(() => expect(result.current.saving).toBe(false));
     expect(overlapped).toBe(false);
+  });
+
+  it("writes nothing until the saved settings are read, so the defaults never replace them", async () => {
+    let release: () => void = () => undefined;
+    global.fetch = jest.fn((_url: RequestInfo | URL, init?: RequestInit) => (init?.method === "PUT"
+      ? Promise.resolve(json({ settings: goal(1) }))
+      : new Promise((resolve) => { release = () => resolve(json({ settings: goal(9) })); }))) as jest.Mock;
+    const { result } = renderHook(() => useCashBufferSettings(), { wrapper });
+    act(() => { result.current.save(goal(3)); });
+    expect((global.fetch as jest.Mock).mock.calls.some(([, init]) => init?.method === "PUT")).toBe(false);
+    await act(async () => { release(); });
+    await waitFor(() => expect(result.current.settings.goalMonths).toBe(9));
   });
 
   it("says the settings already loaded stay in use when only a later refresh fails", async () => {

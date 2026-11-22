@@ -77,7 +77,8 @@ export function AccountFormDrawer({ open, onOpenChange, onSubmit, groups, groupC
     // Access and "leave out" apply off budget only. Only a choice that differs from the class default is saved, as in the table.
     const chosenClass = inheritedClass ?? values.accountClass ?? null;
     const access = values.offBudget && classHasAccess(chosenClass) && values.access ? accessFlagChanges(chosenClass, values.access) : { accessible: false, locked: false };
-    const excluded = values.offBudget && !!values.excluded;
+    const groupDecidesNow = !!values.groupId && (!!excludedGroups?.has(values.groupId) || !!inheritedClass);
+    const excluded = values.offBudget && !groupDecidesNow && !!values.excluded;
     const flags = access.accessible || access.locked || excluded ? { excluded, ...access } : undefined;
     const submitted = { ...values, accountClass: inheritedClass ? null : values.accountClass };
     if (flags) onSubmit(submitted, flags); else onSubmit(submitted);
@@ -93,6 +94,9 @@ export function AccountFormDrawer({ open, onOpenChange, onSubmit, groups, groupC
   const access = useWatch({ control, name: "access" });
   const excluded = useWatch({ control, name: "excluded" });
   const classDefault = offBudget ? defaultAccess(effectiveClass, true) : null;
+  // An account takes its group's "left out" when the group is left out, or when it takes its class from the group: its own choice would not apply.
+  const groupExcluded = !!groupId && !!excludedGroups?.has(groupId);
+  const groupDecides = groupExcluded || !!inheritedClass;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -226,8 +230,10 @@ export function AccountFormDrawer({ open, onOpenChange, onSubmit, groups, groupC
 
           {offBudget && (
             <label className="flex items-start gap-2 text-sm">
-              <Checkbox className="mt-0.5" checked={!!excluded} onCheckedChange={(on) => setValue("excluded", on, { shouldDirty: true })} />
-              <span className="flex flex-col"><span>Leave out of reports</span><span className="text-xs text-muted-foreground">Financial Insights and Cashflow leave out its balance, entries and transfers. It then needs no class.</span></span>
+              <Checkbox className="mt-0.5" checked={groupDecides ? !!groupExcluded : !!excluded} disabled={groupDecides} onCheckedChange={(on) => setValue("excluded", on, { shouldDirty: true })} />
+              <span className="flex flex-col"><span>Leave out of reports</span><span className="text-xs text-muted-foreground">{groupDecides
+                ? "The selected group decides this. Change it on the group in Manage Groups."
+                : "Financial Insights and Cashflow leave out its balance, entries and transfers. It then needs no class."}</span></span>
             </label>
           )}
 

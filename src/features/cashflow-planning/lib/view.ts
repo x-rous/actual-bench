@@ -95,7 +95,7 @@ export function buildLines(doc: PlanDocument, computed: Computed, collapsed: Rea
     if (locked) {
       // Split by access: what could be used now, and what is locked (a term deposit, a pension), as the Accounts page sets it.
       lines.push({ kind: "memo", key: "savings", label: "Savings you can use (estimate)", values: all.map((v, i) => v - locked[i]), aggregate: "last", hint: `${hint} Savings accounts marked Available now in Accounts.` });
-      lines.push({ kind: "memo", key: "locked", label: "Locked savings (estimate)", values: locked, aggregate: "last", hint: `${hint} Savings, investments and retirement accounts you cannot use now, and the savings rows that only put money into them.` });
+      lines.push({ kind: "memo", key: "locked", label: "Locked savings (estimate)", values: locked, aggregate: "last", hint: `${hint} Savings, investments and retirement accounts you cannot use now, and the savings rows that follow any of them (a row's forecast cannot be split between accounts, so money you can use is never overstated).` });
     } else {
       lines.push({ kind: "memo", key: "savings", label: "Savings (estimate)", values: all, aggregate: "last", hint });
     }

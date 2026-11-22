@@ -9,7 +9,7 @@ let hook: Record<string, unknown> = {};
 const saveSettings = jest.fn();
 let settings: BufferSettings = { goalMonths: null, averageMonths: 12, method: "average", cashBasis: "cash-savings" };
 jest.mock("../hooks/useCashBufferScenarios", () => ({ useCashBufferScenarios: () => hook }));
-jest.mock("../hooks/useCashBufferSettings", () => ({ useCashBufferSettings: () => ({ settings, save: saveSettings, saving: false }) }));
+jest.mock("../hooks/useCashBufferSettings", () => ({ useCashBufferSettings: () => ({ settings, save: saveSettings, saving: false, loaded: true }) }));
 
 const categories: BufferCategoryRow[] = [
   { id: "rent", name: "Rent", group: "Housing", hidden: false, avgMinor: 200_000 },

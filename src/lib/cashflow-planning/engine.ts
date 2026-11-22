@@ -53,7 +53,7 @@ export type Computed = {
   belowMinimum: boolean[];
   /** Estimated savings balance; null when the plan has no savings accounts and no savings rows. */
   savings: number[] | null;
-  /** The part of `savings` that cannot be used now: locked savings accounts, and the savings rows that put money only into them. Null when there is none. */
+  /** The part of `savings` that cannot be used now: locked savings accounts, and the savings rows that follow any of them. Null when there is none. */
   lockedSavings: number[] | null;
   kpis: {
     /** The cash balance today (the opening balance for a plan that does not use Actual). */
@@ -329,8 +329,9 @@ export function computePlan(doc: PlanDocument, snapshot: Snapshot | null, placed
   if ((live && live.placed.savingsIds.size > 0) || savingsDocRows.length > 0) {
     savings = estimate(live?.placed.savingsChange ?? new Map<Month, number>(), savingsDocRows.map((r) => rows.get(r.id)!));
     const lockedIds = live?.placed.lockedSavingsIds ?? new Set<string>();
-    // A savings row puts money into locked savings when every account it follows is locked savings.
-    const lockedRows = savingsDocRows.filter((r) => r.links.accounts.length > 0 && r.links.accounts.every((l) => lockedIds.has(l.id)));
+    // A savings row counts as locked when any account it follows is locked savings: its forecast cannot be split between the accounts,
+    // and money you can use is never overstated. A row that follows only accounts you can use (or no account) counts as usable.
+    const lockedRows = savingsDocRows.filter((r) => r.links.accounts.some((l) => lockedIds.has(l.id)));
     if (lockedIds.size > 0 || lockedRows.length > 0) lockedSavings = estimate(live?.placed.lockedSavingsChange ?? new Map<Month, number>(), lockedRows.map((r) => rows.get(r.id)!));
   }
 

@@ -43,6 +43,13 @@ describe("effectiveAccountClasses", () => {
   });
 });
 
+describe("effectiveAccountClasses with a narrower pending class", () => {
+  it("applies a pending class that is a narrower kind of the group's, before it is saved", () => {
+    const result = effectiveAccountClasses({ ...staged, a1: { ...staged.a1, pendingAccountClass: "fixed-deposit" } }, [{ id: "g1", name: "Everyday" }], maps);
+    expect(result.get("a1")).toEqual({ accountClass: "fixed-deposit", source: "account" });
+  });
+});
+
 describe("account class icons", () => {
   it("has an icon for every class", () => {
     for (const accountClass of ACCOUNT_CLASSES) expect(ACCOUNT_CLASS_ICONS[accountClass]).toBeDefined();

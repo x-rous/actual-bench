@@ -211,8 +211,9 @@ export function AccountsTable({
   const handleSetFlags = useCallback(
     (accountId: string, edits: AccountFlagEdit[]) => {
       const entry = useStagedStore.getState().accounts[accountId];
-      // A new account has no permanent id yet: its choices wait for the save, like its class.
-      if (entry?.isNew) {
+      // A new account has no permanent id yet: its choices wait for the save, like its class. An account whose flags are still waiting
+      // for a retry keeps collecting edits there, so the retry writes the latest choice, never an older one over a later edit.
+      if (entry?.isNew || entry?.pendingAccountFlags) {
         const next = { ...(entry.pendingAccountFlags ?? NO_FLAGS) };
         for (const e of edits) next[e.flag] = e.on;
         useStagedStore.getState().pushUndo();
@@ -607,7 +608,7 @@ export function AccountsTable({
         ];
       }
       if (edits.length === 0) continue;
-      if (staged[id].isNew) drafts.push({ id, edits });
+      if (staged[id].isNew || staged[id].pendingAccountFlags) drafts.push({ id, edits });
       else savedChanges.push(...edits.map((e) => ({ scope: "account" as const, id, flag: e.flag, on: e.on })));
     }
     if (drafts.length > 0) {

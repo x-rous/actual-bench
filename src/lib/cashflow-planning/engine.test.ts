@@ -470,6 +470,13 @@ describe("savings by access", () => {
     expect(savingsOnBasis("usable", locked.savings, locked.lockedSavings, 5)).toBe(0);
     expect(savingsOnBasis("total", locked.savings, locked.lockedSavings, 5)).toBe(locked.savings![5]);
     expect(savingsOnBasis("cash", locked.savings, locked.lockedSavings, 5)).toBe(0);
+    // A row that follows both a locked and an available account counts as locked: usable savings are never overstated.
+    const mixedSnapshot = household();
+    mixedSnapshot.accounts = [...mixedSnapshot.accounts.map((a) => (a.id === "broker" ? { ...a, access: "available" as const } : a)), { ...account("pension", "retirement", true), access: "locked" }];
+    const mixed = run(plan((d) => ({ ...d, rows: d.rows.map((r) => (r.name === "Broker" ? { ...r, links: { ...r.links, accounts: [{ id: "broker" }, { id: "pension" }] } } : r)) })), mixedSnapshot);
+    expect(mixed.lockedSavings).not.toBeNull();
+    expect(mixed.lockedSavings![8]).toBeGreaterThan(0);
+    expect(savingsOnBasis("usable", mixed.savings, mixed.lockedSavings, 8)).toBeLessThan(mixed.savings![8]);
     // Marked available now, nothing is locked any more.
     const snapshot = household();
     snapshot.accounts = snapshot.accounts.map((a) => (a.id === "broker" ? { ...a, access: "available" as const } : a));

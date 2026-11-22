@@ -94,6 +94,18 @@ describe("new account group selection", () => {
     await waitFor(() => expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ groupId: "checking", accountClass: null })));
   });
 
+  it("leaves Leave out of reports to the group when the account takes the group's class", async () => {
+    const onSubmit = jest.fn();
+    render(<AccountFormDrawer open onOpenChange={jest.fn()} onSubmit={onSubmit} groups={groups} groupClasses={groupClasses} />);
+    fireEvent.change(screen.getByLabelText("Account Name"), { target: { value: "Pension" } });
+    fireEvent.click(screen.getByRole("switch", { name: "Off Budget" }));
+    await chooseGroup("Pensions");
+    expect(screen.getByRole("checkbox", { name: /Leave out of reports/ })).toBeDisabled();
+    expect(screen.getByText(/The selected group decides this/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Add Account" }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ groupId: "pensions", accountClass: null })));
+  });
+
   it("prevents on-budget assignment to an off-budget-only group", async () => {
     render(<AccountFormDrawer open onOpenChange={jest.fn()} onSubmit={jest.fn()} groups={groups} groupClasses={groupClasses} />);
     fireEvent.click(screen.getByRole("combobox", { name: "Account Group" }));
