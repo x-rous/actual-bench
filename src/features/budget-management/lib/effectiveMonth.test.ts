@@ -1,5 +1,7 @@
 import {
   computeEffectiveMonthState,
+  computeEnvelopeCarry,
+  envelopeReplayMonths,
   mergeMonthStates,
 } from "./effectiveMonth";
 import type {
@@ -820,5 +822,107 @@ describe("mergeMonthStates", () => {
     });
     const merged = mergeMonthStates([undefined, a, undefined]);
     expect(merged?.groupOrder).toEqual(["g1"]);
+  });
+});
+
+// ─── H1: Envelope carry follows Actual's rules ──────────────────────────────────
+
+describe("computeEnvelopeCarry (H1)", () => {
+  const months = ["2026-03", "2026-04"];
+
+  function envelopeMonths(c1March: Partial<LoadedCategory>) {
+    const march = state({
+      month: "2026-03",
+      groups: [group({ categoryIds: ["c1"] })],
+      cats: [cat({ id: "c1", ...c1March })],
+      summary: { toBudget: 500 },
+    });
+    const april = state({
+      month: "2026-04",
+      groups: [group({ categoryIds: ["c1"] })],
+      cats: [cat({ id: "c1", balance: 0 })],
+      summary: { toBudget: 500, lastMonthOverspent: c1March.balance! < 0 ? c1March.balance! : 0 },
+    });
+    return [march, april] as const;
+  }
+
+  function project(c1March: Partial<LoadedCategory>, next: number) {
+    const raw = envelopeMonths(c1March);
+    const edits = editsMap([edit("2026-03", "c1", next, c1March.budgeted ?? 0)]);
+    const carry = computeEnvelopeCarry(months, [...raw], edits);
+    return months.map((m, i) =>
+      computeEffectiveMonthState({
+        serverState: raw[i],
+        allEdits: edits,
+        isTracking: false,
+        incomeBudgets: undefined,
+        month: m,
+        envelopeCarry: carry.get(m),
+      })!
+    );
+  }
+
+  it("covering an overspend leaves next month's To Budget and balance unchanged", () => {
+    // March: budgeted 0, spent 80 → balance -80. Cover it by budgeting 80.
+    const [march, april] = project({ budgeted: 0, actuals: -80, balance: -80 }, 80);
+    expect(march.categoriesById.c1!.balance).toBe(0);
+    expect(march.summary.toBudget).toBe(420);
+    // April: "Overspent last month" drops by 80 and From last month by 80.
+    expect(april.summary.toBudget).toBe(500);
+    expect(april.summary.lastMonthOverspent).toBe(0);
+    expect(april.summary.fromLastMonth).toBe(-80);
+    expect(april.categoriesById.c1!.balance).toBe(0);
+  });
+
+  it("cutting a budget below zero charges only the positive part forward", () => {
+    // March balance +50; budget cut by 100 → March balance -50.
+    const [march, april] = project({ budgeted: 100, actuals: -50, balance: 50 }, 0);
+    expect(march.categoriesById.c1!.balance).toBe(-50);
+    expect(march.summary.toBudget).toBe(600);
+    // April: +100 from last month, -50 overspent, -50 carried balance.
+    expect(april.summary.toBudget).toBe(550);
+    expect(april.categoriesById.c1!.balance).toBe(-50);
+  });
+
+  it("a rollover category carries the full change", () => {
+    const [, april] = project({ budgeted: 0, actuals: -80, balance: -80, carryover: true }, 80);
+    expect(april.categoriesById.c1!.balance).toBe(80);
+    expect(april.summary.toBudget).toBe(420);
+  });
+
+  it("keeps April's figures when the edited March leaves the window", () => {
+    const c1March = { budgeted: 0, actuals: -80, balance: -80 };
+    const [march, april] = envelopeMonths(c1March);
+    const edits = editsMap([edit("2026-03", "c1", 80, 0)]);
+    const aprilFrom = (carryMonths: string[], states: LoadedMonthState[]) =>
+      computeEffectiveMonthState({
+        serverState: april,
+        allEdits: edits,
+        isTracking: false,
+        incomeBudgets: undefined,
+        month: "2026-04",
+        envelopeCarry: computeEnvelopeCarry(carryMonths, states, edits).get("2026-04"),
+      })!;
+
+    // Window starts in April; March is replayed in front of it (useEnvelopeCarry).
+    expect(envelopeReplayMonths("2026-04", edits)).toEqual(["2026-03"]);
+    const replayed = aprilFrom(["2026-03", "2026-04"], [march, april]);
+    expect(replayed.summary.toBudget).toBe(500);
+    expect(replayed.categoriesById.c1!.balance).toBe(0);
+  });
+});
+
+describe("envelopeReplayMonths", () => {
+  it("covers the months from the earliest staged edit before the window", () => {
+    const edits = editsMap([edit("2026-01", "c1", 1, 0), edit("2026-05", "c1", 1, 0)]);
+    expect(envelopeReplayMonths("2026-04", edits)).toEqual(["2026-01", "2026-02", "2026-03"]);
+  });
+
+  it("is empty without edits before the window, and stops at the limit", () => {
+    expect(envelopeReplayMonths("2026-04", editsMap([edit("2026-04", "c1", 1, 0)]))).toEqual([]);
+    expect(envelopeReplayMonths("2026-04", editsMap([edit("2020-01", "c1", 1, 0)]), 2)).toEqual([
+      "2026-02",
+      "2026-03",
+    ]);
   });
 });

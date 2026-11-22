@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import { Loader2 } from "lucide-react";
-import { useMonthsData } from "../context/MonthsDataContext";
+import { useMonthsStructure } from "../context/MonthsDataContext";
 import { useDailyDate } from "../hooks/useDailyDate";
 import { MonthColumnHeader } from "./grid/MonthColumnHeader";
 import {
@@ -120,7 +120,7 @@ export function BudgetGrid({
   // Daily-refreshed date so the current-month highlight + time-of-month marker
   // (RD-067) don't go stale on a page left open across midnight.
   const today = useDailyDate();
-  const { merged, isLoading, errors } = useMonthsData();
+  const { merged, isLoading, errors } = useMonthsStructure();
   const hasAnyData = merged !== null;
   const firstMonthError = firstMonth ? errors.get(firstMonth) : undefined;
 

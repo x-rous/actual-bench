@@ -12,8 +12,12 @@ import {
   getMonthDataErrorMessage,
   isMissingBudgetMonthError,
 } from "../../lib/monthDataQuery";
-import { computeEffectiveMonthState } from "../../lib/effectiveMonth";
+import {
+  computeEffectiveMonthState,
+} from "../../lib/effectiveMonth";
+import { useEnvelopeCarry } from "../../hooks/useEnvelopeCarry";
 import { incomeCategoryIdsNeedingBudgetFallback } from "../../lib/monthAuthority";
+import { formatMonthLabel } from "@/lib/budget/monthMath";
 import { buildBudgetDetailsModel } from "../../lib/budgetDetailsModel";
 import {
   buildEnvelopeDetailsMetrics,
@@ -83,9 +87,16 @@ export function BudgetDetailsPanel() {
     queries: monthQueries,
   });
 
+  // Disabled queries can still expose cached data. Leave unavailable months
+  // out, as the grid's MonthsDataProvider does, so the Envelope carry replay
+  // below sees the same months and both show the same figures.
   const dataArr = useMemo(
-    () => queries.map((query) => query.data),
-    [queries]
+    () =>
+      queries.map((query, index) => {
+        const month = displayMonths[index];
+        return month && availableMonthSet.has(month) ? query.data : undefined;
+      }),
+    [availableMonthSet, displayMonths, queries]
   );
   const isMonthLoading = useMemo(
     () => queries.some((query) => query.isLoading),
@@ -117,9 +128,18 @@ export function BudgetDetailsPanel() {
   const hasMonthQueryError = monthQueryError != null;
   const hasIncomeBudgetsError = isTracking && incomeBudgetsError != null;
 
+  // Same Envelope carry as the grid (MonthsDataProvider), so both agree.
+  const {
+    carry: envelopeCarry,
+    ready: carryReady,
+    failed: carryError,
+  } = useEnvelopeCarry(displayMonths, dataArr, edits, !isTracking, availableMonthSet);
+
   const statesByMonth = useMemo(() => {
     const result = new Map<string, LoadedMonthState>();
     if (hasMonthQueryError || hasIncomeBudgetsError) return result;
+    // Same as the grid: no Envelope figures until the carry is known.
+    if (!carryReady) return result;
 
     for (let i = 0; i < displayMonths.length; i++) {
       const month = displayMonths[i];
@@ -134,6 +154,7 @@ export function BudgetDetailsPanel() {
         // Match the grid (MonthsDataProvider): the Details panel must reflect
         // the same staged holds so its effective state never diverges.
         stagedHolds: holds,
+        envelopeCarry: envelopeCarry?.get(month),
       });
       if (effective) result.set(month, effective);
     }
@@ -142,6 +163,8 @@ export function BudgetDetailsPanel() {
     dataArr,
     displayMonths,
     edits,
+    envelopeCarry,
+    carryReady,
     holds,
     hasIncomeBudgetsError,
     hasMonthQueryError,
@@ -214,6 +237,14 @@ export function BudgetDetailsPanel() {
     );
   }
 
+  if (carryError) {
+    return (
+      <EmptyDetailsState
+        message={`Budget details could not load ${formatMonthLabel(carryError.month)}, which has staged edits that carry into these months: ${getMonthDataErrorMessage(carryError.error)}`}
+      />
+    );
+  }
+
   if (hasIncomeBudgetsError) {
     return (
       <EmptyDetailsState
@@ -226,6 +257,7 @@ export function BudgetDetailsPanel() {
     modeLoading ||
     availableMonthsLoading ||
     isMonthLoading ||
+    (!carryReady && !carryError) ||
     (isTracking && incomeBudgetsLoading);
   if (isLoading && statesByMonth.size === 0) {
     return <DetailsSkeleton />;

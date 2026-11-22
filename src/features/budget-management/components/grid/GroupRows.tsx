@@ -1,7 +1,10 @@
 "use client";
 
 import { ChevronDown, ChevronRight, StickyNote } from "lucide-react";
-import { useEffectiveMonthFromContext } from "../../context/MonthsDataContext";
+import {
+  useEffectiveGroup,
+  useEffectiveSelector,
+} from "../../context/MonthsDataContext";
 import { useBudgetEditsStore } from "@/store/budgetEdits";
 import { useAllNotes } from "@/hooks/useAllNotes";
 import { formatGridMinor, formatMinor } from "../../lib/format";
@@ -17,6 +20,7 @@ import type {
   CellView,
   LoadedCategory,
   LoadedGroup,
+  LoadedMonthState,
   NavDirection,
   RowSelection,
 } from "../../types";
@@ -27,6 +31,24 @@ import type {
  * Exported for tests: the empty-month branch below has no other reachable
  * entry point, and it is the branch that regressed.
  */
+/** Sum of one field over a group's non-hidden categories (Tracking totals). */
+function sumVisibleCategories(
+  map: Map<string, LoadedMonthState>,
+  month: string,
+  groupId: string,
+  field: "budgeted" | "actuals" | "balance"
+): number {
+  const state = map.get(month);
+  const group = state?.groupsById[groupId];
+  if (!state || !group) return 0;
+  let sum = 0;
+  for (const id of group.categoryIds) {
+    const cat = state.categoriesById[id];
+    if (cat && !cat.hidden) sum += cat[field];
+  }
+  return sum;
+}
+
 export function GroupMonthAggregate({
   month,
   groupId,
@@ -56,8 +78,20 @@ export function GroupMonthAggregate({
   showDecimals?: boolean;
   onContextMenuRequest?: (groupId: string, month: string, x: number, y: number) => void;
 }) {
-  const data = useEffectiveMonthFromContext(month);
-  const group = data?.groupsById[groupId];
+  // P1: subscribe to this group's figures only, not the whole month.
+  const group = useEffectiveGroup(month, groupId);
+  // Tracking totals sum the visible categories. Each sum is a number, so the
+  // cell re-renders only when one of its own totals changes.
+  const isTracking = budgetMode === "tracking";
+  const trackingBudgeted = useEffectiveSelector((map) =>
+    isTracking ? sumVisibleCategories(map, month, groupId, "budgeted") : 0
+  );
+  const trackingActuals = useEffectiveSelector((map) =>
+    isTracking ? sumVisibleCategories(map, month, groupId, "actuals") : 0
+  );
+  const trackingBalance = useEffectiveSelector((map) =>
+    isTracking ? sumVisibleCategories(map, month, groupId, "balance") : 0
+  );
   const stagedChildCount = useBudgetEditsStore((s) => {
     if (!group) return 0;
     let count = 0;
@@ -108,12 +142,9 @@ export function GroupMonthAggregate({
   let groupBalanceMinor: number;
   if (budgetMode === "tracking") {
     // Tracking: sum non-hidden categories only.
-    const cats = group.categoryIds
-      .map((id) => data?.categoriesById[id])
-      .filter((c): c is NonNullable<typeof c> => !!c && !c.hidden);
-    groupBudgetedMinor = cats.reduce((sum, c) => sum + c.budgeted, 0);
-    groupActualsMinor = cats.reduce((sum, c) => sum + c.actuals, 0);
-    groupBalanceMinor = cats.reduce((sum, c) => sum + c.balance, 0);
+    groupBudgetedMinor = trackingBudgeted;
+    groupActualsMinor = trackingActuals;
+    groupBalanceMinor = trackingBalance;
   } else {
     // Envelope: group-level aggregates include all hidden rows.
     groupBudgetedMinor = group.budgeted;

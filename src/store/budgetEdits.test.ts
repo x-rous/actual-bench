@@ -206,3 +206,47 @@ describe("budgetEdits store — patch-based undo/redo (BM-19)", () => {
     });
   });
 });
+
+describe("budgetEdits store — server baseline (C1)", () => {
+  it("keeps the first edit's server value when a cell is staged again", () => {
+    const store = useBudgetEditsStore.getState();
+    store.stageEdit(edit("2026-01", "c1", 200, 0));
+    // A transfer staged on the same cell passes the current value as "previous".
+    store.stageBulkEdits([
+      { ...edit("2026-01", "c1", 150, 200), source: "transfer", transferGroupId: "t1" },
+    ]);
+    const saved = useBudgetEditsStore.getState().edits[key("2026-01", "c1")]!;
+    expect(saved.nextBudgeted).toBe(150);
+    expect(saved.previousBudgeted).toBe(0);
+
+    // Undo restores the hand edit with its own baseline.
+    useBudgetEditsStore.getState().undo();
+    expect(useBudgetEditsStore.getState().edits[key("2026-01", "c1")]).toEqual(
+      edit("2026-01", "c1", 200, 0)
+    );
+  });
+});
+
+describe("budgetEdits store — hold baseline after a short hold", () => {
+  beforeEach(() => useBudgetEditsStore.setState({ holds: {} }));
+
+  it("rebases undo history, so Free after undo still clears what Actual holds", () => {
+    const store = useBudgetEditsStore.getState();
+    store.stageHold({ month: "2026-01", previousAmount: 0, nextAmount: 200 });
+    store.stageHold({ month: "2026-01", previousAmount: 0, nextAmount: 300 });
+    // Actual held only 250 of the 300.
+    store.setHoldSaveError("2026-01", "short", 250);
+
+    useBudgetEditsStore.getState().undo();
+    expect(useBudgetEditsStore.getState().holds["2026-01"]).toMatchObject({
+      nextAmount: 200,
+      previousAmount: 250,
+    });
+
+    useBudgetEditsStore.getState().stageHold({ month: "2026-01", previousAmount: 0, nextAmount: 0 });
+    expect(useBudgetEditsStore.getState().holds["2026-01"]).toMatchObject({
+      nextAmount: 0,
+      previousAmount: 250,
+    });
+  });
+});

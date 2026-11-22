@@ -7,6 +7,7 @@
  * per month at a single call-site instead of per-cell.
  */
 
+import { isMonthId, monthsInRange, prevMonth, subtractMonths } from "@/lib/budget/monthMath";
 import type {
   BudgetCellKey,
   LoadedCategory,
@@ -25,7 +26,154 @@ export type ComputeEffectiveMonthStateInput = {
   month: string;
   /** Staged holds keyed by month — from the budgetEdits store. */
   stagedHolds?: Record<string, StagedHold>;
+  /**
+   * Envelope mode only: what staged edits in earlier months carry into this
+   * month, computed by `computeEnvelopeCarry` with Actual's real rules. When
+   * given it replaces the linear prior-month cascade below. Omit it (or pass
+   * undefined) to keep the linear approximation.
+   */
+  envelopeCarry?: EnvelopeCarry;
 };
+
+/**
+ * Change carried into one month by staged edits in earlier months (Envelope),
+ * all in integer minor units.
+ */
+export type EnvelopeCarry = {
+  /** Change to `fromLastMonth` (and so to `incomeAvailable`). */
+  fromLastMonthDelta: number;
+  /** Change to `lastMonthOverspent` (negative = more overspending charged). */
+  lastMonthOverspentDelta: number;
+  /** Change to each category's carried-in balance, keyed by category id. */
+  categoryDeltas: Map<string, number>;
+};
+
+/**
+ * Envelope (H1): staged edits carried forward the way Actual's envelope sheet
+ * does it, month by month through `months` (chronological, consecutive):
+ *
+ *   leftover(M)          = budgeted(M) + spent(M) + carryIn(M)
+ *   carryIn(M+1)         = carryover ? leftover(M) : max(0, leftover(M))
+ *   lastMonthOverspent   = Σ non-carryover min(0, leftover(M))   (into M+1)
+ *   fromLastMonth(M+1)   = toBudget(M) + buffered(M)
+ *   toBudget(M)          = income + fromLastMonth + lastMonthOverspent
+ *                          − budgeted(M) − buffered(M)
+ *
+ * So covering an overspend does not raise next month's balance, and a cut
+ * below zero is charged to next month's To Budget as overspending, not
+ * carried as a negative balance. Holds net out in the next month (To Budget
+ * falls by the hold and `buffered` rises by it), so they are not carried.
+ *
+ * Edits before the first month in `months` cannot be replayed without their
+ * months' data, so they enter the first month with the linear rule (full
+ * delta to the balance and to To Budget). Callers avoid that by starting
+ * `months` at `envelopeReplayMonths` (see `useEnvelopeCarry`), so a month
+ * leaving the view does not change later figures. A month whose server state
+ * is missing is passed through the same way.
+ */
+/** How far back `envelopeReplayMonths` reaches for staged edits. */
+export const ENVELOPE_REPLAY_LIMIT = 24;
+
+/**
+ * The months before `firstMonth` that hold staged edits, from the earliest of
+ * them (at most `limit` months back) up to the month before `firstMonth`, so
+ * `computeEnvelopeCarry` can replay them with Actual's rules instead of
+ * carrying them in linearly. Empty when no edit is staged before `firstMonth`.
+ */
+export function envelopeReplayMonths(
+  firstMonth: string,
+  allEdits: Record<BudgetCellKey, StagedBudgetEdit>,
+  limit = ENVELOPE_REPLAY_LIMIT
+): string[] {
+  let earliest: string | null = null;
+  for (const key of Object.keys(allEdits)) {
+    const editMonth = key.split(":")[0];
+    if (editMonth && editMonth < firstMonth && (earliest === null || editMonth < earliest)) {
+      earliest = editMonth;
+    }
+  }
+  if (earliest === null || !isMonthId(firstMonth)) return [];
+  const floor = subtractMonths(firstMonth, limit);
+  return monthsInRange(earliest < floor ? floor : earliest, prevMonth(firstMonth));
+}
+
+export function computeEnvelopeCarry(
+  months: string[],
+  rawStates: (LoadedMonthState | undefined)[],
+  allEdits: Record<BudgetCellKey, StagedBudgetEdit>
+): Map<string, EnvelopeCarry> {
+  const result = new Map<string, EnvelopeCarry>();
+  if (months.length === 0) return result;
+
+  // Staged change per month per category, against the server value.
+  const editDeltas = new Map<string, Map<string, StagedBudgetEdit>>();
+  for (const [key, edit] of Object.entries(allEdits)) {
+    const editMonth = key.split(":")[0];
+    if (!editMonth) continue;
+    const catId = key.slice(editMonth.length + 1);
+    let byCat = editDeltas.get(editMonth);
+    if (!byCat) editDeltas.set(editMonth, (byCat = new Map()));
+    byCat.set(catId, edit);
+  }
+
+  const firstMonth = months[0]!;
+  const firstState = rawStates[0];
+  let carry = new Map<string, number>();
+  let fromLast = 0;
+  for (const [key, edit] of Object.entries(allEdits)) {
+    const editMonth = key.split(":")[0];
+    if (!editMonth || editMonth >= firstMonth) continue;
+    const catId = key.slice(editMonth.length + 1);
+    const cat = firstState?.categoriesById[catId];
+    if (cat?.isIncome) continue;
+    const delta = edit.nextBudgeted - edit.previousBudgeted;
+    fromLast -= delta;
+    if (cat) carry.set(catId, (carry.get(catId) ?? 0) + delta);
+  }
+  let overspent = 0;
+
+  for (let i = 0; i < months.length; i++) {
+    const month = months[i]!;
+    const state = rawStates[i];
+    result.set(month, {
+      fromLastMonthDelta: fromLast,
+      lastMonthOverspentDelta: overspent,
+      categoryDeltas: carry,
+    });
+
+    // Roll this month forward into the next one.
+    const monthEdits = editDeltas.get(month);
+    const nextCarry = new Map<string, number>();
+    let nextOverspent = 0;
+    let budgetedDelta = 0;
+    const catIds = new Set<string>([...carry.keys(), ...(monthEdits?.keys() ?? [])]);
+    for (const catId of catIds) {
+      const cat = state?.categoriesById[catId];
+      if (state && !cat) continue;
+      if (cat?.isIncome) continue;
+      const edit = monthEdits?.get(catId);
+      // Layer 2 measures a staged edit against the cached server value.
+      const staged = edit ? edit.nextBudgeted - (cat?.budgeted ?? edit.previousBudgeted) : 0;
+      budgetedDelta += staged;
+      const leftoverDelta = (carry.get(catId) ?? 0) + staged;
+      if (leftoverDelta === 0) continue;
+      if (!cat || cat.carryover) {
+        nextCarry.set(catId, leftoverDelta);
+        continue;
+      }
+      const before = cat.balance;
+      const after = before + leftoverDelta;
+      const carried = Math.max(0, after) - Math.max(0, before);
+      if (carried !== 0) nextCarry.set(catId, carried);
+      nextOverspent += Math.min(0, after) - Math.min(0, before);
+    }
+    fromLast = fromLast + overspent - budgetedDelta;
+    overspent = nextOverspent;
+    carry = nextCarry;
+  }
+
+  return result;
+}
 
 /**
  * Returns the effective month state for `month` after applying:
@@ -64,6 +212,7 @@ export function computeEffectiveMonthState(
 ): LoadedMonthState | undefined {
   const { serverState, allEdits, isTracking, incomeBudgets, month, stagedHolds } = input;
   if (!serverState || !month) return serverState;
+  const envelopeCarry = isTracking ? undefined : input.envelopeCarry;
 
   const incomeBudgetForMonth = isTracking ? incomeBudgets?.get(month) : undefined;
 
@@ -74,7 +223,7 @@ export function computeEffectiveMonthState(
   // ── Cascade: sum of deltas from edits in months strictly before this month ─
   // In Tracking mode, effectively-hidden category edits are excluded.
   let priorDelta = 0;
-  for (const [key, edit] of Object.entries(allEdits)) {
+  for (const [key, edit] of envelopeCarry ? [] : Object.entries(allEdits)) {
     const editMonth = key.split(":")[0];
     if (!editMonth || editMonth >= month) continue;
     const catId = key.slice(editMonth.length + 1);
@@ -93,8 +242,8 @@ export function computeEffectiveMonthState(
   // ── Per-category cascade: cumulative deltas from prior-month staged edits ──
   // Envelope mode: all spending categories (server always chains balance forward).
   // Tracking mode: only categories with carryover === true.
-  const priorCatDeltas = new Map<string, number>();
-  for (const [key, edit] of Object.entries(allEdits)) {
+  const priorCatDeltas = new Map<string, number>(envelopeCarry?.categoryDeltas);
+  for (const [key, edit] of envelopeCarry ? [] : Object.entries(allEdits)) {
     const editMonth = key.split(":")[0];
     if (!editMonth || editMonth >= month) continue;
     const catId = key.slice(editMonth.length + 1);
@@ -110,7 +259,18 @@ export function computeEffectiveMonthState(
 
   const stagedHold = stagedHolds?.[month];
 
-  if (!incomeBudgetForMonth && editEntries.length === 0 && priorDelta === 0 && !hasCatCascade && !stagedHold) {
+  const carrySummaryChanges =
+    !!envelopeCarry &&
+    (envelopeCarry.fromLastMonthDelta !== 0 || envelopeCarry.lastMonthOverspentDelta !== 0);
+
+  if (
+    !incomeBudgetForMonth &&
+    editEntries.length === 0 &&
+    priorDelta === 0 &&
+    !carrySummaryChanges &&
+    !hasCatCascade &&
+    !stagedHold
+  ) {
     return serverState;
   }
 
@@ -123,6 +283,13 @@ export function computeEffectiveMonthState(
   if (priorDelta !== 0) {
     summary.incomeAvailable -= priorDelta;
     summary.toBudget -= priorDelta;
+  }
+  if (envelopeCarry && carrySummaryChanges) {
+    summary.fromLastMonth += envelopeCarry.fromLastMonthDelta;
+    summary.incomeAvailable += envelopeCarry.fromLastMonthDelta;
+    summary.lastMonthOverspent += envelopeCarry.lastMonthOverspentDelta;
+    summary.toBudget +=
+      envelopeCarry.fromLastMonthDelta + envelopeCarry.lastMonthOverspentDelta;
   }
 
   // ── Apply Layer 1 ──────────────────────────────────────────────────────────

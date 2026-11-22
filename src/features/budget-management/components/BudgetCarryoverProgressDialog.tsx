@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
+import { formatMonthLabel } from "@/lib/budget/monthMath";
 import { useCarryoverToggle } from "../hooks/useCarryoverToggle";
 import type {
   CarryoverToggleInput,
@@ -28,22 +29,20 @@ function buildRejectedResults(
   error: unknown
 ): CarryoverToggleResult[] {
   const message = getErrorMessage(error);
-  return request.categoryIds.flatMap((categoryId) =>
-    request.months.map((m) => ({
-      categoryId,
-      month: m,
-      status: "error" as const,
-      message,
-    }))
-  );
+  return request.categoryIds.map((categoryId) => ({
+    categoryId,
+    month: request.fromMonth,
+    status: "error" as const,
+    message,
+  }));
 }
 
 /**
  * Progress + partial-failure dialog for the carryover toggle.
  *
- * Mirrors `BudgetSaveProgressDialog`: shows progress while the multi-month
- * PATCH loop runs, auto-closes on full success after 3s, and offers a
- * "Retry Failed" path that re-issues only the months that didn't succeed.
+ * Mirrors `BudgetSaveProgressDialog`: shows progress while the per-category
+ * requests run, auto-closes on full success after 3s, and offers a
+ * "Retry Failed" path that re-issues only the categories that didn't succeed.
  */
 export function BudgetCarryoverProgressDialog({
   request,
@@ -97,16 +96,17 @@ export function BudgetCarryoverProgressDialog({
   }, [dialogState, countdown, onClose]);
 
   async function handleRetry() {
-    const failedMonths = failedResults.map((r) => r.month);
-    if (failedMonths.length === 0) return;
+    const failedCategoryIds = failedResults.map((r) => r.categoryId);
+    if (failedCategoryIds.length === 0) return;
+    const retryRequest = { ...request, categoryIds: failedCategoryIds };
     setDialogState("running");
     setResults([]);
     try {
-      const retry = await run({ ...request, months: failedMonths });
+      const retry = await run(retryRequest);
       applyResults(retry);
     } catch (error) {
       console.error("Carryover toggle retry failed", error);
-      applyResults(buildRejectedResults({ ...request, months: failedMonths }, error));
+      applyResults(buildRejectedResults(retryRequest, error));
     }
   }
 
@@ -117,7 +117,8 @@ export function BudgetCarryoverProgressDialog({
   const scopeLabel = isMultiCategory
     ? `${request.categoryIds.length} categories`
     : (categoryLabel ?? undefined);
-  const unitLabel = isMultiCategory ? "category-month" : "month";
+  const unitLabel = "category";
+  const fromLabel = `from ${formatMonthLabel(request.fromMonth, "long")} onward`;
 
   return (
     <div
@@ -133,12 +134,12 @@ export function BudgetCarryoverProgressDialog({
               <Loader2 className="h-4 w-4 animate-spin text-primary" />
               <h2 className="text-base font-semibold text-foreground">
                 {verbing} rollover
-                {scopeLabel ? ` for ${scopeLabel}` : ""}
+                {scopeLabel ? ` for ${scopeLabel}` : ""} {fromLabel}
               </h2>
             </div>
             <p className="text-sm text-muted-foreground mb-3">
               {progress.total > 0
-                ? `${progress.completed} of ${progress.total} ${unitLabel}${progress.total !== 1 ? "s" : ""} updated…`
+                ? `${progress.completed} of ${progress.total} ${progress.total !== 1 ? "categories" : unitLabel} updated…`
                 : "Preparing…"}
             </p>
             {progress.total > 0 && (
@@ -161,9 +162,8 @@ export function BudgetCarryoverProgressDialog({
               <h2 className="text-base font-semibold text-foreground">{verbedTitle}</h2>
             </div>
             <p className="text-sm text-muted-foreground mb-4">
-              Rollover {verbed} on {succeededResults.length}{" "}
-              {unitLabel}{succeededResults.length !== 1 ? "s" : ""}
-              {scopeLabel && !isMultiCategory ? ` for ${scopeLabel}` : ""}.
+              Rollover {verbed} {fromLabel}
+              {scopeLabel ? ` for ${scopeLabel}` : ""}.
             </p>
             <div className="flex justify-end">
               <button
@@ -187,14 +187,14 @@ export function BudgetCarryoverProgressDialog({
             </div>
             <p className="text-sm text-muted-foreground mb-3">
               {dialogState === "partial-failure"
-                ? `${succeededResults.length} ${unitLabel}${succeededResults.length !== 1 ? "s" : ""} updated, ${failedResults.length} failed.`
-                : `${failedResults.length} ${unitLabel}${failedResults.length !== 1 ? "s" : ""} could not be updated.`}
+                ? `${succeededResults.length} ${succeededResults.length !== 1 ? "categories" : unitLabel} updated, ${failedResults.length} failed.`
+                : `${failedResults.length} ${failedResults.length !== 1 ? "categories" : unitLabel} could not be updated.`}
             </p>
             <div className="mb-4 max-h-44 overflow-y-auto rounded border border-border divide-y divide-border">
               {failedResults.map((r, i) => (
                 <div key={i} className="px-3 py-2 text-xs">
                   <span className="font-mono text-foreground">
-                    {isMultiCategory ? `${r.categoryId}: ${r.month}` : r.month}
+                    {isMultiCategory ? r.categoryId : (scopeLabel ?? r.categoryId)}
                   </span>
                   {r.message && (
                     <p className="text-destructive mt-0.5">{r.message}</p>

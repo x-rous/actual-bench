@@ -4,6 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { formatMonthLabel } from "@/lib/budget/monthMath";
 import { useBudgetEditsStore } from "@/store/budgetEdits";
 import { Input } from "@/components/ui/input";
+import { useRawMonthFromContext } from "../context/MonthsDataContext";
+import { parseBudgetExpression } from "../lib/budgetMath";
+import { formatMinor } from "../lib/format";
 
 type Props = {
   month: string;
@@ -52,10 +55,28 @@ export function NextMonthHoldDialog({
 
   const previousAmount = currentForNextMonth;
 
+  // H5: holds are saved before budget edits, and Actual caps a hold at the
+  // saved To Budget (after clearing the old hold) without reporting it. Check
+  // against that same limit so a hold is never silently cut short. Money
+  // freed by unsaved edits becomes holdable only after those edits are saved.
+  const rawMonth = useRawMonthFromContext(month);
+  const holdLimit = rawMonth
+    ? Math.max(0, rawMonth.summary.toBudget + rawMonth.summary.forNextMonth)
+    : null;
+
   const handleSet = () => {
-    const amount = Math.round(parseFloat(amountStr) * 100);
+    const parsed = parseBudgetExpression(amountStr);
+    const amount = parsed.ok ? parsed.value : NaN;
     if (!Number.isFinite(amount) || !Number.isSafeInteger(amount) || amount < 0) {
       setValidationError("Please enter a valid amount (0 or greater).");
+      return;
+    }
+    if (holdLimit !== null && amount > holdLimit) {
+      setValidationError(
+        holdLimit === 0
+          ? "Nothing can be held: the saved To Budget for this month has no money left. Save any edits that free money first."
+          : `Actual can hold at most ${formatMinor(holdLimit)} (the saved To Budget). Save any edits that free more money first.`
+      );
       return;
     }
     setValidationError(null);
@@ -87,18 +108,27 @@ export function NextMonthHoldDialog({
           <Input
             ref={inputRef}
             id="hold-amount"
-            type="number"
-            min="0"
-            step="0.01"
+            type="text"
+            inputMode="text"
             value={amountStr}
             onChange={(e) => setAmountStr(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && amountStr !== "") handleSet(); }}
+            onKeyDown={(e) => {
+              // An IME uses Enter to confirm composed text; that is not a submit.
+              if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+              if (e.key === "Enter" && amountStr !== "") handleSet();
+            }}
             placeholder="0.00"
             size="sm"
             className="font-mono"
             aria-label="Hold amount in dollars"
           />
         </div>
+
+        {holdLimit !== null && (
+          <p className="text-xs text-muted-foreground mb-3">
+            Available to hold: {formatMinor(holdLimit)}
+          </p>
+        )}
 
         {validationError && (
           <p className="text-xs text-destructive mb-3" role="alert">{validationError}</p>

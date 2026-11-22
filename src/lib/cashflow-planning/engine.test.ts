@@ -1,7 +1,7 @@
 import { SECTIONS, SECTION_SIGN, type PlanDocument } from "./types";
 import { contributionsOf, placeActuals, unplannedTarget, type SnapAccount, type Snapshot } from "./actuals";
 import { buildPlanFromActuals } from "./builder";
-import { createPlanDocument, createRow, exportPlanJson, importPlanJson, parseAmount, parsePlanDocument, planEndMonth, ruleAmount, setCells, setHorizon } from "./document";
+import { createPlanDocument, createRow, exportPlanJson, importPlanJson, parseAmount, parseAmountExpression, parsePlanDocument, planEndMonth, ruleAmount, setCells, setHorizon } from "./document";
 import { computePlan } from "./engine";
 import { linkNotes } from "./linkNotes";
 
@@ -419,5 +419,31 @@ describe("plan documents", () => {
     expect(parseAmount(" 12 ")).toBe(1_200);
     expect(parseAmount("abc")).toBeNull();
     expect(parseAmount("")).toBeNull();
+  });
+
+  it("works out basic arithmetic typed as an amount", () => {
+    expect(parseAmountExpression("30+600")).toBe(63_000);
+    expect(parseAmountExpression("1,200 * 12")).toBe(1_440_000);
+    expect(parseAmountExpression("100-25.50")).toBe(7_450);
+    expect(parseAmountExpression("(50+25)/3")).toBe(2_500);
+    expect(parseAmountExpression("10/3")).toBe(333);
+    expect(parseAmountExpression("2+3*4")).toBe(1_400);
+    expect(parseAmountExpression("-40+10")).toBe(-3_000);
+    expect(parseAmountExpression("5−8")).toBe(-300);
+    expect(parseAmountExpression("6×2÷4")).toBe(300);
+    // Half a cent rounds away from zero either way, matching parseAmount.
+    expect(parseAmountExpression("1/8")).toBe(13);
+    expect(parseAmountExpression("-1/8")).toBe(-13);
+    expect(parseAmount("-0.125")).toBe(-13);
+    // Plain amounts read as before, accounting brackets included.
+    expect(parseAmountExpression("(300)")).toBe(-30_000);
+    expect(parseAmountExpression("1,250.50")).toBe(125_050);
+    expect(parseAmountExpression("5/0")).toBeNull();
+    expect(parseAmountExpression("30+")).toBeNull();
+    expect(parseAmountExpression("(30+6")).toBeNull();
+    expect(parseAmountExpression("1.2.3+1")).toBeNull();
+    expect(parseAmountExpression("abc")).toBeNull();
+    expect(parseAmountExpression("")).toBeNull();
+    expect(parseAmountExpression("99999999999*99999999999")).toBeNull();
   });
 });

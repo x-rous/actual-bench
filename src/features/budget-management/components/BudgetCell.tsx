@@ -2,7 +2,10 @@
 
 import { useRef, useState } from "react";
 import { useBudgetEditsStore } from "@/store/budgetEdits";
-import { useEffectiveMonthFromContext } from "../context/MonthsDataContext";
+import {
+  useEffectiveCategory,
+  useHasEffectiveMonth,
+} from "../context/MonthsDataContext";
 import { parseBudgetExpression } from "../lib/budgetMath";
 import { formatGridMinor, formatMinor } from "../lib/format";
 import { computeSpendingBar, spendingTierLabel } from "../lib/spendingBar";
@@ -82,9 +85,11 @@ export function BudgetCell({
   const removeEdit = useBudgetEditsStore((s) => s.removeEdit);
 
   // Read precomputed effective state from MonthsDataProvider — the cascade
-  // runs once per month at the provider level, not per cell.
-  const effectiveData = useEffectiveMonthFromContext(month);
-  const hasMonthData = effectiveData != null;
+  // runs once per month at the provider level, not per cell. P1: subscribe to
+  // this category in this month only, so the cell re-renders when its own
+  // figures change, not on every edit anywhere in the grid.
+  const hasMonthData = useHasEffectiveMonth(month);
+  const effectiveMonthCategory = useEffectiveCategory(month, category.id);
   /**
    * The `category` prop comes from the cross-month merged structure (BM-13), so
    * it carries whichever month's figures it was merged from. That identity is
@@ -94,7 +99,7 @@ export function BudgetCell({
    * figures - there is nothing budgeted, spent or left in a month that does not
    * exist yet.
    */
-  const effectiveCategory = effectiveData?.categoriesById[category.id] ?? {
+  const effectiveCategory = effectiveMonthCategory ?? {
     ...category,
     budgeted: 0,
     actuals: 0,

@@ -1,7 +1,7 @@
 import React from "react";
 import { renderHook, act } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useBudgetSave } from "./useBudgetSave";
+import { BudgetBatchError, useBudgetSave } from "./useBudgetSave";
 import { useBudgetEditsStore } from "../../../store/budgetEdits";
 import type { ConnectionInstance } from "../../../store/connection";
 import type {
@@ -383,6 +383,348 @@ describe("useBudgetSave", () => {
       { month: "2026-01", categoryId: "cat-1", status: "success" },
       { month: "2026-01", categoryId: "cat-2", status: "success" },
     ]);
+  });
+
+  it("writes absolute values when the server changed a transfer leg since it was cached", async () => {
+    const transport = makeTransport();
+    // The server now holds 130 for cat-1, although the cache still says 100.
+    transport.getBudgetMonth.mockResolvedValue(makeRawMonth(130));
+    mockGetTransport.mockReturnValue(transport);
+    const client = makeAppLikeClient();
+    client.setQueryData(["budget-month-data", "conn-1", "2026-01"], {
+      summary: { month: "2026-01" },
+      groupsById: {},
+      groupOrder: [],
+      categoriesById: {
+        "cat-1": { id: "cat-1", budgeted: 100 },
+        "cat-2": { id: "cat-2", budgeted: 50 },
+      },
+    });
+    const { result } = renderHook(() => useBudgetSave(), { wrapper: makeWrapper(client) });
+
+    await act(async () => {
+      await result.current.save({
+        ["2026-01:cat-1" as BudgetCellKey]: {
+          month: "2026-01", categoryId: "cat-1", previousBudgeted: 100, nextBudgeted: 80,
+          source: "transfer", transferGroupId: "transfer-1",
+        },
+        ["2026-01:cat-2" as BudgetCellKey]: {
+          month: "2026-01", categoryId: "cat-2", previousBudgeted: 50, nextBudgeted: 70,
+          source: "transfer", transferGroupId: "transfer-1",
+        },
+      });
+    });
+
+    expect(transport.transferBudget).not.toHaveBeenCalled();
+    expect(transport.setBudgetAmount).toHaveBeenCalledWith("2026-01", "cat-1", 80);
+    expect(transport.setBudgetAmount).toHaveBeenCalledWith("2026-01", "cat-2", 70);
+  });
+
+  it("checks each edit's category against its own month", async () => {
+    const transport = makeTransport();
+    transport.getBudgetMonths.mockResolvedValue(["2026-01", "2026-02"]);
+    // cat-3 exists from February only.
+    transport.getBudgetMonth.mockImplementation(async (month: string) => {
+      const raw = { ...makeRawMonth(), month };
+      if (month === "2026-02") {
+        raw.categoryGroups = [{
+          ...raw.categoryGroups[0]!,
+          categories: [...raw.categoryGroups[0]!.categories, {
+            id: "cat-3", name: "New", group_id: "group-1", is_income: false, hidden: false,
+            budgeted: 0, spent: 0, balance: 0, carryover: false,
+          }],
+        }];
+      }
+      return raw;
+    });
+    mockGetTransport.mockReturnValue(transport);
+    const client = new QueryClient();
+    const { result } = renderHook(() => useBudgetSave(), { wrapper: makeWrapper(client) });
+
+    let saveResults: BudgetSaveResult[] = [];
+    await act(async () => {
+      saveResults = await result.current.save({
+        ["2026-01:cat-1" as BudgetCellKey]: {
+          month: "2026-01", categoryId: "cat-1", previousBudgeted: 100, nextBudgeted: 150, source: "manual",
+        },
+        ["2026-02:cat-3" as BudgetCellKey]: {
+          month: "2026-02", categoryId: "cat-3", previousBudgeted: 0, nextBudgeted: 40, source: "manual",
+        },
+      });
+    });
+
+    expect(transport.setBudgetAmount).toHaveBeenCalledWith("2026-02", "cat-3", 40);
+    expect(saveResults.every((r) => r.status === "success")).toBe(true);
+  });
+
+  it("writes absolute values when a transfer leg also carries a hand edit (C1)", async () => {
+    const transport = makeTransport();
+    mockGetTransport.mockReturnValue(transport);
+    const client = new QueryClient();
+    const { result } = renderHook(() => useBudgetSave(), {
+      wrapper: makeWrapper(client),
+    });
+
+    // Server: cat-1 = 100, cat-2 = 50. The user typed 200 into cat-1, then
+    // transferred 50 from cat-1 to cat-2. The store keeps the server baseline.
+    const src: StagedBudgetEdit = {
+      month: "2026-01",
+      categoryId: "cat-1",
+      previousBudgeted: 100,
+      nextBudgeted: 150,
+      source: "transfer",
+      transferGroupId: "transfer-1",
+    };
+    const dst: StagedBudgetEdit = {
+      month: "2026-01",
+      categoryId: "cat-2",
+      previousBudgeted: 50,
+      nextBudgeted: 100,
+      source: "transfer",
+      transferGroupId: "transfer-1",
+    };
+
+    await act(async () => {
+      await result.current.save({
+        ["2026-01:cat-1" as BudgetCellKey]: src,
+        ["2026-01:cat-2" as BudgetCellKey]: dst,
+      });
+    });
+
+    expect(transport.transferBudget).not.toHaveBeenCalled();
+    expect(transport.setBudgetAmount).toHaveBeenCalledWith("2026-01", "cat-1", 150);
+    expect(transport.setBudgetAmount).toHaveBeenCalledWith("2026-01", "cat-2", 100);
+  });
+
+  it("sets holds outside the budget batch from the current hold and reports a capped hold (C2, H5)", async () => {
+    const transport = makeTransport();
+    let inBatch = false;
+    const calls: string[] = [];
+    transport.batchBudgetUpdates.mockImplementation(async (operation: () => Promise<unknown>) => {
+      inBatch = true;
+      try {
+        return await operation();
+      } finally {
+        inBatch = false;
+      }
+    });
+    transport.resetBudgetHold.mockImplementation(async () => {
+      calls.push(`reset:${inBatch}`);
+    });
+    transport.holdBudgetForNextMonth.mockImplementation(async (_m: string, amount: number) => {
+      calls.push(`hold:${amount}:${inBatch}`);
+    });
+    // The server already holds 100 (the staged previousAmount says 0). Raising
+    // it to 300 must add only 200; Actual then caps the total at 250.
+    transport.getBudgetMonth
+      .mockResolvedValueOnce({ ...makeRawMonth(), forNextMonth: 100 })
+      .mockResolvedValueOnce({ ...makeRawMonth(), forNextMonth: 250 });
+    mockGetTransport.mockReturnValue(transport);
+    const client = new QueryClient();
+    const { result } = renderHook(() => useBudgetSave(), {
+      wrapper: makeWrapper(client),
+    });
+
+    let saveResults: BudgetSaveResult[] = [];
+    await act(async () => {
+      saveResults = await result.current.save(
+        {},
+        { "2026-01": { month: "2026-01", previousAmount: 0, nextAmount: 300 } }
+      );
+    });
+
+    expect(calls).toEqual(["hold:200:false"]);
+    expect(saveResults).toHaveLength(1);
+    expect(saveResults[0]).toMatchObject({ month: "2026-01", status: "error" });
+    expect(saveResults[0]!.message).toMatch(/held 2\.50 instead of 3\.00/);
+    expect(result.current.isSaving).toBe(false);
+  });
+
+  it("lowers a hold by resetting first, outside the batch", async () => {
+    const transport = makeTransport();
+    let inBatch = false;
+    const calls: string[] = [];
+    transport.batchBudgetUpdates.mockImplementation(async (operation: () => Promise<unknown>) => {
+      inBatch = true;
+      try {
+        return await operation();
+      } finally {
+        inBatch = false;
+      }
+    });
+    transport.resetBudgetHold.mockImplementation(async () => {
+      calls.push(`reset:${inBatch}`);
+    });
+    transport.holdBudgetForNextMonth.mockImplementation(async (_m: string, amount: number) => {
+      calls.push(`hold:${amount}:${inBatch}`);
+    });
+    transport.getBudgetMonth
+      .mockResolvedValueOnce({ ...makeRawMonth(), forNextMonth: 300 })
+      .mockResolvedValueOnce({ ...makeRawMonth(), forNextMonth: 100 });
+    mockGetTransport.mockReturnValue(transport);
+    const client = new QueryClient();
+    const { result } = renderHook(() => useBudgetSave(), {
+      wrapper: makeWrapper(client),
+    });
+
+    let saveResults: BudgetSaveResult[] = [];
+    await act(async () => {
+      saveResults = await result.current.save(
+        {},
+        { "2026-01": { month: "2026-01", previousAmount: 300, nextAmount: 100 } }
+      );
+    });
+
+    expect(calls).toEqual(["reset:false", "hold:100:false"]);
+    expect(saveResults).toEqual([{ month: "2026-01", categoryId: "", status: "success" }]);
+    // A hold-only save has no cell edits, so no budget batch is opened.
+    expect(transport.batchBudgetUpdates).not.toHaveBeenCalled();
+  });
+
+  it("keeps a short hold staged with its error so Retry Failed can retry it", async () => {
+    const transport = makeTransport();
+    transport.getBudgetMonth
+      .mockResolvedValueOnce({ ...makeRawMonth(), forNextMonth: 0 })
+      .mockResolvedValueOnce({ ...makeRawMonth(), forNextMonth: 250 });
+    mockGetTransport.mockReturnValue(transport);
+    const client = new QueryClient();
+    const invalidate = jest.spyOn(client, "invalidateQueries");
+    const { result } = renderHook(() => useBudgetSave(), { wrapper: makeWrapper(client) });
+    useBudgetEditsStore.getState().stageHold({ month: "2026-01", previousAmount: 0, nextAmount: 300 });
+
+    let firstResults: BudgetSaveResult[] = [];
+    await act(async () => {
+      firstResults = await result.current.save({}, useBudgetEditsStore.getState().holds);
+    });
+
+    // Retry Failed picks holds by an error row with an empty categoryId.
+    expect(firstResults).toEqual([
+      expect.objectContaining({ month: "2026-01", categoryId: "", status: "error" }),
+    ]);
+    // The draft's baseline is now what Actual really holds; the target stays.
+    expect(useBudgetEditsStore.getState().holds["2026-01"]).toMatchObject({
+      previousAmount: 250,
+      nextAmount: 300,
+      saveError: expect.stringMatching(/held 2\.50 instead of 3\.00/),
+    });
+    // Actual still changed the month, so it is refreshed.
+    expect(invalidate).toHaveBeenCalled();
+
+    // Retry once To Budget has room: only the missing 0.50 is sent, and the
+    // draft is removed after the read-back confirms 3.00.
+    transport.getBudgetMonth
+      .mockResolvedValueOnce({ ...makeRawMonth(), forNextMonth: 250 })
+      .mockResolvedValueOnce({ ...makeRawMonth(), forNextMonth: 300 });
+    transport.holdBudgetForNextMonth.mockClear();
+    await act(async () => {
+      await result.current.save({}, useBudgetEditsStore.getState().holds);
+    });
+
+    expect(transport.holdBudgetForNextMonth).toHaveBeenCalledTimes(1);
+    expect(transport.holdBudgetForNextMonth).toHaveBeenCalledWith("2026-01", 50);
+    expect(useBudgetEditsStore.getState().holds["2026-01"]).toBeUndefined();
+  });
+
+  it("stages a clear for Free after a short hold, because Actual still holds the short amount", async () => {
+    const transport = makeTransport();
+    transport.getBudgetMonth
+      .mockResolvedValueOnce({ ...makeRawMonth(), forNextMonth: 0 })
+      .mockResolvedValueOnce({ ...makeRawMonth(), forNextMonth: 250 });
+    mockGetTransport.mockReturnValue(transport);
+    const client = new QueryClient();
+    const { result } = renderHook(() => useBudgetSave(), { wrapper: makeWrapper(client) });
+    useBudgetEditsStore.getState().stageHold({ month: "2026-01", previousAmount: 0, nextAmount: 300 });
+
+    await act(async () => {
+      await result.current.save({}, useBudgetEditsStore.getState().holds);
+    });
+    useBudgetEditsStore.getState().stageHold({ month: "2026-01", previousAmount: 0, nextAmount: 0 });
+
+    expect(useBudgetEditsStore.getState().holds["2026-01"]).toMatchObject({
+      previousAmount: 250,
+      nextAmount: 0,
+    });
+  });
+
+  it("does not report a hold saved when it cannot be read back", async () => {
+    const transport = makeTransport();
+    transport.getBudgetMonth
+      .mockResolvedValueOnce({ ...makeRawMonth(), forNextMonth: 0 })
+      .mockRejectedValueOnce(new Error("offline"));
+    mockGetTransport.mockReturnValue(transport);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { result } = renderHook(() => useBudgetSave(), { wrapper: makeWrapper(client) });
+    useBudgetEditsStore.getState().stageHold({ month: "2026-01", previousAmount: 0, nextAmount: 300 });
+
+    let saveResults: BudgetSaveResult[] = [];
+    await act(async () => {
+      saveResults = await result.current.save({}, useBudgetEditsStore.getState().holds);
+    });
+
+    expect(saveResults[0]).toMatchObject({ status: "error" });
+    expect(useBudgetEditsStore.getState().holds["2026-01"]?.saveError).toMatch(/could not be checked/);
+  });
+
+  it("refreshes the month when a hold reset succeeds but the new hold fails", async () => {
+    const transport = makeTransport();
+    transport.getBudgetMonth.mockResolvedValueOnce({ ...makeRawMonth(), forNextMonth: 300 });
+    transport.holdBudgetForNextMonth.mockRejectedValue(new Error("hold failed"));
+    mockGetTransport.mockReturnValue(transport);
+    const client = new QueryClient();
+    const invalidate = jest.spyOn(client, "invalidateQueries");
+    const { result } = renderHook(() => useBudgetSave(), { wrapper: makeWrapper(client) });
+    useBudgetEditsStore.getState().stageHold({ month: "2026-01", previousAmount: 300, nextAmount: 100 });
+
+    await act(async () => {
+      await result.current.save({}, useBudgetEditsStore.getState().holds);
+    });
+
+    expect(transport.resetBudgetHold).toHaveBeenCalled();
+    // The reset went through: the draft's baseline follows the live hold (0).
+    expect(useBudgetEditsStore.getState().holds["2026-01"]).toMatchObject({
+      previousAmount: 0,
+      saveError: "hold failed",
+    });
+    expect(invalidate).toHaveBeenCalled();
+  });
+
+  it("clears saved holds and still rejects when the budget batch fails", async () => {
+    const transport = makeTransport();
+    let held = 0;
+    transport.holdBudgetForNextMonth.mockImplementation(async (_m: string, amount: number) => {
+      held += amount;
+    });
+    transport.getBudgetMonth.mockImplementation(async () => ({ ...makeRawMonth(), forNextMonth: held }));
+    transport.batchBudgetUpdates.mockRejectedValue(new Error("batch failed"));
+    mockGetTransport.mockReturnValue(transport);
+    const client = new QueryClient();
+    const { result } = renderHook(() => useBudgetSave(), { wrapper: makeWrapper(client) });
+    useBudgetEditsStore.getState().stageHold({ month: "2026-01", previousAmount: 0, nextAmount: 25 });
+    useBudgetEditsStore.getState().stageEdit({
+      month: "2026-01",
+      categoryId: "cat-1",
+      previousBudgeted: 100,
+      nextBudgeted: 150,
+      source: "manual",
+    });
+    const { edits, holds } = useBudgetEditsStore.getState();
+
+    let error: unknown = null;
+    await act(async () => {
+      await result.current.save(edits, holds).catch((err: unknown) => {
+        error = err;
+      });
+    });
+
+    expect(error).toBeInstanceOf(BudgetBatchError);
+    expect((error as unknown as BudgetBatchError).message).toBe("batch failed");
+    // The hold ran before the batch; its result travels with the rejection.
+    expect((error as unknown as BudgetBatchError).holdResults).toEqual([
+      { month: "2026-01", categoryId: "", status: "success" },
+    ]);
+    expect(useBudgetEditsStore.getState().holds["2026-01"]).toBeUndefined();
+    expect(useBudgetEditsStore.getState().edits["2026-01:cat-1" as BudgetCellKey]).toBeDefined();
+    expect(result.current.isSaving).toBe(false);
   });
 
   it("keeps rejected staged edits in the store with a save error", async () => {

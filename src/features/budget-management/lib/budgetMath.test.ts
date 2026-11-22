@@ -123,6 +123,17 @@ describe("parseBudgetExpression", () => {
       expect(r.ok).toBe(false);
     });
 
+    it("rejects a number with more than one decimal point", () => {
+      expect(parseBudgetExpression("12.3.4").ok).toBe(false);
+      expect(parseBudgetExpression("1..5").ok).toBe(false);
+      expect(parseBudgetExpression("10 + 1.2.3").ok).toBe(false);
+    });
+
+    it("still accepts a leading or trailing decimal point", () => {
+      expect(parseBudgetExpression(".5")).toMatchObject({ ok: true });
+      expect(parseBudgetExpression("5.")).toMatchObject({ ok: true });
+    });
+
     it("rejects letters", () => {
       const r = parseBudgetExpression("abc");
       expect(r.ok).toBe(false);
@@ -136,6 +147,17 @@ describe("parseBudgetExpression", () => {
 
     it("ignores whitespace between operators", () => {
       expect(parseBudgetExpression("1   +   2")).toEqual({ ok: true, value: 300 });
+    });
+  });
+
+  describe("thousands separators", () => {
+    it("reads correctly grouped numbers, also inside expressions", () => {
+      expect(parseBudgetExpression("1,500")).toEqual({ ok: true, value: 150000 });
+      expect(parseBudgetExpression("1,500.25+12,000")).toEqual({ ok: true, value: 1350025 });
+    });
+
+    it.each(["1,50", "1,2,3", "12,3456", ",5", "100+1,5"])("refuses %s", (text) => {
+      expect(parseBudgetExpression(text).ok).toBe(false);
     });
   });
 });

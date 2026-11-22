@@ -26,25 +26,28 @@ export function useStagedTransfer() {
   }: StagedTransferParams) {
     const transferGroupId = `transfer-${generateId()}`;
 
-    const sourcePrev =
-      edits[`${month}:${sourceCategoryId}`]?.nextBudgeted ?? sourceServerBudgeted;
-    const destPrev =
-      edits[`${month}:${destinationCategoryId}`]?.nextBudgeted ?? destServerBudgeted;
+    // Each leg starts from the cell's current (staged) value, but keeps the
+    // server value as its baseline so a hand edit staged earlier in the same
+    // cell is still written (C1). The store enforces the same rule.
+    const sourceExisting = edits[`${month}:${sourceCategoryId}`];
+    const destExisting = edits[`${month}:${destinationCategoryId}`];
+    const sourceCurrent = sourceExisting?.nextBudgeted ?? sourceServerBudgeted;
+    const destCurrent = destExisting?.nextBudgeted ?? destServerBudgeted;
 
     stageBulkEdits([
       {
         month,
         categoryId: sourceCategoryId,
-        nextBudgeted: sourcePrev - amount,
-        previousBudgeted: sourcePrev,
+        nextBudgeted: sourceCurrent - amount,
+        previousBudgeted: sourceExisting?.previousBudgeted ?? sourceServerBudgeted,
         source: "transfer",
         transferGroupId,
       },
       {
         month,
         categoryId: destinationCategoryId,
-        nextBudgeted: destPrev + amount,
-        previousBudgeted: destPrev,
+        nextBudgeted: destCurrent + amount,
+        previousBudgeted: destExisting?.previousBudgeted ?? destServerBudgeted,
         source: "transfer",
         transferGroupId,
       },
