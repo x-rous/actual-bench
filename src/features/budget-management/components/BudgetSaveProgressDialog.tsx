@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
-import { useBudgetSave } from "../hooks/useBudgetSave";
+import { BudgetBatchError, useBudgetSave } from "../hooks/useBudgetSave";
 import { useBudgetEditsStore } from "@/store/budgetEdits";
 import type { BudgetCellKey, BudgetSaveResult, StagedBudgetEdit, StagedHold } from "../types";
 
@@ -26,12 +26,18 @@ function buildRejectedSaveResults(
 ): BudgetSaveResult[] {
   const message = getSaveErrorMessage(error);
 
-  return Object.values(edits).map((edit) => ({
-    month: edit.month,
-    categoryId: edit.categoryId,
-    status: "error",
-    message,
-  }));
+  // The holds ran before the budget batch: keep their own outcomes, so a failed
+  // hold is listed and retried and a saved one is not reported as failed.
+  const holdResults = error instanceof BudgetBatchError ? error.holdResults : [];
+  return [
+    ...holdResults,
+    ...Object.values(edits).map((edit): BudgetSaveResult => ({
+      month: edit.month,
+      categoryId: edit.categoryId,
+      status: "error",
+      message,
+    })),
+  ];
 }
 
 export function BudgetSaveProgressDialog({ edits, holds = {}, onClose }: Props) {

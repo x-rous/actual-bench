@@ -117,6 +117,27 @@ type UseBudgetSaveReturn = {
  * Clearing: only keys that received a 200 are removed from the store —
  * failed keys remain with their saveError set, visible in the grid.
  */
+/**
+ * Thrown when the budget batch rejects after the holds were sent. Holds run
+ * outside the batch and are already reconciled, so their results travel with
+ * the rejection: the dialog lists them and Retry Failed resends failed holds.
+ */
+export class BudgetBatchError extends Error {
+  readonly holdResults: BudgetSaveResult[];
+  readonly cause: unknown;
+
+  constructor(cause: unknown, holdResults: BudgetSaveResult[]) {
+    super(
+      cause instanceof Error
+        ? cause.message
+        : (cause as { message?: string } | null)?.message ?? "Budget save failed."
+    );
+    this.name = "BudgetBatchError";
+    this.cause = cause;
+    this.holdResults = holdResults;
+  }
+}
+
 export function useBudgetSave(): UseBudgetSaveReturn {
   const connection = useConnectionStore(selectActiveInstance);
   const queryClient = useQueryClient();
@@ -629,7 +650,12 @@ export function useBudgetSave(): UseBudgetSaveReturn {
           }
         }
 
-        if (batchError !== null) throw batchError;
+        if (batchError !== null) {
+          throw new BudgetBatchError(
+            batchError,
+            results.filter((r) => r.categoryId === "")
+          );
+        }
       } finally {
         setIsSaving(false);
         setProgress({ completed: 0, total: 0 });

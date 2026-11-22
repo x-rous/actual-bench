@@ -274,11 +274,30 @@ export const useBudgetEditsStore = create<BudgetEditsStore>()((set, get) => ({
   },
 
   setHoldSaveError(month, message, serverAmount) {
-    const { holds } = get();
+    const { holds, undoStack, redoStack } = get();
     const existing = holds[month];
     if (!existing) return;
     const previousAmount = serverAmount ?? existing.previousAmount;
-    set({ holds: { ...holds, [month]: { ...existing, previousAmount, saveError: message } } });
+    if (previousAmount === existing.previousAmount) {
+      set({ holds: { ...holds, [month]: { ...existing, saveError: message } } });
+      return;
+    }
+    // The server's hold changed: every undo/redo step for this month must use
+    // the new baseline too, or undoing would bring back the old one and a
+    // later Free could be dropped as a no-op while Actual still holds money.
+    const rebase = (stack: ActionPatch[][]) =>
+      stack.map((patches) =>
+        patches.map((patch) =>
+          patch.type === "hold" && patch.month === month && patch.prev
+            ? { ...patch, prev: { ...patch.prev, previousAmount } }
+            : patch
+        )
+      );
+    set({
+      holds: { ...holds, [month]: { ...existing, previousAmount, saveError: message } },
+      undoStack: rebase(undoStack),
+      redoStack: rebase(redoStack),
+    });
   },
 
   clearHoldSaveError(month) {

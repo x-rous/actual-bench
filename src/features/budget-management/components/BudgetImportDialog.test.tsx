@@ -193,6 +193,74 @@ describe("BudgetImportDialog", () => {
     expect(screen.getByRole("button", { name: /Preview 2 approved rows/ })).toBeInTheDocument();
   });
 
+  function renderRangeDialog(jan: LoadedMonthState, csv: string) {
+    const client = new QueryClient({
+      defaultOptions: { queries: { staleTime: Infinity, retry: false } },
+    });
+    const props = {
+      availableMonths: ["2026-01", "2026-02"],
+      categories: Object.values(jan.categoriesById),
+      groups: [group],
+      categoriesById: jan.categoriesById,
+      onClose: jest.fn(),
+    };
+    const onExtendRange = jest.fn();
+    const ui = (activeMonths: string[]) => (
+      <QueryClientProvider client={client}>
+        <BudgetImportDialog {...props} activeMonths={activeMonths} onExtendRange={onExtendRange} />
+      </QueryClientProvider>
+    );
+    const view = render(ui(["2026-01"]));
+    fireEvent.change(screen.getByLabelText(/Or paste cells/), { target: { value: csv } });
+    fireEvent.click(screen.getByRole("button", { name: "Use pasted data" }));
+    const moveRange = () => {
+      fireEvent.click(screen.getByRole("button", { name: /Move the visible range/ }));
+      view.rerender(ui(["2026-01", "2026-02"]));
+    };
+    return { moveRange };
+  }
+
+  it("reports a month brought into view whose categories could not load, and retries it", async () => {
+    const jan = month("2026-01", [category("c1", "Groceries", 45000)]);
+    const feb = month("2026-02", [category("c1", "Groceries", 45000), category("c2", "Dining", 0)]);
+    mockServerMonths = { "2026-01": jan };
+    const { moveRange } = renderRangeDialog(
+      jan,
+      "Group Name\tCategory Name\tJan-26\tFeb-26\nFood\tGroceries\t450.00\t450.00\nFood\tDining\t\t80.00\n"
+    );
+    expect(await screen.findByText("Review Matches")).toBeInTheDocument();
+
+    moveRange();
+    expect(await screen.findByText(/Could not load the categories of/)).toHaveTextContent("Feb 26");
+    expect(screen.getAllByText("Exact")).toHaveLength(1);
+
+    mockServerMonths = { "2026-01": jan, "2026-02": feb };
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+
+    await waitFor(() => expect(screen.getAllByText("Exact")).toHaveLength(2));
+    expect(screen.queryByText(/Could not load the categories of/)).not.toBeInTheDocument();
+  });
+
+  it("drops an approval when moving the range changes the suggested category", async () => {
+    const jan = month("2026-01", [category("c1", "Batsx", 0)]);
+    const feb = month("2026-02", [category("c1", "Batsx", 0), category("c2", "Cuts", 0)]);
+    mockServerMonths = { "2026-01": jan, "2026-02": feb };
+    const { moveRange } = renderRangeDialog(
+      jan,
+      "Group Name\tCategory Name\tJan-26\tFeb-26\nFood\tCats\t10.00\t20.00\n"
+    );
+    expect(await screen.findByText("Review Matches")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Approve 1 similar name/ }));
+    expect(screen.getByText(/1 of 1 rows approved/)).toBeInTheDocument();
+
+    moveRange();
+
+    // "Cuts" is closer than the approved "Batsx": the user has not approved it.
+    await waitFor(() => expect(screen.queryByText(/Batsx/)).not.toBeInTheDocument());
+    expect(screen.getAllByText(/Cuts/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/0 of 1 rows approved/)).toBeInTheDocument();
+  });
+
   function renderDialog(client: QueryClient, jan: LoadedMonthState) {
     render(
       <QueryClientProvider client={client}>

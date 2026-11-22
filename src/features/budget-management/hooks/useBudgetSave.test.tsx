@@ -1,7 +1,7 @@
 import React from "react";
 import { renderHook, act } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useBudgetSave } from "./useBudgetSave";
+import { BudgetBatchError, useBudgetSave } from "./useBudgetSave";
 import { useBudgetEditsStore } from "../../../store/budgetEdits";
 import type { ConnectionInstance } from "../../../store/connection";
 import type {
@@ -716,7 +716,12 @@ describe("useBudgetSave", () => {
       });
     });
 
-    expect(error).toEqual(new Error("batch failed"));
+    expect(error).toBeInstanceOf(BudgetBatchError);
+    expect((error as unknown as BudgetBatchError).message).toBe("batch failed");
+    // The hold ran before the batch; its result travels with the rejection.
+    expect((error as unknown as BudgetBatchError).holdResults).toEqual([
+      { month: "2026-01", categoryId: "", status: "success" },
+    ]);
     expect(useBudgetEditsStore.getState().holds["2026-01"]).toBeUndefined();
     expect(useBudgetEditsStore.getState().edits["2026-01:cat-1" as BudgetCellKey]).toBeDefined();
     expect(result.current.isSaving).toBe(false);

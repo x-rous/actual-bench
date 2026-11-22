@@ -107,6 +107,8 @@ export function BudgetImportDialog({
   const [isWorking, setIsWorking] = useState(false);
   const [pasteText, setPasteText] = useState("");
   const [previewError, setPreviewError] = useState<string | null>(null);
+  /** Months brought into view whose categories could not be loaded. */
+  const [categoryLoadFailed, setCategoryLoadFailed] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Each read or preview load takes a ticket; a newer one (or Back) makes an
   // older pending load's result void, so it cannot replace newer state.
@@ -196,7 +198,7 @@ export function BudgetImportDialog({
       const inView = [...new Set(result.monthColumns.map((c) => c.month))].filter(
         (m) => visible.has(m) && available.has(m)
       );
-      const { monthStates: states } = await loadMonthStates(inView);
+      const { monthStates: states, failed } = await loadMonthStates(inView);
       if (request !== requestRef.current) return;
       const allCategories = mergeCategories(
         categories,
@@ -206,6 +208,7 @@ export function BudgetImportDialog({
       const results = matchImportRows(result.rows, allCategories, availableMonths, activeMonths);
       setParsed(result);
       setMatchCategories(allCategories);
+      setCategoryLoadFailed(failed.sort());
       // Auto-approve exact matches
       setApprovedIds(
         new Set(
@@ -309,41 +312,54 @@ export function BudgetImportDialog({
     ),
   ];
 
-  const handleExtendRange = async () => {
-    if (!onExtendRange || outOfRangeMonths.length === 0 || !parsed) return;
-    const months = outOfRangeMonths;
-    onExtendRange(months);
-
-    // Categories are matched against the months in view; load the months just
-    // brought into view too, so a category found only there can be matched.
-    // Approvals are kept (row ids are row positions); a row that only now
-    // matches exactly is approved, as it would have been on the first read.
+  /**
+   * Matches against categories found in `months` as well (months just brought
+   * into view). Approvals are kept by row position while a row keeps its
+   * target; a row whose suggested category changed loses its approval, since
+   * the user approved a different one; a row that only now matches exactly is
+   * approved, as it would have been on the first read. Months that fail to
+   * load are reported with a retry.
+   */
+  const loadMoreCategories = async (months: string[]) => {
+    if (!parsed) return;
     const available = new Set(availableMonths);
     const request = ++requestRef.current;
     setIsWorking(true);
     try {
-      const { monthStates } = await loadMonthStates(months.filter((m) => available.has(m)));
+      const { monthStates, failed } = await loadMonthStates(months.filter((m) => available.has(m)));
       if (request !== requestRef.current) return;
+      setCategoryLoadFailed(failed.sort());
       const merged = mergeCategories(
         matchCategories,
         Object.values(monthStates).filter((st): st is LoadedMonthState => st != null)
       );
       if (merged.length === matchCategories.length) return;
       const before = matchResults;
-      const after = matchImportRows(parsed.rows, merged, availableMonths, [...activeMonths, ...months]);
+      const after = matchImportRows(parsed.rows, merged, availableMonths, [...new Set([...activeMonths, ...months])]);
       setMatchCategories(merged);
       setApprovedIds((prev) => {
-        const next = new Set(prev);
+        const next = new Set<string>();
         after.forEach((r, index) => {
-          if (r.matchStatus === "exact" && r.matchedCategoryId !== null && before[index]?.matchStatus !== "exact") {
-            next.add(getImportRowId(index));
-          }
+          const id = getImportRowId(index);
+          const was = before[index];
+          const isExact = r.matchStatus === "exact" && r.matchedCategoryId !== null;
+          if (prev.has(id) && was?.matchedCategoryId === r.matchedCategoryId) next.add(id);
+          else if (isExact && was?.matchStatus !== "exact") next.add(id);
         });
         return next;
       });
     } finally {
       if (request === requestRef.current) setIsWorking(false);
     }
+  };
+
+  const handleExtendRange = async () => {
+    if (!onExtendRange || outOfRangeMonths.length === 0) return;
+    const months = outOfRangeMonths;
+    onExtendRange(months);
+    // Categories are matched against the months in view; load the months just
+    // brought into view too, so a category found only there can be matched.
+    await loadMoreCategories(months);
   };
 
   const handleBuildPreview = async () => {
@@ -560,6 +576,22 @@ export function BudgetImportDialog({
                       Move the visible range
                     </button>
                   )}
+                </div>
+              )}
+
+              {categoryLoadFailed.length > 0 && (
+                <div className="p-2 rounded bg-destructive/10 text-xs text-destructive" role="alert">
+                  Could not load the categories of{" "}
+                  <strong>{categoryLoadFailed.map((m) => formatMonthLabel(m)).join(", ")}</strong>, so rows
+                  for categories found only there stay unmatched.{" "}
+                  <button
+                    type="button"
+                    onClick={() => void loadMoreCategories(categoryLoadFailed)}
+                    disabled={isWorking}
+                    className="underline hover:no-underline disabled:opacity-50"
+                  >
+                    Try again
+                  </button>
                 </div>
               )}
 

@@ -236,12 +236,46 @@ describe("MonthsDataProvider Envelope carry", () => {
     expect(view.getByTestId("balance").textContent).toBe("none");
     expect(view.getByTestId("loading").textContent).toBe("true");
 
-    const march = monthState("2026-03");
-    march.categoriesById.a = { ...category("a", 0), actuals: -80, balance: -80 };
-    client.setQueryData(["budget-month-data", "conn-1", "2026-03"], march);
-    resolveMarch(undefined);
+    // The server answers for March: "a" overspent by 80 (not rollover).
+    resolveMarch({
+      month: "2026-03",
+      incomeAvailable: 0,
+      lastMonthOverspent: 0,
+      forNextMonth: 0,
+      totalBudgeted: 0,
+      toBudget: 1000,
+      fromLastMonth: 0,
+      totalIncome: 0,
+      totalSpent: -80,
+      totalBalance: -80,
+      categoryGroups: [
+        {
+          id: "g1",
+          name: "Group",
+          is_income: false,
+          hidden: false,
+          budgeted: 0,
+          spent: -80,
+          balance: -80,
+          categories: [
+            {
+              id: "a",
+              name: "a",
+              group_id: "g1",
+              is_income: false,
+              hidden: false,
+              budgeted: 0,
+              spent: -80,
+              balance: -80,
+              carryover: false,
+            },
+          ],
+        },
+      ],
+    });
 
-    // Once March is known, its overspend is covered and April stays at 0.
+    // Once March is known, its overspend is covered and April stays at 0
+    // (a replay without March would carry the full 80 into April).
     await waitFor(() => expect(view.getByTestId("balance").textContent).toBe("0"));
     expect(view.getByTestId("loading").textContent).toBe("false");
   });

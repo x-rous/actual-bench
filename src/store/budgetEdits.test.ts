@@ -226,3 +226,27 @@ describe("budgetEdits store — server baseline (C1)", () => {
     );
   });
 });
+
+describe("budgetEdits store — hold baseline after a short hold", () => {
+  beforeEach(() => useBudgetEditsStore.setState({ holds: {} }));
+
+  it("rebases undo history, so Free after undo still clears what Actual holds", () => {
+    const store = useBudgetEditsStore.getState();
+    store.stageHold({ month: "2026-01", previousAmount: 0, nextAmount: 200 });
+    store.stageHold({ month: "2026-01", previousAmount: 0, nextAmount: 300 });
+    // Actual held only 250 of the 300.
+    store.setHoldSaveError("2026-01", "short", 250);
+
+    useBudgetEditsStore.getState().undo();
+    expect(useBudgetEditsStore.getState().holds["2026-01"]).toMatchObject({
+      nextAmount: 200,
+      previousAmount: 250,
+    });
+
+    useBudgetEditsStore.getState().stageHold({ month: "2026-01", previousAmount: 0, nextAmount: 0 });
+    expect(useBudgetEditsStore.getState().holds["2026-01"]).toMatchObject({
+      nextAmount: 0,
+      previousAmount: 250,
+    });
+  });
+});
