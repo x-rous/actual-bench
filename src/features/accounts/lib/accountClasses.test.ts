@@ -50,6 +50,15 @@ describe("effectiveAccountClasses with a narrower pending class", () => {
   });
 });
 
+describe("effectiveAccountClasses with a kept pre-upgrade choice", () => {
+  it("shows a chosen class at once, instead of the kept choice it will replace on save", () => {
+    const kept = { ...maps, refinements: new Map([["a1", "fixed-deposit" as const]]) };
+    expect(effectiveAccountClasses(staged, [{ id: "g1", name: "Everyday" }], kept).get("a1")).toEqual({ accountClass: "fixed-deposit", source: "account" });
+    const chosen = { ...staged, a1: { ...staged.a1, pendingAccountClass: "savings" as const } };
+    expect(effectiveAccountClasses(chosen, [{ id: "g1", name: "Everyday" }], kept).get("a1")).toEqual({ accountClass: "savings", source: "account" });
+  });
+});
+
 describe("account class icons", () => {
   it("has an icon for every class", () => {
     for (const accountClass of ACCOUNT_CLASSES) expect(ACCOUNT_CLASS_ICONS[accountClass]).toBeDefined();
