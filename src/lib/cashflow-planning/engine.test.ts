@@ -477,6 +477,11 @@ describe("savings by access", () => {
     expect(mixed.lockedSavings).not.toBeNull();
     expect(mixed.lockedSavings![8]).toBeGreaterThan(0);
     expect(savingsOnBasis("usable", mixed.savings, mixed.lockedSavings, 8)).toBeLessThan(mixed.savings![8]);
+    // A withdrawal on such a row comes out of the usable part, never the locked one.
+    const withdrawing = run(plan((d) => ({ ...d, rows: d.rows.map((r) => (r.name === "Broker" ? { ...r, basis: { kind: "manual" as const }, links: { ...r.links, accounts: [{ id: "broker" }, { id: "pension" }] }, cells: { "2026-06": -30_000 } } : r)) })), mixedSnapshot);
+    const june = withdrawing.months.indexOf("2026-06"), may = june - 1;
+    expect(withdrawing.lockedSavings![june]).toBe(withdrawing.lockedSavings![may]);
+    expect(savingsOnBasis("usable", withdrawing.savings, withdrawing.lockedSavings, june) - savingsOnBasis("usable", withdrawing.savings, withdrawing.lockedSavings, may)).toBe(-30_000);
     // Marked available now, nothing is locked any more.
     const snapshot = household();
     snapshot.accounts = snapshot.accounts.map((a) => (a.id === "broker" ? { ...a, access: "available" as const } : a));

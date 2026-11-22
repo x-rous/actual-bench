@@ -42,7 +42,7 @@ import { ASSET_TYPES, eligibility, ownershipAt, type Asset, type Registry } from
 import { readBook, sumMinor } from "@/lib/asset-registry/ledger";
 import { freshActionContext } from "@/lib/asset-registry/actions";
 import { bankToday } from "@/features/credit-cards/lib/cycles";
-import type { AccountClass } from "@/lib/account-class";
+import { classMapsFromRecords, type AccountClassRecordLike } from "@/lib/account-class";
 import { pruneRequest, registryRequest } from "./api";
 import { buildPruneEvidence, planPrune, pruneSize } from "@/lib/asset-registry/prune";
 import { normalizeActivity } from "@/features/credit-cards/lib/activity";
@@ -199,8 +199,8 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
     const directory = await context.transport.getAccounts();
     const response = await fetch(`/api/account-classes?budgetSyncId=${encodeURIComponent(connection.budgetSyncId)}`);
     if (!response.ok) throw new Error("Could not confirm current account class");
-    const records = (await response.json()).accountClasses as { scope: string; accountId: string; accountClass: AccountClass }[];
-    const maps = { accounts: new Map(records.filter((r) => r.scope === "account").map((r) => [r.accountId, r.accountClass])), groups: new Map(records.filter((r) => r.scope === "group").map((r) => [r.accountId, r.accountClass])) };
+    const records = (await response.json()).accountClasses as AccountClassRecordLike[];
+    const maps = classMapsFromRecords(records);
     const invalid = eligibility(directory.find((a) => a.id === context.asset.actualAccountId), context.asset.assetType, maps);
     if (invalid) throw new Error(invalid);
     const pending = useStagedStore.getState().accounts[context.asset.actualAccountId];

@@ -8,6 +8,7 @@ import {
   isLiability,
   planGroupAccountClass,
   refinesClass,
+  classMapsFromRecords,
   resolveAccountClass,
   type AccountClass,
   type AccountClassMaps,
@@ -87,6 +88,15 @@ describe("resolveAccountClass", () => {
     expect(resolveAccountClass("dep", "things", m)).toEqual({ accountClass: "other-asset", source: "group" });
     expect(refinesClass("savings", "bank")).toBe(true);
     expect(refinesClass("bank", "savings")).toBe(false);
+  });
+
+  it("applies a narrower class kept from before schema 68 only inside a group whose class it narrows", () => {
+    const m = { ...maps({ a1: "cash" }, { banks: "bank", invest: "investment" }), refinements: new Map([["a1", "fixed-deposit" as const]]) };
+    expect(resolveAccountClass("a1", "banks", m)).toEqual({ accountClass: "fixed-deposit", source: "account" });
+    expect(resolveAccountClass("a1", "invest", m)).toEqual({ accountClass: "investment", source: "group" });
+    expect(resolveAccountClass("a1", null, m)).toEqual({ accountClass: "cash", source: "account" });
+    expect(classMapsFromRecords([{ scope: "refinement", accountId: "a1", accountClass: "fixed-asset" }, { scope: "group", accountId: "g", accountClass: "other-asset" }]))
+      .toEqual({ accounts: new Map(), groups: new Map([["g", "other-asset"]]), refinements: new Map([["a1", "fixed-asset"]]) });
   });
 
   it("ignores a group with no class", () => {

@@ -114,7 +114,23 @@ export type AccountClassMaps = {
   accounts: ReadonlyMap<string, AccountClass>;
   /** Class per Actual account group id. */
   groups: ReadonlyMap<string, AccountClass>;
+  /**
+   * Narrower classes saved before schema 68 as Financial Reporting choices (a Bank account marked Fixed / restricted deposit, an Other
+   * Asset marked Fixed asset), per Actual account id. Each applies only where the old choice did: inside a group whose class it narrows.
+   * The account's own class, which may differ, is kept. Choosing the account's own class clears it.
+   */
+  refinements?: ReadonlyMap<string, AccountClass>;
 };
+
+/** A saved class record as the account-classes API returns it. */
+export type AccountClassRecordLike = { scope: "account" | "group" | "refinement"; accountId: string; accountClass: AccountClass };
+
+/** The class maps from the API's records: own classes, group classes and the narrower classes kept from before schema 68. */
+export function classMapsFromRecords(records: readonly AccountClassRecordLike[]): Required<AccountClassMaps> {
+  const accounts = new Map<string, AccountClass>(), groups = new Map<string, AccountClass>(), refinements = new Map<string, AccountClass>();
+  for (const r of records) (r.scope === "group" ? groups : r.scope === "refinement" ? refinements : accounts).set(r.accountId, r.accountClass);
+  return { accounts, groups, refinements };
+}
 
 /**
  * A group with a class wins over the account's own class, which stays stored
@@ -145,7 +161,12 @@ export function resolveAccountClass(
 ): EffectiveAccountClass {
   const groupClass = groupId ? maps.groups.get(groupId) : undefined;
   const own = maps.accounts.get(accountId);
-  if (groupClass && !refinesClass(own, groupClass)) return { accountClass: groupClass, source: "group" };
+  if (groupClass && !refinesClass(own, groupClass)) {
+    // A narrower class kept from a pre-schema-68 choice applies inside the group, as the choice did; the own class stays as it was.
+    const kept = maps.refinements?.get(accountId);
+    if (kept && refinesClass(kept, groupClass)) return { accountClass: kept, source: "account" };
+    return { accountClass: groupClass, source: "group" };
+  }
   if (own) return { accountClass: own, source: "account" };
   return { accountClass: null, source: "none" };
 }

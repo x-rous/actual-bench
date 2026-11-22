@@ -1,3 +1,4 @@
+import { classMapsFromRecords } from "@/lib/account-class";
 import { z } from "zod";
 import type { DepreciationSettings } from "@/lib/asset-registry/depreciation";
 import type { AssetDebtLink } from "@/lib/asset-registry/financing";
@@ -74,7 +75,7 @@ export function saveAsset(db: SqliteDatabase, input: unknown): Registry {
     if (dedicatedMember && adopt?.assetId !== dedicatedMember.id) throw new AppDbValidationError(`${dedicatedMember.name} has no hashtag, so its entries must be assigned to it before another asset shares its account. Refresh and try again.`);
     if (adopt && !dedicatedMember) throw new AppDbValidationError("Only the entries of an account's single untagged asset can be assigned while sharing its account");
     const records = listAccountClasses(db, budget);
-    const maps = { accounts: new Map(records.filter((c) => c.scope === "account").map((c) => [c.accountId, c.accountClass])), groups: new Map(records.filter((c) => c.scope === "group").map((c) => [c.accountId, c.accountClass])) };
+    const maps = classMapsFromRecords(records);
     const reason = eligibility(accountDirectory.find((a) => a.id === asset.actualAccountId), asset.assetType, maps);
     // Archiving remains possible after account/class drift; it never writes Actual.
     if (reason && !(current && asset.status === "archived" && asset.assetType === current.assetType)) throw new AppDbValidationError(reason);

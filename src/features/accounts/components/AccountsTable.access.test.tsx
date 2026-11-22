@@ -110,6 +110,21 @@ describe("accounts table access and reports", () => {
     expect(jest.requireMock("sonner").toast.info).toHaveBeenCalledWith(expect.stringContaining("1 account was left unchanged"));
   });
 
+  it("waits for a bulk access save to land before taking another choice", async () => {
+    renderTable();
+    await screen.findByText("Sell to use");
+    let release: () => void = () => undefined;
+    const original = global.fetch as jest.Mock;
+    global.fetch = jest.fn((url: RequestInfo | URL, init?: RequestInit) => (init?.method === "PUT"
+      ? new Promise((resolve) => { release = () => resolve(original(url, init)); })
+      : original(url, init))) as unknown as typeof fetch;
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select account Brokerage" }));
+    await chooseSelectOption(screen.getByRole("combobox", { name: "Set the access of the selected accounts" }), "Available now");
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Set the access of the selected accounts" })).toBeDisabled());
+    release();
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Set the access of the selected accounts" })).not.toBeDisabled());
+  });
+
   it("says when the settings could not be loaded, and retries", async () => {
     fakeServer({ failFlags: true });
     renderTable();

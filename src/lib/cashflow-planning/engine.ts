@@ -307,7 +307,8 @@ export function computePlan(doc: PlanDocument, snapshot: Snapshot | null, placed
   // ── Savings estimate ───────────────────────────────────────────────────────
   // One estimate for all savings, and the same for the locked part: the recorded balance, then what the plan puts aside, with growth.
   const monthlyGrowth = doc.savingsGrowthPct ? Math.pow(1 + doc.savingsGrowthPct / 100, 1 / 12) - 1 : 0;
-  const estimate = (change: Map<Month, number>, savingsRows: RowResult[]): number[] => {
+  // `share` picks the part of a row's amount that goes into this estimate (all of it by default).
+  const estimate = (change: Map<Month, number>, savingsRows: RowResult[], share: (row: RowResult, amount: number) => number = (_r, amount) => amount): number[] => {
     const out = zeros(count);
     const total = [...change.values()].reduce((sum, amount) => sum + amount, 0);
     let running = 0;
@@ -317,8 +318,8 @@ export function computePlan(doc: PlanDocument, snapshot: Snapshot | null, placed
     for (let i = 0; i < count; i++) {
       if (kinds[i] === "actual") running += change.get(months[i]) ?? 0;
       // Today's balance, plus what the plan still expects to be put aside this month.
-      else if (kinds[i] === "current") running = total + savingsRows.reduce((sum, r) => sum + r.values[i] - (r.actual[i] ?? 0), 0);
-      else running = Math.round(running * (1 + monthlyGrowth)) + savingsRows.reduce((sum, r) => sum + r.values[i], 0);
+      else if (kinds[i] === "current") running = total + savingsRows.reduce((sum, r) => sum + share(r, r.values[i] - (r.actual[i] ?? 0)), 0);
+      else running = Math.round(running * (1 + monthlyGrowth)) + savingsRows.reduce((sum, r) => sum + share(r, r.values[i]), 0);
       out[i] = running;
     }
     return out;
@@ -329,10 +330,15 @@ export function computePlan(doc: PlanDocument, snapshot: Snapshot | null, placed
   if ((live && live.placed.savingsIds.size > 0) || savingsDocRows.length > 0) {
     savings = estimate(live?.placed.savingsChange ?? new Map<Month, number>(), savingsDocRows.map((r) => rows.get(r.id)!));
     const lockedIds = live?.placed.lockedSavingsIds ?? new Set<string>();
-    // A savings row counts as locked when any account it follows is locked savings: its forecast cannot be split between the accounts,
-    // and money you can use is never overstated. A row that follows only accounts you can use (or no account) counts as usable.
+    // A row's forecast cannot be split between the accounts it follows, so it is placed so that money you can use is never overstated:
+    // a row that follows only locked savings is all locked; a row that follows locked and usable savings puts money into the locked
+    // part and takes it out of the usable part; a row that follows only usable savings (or no account) is all usable.
     const lockedRows = savingsDocRows.filter((r) => r.links.accounts.some((l) => lockedIds.has(l.id)));
-    if (lockedIds.size > 0 || lockedRows.length > 0) lockedSavings = estimate(live?.placed.lockedSavingsChange ?? new Map<Month, number>(), lockedRows.map((r) => rows.get(r.id)!));
+    const allLocked = new Set(lockedRows.filter((r) => r.links.accounts.every((l) => lockedIds.has(l.id))).map((r) => rows.get(r.id)!));
+    if (lockedIds.size > 0 || lockedRows.length > 0) {
+      lockedSavings = estimate(live?.placed.lockedSavingsChange ?? new Map<Month, number>(), lockedRows.map((r) => rows.get(r.id)!),
+        (row, amount) => (allLocked.has(row) ? amount : Math.max(0, amount)));
+    }
   }
 
   // ── Key figures ────────────────────────────────────────────────────────────

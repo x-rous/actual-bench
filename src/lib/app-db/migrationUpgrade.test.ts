@@ -15,6 +15,8 @@ import { sealSecret, sealWithKey } from "@/lib/sync/vault";
 import { connectionFingerprint, serverFingerprint } from "@/lib/sync/connectionRef";
 import { randomBytes } from "node:crypto";
 import { LATEST_SCHEMA_VERSION, runMigrations } from "./migrations";
+import { applyAccountClassChanges, listAccountClasses } from "./accountClassRepository";
+import { classMapsFromRecords, resolveAccountClass } from "@/lib/account-class";
 import type { SqliteDatabase } from "./types";
 import { getLastSnapshotAt, recordSnapshotUploaded } from "./budgetRuntimeStateRepository";
 import {
@@ -2020,8 +2022,17 @@ describe("v60 loan tracking", () => {
       ]);
       // An existing row reads as the default basis.
       expect(first.basis).toEqual([{ basis: null }]);
+      // "dormant" kept its own class (Cash), which only applied outside a group: inside the Bank group "grp" its Fixed deposit choice
+      // applied, and still does, through the kept narrower class. Outside a group it is still Cash.
+      const maps = classMapsFromRecords(listAccountClasses(db, "b1"));
+      expect(resolveAccountClass("dormant", "grp", maps)).toEqual({ accountClass: "fixed-deposit", source: "account" });
+      expect(resolveAccountClass("dormant", null, maps)).toEqual({ accountClass: "cash", source: "account" });
+      expect(resolveAccountClass("member", "grp", maps)).toEqual({ accountClass: "fixed-deposit", source: "account" });
       expect(runMigrations(db).schemaVersion).toBe(LATEST_SCHEMA_VERSION);
       expect(read()).toEqual(first);
+      // Choosing the account's own class replaces the kept choice, so it cannot outlive the user's decision.
+      applyAccountClassChanges(db, { budgetSyncId: "b1", changes: [{ scope: "account", id: "dormant", accountClass: "bank" }] });
+      expect(resolveAccountClass("dormant", "grp", classMapsFromRecords(listAccountClasses(db, "b1")))).toEqual({ accountClass: "bank", source: "group" });
     } finally {
       resetAppDbForTests();
       rmSync(root, { recursive: true, force: true });

@@ -1,4 +1,5 @@
 "use client";
+import { classMapsFromRecords, type AccountClassRecordLike } from "@/lib/account-class";
 import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { buildAccountOptions } from "@/components/ui/entity-options";
@@ -86,9 +87,9 @@ export function useAssetSetup({ connection, asset, accounts, registry, onDiscard
     const records = await queryClient.fetchQuery({ queryKey: ["accountClasses", connection.budgetSyncId], staleTime: 0, queryFn: async () => {
       const r = await fetch(`/api/account-classes?budgetSyncId=${encodeURIComponent(connection.budgetSyncId)}`);
       if (!r.ok) throw new Error("Could not confirm saved account class");
-      return (await r.json()).accountClasses as { scope: string; accountId: string; accountClass: typeof initialAccount.accountClass }[];
+      return (await r.json()).accountClasses as AccountClassRecordLike[];
     } });
-    const maps = { accounts: new Map(records.filter((r) => r.scope === "account").map((r) => [r.accountId, r.accountClass])), groups: new Map(records.filter((r) => r.scope === "group").map((r) => [r.accountId, r.accountClass])) };
+    const maps = classMapsFromRecords(records);
     const saved = fresh.find((a) => a.id === realId);
     const pending = realId ? useStagedStore.getState().accounts[realId] : null;
     if (!saved || pending?.isNew || pending?.isUpdated || pending?.saveError || eligibility(saved, draft.assetType, maps)) throw new Error("Account or class/group save is incomplete. Review Accounts errors and Save again; the asset draft is preserved.");

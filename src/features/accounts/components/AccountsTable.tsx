@@ -25,7 +25,7 @@ import { isExcluded, type AccountFlagChange } from "@/lib/account-class/flags";
 import { accessChoosable, accessFlagChanges } from "@/lib/account-class/access";
 import { NO_FLAGS, type AccountFlagEdit, type AccountFlagState } from "./AccountAccessCell";
 import { toast } from "sonner";
-import { ACCOUNT_CLASS_INFO, accountClassLabel, isAccountClass, refinesClass, isAccountClassAllowed, isAccountClassAllowedForSet, type AccountClass } from "@/lib/account-class";
+import { ACCOUNT_CLASS_INFO, accountClassLabel, isAccountClass, isAccountClassAllowed, isAccountClassAllowedForSet, type AccountClass } from "@/lib/account-class";
 import { selectActiveInstance, useConnectionStore } from "@/store/connection";
 import { effectiveAccountClasses } from "../lib/accountClasses";
 import { buildClusters, type GroupBy } from "../lib/accountClusters";
@@ -163,9 +163,9 @@ export function AccountsTable({
       const groupId = r.entity.groupId;
       const own = accountClasses.maps.accounts.get(r.entity.id);
       const group = groupId && live.has(groupId) ? accountClasses.maps.groups.get(groupId) : undefined;
-      return !r.isNew && !r.isDeleted && own && group && own !== group && !refinesClass(own, group) ? [{ id: r.entity.id, name: r.entity.name, own, group, groupName: groupNames.get(groupId!) ?? "" }] : [];
+      return !r.isNew && !r.isDeleted && own && group && own !== group && effectiveClasses.get(r.entity.id)?.source === "group" ? [{ id: r.entity.id, name: r.entity.name, own, group, groupName: groupNames.get(groupId!) ?? "" }] : [];
     });
-  }, [groups, accountClasses.available, accountClasses.maps, staged, groupNames]);
+  }, [groups, accountClasses.available, accountClasses.maps, staged, groupNames, effectiveClasses]);
   const overriddenSignature = overridden.map((o) => `${o.id}:${o.own}:${o.group}`).sort().join("|");
   // What was dismissed, per budget, in this browser only; read again when the budget changes or after a dismissal.
   const [dismissals, setDismissals] = useState(0);
@@ -585,6 +585,7 @@ export function AccountsTable({
   }
 
   function handleBulkSetAccess(choice: BulkAccessChoice) {
+    if (accountFlags.busy) return;
     const live = [...selectedIds].filter((id) => staged[id] && !staged[id].isDeleted);
     const savedChanges: AccountFlagChange[] = [];
     const drafts: { id: string; edits: AccountFlagEdit[] }[] = [];
@@ -785,7 +786,7 @@ export function AccountsTable({
         classGroupName={entity.groupId ? groupNames.get(entity.groupId) : undefined}
         canSetClass={row.isNew || row.pendingAccountClass !== undefined || accountClasses.available}
         onSetClass={handleSetClass}
-        canSetFlags={row.isNew || accountFlags.available}
+        canSetFlags={row.isNew || (accountFlags.available && !accountFlags.busy)}
         flagState={flagStateOf(entity.id)}
         excludedByGroup={excludedByGroupIds.has(entity.id)}
         onSetFlags={handleSetFlags}
@@ -832,6 +833,7 @@ export function AccountsTable({
           groupBy={activeGroupBy} onGroupByChange={setGroupBy} groupByOptions={groupByOptions}
           onBulkSetClass={accountClasses.available ? handleBulkSetClass : undefined}
           onBulkSetAccess={classesEnabled && accountClasses.available && accountFlags.available ? handleBulkSetAccess : undefined}
+          bulkAccessBusy={accountFlags.busy}
           onBulkAssignGroup={handleBulkAssignGroup}
           filteredCount={rows.length} totalCount={totalCount}
           selectedCount={activeSelectedCount}

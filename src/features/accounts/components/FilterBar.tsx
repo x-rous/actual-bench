@@ -76,6 +76,7 @@ export function FilterBar({
   groupByOptions,
   onBulkSetClass,
   onBulkSetAccess,
+  bulkAccessBusy = false,
   onBulkAssignGroup,
   filteredCount,
   totalCount,
@@ -112,6 +113,8 @@ export function FilterBar({
   onBulkSetClass?: (accountClass: AccountClass | null) => void;
   /** Sets the access, or whether they count in reports, of the selected accounts. */
   onBulkSetAccess?: (choice: BulkAccessChoice) => void;
+  /** A flag save is in flight: a new access choice waits until it has landed. */
+  bulkAccessBusy?: boolean;
   /** Open accounts with no class; shown as a shortcut to the Unclassified filter. */
   unclassifiedCount?: number;
   /** Shown with the class filter when `leftOutCount` is provided (saved settings loaded). */
@@ -178,6 +181,7 @@ export function FilterBar({
               value=""
               placeholder="Set access…"
               aria-label="Set the access of the selected accounts"
+              disabled={bulkAccessBusy}
               options={[
                 { value: "available", label: "Available now" },
                 { value: "locked", label: "Locked" },
