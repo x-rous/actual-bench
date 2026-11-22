@@ -581,7 +581,7 @@ export type BufferLoan = { accountId: string; name: string; monthlyMinor: number
 
 export type CashBuffer = {
   months: number;
-  /** Cash & bank less what is owed on credit cards (`grossCashMinor` − `cardsOwedMinor`): what the months are measured on. Never negative. */
+  /** Cash less what is owed on credit cards (`grossCashMinor` − `cardsOwedMinor`): what the months are measured on. Never negative. */
   cashMinor: number;
   /** Eligible cash today, before cards. */
   grossCashMinor: number;
@@ -683,11 +683,11 @@ export function cashBuffer(ledger: Ledger, today: string, schedules: ReadonlyMap
   const monthlyNeedMinor = averageSpending + loans.reduce((sum, l) => sum + l.monthlyMinor, 0);
   if (monthlyNeedMinor <= 0) return unavailable("There is no regular spending to measure against");
   const grossCashMinor = cashAt(ledger, current);
-  if (grossCashMinor < 0) return unavailable("Cash & bank is below zero");
+  if (grossCashMinor < 0) return unavailable("Cash is below zero");
   // Card purchases are in the spending average, and what is already owed on the cards is committed out of this cash.
   const cardsOwedMinor = cardsOwedAt(ledger, current);
   const cashMinor = grossCashMinor - cardsOwedMinor;
-  if (cashMinor < 0) return unavailable("What you owe on credit cards is more than your cash & bank");
+  if (cashMinor < 0) return unavailable("What you owe on credit cards is more than your cash");
   // Other money you can use now (investments, retirement and other assets set to Available now; and Savings and Fixed Deposits when the
   // basis leaves them out of cash): a second figure, never part of the main one.
   const accessibleAccounts = [...ledger.account.values()].filter((a) => ledger.role.get(a.id) !== "cash" && (rungOfFact(a) === "reachable" || rungOfFact(a) === "savings")).map((a) => ({ accountId: a.id, name: a.name, balanceMinor: Math.max(0, ledger.balanceAt(a.id, current)) })).sort((a, b) => b.balanceMinor - a.balanceMinor);

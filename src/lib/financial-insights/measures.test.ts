@@ -326,8 +326,8 @@ describe("financial insights: cash buffer", () => {
     expect(buffer(facts(spending(["2026-09", "2026-10"])))).toEqual({ state: "unavailable", reason: "Insufficient history: at least three complete months are needed" });
   });
 
-  it("is unavailable, not negative, when cash & bank is below zero", () => {
-    expect(buffer(facts(spending(months6)))).toEqual({ state: "unavailable", reason: "Cash & bank is below zero" });
+  it("is unavailable, not negative, when cash is below zero", () => {
+    expect(buffer(facts(spending(months6)))).toEqual({ state: "unavailable", reason: "Cash is below zero" });
   });
 
   it("excludes fixed deposits from the cash it divides", () => {
@@ -379,9 +379,9 @@ describe("financial insights: the cash buffer", () => {
     const credit = buffer(facts(steady, { startingBalances: [{ month: "2026-04", accountId: "chk", amountMinor: 1_000_000 }, { month: "2026-04", accountId: "visa", amountMinor: 50_000 }] }));
     expect(credit).toMatchObject({ state: "ready", value: { cardsOwedMinor: 0, cashMinor: 1_000_000 } });
     const owed = buffer(facts(steady, { startingBalances: [{ month: "2026-04", accountId: "chk", amountMinor: 1_000_000 }, { month: "2026-04", accountId: "visa", amountMinor: -1_200_000 }] }));
-    expect(owed).toEqual({ state: "unavailable", reason: "What you owe on credit cards is more than your cash & bank" });
+    expect(owed).toEqual({ state: "unavailable", reason: "What you owe on credit cards is more than your cash" });
     const below = buffer(facts(steady, { startingBalances: [{ month: "2026-04", accountId: "chk", amountMinor: -400_000 }] }));
-    expect(below).toEqual({ state: "unavailable", reason: "Cash & bank is below zero" });
+    expect(below).toEqual({ state: "unavailable", reason: "Cash is below zero" });
   });
 
   it("is the same whether the lender's charge is tagged as a cost of the loan or not (it is in the repayment either way)", () => {
@@ -441,5 +441,43 @@ describe("financial insights: the cash buffer", () => {
     const median = cashBuffer(buildLedger(f), "2026-11-18", new Map(), { method: "median" });
     expect(average.state === "ready" && average.value.loans[0].monthlyMinor).toBe(Math.round((5 * 100_000 + 1_000_000) / 6));
     expect(median.state === "ready" && median.value.loans[0].monthlyMinor).toBe(100_000);
+  });
+});
+
+describe("financial insights: the cash basis and access", () => {
+  const saver: AccountFact = { id: "saver", name: "Online saver", accountClass: "savings", offBudget: true };
+  const notice: AccountFact = { id: "notice", name: "Notice saver", accountClass: "savings", offBudget: true, access: "locked" };
+  const withSavings = (movement: MovementRow[]) => facts(movement, { accounts: [...accounts, saver, notice] });
+  const at = (f: FinancialFacts, basis: "cash" | "cash-savings") => {
+    const ledger = buildLedger(f, basis);
+    return summarize(ledger, resolvePeriod(sep, "2026-11-18", ledger.firstMonth), none);
+  };
+
+  it("keeps a move to savings you can use inside cash with savings, and shows it as moved to savings with cash only", () => {
+    const f = withSavings(transfer("2026-09", "chk", "saver", 200_000));
+    const both = at(f, "cash-savings");
+    expect(both.eligibleCash.change).toBe(0);
+    expect(both.cashBridge.fixedDeposits).toBe(0);
+    const only = at(f, "cash");
+    expect(only.eligibleCash.change).toBe(-200_000);
+    expect(only.cashBridge.fixedDeposits).toBe(-200_000);
+    // Net worth, income and spending do not depend on the basis.
+    expect(only.netWorth).toEqual(both.netWorth);
+    expect(only.unexplained).toBe(0);
+  });
+
+  it("never counts locked savings as cash, and lists Savings on its own line by class", () => {
+    const f = withSavings(transfer("2026-09", "chk", "notice", 50_000));
+    const s = at(f, "cash-savings");
+    expect(s.eligibleCash.change).toBe(-50_000);
+    expect(s.closing.savings).toBe(50_000);
+  });
+
+  it("counts uncategorized money in as income in an off-budget Savings account, and money out as unidentified", () => {
+    const f = { ...withSavings([row("2026-09", "saver", 1_500, { count: 2 })]), uncategorizedIn: [{ month: "2026-09", accountId: "saver", amountMinor: 2_000, count: 1 }] };
+    const s = at(f, "cash-savings");
+    expect(s.flows.offBudgetIncome).toBe(2_000);
+    expect(s.received).toBe(2_000);
+    expect(s.flows.unidentified).toBe(-500);
   });
 });

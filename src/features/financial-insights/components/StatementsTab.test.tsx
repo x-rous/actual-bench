@@ -152,7 +152,7 @@ it("opens the cash breakdown from either balance, restores focus and exports tot
   expect(group).toHaveAttribute("aria-expanded", "false");
   fireEvent.click(within(dialog).getByRole("button", { name: "Expand all" }));
   expect(group).toHaveAttribute("aria-expanded", "true");
-  expect(within(dialog).getByRole("rowheader", { name: "Checking" })).toBeVisible();
+  for (const header of within(dialog).getAllByRole("rowheader", { name: "Checking" })) expect(header).toBeVisible();
   fireEvent.click(within(dialog).getByRole("button", { name: "Collapse all" }));
   expect(group).toHaveAttribute("aria-expanded", "false");
   fireEvent.click(within(dialog).getByRole("button", { name: "Export CSV" }));

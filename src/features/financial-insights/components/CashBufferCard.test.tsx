@@ -49,12 +49,12 @@ describe("the cash buffer card", () => {
     };
     const data = { ledger } as unknown as NonNullable<Parameters<typeof CashBufferCard>[0]["data"]>;
     render(<TipProvider><CashBufferCard buffer={ready} groups={groups} today="2026-11-18" data={data} /></TipProvider>);
-    fireEvent.click(screen.getByRole("button", { name: /Cash & bank less card balances today.*see account balances/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Cash less card balances today.*see account balances/ }));
     const table = screen.getByRole("table");
     expect(within(table).getByRole("row", { name: /Checking/ })).toHaveTextContent("19,000.00");
     expect(within(table).getByRole("row", { name: /Off-budget savings/ })).toHaveTextContent("12,000.00");
     expect(within(table).getByRole("row", { name: /Overdraft/ })).toHaveTextContent("-2,000.00");
-    expect(within(table).getByRole("row", { name: /Cash & bank less card balances/ })).toHaveTextContent("30,000.00");
+    expect(within(table).getByRole("row", { name: /Cash less card balances/ })).toHaveTextContent("30,000.00");
     expect(within(table).getByRole("row", { name: /Credit cards owed/ })).toHaveTextContent("0.00");
     expect(within(table).queryByText("Restricted deposit")).not.toBeInTheDocument();
     expect(within(table).queryByText("Brokerage")).not.toBeInTheDocument();
@@ -122,7 +122,7 @@ describe("the cash buffer card", () => {
     const { unmount } = show();
     // 3,000,000 cash, 340,000 a month: 8.8 months; 12 months needs 4,080,000, so 1,080,000 more.
     expect(screen.getByText("your goal: 12 months")).toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent("3.2 months short of your 12-month goal: 10,800.00 more cash & bank would reach it.");
+    expect(screen.getByRole("status")).toHaveTextContent("3.2 months short of your 12-month goal: 10,800.00 more cash would reach it.");
     unmount();
     settings = { goalMonths: 6, averageMonths: 12, method: "average", cashBasis: "cash-savings" };
     show();
@@ -172,13 +172,13 @@ describe("the cash buffer card", () => {
     const accessible = { ...value, accessibleMinor: 500_000, monthsWithAccessible: (3_000_000 + 500_000) / 340_000, accessibleAccounts: [{ accountId: "inv", name: "Brokerage", balanceMinor: 500_000 }] };
     render(<TipProvider><CashBufferCard buffer={{ state: "ready", value: accessible as CashBuffer }} groups={groups} today="2026-11-18" /></TipProvider>);
     expect(screen.getByText("10.3 months")).toBeInTheDocument();
-    expect(screen.getByText(/with accessible investments/)).toBeInTheDocument();
+    expect(screen.getByText(/with other money you can use now/)).toBeInTheDocument();
     expect(screen.queryByText("Brokerage")).not.toBeInTheDocument();
     // One (i), beside the months, holds the formula and the accounts behind the second figure.
-    expect(screen.queryByRole("button", { name: "About the cover with accessible investments" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "About the cover with other money you can use now" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "About the months of cover" }));
     expect(screen.getByText("Brokerage")).toBeInTheDocument();
-    expect(screen.getByText(/Counts the accounts you set to Accessible money/)).toBeInTheDocument();
+    expect(screen.getByText(/Also counts the accounts you can use now that the main figure leaves out/)).toBeInTheDocument();
     expect(screen.getByText(/divided by what you need each month/)).toBeInTheDocument();
     // The scale starts at the bar's own left edge, so only its far end is labelled.
     expect(screen.getByText("12 months")).toBeInTheDocument();
@@ -194,7 +194,7 @@ describe("the cash buffer card", () => {
     expect(screen.queryByText("Empty fund")).not.toBeInTheDocument();
     const empty = { ...value, accessibleMinor: 0, monthsWithAccessible: 3_000_000 / 340_000, accessibleAccounts: [{ accountId: "old", name: "Empty fund", balanceMinor: 0 }] };
     render(<TipProvider><CashBufferCard buffer={{ state: "ready", value: empty as CashBuffer }} groups={groups} today="2026-11-18" /></TipProvider>);
-    expect(screen.getAllByText(/with accessible investments/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/with other money you can use now/).length).toBeGreaterThan(0);
   });
 
   it("has no accessible figure in the (i) when no account is set", () => {
@@ -202,6 +202,6 @@ describe("the cash buffer card", () => {
     show();
     fireEvent.click(screen.getByRole("button", { name: "About the months of cover" }));
     expect(screen.getByText(/divided by what you need each month/)).toBeInTheDocument();
-    expect(screen.queryByText(/With accessible investments/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/With other money you can use now/)).not.toBeInTheDocument();
   });
 });

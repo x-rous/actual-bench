@@ -170,8 +170,8 @@ function tenfoldWording(direction: "up" | "down" | "improved" | "worsened"): str
 const KNOWN_REASONS = new Set([
   "Insufficient history: at least three complete months are needed",
   "There is no regular spending to measure against",
-  "Cash & bank is below zero",
-  "What you owe on credit cards is more than your cash & bank",
+  "Cash is below zero",
+  "What you owe on credit cards is more than your cash",
   "There was no income in this period",
 ]);
 export const safeReason = (reason: string, fallback: string): string => (KNOWN_REASONS.has(reason) ? reason : fallback);
@@ -532,7 +532,7 @@ const BUFFER_SCALE = 12;
 const BUFFER_UNAVAILABLE = "The cash buffer could not be worked out yet. Open Summary to see why.";
 
 function bufferCard(input: ProgressInput): BufferCard {
-  const base = { kind: "buffer" as const, id: "cash-buffer", title: "Cash buffer", asOf: "As of today", info: "How many months your cash could cover your usual spending, as of today, with what is owed on credit cards taken off. It is the cash buffer on Summary. Investments you can reach are counted in a second figure when you have set them." };
+  const base = { kind: "buffer" as const, id: "cash-buffer", title: "Cash buffer", asOf: "As of today", info: "How many months your cash could cover your usual spending, as of today, with what is owed on credit cards taken off. It is the cash buffer on Summary. Other money you can use now (investments or savings the main figure leaves out) is counted in a second figure." };
   const status = input.buffer;
   if (status.state !== "ready") return { ...base, state: "unavailable", reason: safeReason(status.reason, BUFFER_UNAVAILABLE) };
   const months = asMonths(status.value.months);

@@ -5,6 +5,8 @@ import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { BookOpen, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { PillGroup } from "@/components/ui/pill-group";
+import { CASH_BASIS_LABEL } from "../format";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { DrillTarget } from "@/lib/financial-insights/drill";
 import { PageLayout } from "@/components/layout/PageLayout";
@@ -60,6 +62,9 @@ export function FinancialInsightsWorkspace() {
   const actions = ready ? (
     <div className="flex shrink-0 items-center gap-2">
       <span className="text-xs text-muted-foreground" role="status">{!hideDates && <>Read at {readTime(ready.readAt)}</>}{ready.refreshing && `${hideDates ? "" : " · "}Refreshing…`}</span>
+      <span title="What the cash figures count: Checking and Cash you can use now, or also Savings and Fixed Deposits you can use now. Locked money is never cash.">
+        <PillGroup<"cash" | "cash-savings"> options={[{ value: "cash", label: CASH_BASIS_LABEL.cash }, { value: "cash-savings", label: CASH_BASIS_LABEL["cash-savings"] }]} value={view.cashBasis} onChange={view.setCashBasis} />
+      </span>
       <PeriodControl choice={view.period} period={period} today={view.today} firstMonth={ready.firstMonth} onChange={view.setPeriod} hideDates={hideDates} />
       <Button size="xs" variant="outline" onClick={view.refresh} disabled={ready.refreshing} aria-label="Refresh Financial Insights">
         <RefreshCw className={ready.refreshing ? "size-3.5 animate-spin" : "size-3.5"} aria-hidden />Refresh

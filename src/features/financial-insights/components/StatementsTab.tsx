@@ -1,5 +1,8 @@
 "use client";
 
+import { accountClassLabel } from "@/lib/account-class";
+import { isCashEquivalentRung } from "@/lib/account-class/access";
+
 import { Fragment, useState, type ReactNode } from "react";
 import { CheckCircle2, AlertTriangle, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -7,7 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { downloadCsv } from "@/lib/csv";
 import { buildBalanceSheet, type BalanceSheetGroup } from "@/lib/financial-insights/balanceSheet";
 import type { DrillTarget } from "@/lib/financial-insights/drill";
-import type { AccountFact, Ledger } from "@/lib/financial-insights/measures";
+import { rungOfFact, type AccountFact, type Ledger } from "@/lib/financial-insights/measures";
 import { addMonths } from "@/lib/financial-insights/period";
 import { statementsCsvRows, subtotalIds, type StatementGroup, type StatementLine, type Statements } from "@/lib/financial-insights/statements";
 import type { ReadyData } from "../hooks/useFinancialInsights";
@@ -132,7 +135,7 @@ function BalanceSheetGroups({ groups, empty, expanded, setExpanded, closed, setC
 function CashAccountBreakdown({ accounts, ledger, before, endMonth, openingMinor, closingMinor }: { accounts: readonly AccountFact[]; ledger: Ledger; before: string; endMonth: string; openingMinor: number; closingMinor: number }) {
   const [closedClasses, setClosedClasses] = useState<ReadonlySet<string>>(new Set());
   const [expandedGroups, setExpandedGroups] = useState<ReadonlySet<string>>(new Set());
-  const classes = (["cash", "bank"] as const).map((key) => ({ key, label: key === "cash" ? "Cash" : "Bank", accounts: accounts.filter((a) => a.accountClass === key) })).filter((group) => group.accounts.length);
+  const classes = (["bank", "cash", "savings", "fixed-deposit"] as const).map((key) => ({ key, label: accountClassLabel(key), accounts: accounts.filter((a) => a.accountClass === key) })).filter((group) => group.accounts.length);
   const groupKey = (classKey: string, id: string | null | undefined) => JSON.stringify([classKey, id ?? null]);
   const toggle = (setter: React.Dispatch<React.SetStateAction<ReadonlySet<string>>>, key: string) => setter((current) => { const next = new Set(current); if (!next.delete(key)) next.add(key); return next; });
   const sum = (items: readonly AccountFact[], month: string) => items.reduce((total, account) => total + ledger.balanceAt(account.id, month), 0);
@@ -187,10 +190,11 @@ export function StatementsContent({ data, model, onDrill }: Props & { model: Sta
   const balanceGroups = [...balanceSheet.assets, ...balanceSheet.liabilities];
   const categoryKeys = [...pnl.income.map((group) => JSON.stringify(["income", group.key])), ...pnl.expenses.map((group) => JSON.stringify(["expenses", group.key]))];
   const accountGroupKeys = balanceGroups.flatMap((group) => group.rows.map((row) => JSON.stringify([group.key, row.groupId])));
-  const cashAccounts = ledger.facts.accounts.filter((a) => ledger.role.get(a.id) === "cash");
+  // Cash and cash equivalents, as the statement counts them whatever the page's cash basis: money you can use now.
+  const cashAccounts = ledger.facts.accounts.filter((a) => isCashEquivalentRung(rungOfFact(a)));
   return <div className="space-y-4 p-4 font-sans">
     <div className="grid grid-cols-2 items-stretch gap-4" data-testid="statements-pair">
-      <Dialog><TableCard id="cash-flow-statement" title="Cash Flow Statement" hint="Cash movements" info="Cash and Bank cash-equivalent accounts, on or off budget. Fixed / restricted deposits are outside cash. Ordinary card settlements are operating; unidentified purposes are separate." head={["Section", "Line", "Amount", "Entries", "Explanation"]} rows={csvRows("Cash flow")} csvScope={scope} footer={<Total strong label={cash.changeMinor < 0 ? "Net decrease in cash" : "Net increase in cash"} amountMinor={cash.changeMinor} onOpen={open} />}
+      <Dialog><TableCard id="cash-flow-statement" title="Cash Flow Statement" hint="Cash movements" info="Cash and cash equivalents: Checking, Cash, Savings and Fixed Deposit accounts you can use now, on or off budget, whatever the Cash / Cash + savings switch shows. Locked money is outside cash, and moving money to it is investing. Ordinary card settlements are operating; unidentified purposes are separate." head={["Section", "Line", "Amount", "Entries", "Explanation"]} rows={csvRows("Cash flow")} csvScope={scope} footer={<Total strong label={cash.changeMinor < 0 ? "Net decrease in cash" : "Net increase in cash"} amountMinor={cash.changeMinor} onOpen={open} />}
         note={<div className="space-y-1"><Status ok={cash.differenceMinor === 0}>{cash.differenceMinor === 0 ? "Balances reconcile" : "Balances do not reconcile"}</Status><p>{money(cash.openingMinor)} + ({signedMoney(cash.changeMinor)}) = {money(cash.closingMinor)}</p><p>Unclassified movements and starting balances are included in this identity, separately from the three activity subtotals.</p></div>}>
         <div className="space-y-3 pt-2">
           <Headline cashBreakdown figures={[["Opening cash", cash.openingMinor], ["Net cash movement", cash.changeMinor], ["Closing cash", cash.closingMinor]]} />
@@ -200,7 +204,7 @@ export function StatementsContent({ data, model, onDrill }: Props & { model: Sta
         </div>
       </TableCard>
       <DialogContent className="flex max-h-[85vh] flex-col sm:max-w-3xl">
-        <DialogHeader className="pr-8"><DialogTitle>Which accounts form cash?</DialogTitle><DialogDescription>Opening and closing balances for cash-equivalent accounts, including closed-account history. Fixed / restricted deposits are excluded.</DialogDescription></DialogHeader>
+        <DialogHeader className="pr-8"><DialogTitle>Which accounts form cash?</DialogTitle><DialogDescription>Opening and closing balances of the accounts you can use now (Checking, Cash, Savings and Fixed Deposits), including closed-account history. Locked money is excluded.</DialogDescription></DialogHeader>
         <CashAccountBreakdown accounts={cashAccounts} ledger={ledger} before={before} endMonth={period.endMonth} openingMinor={cash.openingMinor} closingMinor={cash.closingMinor} />
         <div><Button variant="outline" size="xs" onClick={() => downloadCsv("financial-insights-statement-cash-accounts.csv", [["Financial Insights", "Which accounts form cash?"], ...scope, [], ["Account", "Opening cash", "Closing cash"], ...cashAccounts.map((a) => [a.name + (a.closed ? " (closed)" : ""), (ledger.balanceAt(a.id, before) / 100).toFixed(2), (ledger.balanceAt(a.id, period.endMonth) / 100).toFixed(2)]), ["Total cash equivalents", (cash.openingMinor / 100).toFixed(2), (cash.closingMinor / 100).toFixed(2)]])}>Export CSV</Button></div>
       </DialogContent></Dialog>

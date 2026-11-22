@@ -99,7 +99,7 @@ export type AdjustedBuffer = {
   /** Spending per month in the scenario, including what no category row holds (loan interest taken out, rounding). */
   spendingMinor: number;
   loans: AdjustedLoan[];
-  /** The months of cover with the accessible accounts counted too, in this scenario; absent when no account is set to "Accessible money". */
+  /** The months of cover with the accessible accounts counted too, in this scenario; absent when there is no other money you can use now. */
   monthsWithAccessible?: number;
   /** How many categories and loans are left out or have another amount. */
   leftOut: number;

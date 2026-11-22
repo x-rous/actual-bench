@@ -27,7 +27,7 @@ import type { PlanMode } from "@/lib/financial-insights/budget";
 import { ASSET_ROW_LIMIT, reviewAssetEntries, valueChangeRows, type AssetEntry, type ReviewEntry, type SavedClassification } from "@/lib/financial-insights/assetReview";
 import { SPECIAL_ROW_ID, compositionSeries, debtRepayments, incomeBreakdown, monthlyFlows, netWorthSteps, payeeSpending, spendingBreakdown, spendingFacts, spendingGroups, type CategoryInfo, type DebtRepayments, type MonthlyPoint, type SpendingBreakdown, type SpendingFacts } from "@/lib/financial-insights/breakdowns";
 import type { ScheduleInput } from "@/lib/financial-insights/debt";
-import { UNCATEGORIZED_KEY, median, type BufferCategoryRow, type BufferSettings } from "@/lib/financial-insights/bufferScenario";
+import { UNCATEGORIZED_KEY, median, type BufferCategoryRow, type BufferSettings, type CashBasis } from "@/lib/financial-insights/bufferScenario";
 import { comparePeriods, type Comparison } from "@/lib/financial-insights/compare";
 import type { DrillContext } from "@/lib/financial-insights/drill";
 import { isFixedAssetAccount } from "@/lib/financial-insights/wealth";
@@ -256,6 +256,9 @@ export type FinancialInsightsView = {
   today: string;
   period: PeriodChoice;
   setPeriod: (period: PeriodChoice) => void;
+  /** What the cash figures count: Checking and Cash you can use now, or those and Savings and Fixed Deposits you can use now. Saved per budget. */
+  cashBasis: CashBasis;
+  setCashBasis: (basis: CashBasis) => void;
   /** Loading, or failed, or ready; the figures exist only when ready. */
   data:
     | { state: "loading"; /** What is being read now, so a long read says where it is. */ stage?: string }
@@ -269,7 +272,7 @@ export function useFinancialInsights(): FinancialInsightsView {
   const queryClient = useQueryClient();
   const today = useLocalToday();
   const gate = useFinancialInsightsGate();
-  const { settings: bufferSettings } = useCashBufferSettings();
+  const { settings: bufferSettings, save: saveBufferSettings } = useCashBufferSettings();
   const [filters, setFilters] = usePersistedFilters("filters:financial-insights", { period: DEFAULT_PERIOD, tab: "summary" as TabId });
   const accounts = gate.state === "ready" ? gate.accounts : null;
   const excluded = gate.state === "ready" ? gate.excluded : null;
@@ -398,6 +401,8 @@ export function useFinancialInsights(): FinancialInsightsView {
     tab: tabs.some((t) => t.value === filters.tab) ? filters.tab : "summary",
     setTab: (next) => setFilters((f) => ({ ...f, tab: next })),
     setPeriod: (next) => setFilters((f) => ({ ...f, period: next })),
+    cashBasis: bufferSettings.cashBasis,
+    setCashBasis: (cashBasis) => saveBufferSettings({ ...bufferSettings, cashBasis }),
     // The same path as the toolbar's Refresh: pull the budget from the server first, then re-read.
     refresh: () => void refreshFromServer({
       sync: async () => { if (connection) await getTransport(connection).sync(); },
@@ -414,6 +419,7 @@ export function useFinancialInsights(): FinancialInsightsView {
         queryClient.invalidateQueries({ queryKey: ["accountActivity"] }),
         // Saved in another tab since: the setup screen must not keep an answer that has changed.
         queryClient.invalidateQueries({ queryKey: ["accountClasses", connection?.budgetSyncId] }),
+        queryClient.invalidateQueries({ queryKey: ["accountFlags", connection?.budgetSyncId] }),
       ]),
       onSyncFailed: () => toast.warning("Could not reach the server. Showing the data already loaded."),
     }),

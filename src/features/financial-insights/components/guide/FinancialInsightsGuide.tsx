@@ -45,14 +45,14 @@ const account = (label: string, accountClass: AccountClass): FlowNode => ({ labe
 const other = (label: string): FlowNode => ({ label });
 type FlowExample = { label: string; left: FlowNode; right: FlowNode; direction: "right" | "left" | "entry" | "link"; impact?: "received" | "spent"; recorded: string; result: string };
 const FLOW_GROUPS: { name: string; icon: LucideIcon; placement: string; examples: FlowExample[] }[] = [
-  { name: "Cash & bank", icon: ACCOUNT_CLASS_ICONS.bank, placement: "Cash and Bank classes can be on or off budget", examples: [
+  { name: "Cash & savings", icon: ACCOUNT_CLASS_ICONS.bank, placement: "Checking, Cash and Savings can be on or off budget; Fixed Deposits are off budget", examples: [
     { label: "Paycheck", left: account("Checking · on budget", "bank"), right: other("Employer · outside payee"), direction: "left", impact: "received", recorded: "Paycheck with an income category.", result: "Received rises; Change in cash rises." },
     { label: "Groceries", left: account("Checking · on budget", "bank"), right: other("Grocery store · outside payee"), direction: "right", impact: "spent", recorded: "Purchase with a grocery category.", result: "Spent rises; Change in cash falls." },
-    { label: "Move to savings", left: account("Checking · on budget", "bank"), right: account("Savings · off budget", "bank"), direction: "right", recorded: "Transfer between two Bank accounts; the category is on the on-budget side.", result: "Cash and Money kept stay the same." },
-    { label: "Off-budget payment", left: other("Outside payee"), right: account("Savings · off budget", "bank"), direction: "left", recorded: "Uncategorized entry in the off-budget account.", result: "Unidentified movements; not Spent." },
-    { label: "Restricted deposit", left: account("Checking · on budget", "bank"), right: account("Deposit · off budget", "bank"), direction: "right", recorded: "Transfer into a Bank marked Fixed / restricted deposit.", result: "Fixed / restricted deposits rise; cash falls. Still in net worth, not the cash buffer." },
+    { label: "Move to savings", left: account("Checking · on budget", "bank"), right: account("Savings · off budget", "savings"), direction: "right", recorded: "Transfer to a Savings account you can use now.", result: "Cash + savings and Money kept stay the same. With Cash only, it is Moved to savings." },
+    { label: "Interest", left: other("Bank · outside payee"), right: account("Savings · off budget", "savings"), direction: "left", impact: "received", recorded: "Uncategorized money in, in the off-budget Savings account.", result: "Received (interest). Money out with no category there is an unidentified movement." },
+    { label: "Term deposit", left: account("Checking · on budget", "bank"), right: account("Term deposit · off budget", "fixed-deposit"), direction: "right", recorded: "Transfer into a locked Fixed Deposit.", result: "Fixed deposits rise; cash falls. Still in net worth, not the cash buffer." },
   ] },
-  { name: "Investments", icon: ACCOUNT_CLASS_ICONS.investment, placement: "Off budget · Investment, with an optional Accessible money setting", examples: [
+  { name: "Investments", icon: ACCOUNT_CLASS_ICONS.investment, placement: "Off budget · Investment or Retirement, locked unless set to Available now", examples: [
     { label: "Put in", left: account("Checking · on budget", "bank"), right: account("Brokerage · off budget", "investment"), direction: "right", recorded: "Transfer; the on-budget side carries the category.", result: "Funding / Put into investments; not Spent." },
     { label: "Withdraw", left: account("Checking · on budget", "bank"), right: account("Brokerage · off budget", "investment"), direction: "left", recorded: "Withdrawal recorded as a transfer.", result: "Withdrawals / Withdrawn from investments; not Received." },
     { label: "Between investments", left: account("Brokerage A · off budget", "investment"), right: account("Brokerage B · off budget", "investment"), direction: "right", recorded: "Transfer between two portfolio accounts; neither side has a category.", result: "Other per account; cancels in the portfolio total when both sides are in the period." },
@@ -76,14 +76,14 @@ const FLOW_GROUPS: { name: string; icon: LucideIcon; placement: string; examples
   ] },
   { name: "Other accounts", icon: ACCOUNT_CLASS_ICONS["other-liability"], placement: "Other Liability may be on or off budget; an off-budget account can be left out of Financial Insights", examples: [
     { label: "Other liability", left: account("Checking · on budget", "bank"), right: account("Liability · off budget", "other-liability"), direction: "right", recorded: "A transfer to an Other Liability account.", result: "Other liabilities change; the transfer is not Spent." },
-    { label: "Account left out", left: account("Checking · on budget", "bank"), right: account("Savings · off budget", "bank"), direction: "right", recorded: "A transfer to an off-budget account set to “Include in Financial Insights: off”.", result: "Transfers with excluded accounts: the excluded account is left out, so the movement changes the included balances and net worth." },
+    { label: "Account left out", left: account("Checking · on budget", "bank"), right: account("Old savings · off budget", "savings"), direction: "right", recorded: "A transfer to an off-budget account left out of reports.", result: "Transfers with excluded accounts: the excluded account is left out, so the movement changes the included balances and net worth." },
   ] },
 ];
 
 const FLOW_CLASS_COLOURS: Partial<Record<AccountClass, string>> = {
-  cash: "var(--fi-cash)", bank: "var(--fi-cash)", investment: "var(--fi-invest)", retirement: "var(--fi-invest)",
+  cash: "var(--fi-cash)", bank: "var(--fi-cash)", savings: "var(--fi-savings)", "fixed-deposit": "var(--fi-fixed)", investment: "var(--fi-invest)", retirement: "var(--fi-invest)",
   loan: "var(--fi-loan)", "credit-card": "var(--fi-card)", property: "var(--fi-property)", vehicle: "var(--fi-vehicle)",
-  "other-asset": "var(--fi-other-asset)", "other-liability": "var(--fi-other-liability)",
+  "fixed-asset": "var(--fi-other-asset)", "other-asset": "var(--fi-other-asset)", "other-liability": "var(--fi-other-liability)",
 };
 const FLOW_GROUP_COLOURS = ["var(--fi-cash)", "var(--fi-invest)", "var(--fi-loan)", "var(--fi-card)", "var(--fi-property)", "var(--fi-other-liability)"];
 
@@ -104,7 +104,7 @@ function FlowOverview() {
   const common = [
     { title: "Receive a salary", badge: "Received", left: other("Employer · outside payee"), right: account("Checking · on budget", "bank"), text: "Received and cash rise." },
     { title: "Buy groceries", badge: "Spent", left: account("Checking · on budget", "bank"), right: other("Grocery store · outside payee"), text: "Spent rises; cash and net worth fall." },
-    { title: "Move money to savings", badge: "Transfer", left: account("Checking · on budget", "bank"), right: account("Savings · off budget", "bank"), text: "Cash moves between included accounts; total cash and net worth stay the same when both sides match in the period." },
+    { title: "Move money to savings", badge: "Transfer", left: account("Checking · on budget", "bank"), right: account("Savings · off budget", "savings"), text: "Money moves between included accounts; Cash + savings and net worth stay the same when both sides match in the period." },
     { title: "Repay loan principal", badge: "Transfer", left: account("Checking · on budget", "bank"), right: account("Loan · off budget", "loan"), text: "Cash and debt fall; principal is not Spent." },
   ];
   const order = [0, 3, 1, 2, 4, 5];
@@ -187,8 +187,8 @@ export function FinancialInsightsGuide({ section, onSection, onClose, docsUrl }:
               ["Asset Registry entries", ["A revaluation or depreciation classified in Assets has its own value-change line.", "Proceeds linked to an asset sale have their own Asset sales line."]],
               ["Categories", ["Other categorized entries follow their category: income in an income category, spending otherwise.", "A refund in an expense category reduces spending; its sign does not make it income."]],
               ["On-budget, no category", ["Money in or out is counted by its sign and shown separately as uncategorized.", "Starting balances are not income."]],
-              ["Off-budget, no category", ["A non-transfer entry in an investment or retirement account is Investment activity, not a calculated return.", "In a loan account it is an other entry in a loan account (interest or fees the lender charged to a loan tracked in Loans are Spent). In another off-budget account it is an unidentified movement. Assets can classify either; neither is income. The exception: money in, in an off-budget Cash or Bank account set to count uncategorized entries as income, is income; the rest stays unidentified."]],
-              ["Accounts left out", ["The account’s balance and entries are left out of Financial Insights (Include in Financial Insights is off, on the account or its group).", "Transfers between an excluded account and an included account appear on their own line."]],
+              ["Off-budget, no category", ["A non-transfer entry in an investment or retirement account is Investment activity, not a calculated return.", "In a loan account it is an other entry in a loan account (interest or fees the lender charged to a loan tracked in Loans are Spent). In another off-budget account it is an unidentified movement. Assets can classify either; neither is income. The exception: money in, in an off-budget Savings or Fixed Deposit account, is income (interest); the rest stays unidentified."]],
+              ["Accounts left out", ["The account’s balance and entries are left out of reports (set in the Accounts table, Reports column, on the account or its group).", "Transfers between an excluded account and an included account appear on their own line."]],
             ] satisfies [string, string[]][]).map(([title, bullets], index) => <li key={title} className="flex gap-3 rounded-lg border border-border bg-muted/20 p-3">
               <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-primary/10 font-semibold text-primary">{index + 1}</span>
               <div className="min-w-0"><p className="font-semibold">{title}</p><ul className="mt-1.5 list-disc space-y-1 pl-4 leading-relaxed text-foreground/80">{bullets.map((bullet) => <li key={bullet}>{bullet}</li>)}</ul></div>
@@ -228,8 +228,8 @@ export function FinancialInsightsGuide({ section, onSection, onClose, docsUrl }:
         <Para>Financial Insights shows no figure until it understands every account. This is on purpose: a number built on a guess about what an account is would look exact and be wrong.</Para>
         <ReadinessSketch />
         <Steps items={[
-          ["Every account has a class", "Its own, or its group’s: cash & bank, credit card, loan, investment, property and so on. Set in the Accounts table, Class column."],
-          ["Placement fits the class", "A house, car, investment, pension or loan is off budget; a credit card is on budget so its purchases count as spending. An off-budget account you do not want counted can be left out instead (Include in Financial Insights), and then needs no class."],
+          ["Every account has a class", "Its own, or its group’s: checking, savings, credit card, loan, investment, property and so on. Set in the Accounts table, Class column. Access (Available now or Locked) has a default and is optional."],
+          ["Placement fits the class", "A fixed deposit, house, car, other fixed asset, investment, pension or loan is off budget; a credit card is on budget so its purchases count as spending. An off-budget account you do not want counted can be left out of reports instead, and then needs no class."],
           ["The page tells you what is missing", "It lists the accounts that need attention with an Open Accounts button. When you come back it checks again by itself."],
           ["It locks again if something new appears", "A new unclassified account removes the figures until it is classified. A closed account with no transactions and a zero balance needs nothing."],
         ]} />
@@ -249,7 +249,7 @@ export function FinancialInsightsGuide({ section, onSection, onClose, docsUrl }:
           <MiniTile label="Net worth" value="214,200" detail="Owns 394,200 · owes 180,000" />
           <MiniTile label="Change in net worth" info value="+14,200" detail="+7.1% over 10 months" />
           <MiniTile label="Money kept" info value="12,000" detail="48,000 received − 36,000 spent" delta={{ text: "▲ 8.0%", good: true }} />
-          <MiniTile label="Change in cash" value="+6,400" detail="Cash & bank, end less start" />
+          <MiniTile label="Change in cash" value="+6,400" detail="Cash, end less start" />
           <MiniTile label="Savings rate" value="25.0%" detail="Money kept ÷ money received" delta={{ text: "▲ 1.2 pts", good: true }} />
         </Tiles>
         <Heading>What you own and owe, month by month</Heading>
@@ -266,7 +266,7 @@ export function FinancialInsightsGuide({ section, onSection, onClose, docsUrl }:
         <Heading>The three measures people confuse</Heading>
         <Example caption="Money kept, change in cash and change in net worth" head={["Measure", "What it is", "Why it differs"]} rows={[
           ["Money kept", "Income − spending", "Moving money into investments or paying loan principal is not spending"],
-          ["Change in cash", "Cash & bank, end − start", "Moves after investments, card payments, loans and transfers: it can fall even when you kept money"],
+          ["Change in cash", "Cash, end − start (as the Cash / Cash + savings switch counts it)", "Moves after investments, card payments, loans and transfers: it can fall even when you kept money"],
           ["Change in net worth", "Everything owned − everything owed, end − start", "Adds changes in value and anything Bench cannot place, shown in the waterfall"],
         ]} />
         <Heading>Start and end, and your cash buffer</Heading>
@@ -432,13 +432,13 @@ export function FinancialInsightsGuide({ section, onSection, onClose, docsUrl }:
       {section === "statements" && <>
         <Para>The statements use the global reporting period in Tracking and Envelope mode. Budget plans, assignments, holds and carryover do not enter these statements. Each section keeps its heading, indented contents and subtotal together.</Para>
         <Grid cols={2}>
-          <Card icon={Banknote} tone="income" title="Cash Flow Statement">Operating, investing and financing activities, followed by unclassified movements and adjustments. Opening and closing cash include Cash and Bank cash equivalents, on or off budget; fixed / restricted deposits are excluded.</Card>
+          <Card icon={Banknote} tone="income" title="Cash Flow Statement">Operating, investing and financing activities, followed by unclassified movements and adjustments. Opening and closing cash include Checking, Cash, Savings and Fixed Deposit accounts you can use now, on or off budget, whatever the header switch shows; locked money is excluded.</Card>
           <Card icon={Scale} tone="value" title="Income Statement (P&L)">Actual categories in budget order, including hidden categories. Category groups start collapsed: select a chevron or group name to expand its indented categories. Use Expand all or Collapse all to change all category groups. Select an underlined group or category amount to see the transactions.</Card>
         </Grid>
         <Example caption="The same transaction in two statements" head={["Recorded movement", "Cash flow", "P&L"]} rows={[
           ["Categorized card purchase", "No cash movement", "Expense when recorded"],
           ["Ordinary cash settlement of a card", "Operating payment", "No second expense"],
-          ["Transfer into investments or a restricted deposit", "Investing", "Excluded"],
+          ["Transfer into investments or locked savings and deposits", "Investing", "Excluded"],
           ["Recorded loan split", "Principal financing; paid interest operating", "Recorded interest expense"],
           ["Unsplit loan payment", "Allocation unidentified", "Transfer excluded; no estimated interest"],
           ["Interest the lender charged to a tracked loan, with payments in the period", "Interest paid (operating); the rest of the payments is principal (financing)", "Recorded interest expense"],
@@ -457,17 +457,18 @@ export function FinancialInsightsGuide({ section, onSection, onClose, docsUrl }:
         <Para>Other assets and liabilities can need a purpose that their class does not give. An unlinked asset acquisition or unavailable asset evidence makes P&amp;L need review, with provisional category totals still visible. Classification exceptions shows the supporting entries and reasons.</Para>
         <Heading>Rules, accounts and exports</Heading>
         <Example caption="Account classification rules" head={["Class", "Statement treatment"]} rows={[
-          ["Cash", "Cash balance; categorized receipts/payments and uncategorized on-budget receipts/payments are operating."],
-          ["Bank", "Cash balance unless fixed / restricted; fixed-deposit transfers are investing."],
+          ["Checking, Cash", "Cash balance when available now; categorized receipts/payments and uncategorized on-budget receipts/payments are operating."],
+          ["Savings, Fixed Deposit", "Cash balance when available now; transfers with a locked one are investing. Off budget, uncategorized money in is income."],
           ["Vehicle", "Cash purchases / capital and transfers received are investing. Value changes stay out of P&L."],
           ["Property", "Cash purchases / capital and transfers received are investing. Categorized rents and costs enter P&L."],
           ["Investment", "Cash funding and withdrawals are investing. Uncategorized internal activity stays outside P&L."],
           ["Retirement", "Cash funding and withdrawals are investing. Uncategorized internal activity stays outside P&L."],
-          ["Other asset", "Fixed-asset cash transfers are investing. Other transfers need an identified purpose."],
+          ["Other Fixed Asset", "Cash transfers are investing, as for Property and Vehicle."],
+          ["Other asset", "Transfers need an identified purpose."],
           ["Credit card", "Purchases enter P&L once, including uncategorized on-budget payments. Ordinary settlements are operating; cash receipts need a purpose."],
           ["Loan", "Borrowing is financing. Recorded split principal is financing. Interest and fees the lender charged to a tracked loan are expenses, and the rest of its payments is principal; any other unsplit payment needs review."],
           ["Other liability", "Its class does not identify borrowing versus payables; transfers need review."],
-          ["Left out of Financial Insights", "Activity excluded. Its cash counterpart is a scope exception."],
+          ["Left out of reports", "Activity excluded. Its cash counterpart is a scope exception."],
         ]} />
         <Para>Current saved account classifications apply to historical periods. Select Opening cash or Closing cash in the Cash Flow Statement to see opening and closing balances by account class and account group, including closed-account history. Expand individual groups or use Expand all, and export the breakdown. Individual card CSV exports preserve the reporting period and reporting basis. Underlined figures open exact recorded transactions and check their total against the figure.</Para>
       </>}
@@ -479,7 +480,7 @@ export function FinancialInsightsGuide({ section, onSection, onClose, docsUrl }:
           <Card icon={CreditCard} tone="spend" title="Debt payoff progress">How what you owe fell, for Credit cards, Loans or All debt, with the highest month marked. It says how much was paid off since that peak once the balance has fallen three months in a row, how many months in a row it fell, and when it was paid off. A date for being debt-free appears for loans only, and only when every loan you still owe has a payoff date in Loans.</Card>
           <Card icon={Banknote} tone="income" title="Savings rate">Bars for each month above and below 0%. The rate over the period is the savings rate on Summary. A month with no income is left blank, not drawn as 0%. It also shows your best month and your run of months in a row above 0%.</Card>
           <Card icon={Gauge} tone="value" title="Cash buffer">A bar from 0 to 12 months with marks at 3 and 6 months: how long your cash could cover your spending, as of today. It is the cash buffer on Summary, and a second lighter figure counts investments you can reach when you have set them.</Card>
-          <Card icon={PieChart} tone="value" title="Asset composition">Two bars, Start and the end of the period, each 100% of what you own split into Cash & deposits (fixed or restricted deposits included), Investments, Property and Other. Only shares are shown, never amounts, using the same classes as Summary.</Card>
+          <Card icon={PieChart} tone="value" title="Asset composition">Two bars, Start and the end of the period, each 100% of what you own split into Cash & deposits (checking, savings and fixed deposits), Investments, Property and Other. Only shares are shown, never amounts, using the same classes as Summary.</Card>
           <Card icon={ListChecks} tone="income" title="Savings consistency">In how many of the complete months of the period you spent less than you received, with one square for each month (a long history wraps onto several lines of smaller squares, each line labelled with the month it starts at): a tick for a month saved, a dash for a month short, an empty outline for a month with no income. The months come from the same savings rate as Summary.</Card>
           <Card icon={TrendingUp} tone="value" title="Cash buffer journey">Months of cover at the end of each of the last months, with the goal from your cash buffer settings as a dashed line. It is the cash buffer on Summary: every month is worked out as of that month with the same loan schedules, so the last point is today&apos;s figure.</Card>
           <Card icon={Home} tone="value" title="Property value &amp; LTV">One card for each property or other fixed asset you track (vehicles are not drawn), named only by its kind. It draws the value as a shaded shape (scaled to its own highest month, so no amount is shown) and, where a loan is linked, the loan-to-value by month with a dashed line at 80%, its latest figure written at the end of the line, and how much of it you own. The loan-to-value marks stay on the chart even with Show text off. An asset with no loan shows its value alone, and no card appears if you have no such asset. These are the figures on Property &amp; assets.</Card>
@@ -498,10 +499,10 @@ export function FinancialInsightsGuide({ section, onSection, onClose, docsUrl }:
         <Para>The cash buffer on the Summary tab answers “if my income stopped, how many months could I cover?”. It is always as of today, whatever period is selected.</Para>
         <BufferSketch />
         <Example caption="How the real figure is worked out" head={["Part", "What it is"]} rows={[
-          ["Cash", "Cash & bank today, less what you owe on credit cards. Investments and fixed or restricted deposits are not cash"],
+          ["Cash", "Cash today as the header switch counts it (Checking and Cash, or with Savings and Fixed Deposits, that you can use now), less what you owe on credit cards. Locked money is not cash; other money you can use now is the second figure"],
           ["Spending per month", "A typical month of recorded spending, without the interest and fees of tracked loans"],
           ["Loan repayments", "Each loan you owe, in full: its scheduled repayment (principal and interest) if it is tracked and agrees with Actual; if it is tracked but does not agree, the buffer is unavailable; if it is not tracked, its recorded repayments over the same recent months as your typical month (what was paid in, which can include interest the lender charged), which needs three complete months"],
-          ["Months of cover", "(Cash & bank − cards owed) ÷ (spending per month + loan repayments)"],
+          ["Months of cover", "(Cash − cards owed) ÷ (spending per month + loan repayments)"],
         ]} />
         <Callout title="Is the loan interest counted twice?">No. The interest and fee lines of tracked loans are taken out of the spending categories, because each loan’s scheduled repayment already contains them. In the simulator that category is not listed at all.</Callout>
         <Heading>Your goal and a typical month</Heading>
@@ -538,15 +539,15 @@ export function FinancialInsightsGuide({ section, onSection, onClose, docsUrl }:
 
       {section === "glossary" && <>
         <Example caption="Terms used on the page" head={["Term", "Meaning"]} rows={[
-          ["Account class", "What kind of account it is: cash & bank, credit card, loan, investment, property and so on. Set in Accounts"],
-          ["Financial Reporting", "Optional choices: a Bank account that is a fixed / restricted deposit, an Other Asset that is a fixed asset or accessible money, and whether an account is left out of Financial Insights"],
+          ["Account class", "What kind of account it is: checking, savings, credit card, loan, investment, property and so on. Set in Accounts"],
+          ["Accessible", "Whether you can use an account's money now: Available now or Locked. On budget it is always available; off budget it follows the class unless you choose. Set in Accounts"],
           ["Net worth", "Everything you own less everything you owe"],
           ["Money kept", "Money received less money spent"],
           ["Savings rate", "Money kept as a share of money received"],
-          ["Change in cash", "How your cash & bank balance moved from the start to the end"],
+          ["Change in cash", "How your cash balance moved from the start to the end"],
           ["In transit", "A transfer with only one side recorded, or whose other side falls outside the period"],
           ["Investment activity", "An uncategorized non-transfer entry in an investment account: a price change, dividend, interest or fee. Not a return; transfers between investment accounts are separate"],
-          ["Unidentified movement", "An uncategorized non-transfer entry in an off-budget account other than an investment or retirement account, unless Assets classifies it (or it is money in, in a Cash or Bank account set to count it as income). Shown on its own"],
+          ["Unidentified movement", "An uncategorized non-transfer entry in an off-budget account other than an investment or retirement account, unless Assets classifies it (or it is money in, in an off-budget Savings or Fixed Deposit account, which is income). Shown on its own"],
           ["Reconciled / Unexplained", "Whether the identified steps add up to the change, or by how much they do not"],
           ["Partial month", "The month still running, drawn lighter and not compared with whole months"],
           ["Typical month", "A category’s average or median over the last 3, 6 or 12 complete months"],
