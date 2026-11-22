@@ -3,6 +3,7 @@ import { getAppDb } from "@/lib/app-db/connection";
 import { appDbErrorResponse, readJsonBody } from "@/lib/app-db/routeResponses";
 import {
   getAllSyncFlowRunItems,
+  claimSyncFlowRun,
   getSyncFlowRun,
   updateSyncFlowRun,
   type UpdateSyncFlowRunPatch,
@@ -21,6 +22,18 @@ export async function GET(_request: Request, context: RouteContext) {
     if (!run) return NextResponse.json({ error: "Run not found" }, { status: 404 });
     // Complete item set: apply reads this route and must see every planned item.
     return NextResponse.json({ run, items: getAllSyncFlowRunItems(db, runId) });
+  } catch (error) {
+    return appDbErrorResponse(error);
+  }
+}
+
+/** Claim a run for apply. Only one caller can win it. */
+export async function POST(request: Request, context: RouteContext) {
+  try {
+    const { runId } = await context.params;
+    const body = (await readJsonBody(request)) as { retry?: unknown };
+    const from = body?.retry === true ? (["draft_preview", "partial", "failed"] as const) : (["draft_preview"] as const);
+    return NextResponse.json({ claimed: claimSyncFlowRun(getAppDb(), runId, from) });
   } catch (error) {
     return appDbErrorResponse(error);
   }

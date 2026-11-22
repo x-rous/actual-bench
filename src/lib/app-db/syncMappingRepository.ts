@@ -164,6 +164,14 @@ export function createSyncMapping(db: SqliteDatabase, input: SyncMappingInput): 
   return created;
 }
 
+/**
+ * Record a mapping unless the flow already has one for this source item. An apply
+ * that overlaps or resumes must not lose its whole batch to one existing row.
+ */
+export function createSyncMappingIfAbsent(db: SqliteDatabase, input: SyncMappingInput): SyncMapping {
+  return getSyncMappingBySource(db, input.flowId, input.sourceItemKey) ?? createSyncMapping(db, input);
+}
+
 export function getSyncMapping(db: SqliteDatabase, mappingId: string): SyncMapping | null {
   const row = db.prepare("SELECT * FROM sync_mappings WHERE id = ?").get<SyncMappingRow>(mappingId);
   return row ? rowToMapping(row) : null;

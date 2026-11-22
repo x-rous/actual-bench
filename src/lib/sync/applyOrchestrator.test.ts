@@ -148,7 +148,7 @@ function makeTargetTransport(opts: TargetOptions = {}) {
 function makeStore(opts: { runStatus?: string; items?: SyncFlowRunItem[]; seedMappings?: SyncMapping[] } = {}) {
   const run: SyncFlowRun = {
     id: "run-1", flowId: "flow-1", status: opts.runStatus ?? "draft_preview",
-    startedAt: "2026-07-01T00:00:00.000Z", finishedAt: null,
+    startedAt: new Date().toISOString(), finishedAt: null,
     summary: { version: 1, data: {} }, error: null, createdByTrigger: "manual_preview",
     sourceSnapshotSummary: null, targetSnapshotSummary: null, counts: null,
   };

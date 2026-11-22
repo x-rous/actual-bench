@@ -146,9 +146,13 @@ describe("fingerprints", () => {
     const base = transactionFingerprint(makeTxn());
     expect(transactionFingerprint(makeTxn({ amount: -1251 }))).not.toBe(base);
     expect(transactionFingerprint(makeTxn({ notes: "latte" }))).not.toBe(base);
-    expect(transactionFingerprint(makeTxn({ cleared: false }))).not.toBe(base);
-    expect(transactionFingerprint(makeTxn({ reconciled: true }))).not.toBe(base);
     expect(transactionFingerprint(makeTxn({ payeeName: "Tea Bar" }))).not.toBe(base);
+  });
+
+  it("does not change when the source is cleared or reconciled", () => {
+    const base = transactionFingerprint(makeTxn());
+    expect(transactionFingerprint(makeTxn({ cleared: false }))).toBe(base);
+    expect(transactionFingerprint(makeTxn({ reconciled: true }))).toBe(base);
   });
 
   it("distinguishes a null field from an empty string", () => {

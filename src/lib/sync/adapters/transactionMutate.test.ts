@@ -24,16 +24,20 @@ const liveTarget: SyncAppliedSnapshot = {
 };
 
 function makeTransport(overrides: Partial<ActualBenchTransport> = {}) {
-  const updateTransactionForSync = jest.fn(async () => ({ ...liveTarget, amount: -2000 }));
+  let current = { ...liveTarget };
+  const updateTransactionForSync = jest.fn(async (input: { amount: number }) => {
+    current = { ...current, amount: input.amount };
+    return null;
+  });
   const deleteTransactionForSync = jest.fn(async () => {});
-  const readTargetTransactionForSync = jest.fn(async () => liveTarget);
+  const listTransactionsForSync = jest.fn(async () => [{ id: "tgt-1", ...current }]);
   const transport = {
-    readTargetTransactionForSync,
+    listTransactionsForSync,
     updateTransactionForSync,
     deleteTransactionForSync,
     ...overrides,
   } as unknown as ActualBenchTransport;
-  return { transport, updateTransactionForSync, deleteTransactionForSync, readTargetTransactionForSync };
+  return { transport, updateTransactionForSync, deleteTransactionForSync, listTransactionsForSync };
 }
 
 const updateInput = (fp: string | null): AdapterMutateInput => ({
@@ -61,7 +65,7 @@ describe("transactionAdapter.updateBatch (RD-057 §4)", () => {
 
   it("skips when the target no longer exists", async () => {
     const { transport, updateTransactionForSync } = makeTransport({
-      readTargetTransactionForSync: jest.fn(async () => null),
+      listTransactionsForSync: jest.fn(async () => []),
     });
     const res = await transactionAdapter.updateBatch!(transport, flow(), [updateInput(hashTargetFields(liveTarget))]);
     expect(res[0].outcome).toBe("skipped");
@@ -79,7 +83,7 @@ describe("transactionAdapter.updateBatch (RD-057 §4)", () => {
     const updateTransactionForSync = jest
       .fn()
       .mockRejectedValueOnce(new Error("boom"))
-      .mockResolvedValueOnce({ ...liveTarget, amount: -2000 });
+      .mockResolvedValueOnce(null);
     const { transport } = makeTransport({ updateTransactionForSync });
     const res = await transactionAdapter.updateBatch!(transport, flow(), [
       { ...updateInput(hashTargetFields(liveTarget)), itemId: "a" },

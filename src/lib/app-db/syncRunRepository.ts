@@ -378,6 +378,47 @@ export type UpdateSyncFlowRunPatch = {
   counts?: JsonEnvelope | null;
 };
 
+/**
+ * Atomically move a run to `applying`, only from one of `from`. Exactly one
+ * caller wins, so a double click or a second tab cannot apply the same run twice.
+ * The start time lets an apply that died part-way be recognised later.
+ */
+export function claimSyncFlowRun(db: SqliteDatabase, runId: string, from: readonly SyncRunStatus[]): boolean {
+  if (from.length === 0) return false;
+  const placeholders = from.map(() => "?").join(", ");
+  const result = db
+    .prepare(
+      `UPDATE sync_flow_runs
+       SET status = 'applying',
+           finished_at = NULL,
+           summary_json = json_set(summary_json, '$.data.applyStartedAt', ?)
+       WHERE id = ? AND status IN (${placeholders})`
+    )
+    .run(new Date().toISOString(), runId, ...from);
+  return result.changes === 1;
+}
+
+/**
+ * Close applies that never finished (a closed tab, a killed worker), which would
+ * otherwise read as "applying" forever. Mappings and target markers keep the next
+ * preview correct, so it is enough to end the run and say what happened.
+ */
+export function failAbandonedSyncRuns(db: SqliteDatabase, flowId: string, olderThanIso: string): number {
+  const now = new Date().toISOString();
+  const error = stringifyEnvelope({
+    version: 1,
+    data: { code: "apply_interrupted", message: "This apply did not finish. Run a new preview to pick up anything it missed." },
+  });
+  return db
+    .prepare(
+      `UPDATE sync_flow_runs
+       SET status = 'failed', finished_at = ?, error_json = ?
+       WHERE flow_id = ? AND status = 'applying'
+         AND COALESCE(json_extract(summary_json, '$.data.applyStartedAt'), started_at) < ?`
+    )
+    .run(now, error, flowId, olderThanIso).changes;
+}
+
 export function updateSyncFlowRun(
   db: SqliteDatabase,
   runId: string,

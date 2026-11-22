@@ -3,6 +3,8 @@ import { openServerTransport, resolveServerConnection } from "@/lib/actual/serve
 import { enrolledConnectionFor } from "@/lib/credentials/unattendedCredentials";
 import { getVaultSummary } from "@/lib/credentials/vaultState";
 import { vaultLockedError } from "@/lib/credentials/vaultSummary";
+import { createFrankfurterProvider } from "@/lib/fx/providers/frankfurter";
+import { resolveFxBatch } from "@/lib/fx/services/resolveFxBatch";
 import { logger } from "@/lib/logger";
 import { decodeFlowPlanConfig } from "./flowConfig";
 import { createAppDbApplyStore } from "./appDbApplyStore";
@@ -99,6 +101,8 @@ export async function runServerSafeSync(
       transport,
       previewStore: createAppDbPreviewStore(db),
       applyStore: createAppDbApplyStore(db),
+      resolveFx: (needs, allowProvider) =>
+        resolveFxBatch(db, needs, { provider: allowProvider ? createFrankfurterProvider() : undefined }),
       onApplyStart: options.onApplyStart,
     }
   );

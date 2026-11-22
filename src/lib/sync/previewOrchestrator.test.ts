@@ -180,7 +180,9 @@ describe("runLiveDryRunPreview - happy path", () => {
 
   it("passes loaded mappings into the planner (already-synced skip)", async () => {
     const source = makeTransport("source", { sourceTransactions: [srcTxn()] });
-    const target = makeTransport("target", {});
+    const target = makeTransport("target", {
+      targetTransactions: [{ id: "tt1", date: "2020-01-01", amount: 1, payeeName: null, categoryId: null }],
+    } as Parameters<typeof makeTransport>[1]);
     const mapping = {
       sourceItemKey: "txn:t1",
       // fingerprint must match the planner's computed one; use a mapping that

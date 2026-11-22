@@ -1,5 +1,5 @@
 import { getBudgetFileSyncCapabilities } from "./capabilities";
-import { decodeFlowPlanConfig } from "./flowConfig";
+import { decodeFlowPlanConfig, flowPlanHash } from "./flowConfig";
 import "./adapters"; // register all data-type adapters (side-effect)
 import { describeSyncError, getSyncKindAdapter, SyncKindError } from "./syncKind";
 import type { ActualBenchTransport } from "@/lib/actual/transport";
@@ -100,6 +100,8 @@ export type DryRunSummary = {
   sourceChangedWarnings: number;
   targetMarkerMatches: number;
   blocked: number;
+  /** Mapped rows whose target transaction no longer exists. */
+  targetMissing?: number;
 };
 
 export type LiveDryRunResult =
@@ -142,6 +144,8 @@ export type PreviewFxResolver = (
   allowProvider: boolean
 ) => Promise<{
   resolved: Record<string, { requestedDate: string; rate: string; effectiveDate: string; source: string; provider: string | null; fxRateId: string | null }>;
+  /** Keyed `BASE:QUOTE:YYYY-MM-DD`; the reason a date has no rate. */
+  pending?: Record<string, { code: string; message: string }>;
 }>;
 
 export async function runLiveDryRunPreview(
@@ -206,6 +210,7 @@ export async function runLiveDryRunPreview(
     // the pure planner can convert amounts. Unresolved dates are simply absent →
     // those items plan as `fx_rate_pending` review items.
     let fxRateByDate: Map<string, import("./plannedChanges").FxRateInfo> | undefined;
+    let fxPendingByDate: Map<string, string> | undefined;
     const fxNeeds = adapter.collectFxNeeds?.(source.materialized, flow) ?? [];
     if (fxNeeds.length > 0 && deps.resolveFx) {
       const batch = await deps.resolveFx(fxNeeds, decodeFlowPlanConfig(flow).fxAllowProvider);
@@ -215,11 +220,14 @@ export async function runLiveDryRunPreview(
           { rate: r.rate, effectiveDate: r.effectiveDate, source: r.source, provider: r.provider, fxRateId: r.fxRateId },
         ])
       );
+      fxPendingByDate = new Map(
+        Object.entries(batch.pending ?? {}).map(([key, pending]) => [key.slice(key.lastIndexOf(":") + 1), pending.message])
+      );
     }
 
     // 5. Plan (pure) + summary.
     const targetCapabilities = getBudgetFileSyncCapabilities({ mode: input.context.targetConnection.mode }).capabilities;
-    const plan = adapter.plan({ flow, materialized: source.materialized, target, mappings, targetCapabilities, fxRateByDate });
+    const plan = adapter.plan({ flow, materialized: source.materialized, target, mappings, targetCapabilities, fxRateByDate, fxPendingByDate });
     const summary = adapter.buildSummary(plan, source.stats);
 
     // 6. Persist the draft preview run (one transaction).
@@ -227,7 +235,7 @@ export async function runLiveDryRunPreview(
     let items: SyncFlowRunItem[];
     try {
       ({ runId, items } = await deps.store.persistPlan(plan, {
-        summary: { ...summary },
+        summary: { ...summary, flowPlanHash: flowPlanHash(flow) },
         sourceSnapshotSummary: adapter.sourceSummary(flow),
         trigger: input.trigger,
       }));

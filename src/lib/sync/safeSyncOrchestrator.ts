@@ -4,6 +4,7 @@ import {
   type DryRunError,
   type DryRunSummary,
   type LiveDryRunContext,
+  type PreviewFxResolver,
   type PreviewStore,
   type PreviewTransportProvider,
 } from "./previewOrchestrator";
@@ -51,6 +52,8 @@ export type SafeSyncDeps = {
   transport: PreviewTransportProvider & ApplyTransportProvider;
   previewStore: PreviewStore;
   applyStore: ApplyStore;
+  /** Resolves FX rates; without it, every row of a converting flow waits for a rate. */
+  resolveFx?: PreviewFxResolver;
   /** Injectable for tests; default to the real orchestrators. */
   runPreview?: typeof runLiveDryRunPreview;
   runApply?: typeof applySyncRun;
@@ -120,7 +123,7 @@ export async function runSafeSync(
       allowDisabled: input.allowDisabled,
       trigger: input.trigger ?? "interval_safe_only",
     },
-    { transport: deps.transport, store: deps.previewStore }
+    { transport: deps.transport, store: deps.previewStore, resolveFx: deps.resolveFx }
   );
   if (preview.status !== "draft_preview") {
     return { status: "preview_failed", flowId, runId: preview.runId, error: preview.error };

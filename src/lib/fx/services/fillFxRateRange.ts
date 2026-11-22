@@ -25,15 +25,20 @@ export async function fillFxRateRange(
   if (!provider.getRateSeries) throw new FxError("PROVIDER_UNAVAILABLE", "The provider cannot fetch a date range.");
 
   const series = await provider.getRateSeries({ baseCurrency: base, quoteCurrency: quote, from: input.from, to: input.to });
-  let inserted = 0;
-  let skipped = 0;
-  for (const { date, rate } of series) {
-    if (findActiveFxRate(db, { baseCurrency: base, quoteCurrency: quote, requestedDate: date })) {
-      skipped++;
-      continue;
+  // One commit for the whole series instead of one per date.
+  const store = db.transaction(() => {
+    let inserted = 0;
+    let skipped = 0;
+    for (const { date, rate } of series) {
+      if (findActiveFxRate(db, { baseCurrency: base, quoteCurrency: quote, requestedDate: date })) {
+        skipped++;
+        continue;
+      }
+      insertFxRate(db, { baseCurrency: base, quoteCurrency: quote, requestedDate: date, effectiveDate: date, rate, source: "frankfurter", provider: provider.name });
+      inserted++;
     }
-    insertFxRate(db, { baseCurrency: base, quoteCurrency: quote, requestedDate: date, effectiveDate: date, rate, source: "frankfurter", provider: provider.name });
-    inserted++;
-  }
+    return { inserted, skipped };
+  });
+  const { inserted, skipped } = store() as { inserted: number; skipped: number };
   return { fetched: series.length, inserted, skipped };
 }

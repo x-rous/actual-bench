@@ -1,6 +1,7 @@
 import { getSyncFlow } from "@/lib/app-db/syncFlowRepository";
-import { createSyncMapping, getSyncMappingBySource, updateSyncMapping } from "@/lib/app-db/syncMappingRepository";
+import { createSyncMappingIfAbsent, getSyncMappingBySource, updateSyncMapping } from "@/lib/app-db/syncMappingRepository";
 import {
+  claimSyncFlowRun,
   getAllSyncFlowRunItems,
   getSyncFlowRun,
   updateSyncFlowRun,
@@ -23,11 +24,13 @@ export function createAppDbApplyStore(db: SqliteDatabase): ApplyStore {
     loadFlow: async (flowId) => getSyncFlow(db, flowId),
     getMappingBySource: async (flowId, sourceItemKey) => getSyncMappingBySource(db, flowId, sourceItemKey),
     createMapping: async (input) => {
-      createSyncMapping(db, input);
+      createSyncMappingIfAbsent(db, input);
     },
     updateMapping: async (mappingId, patch) => {
       updateSyncMapping(db, mappingId, patch);
     },
+    claimRun: async (runId, retry) =>
+      claimSyncFlowRun(db, runId, retry ? ["draft_preview", "partial", "failed"] : ["draft_preview"]),
     updateRunStatus: async (runId, patch) => {
       updateSyncFlowRun(db, runId, {
         status: patch.status,

@@ -39,7 +39,11 @@ export type SyncPlanFlag =
   /** FX conversion is enabled but no rate is available for this item's date (RD-056). */
   | "fx_rate_pending"
   /** An already-synced item whose FX rate changed; target amount will be updated (RD-056). */
-  | "fx_rate_changed";
+  | "fx_rate_changed"
+  /** Mapped target no longer exists; the user chooses to recreate it or stop syncing it. */
+  | "target_missing_review"
+  /** The flow's split setting changed after this split was synced; creating it would duplicate it. */
+  | "split_mode_changed";
 
 /** The transaction the engine would create on the target (create-only, no splits). */
 export type PlannedTargetPayload = {
@@ -176,6 +180,11 @@ export type SyncPlannerTargetSnapshot = {
   importedIdIndex: Map<string, string>;
   /** Target transactions in range for duplicate classification. */
   transactions: SyncTargetTransactionForDedupe[];
+  /**
+   * Every transaction id in the target account, whatever its date. When present,
+   * a mapping whose target is not in it is reported as `target_missing`.
+   */
+  allTransactionIds?: Set<string>;
 };
 
 export type SyncPlannerInput = {
@@ -191,11 +200,16 @@ export type SyncPlannerInput = {
    * `blocked` with `fx_rate_pending`. Omitted when FX is off.
    */
   fxRateByDate?: Map<string, FxRateInfo>;
+  /** Why a date has no rate, shown on its pending rows (provider down, bad code, future date). */
+  fxPendingByDate?: Map<string, string>;
   /**
    * When true, active mappings with no matching source item are emitted as
-   * review-first `source_missing` delete candidates (RD-057 §5). The adapter
-   * only sets this for a whole-account scan, so an item outside a date window is
-   * never mistaken for a deletion.
+   * review-first `source_missing` delete candidates (RD-057 §5).
    */
   detectDeletedSource?: boolean;
+  /**
+   * Every item key that exists in the source account, before any filter. With
+   * it, an item that merely left the flow's filters is not taken for a deletion.
+   */
+  presentSourceKeys?: Set<string>;
 };

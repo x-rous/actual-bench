@@ -25,15 +25,21 @@ export type CategoryResolution = {
   leftEmpty: boolean;
 };
 
+/** One index per entity list: a plan resolves every row against the same list. */
+const nameIndexes = new WeakMap<object, Map<string, string>>();
+
 function buildNameIndex(
   entities: { id: string; name: string }[]
 ): Map<string, string> {
+  const cached = nameIndexes.get(entities);
+  if (cached) return cached;
   const index = new Map<string, string>();
   for (const entity of entities) {
     const key = normalizeName(entity.name);
     // First match wins; keeps resolution deterministic on duplicate names.
     if (key && !index.has(key)) index.set(key, entity.id);
   }
+  nameIndexes.set(entities, index);
   return index;
 }
 

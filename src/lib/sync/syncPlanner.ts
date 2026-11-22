@@ -1,7 +1,7 @@
 import { classifyDuplicate } from "./duplicateClassifier";
 import { resolveCategory, resolvePayee } from "./entityResolution";
 import { generateSyncMarker } from "./marker";
-import { expandSourceTransactions, type SyncSourceItem } from "./sourceItems";
+import { expandSourceTransactions, sourceTransactionItemKey, type SyncSourceItem } from "./sourceItems";
 import { buildPlannedTargetPayload } from "./transform";
 import { convertMinorUnits } from "@/lib/fx/fxMath";
 import type {
@@ -18,7 +18,44 @@ import type {
   SyncPlannedItem,
   SyncPlannerInput,
   SyncPlanResult,
+  SyncTargetTransactionForDedupe,
 } from "./plannedChanges";
+
+/** Lookups built once per plan, so each row costs a map read instead of a scan. */
+type PlanContext = {
+  /** Target rows by `date:amount`, the only ones a duplicate check can match. */
+  targetsByDateAmount: Map<string, SyncTargetTransactionForDedupe[]>;
+  targetById: Map<string, SyncTargetTransactionForDedupe>;
+  /** Target rows already linked to a source row; they cannot be another row's duplicate. */
+  claimedTargetIds: Set<string>;
+  /** Parent ids synced as separate split lines. */
+  explodedParentIds: Set<string>;
+};
+
+const dateAmountKey = (date: string, amount: number) => `${date}:${amount}`;
+
+function buildPlanContext(
+  input: Pick<SyncPlannerInput, "target" | "existingMappings">
+): PlanContext {
+  const targetsByDateAmount = new Map<string, SyncTargetTransactionForDedupe[]>();
+  const targetById = new Map<string, SyncTargetTransactionForDedupe>();
+  for (const txn of input.target.transactions) {
+    targetById.set(txn.id, txn);
+    const key = dateAmountKey(txn.date, txn.amount);
+    const rows = targetsByDateAmount.get(key);
+    if (rows) rows.push(txn);
+    else targetsByDateAmount.set(key, [txn]);
+  }
+  const claimedTargetIds = new Set<string>();
+  const explodedParentIds = new Set<string>();
+  for (const mapping of input.existingMappings) {
+    if (mapping.targetTransactionId) claimedTargetIds.add(mapping.targetTransactionId);
+    if (mapping.sourceEntityType === "split_line" && mapping.sourceTransactionId) {
+      explodedParentIds.add(mapping.sourceTransactionId);
+    }
+  }
+  return { targetsByDateAmount, targetById, claimedTargetIds, explodedParentIds };
+}
 
 /**
  * Headless dry-run planner for Cross Budget Sync (RD-053 / PR-019 Slice 2).
@@ -65,18 +102,22 @@ export function planExpandedItems(
   const canWriteMarker =
     capabilities.supported && capabilities.capabilities.createTransactionWithImportedId;
 
+  const context = buildPlanContext(input);
   const items = input.sourceItems.map((sourceItem) =>
-    planSourceItem(sourceItem, input, mappingByKey, canWriteMarker)
+    planSourceItem(sourceItem, input, mappingByKey, canWriteMarker, context)
   );
 
-  // RD-057 §5: an active mapping whose source item is no longer present means the
-  // source transaction was deleted. Surfaced only when the flow opts in (whole
-  // account scans), as review-first delete candidates the user must select.
+  // RD-057 §5: an active mapping whose source item no longer exists means the
+  // source transaction was deleted. Surfaced only when the flow opts in, as
+  // review-first delete candidates the user must select.
   if (input.detectDeletedSource) {
-    const presentKeys = new Set(input.sourceItems.map((item) => item.itemKey));
+    const presentKeys = input.presentSourceKeys ?? new Set(input.sourceItems.map((item) => item.itemKey));
     for (const mapping of input.existingMappings) {
       if (mapping.status !== "active") continue;
       if (presentKeys.has(mapping.sourceItemKey)) continue;
+      // A positional split key embeds the line's content, so an edit changes it.
+      // Only the parent's existence can say whether that line was really deleted.
+      if (mapping.sourceEntityType === "split_line" && !mapping.sourceSplitId && mapping.sourceTransactionId && presentKeys.has(sourceTransactionItemKey(mapping.sourceTransactionId))) continue;
       items.push(deletedSourceItem(mapping));
     }
   }
@@ -168,7 +209,8 @@ function fxRateChangeUpdate(
   input: Pick<SyncPlannerInput, "config" | "target">,
   mapping: SyncMapping,
   fxInfo: FxRateInfo | null,
-  fxRate: string | null
+  fxRate: string | null,
+  context: PlanContext
 ): SyncPlannedItem | null {
   const { config, target } = input;
   if (!config.fxUpdateOnRateChange || !fxRate || !fxInfo || !mapping.targetTransactionId) return null;
@@ -176,7 +218,7 @@ function fxRateChangeUpdate(
 
   const directedParent = config.amountDirection === "same" ? item.amount : -item.amount;
   const currentConverted = convertMinorUnits(directedParent, fxRate);
-  const targetTxn = target.transactions.find((t) => t.id === mapping.targetTransactionId);
+  const targetTxn = context.targetById.get(mapping.targetTransactionId);
   if (!targetTxn || targetTxn.amount === currentConverted) return null;
 
   const payee = resolvePayee(item, config, target.payees);
@@ -200,20 +242,71 @@ function fxRateChangeUpdate(
 }
 
 /** A blocked item awaiting an FX rate (RD-056), routed to review. */
-function fxPendingItem(item: SyncSourceItem): SyncPlannedItem {
+function fxPendingItem(item: SyncSourceItem, reason?: string): SyncPlannedItem {
   return baseItem(item, {
     classification: "blocked",
     action: "blocked",
     flags: ["fx_rate_pending"],
-    message: `No FX rate available for ${item.date}; item is awaiting a rate.`,
+    message: reason ?? `No FX rate available for ${item.date}; item is awaiting a rate.`,
   });
+}
+
+/** The target payload for creating this item, with grouped-split children resolved. */
+function buildCreatePayload(
+  item: SyncSourceItem,
+  input: Pick<SyncPlannerInput, "config" | "target">,
+  fxInfo: FxRateInfo | null
+) {
+  const { config, target } = input;
+  const fxRate = fxInfo?.rate ?? null;
+  const payee = resolvePayee(item, config, target.payees);
+  const category = resolveCategory(item, target.categories);
+  const importedId = generateSyncMarker({
+    sourceBudgetId: config.sourceBudgetId,
+    targetBudgetId: config.targetBudgetId,
+    targetAccountId: config.targetAccountId,
+    sourceItemKey: item.itemKey,
+  });
+  // Grouped split (RD-057 §6): resolve each child's payee/category by name and
+  // apply the flow's amount direction, so the parent creates as one target split.
+  const subtransactions = item.splitLines?.map((line) => {
+    const childPayee = resolvePayee({ payeeName: line.payeeName ?? item.payeeName }, config, target.payees);
+    const childCategory = resolveCategory({ categoryName: line.categoryName }, target.categories);
+    const directedChild = config.amountDirection === "same" ? line.amount : -line.amount;
+    return {
+      amount: fxRate ? convertMinorUnits(directedChild, fxRate) : directedChild,
+      categoryId: childCategory.categoryId,
+      payeeId: childPayee.payeeId,
+      payeeName: childPayee.payeeName,
+      notes: line.notes,
+    };
+  }) ?? null;
+  // With FX, converting each child independently can round the children so they
+  // no longer sum to the parent total. Reconcile by pushing the rounding
+  // remainder onto the last child, keeping the grouped split balanced (RD-056).
+  if (fxRate && subtransactions && subtransactions.length > 0) {
+    const directedParent = config.amountDirection === "same" ? item.amount : -item.amount;
+    const parentConverted = convertMinorUnits(directedParent, fxRate);
+    const childSum = subtransactions.reduce((sum, child) => sum + child.amount, 0);
+    const remainder = parentConverted - childSum;
+    if (remainder !== 0) subtransactions[subtransactions.length - 1].amount += remainder;
+  }
+  const payload = buildPlannedTargetPayload({ item, config, payee, category, importedId, subtransactions, fx: fxInfo });
+  return { payee, category, importedId, payload };
+}
+
+/** True when this item's split shape differs from how the split was first synced. */
+function splitModeChanged(item: SyncSourceItem, mappingByKey: Map<string, SyncMapping>, context: PlanContext): boolean {
+  if (item.kind === "split_line") return mappingByKey.has(sourceTransactionItemKey(item.sourceTransactionId));
+  return !!item.splitLines?.length && context.explodedParentIds.has(item.sourceTransactionId);
 }
 
 function planSourceItem(
   item: SyncSourceItem,
-  input: Pick<SyncPlannerInput, "config" | "target" | "fxRateByDate">,
+  input: Pick<SyncPlannerInput, "config" | "target" | "fxRateByDate" | "fxPendingByDate">,
   mappingByKey: Map<string, SyncMapping>,
-  canWriteMarker: boolean
+  canWriteMarker: boolean,
+  context: PlanContext
 ): SyncPlannedItem {
   const { config, target } = input;
 
@@ -224,6 +317,7 @@ function planSourceItem(
   const fxInfo = needsFx ? input.fxRateByDate?.get(item.date) ?? null : null;
   const fxRate = fxInfo?.rate ?? null;
   const fxPending = needsFx && fxInfo == null;
+  const fxPendingReason = input.fxPendingByDate?.get(item.date);
 
   // 1. Existing mapping wins - this item was synced before.
   const mapping = mappingByKey.get(item.itemKey);
@@ -238,10 +332,24 @@ function planSourceItem(
         message: "Sync disabled for this item.",
       });
     }
-    if (mapping.sourceFingerprint === item.fingerprint) {
+    // The target was deleted: nothing can be updated, and the budgets now differ.
+    if (mapping.targetTransactionId && target.allTransactionIds && !target.allTransactionIds.has(mapping.targetTransactionId)) {
+      if (fxPending) return fxPendingItem(item, fxPendingReason);
+      const { importedId, payload } = buildCreatePayload(item, input, fxInfo);
+      const canRecreate = canWriteMarker && !!importedId;
+      return baseItem(item, {
+        classification: "target_missing",
+        action: canRecreate ? "create" : "skip",
+        flags: ["target_missing_review"],
+        plannedTargetPayload: canRecreate ? payload : null,
+        targetTransactionId: mapping.targetTransactionId,
+        message: "Deleted from the target budget. Select it to recreate, or stop syncing it.",
+      });
+    }
+    if (mapping.sourceFingerprint === item.fingerprint || item.legacyFingerprints?.includes(mapping.sourceFingerprint)) {
       // The source is unchanged, but the FX rate may have been corrected since
       // sync. When the flow opts in, offer to update the target amount (RD-056).
-      const fxUpdate = fxRateChangeUpdate(item, input, mapping, fxInfo, fxRate);
+      const fxUpdate = fxRateChangeUpdate(item, input, mapping, fxInfo, fxRate, context);
       if (fxUpdate) return fxUpdate;
       return baseItem(item, {
         classification: "already_synced",
@@ -260,7 +368,7 @@ function planSourceItem(
     // totals inconsistent. Warn instead until updates can carry subtransactions.
     const isGroupedSplit = !!item.splitLines && item.splitLines.length > 0;
     if (config.updateMappedTargets && mapping.targetTransactionId && !isGroupedSplit) {
-      if (fxPending) return fxPendingItem(item);
+      if (fxPending) return fxPendingItem(item, fxPendingReason);
       const upPayee = resolvePayee(item, config, input.target.payees);
       const upCategory = resolveCategory(item, input.target.categories);
       const upImportedId = generateSyncMarker({
@@ -296,40 +404,19 @@ function planSourceItem(
     });
   }
 
-  // Resolve entities + build the intended payload/marker up front.
-  const payee = resolvePayee(item, config, target.payees);
-  const category = resolveCategory(item, target.categories);
-  const importedId = generateSyncMarker({
-    sourceBudgetId: config.sourceBudgetId,
-    targetBudgetId: config.targetBudgetId,
-    targetAccountId: config.targetAccountId,
-    sourceItemKey: item.itemKey,
-  });
-  // Grouped split (RD-057 §6): resolve each child's payee/category by name and
-  // apply the flow's amount direction, so the parent creates as one target split.
-  const subtransactions = item.splitLines?.map((line) => {
-    const childPayee = resolvePayee({ payeeName: line.payeeName ?? item.payeeName }, config, target.payees);
-    const childCategory = resolveCategory({ categoryName: line.categoryName }, target.categories);
-    const directedChild = config.amountDirection === "same" ? line.amount : -line.amount;
-    return {
-      amount: fxRate ? convertMinorUnits(directedChild, fxRate) : directedChild,
-      categoryId: childCategory.categoryId,
-      payeeId: childPayee.payeeId,
-      payeeName: childPayee.payeeName,
-      notes: line.notes,
-    };
-  }) ?? null;
-  // With FX, converting each child independently can round the children so they
-  // no longer sum to the parent total. Reconcile by pushing the rounding
-  // remainder onto the last child, keeping the grouped split balanced (RD-056).
-  if (fxRate && subtransactions && subtransactions.length > 0) {
-    const directedParent = config.amountDirection === "same" ? item.amount : -item.amount;
-    const parentConverted = convertMinorUnits(directedParent, fxRate);
-    const childSum = subtransactions.reduce((sum, child) => sum + child.amount, 0);
-    const remainder = parentConverted - childSum;
-    if (remainder !== 0) subtransactions[subtransactions.length - 1].amount += remainder;
+  // The flow's split setting changed after this split was synced. Creating it in
+  // the new shape would sit beside the rows already on the target.
+  if (splitModeChanged(item, mappingByKey, context)) {
+    return baseItem(item, {
+      classification: "blocked",
+      action: "blocked",
+      flags: ["split_mode_changed"],
+      message: "Already synced with the other split setting; creating it again would duplicate it.",
+    });
   }
-  const payload = buildPlannedTargetPayload({ item, config, payee, category, importedId, subtransactions, fx: fxInfo });
+
+  // Resolve entities + build the intended payload/marker up front.
+  const { payee, category, importedId, payload } = buildCreatePayload(item, input, fxInfo);
   const effectivePayeeName = resolveEffectivePayeeName(item, payee, target);
 
   // 2. No mapping, but our marker already exists on the target → repairable.
@@ -345,12 +432,12 @@ function planSourceItem(
 
   // An FX-pending item must not be matched or created with an unconverted
   // amount — route it to review now (after the cheap marker-repair check above).
-  if (fxPending) return fxPendingItem(item);
+  if (fxPending) return fxPendingItem(item, fxPendingReason);
 
   // 3. Duplicate heuristic (skipped by default when uncertain).
   const { confidence, targetTransactionId: dupTargetId } = classifyDuplicate(
     payload,
-    target.transactions,
+    (context.targetsByDateAmount.get(dateAmountKey(payload.date, payload.amount)) ?? []).filter((txn) => !context.claimedTargetIds.has(txn.id)),
     effectivePayeeName
   );
   if (confidence !== "none") {
@@ -358,6 +445,8 @@ function planSourceItem(
     // opts in: record a mapping (no write), instead of routing to review. Fuzzy
     // (strong/weak) duplicates always stay review-required.
     if (confidence === "exact" && config.exactDuplicateAutoMap && dupTargetId) {
+      // One target row can stand in for one source row only.
+      context.claimedTargetIds.add(dupTargetId);
       return baseItem(item, {
         classification: "exact_duplicate",
         action: "skip",

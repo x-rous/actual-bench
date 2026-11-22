@@ -139,6 +139,11 @@ export function updateRun(runId: string, patch: UpdateSyncFlowRunPatch): Promise
   return jsonFetch(`/api/sync-flow-runs/${runId}`, { method: "PATCH", body: JSON.stringify(patch) });
 }
 
+/** Claim a run for apply; false means another apply already holds it. */
+export function claimRun(runId: string, retry: boolean): Promise<{ claimed: boolean }> {
+  return jsonFetch(`/api/sync-flow-runs/${runId}`, { method: "POST", body: JSON.stringify({ retry }) });
+}
+
 export function updateRunItem(itemId: string, patch: UpdateSyncFlowRunItemPatch): Promise<{ item: SyncFlowRunItem }> {
   return jsonFetch(`/api/sync-flow-run-items/${itemId}`, { method: "PATCH", body: JSON.stringify(patch) });
 }
@@ -286,10 +291,16 @@ export function persistFxSnapshot(input: {
   return jsonFetch("/api/fx/snapshot", { method: "POST", body: JSON.stringify(input) });
 }
 
+/** Persist many FX snapshots in one request and one commit. */
+export function persistFxSnapshots(inputs: Parameters<typeof persistFxSnapshot>[0][]): Promise<{ saved: number }> {
+  return jsonFetch("/api/fx/snapshot", { method: "POST", body: JSON.stringify({ snapshots: inputs }) });
+}
+
 /** Update an FX snapshot after a confirmed rate-change re-sync (RD-056 / PR-025 rate-change update). */
 export function updateFxSnapshot(input: {
   transactionId: string;
   fxRateId: string | null;
+  sourceAmount?: number;
   appliedRate: string;
   convertedAmount: number;
   requestedDate: string;

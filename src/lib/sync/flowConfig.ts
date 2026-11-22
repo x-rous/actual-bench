@@ -1,4 +1,5 @@
 import { MIN_INTERVAL_MINUTES } from "@/lib/automation/schedule";
+import { fnv1aHex } from "./hash";
 import type { SyncFlow, SyncReviewPolicy } from "@/lib/app-db/types";
 
 /**
@@ -74,10 +75,10 @@ export type SyncFlowPlanConfig = {
   updateMappedTargets: boolean;
   /**
    * When true, a mapped item whose source transaction was deleted is surfaced as
-   * a review-first `source_missing` delete candidate (RD-057 §5). Off by default,
-   * and only acted on for whole-account flows (no date filter) so a transaction
-   * merely outside the synced window is never mistaken for a deletion. Deletes
-   * always require explicit selection - they are never applied in bulk.
+   * a review-first `source_missing` delete candidate (RD-057 §5). Off by default.
+   * Presence is checked against the whole source account, so a transaction merely
+   * outside the flow's filters is never mistaken for a deletion. Deletes always
+   * require explicit selection - they are never applied in bulk.
    */
   detectDeletedSource: boolean;
   /**
@@ -244,6 +245,47 @@ export function buildPlanConfig(
     fxAllowProvider: input.fxAllowProvider ?? SYNC_PLAN_CONFIG_DEFAULTS.fxAllowProvider,
     fxUpdateOnRateChange: input.fxUpdateOnRateChange ?? SYNC_PLAN_CONFIG_DEFAULTS.fxUpdateOnRateChange,
   };
+}
+
+/** JSON with sorted object keys, so equal settings always serialize the same way. */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, entry]) => entry !== undefined)
+      .sort(([a], [b]) => (a < b ? -1 : 1));
+    return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`).join(",")}}`;
+  }
+  return JSON.stringify(value ?? null);
+}
+
+/**
+ * Identifies the settings a preview was planned with. A run whose hash no longer
+ * matches its flow was planned for a different route, filter or transform and
+ * must be previewed again. Schedule and pause settings are left out: changing
+ * them does not change what a preview would write.
+ */
+export function flowPlanHash(flow: SyncFlow): string {
+  const source = (flow.sourceRef.data ?? {}) as Record<string, unknown>;
+  const target = (flow.targetRef.data ?? {}) as Record<string, unknown>;
+  const options = (flow.options.data ?? {}) as Record<string, unknown>;
+  return fnv1aHex(
+    canonicalJson({
+      flowType: flow.flowType,
+      source: { budgetId: source.budgetId, accountId: source.accountId },
+      target: { budgetId: target.budgetId, accountId: target.accountId },
+      filter: flow.filter.data,
+      transform: flow.transform.data,
+      options: {
+        exactDuplicateAutoMap: options.exactDuplicateAutoMap,
+        updateMappedTargets: options.updateMappedTargets,
+        detectDeletedSource: options.detectDeletedSource,
+        createTargetSplits: options.createTargetSplits,
+        defaultGroupName: options.defaultGroupName,
+        createMissingGroup: options.createMissingGroup,
+      },
+    })
+  );
 }
 
 function str(value: unknown): string | undefined {

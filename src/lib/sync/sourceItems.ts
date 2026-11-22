@@ -27,6 +27,12 @@ export type SyncSourceItem = {
   usedFallbackKey: boolean;
   /** Content fingerprint for change-since-sync detection. */
   fingerprint: string;
+  /**
+   * What this item's fingerprint would have been under the previous format, for
+   * each cleared/reconciled state. A mapping stored before those fields left the
+   * fingerprint is unchanged if it matches any of them.
+   */
+  legacyFingerprints?: string[];
   // Denormalized fields the engine transforms/classifies against.
   date: string;
   amount: number;
@@ -46,7 +52,8 @@ export type SyncSourceItem = {
   splitLines?: SyncSourceSplitLine[];
 };
 
-const FINGERPRINT_VERSION = "v1";
+const FINGERPRINT_VERSION = "v2";
+const LEGACY_FINGERPRINT_VERSION = "v1";
 const FIELD_SEP = "␟"; // ␟ SYMBOL FOR UNIT SEPARATOR - safe against field collisions.
 
 export function sourceTransactionItemKey(sourceTransactionId: string): string {
@@ -78,10 +85,26 @@ function part(value: string | number | boolean | null): string {
   return String(value);
 }
 
-/** Fingerprint of a normal (non-split-parent) transaction's content. */
-export function transactionFingerprint(txn: SyncSourceTransaction): string {
-  const canonical = [
-    FINGERPRINT_VERSION,
+/**
+ * Cleared and reconciled state are left out of every fingerprint: sync never
+ * writes them to the target, so clearing or reconciling the source account is
+ * not a change that needs review. `flags` carries them only for the legacy format.
+ */
+type LegacyFlags = { cleared: boolean; reconciled: boolean };
+const LEGACY_FLAG_STATES: LegacyFlags[] = [
+  { cleared: false, reconciled: false },
+  { cleared: true, reconciled: false },
+  { cleared: false, reconciled: true },
+  { cleared: true, reconciled: true },
+];
+
+function statusParts(flags: LegacyFlags | null): string[] {
+  return flags ? [part(flags.cleared), part(flags.reconciled)] : [];
+}
+
+function transactionCanonical(txn: SyncSourceTransaction, flags: LegacyFlags | null): string {
+  return [
+    flags ? LEGACY_FINGERPRINT_VERSION : FINGERPRINT_VERSION,
     "txn",
     part(txn.date),
     part(txn.amount),
@@ -90,32 +113,29 @@ export function transactionFingerprint(txn: SyncSourceTransaction): string {
     part(txn.categoryId),
     part(txn.categoryName),
     part(txn.notes),
-    part(txn.cleared),
-    part(txn.reconciled),
+    ...statusParts(flags),
     part(txn.importedId),
   ].join(FIELD_SEP);
-  return fnv1aHex(canonical);
 }
 
-/**
- * Fingerprint of a single split line. Includes parent context (date, parent
- * payee, parent cleared/reconciled state) so that a line's fingerprint changes
- * when the surrounding parent transaction is edited, plus the line position so
- * reordered lines are detectable.
- */
-export function splitLineFingerprint(
+/** Fingerprint of a normal (non-split-parent) transaction's content. */
+export function transactionFingerprint(txn: SyncSourceTransaction): string {
+  return fnv1aHex(transactionCanonical(txn, null));
+}
+
+function splitLineCanonical(
   parent: SyncSourceTransaction,
   line: SyncSourceSplitLine,
-  lineIndex: number
+  lineIndex: number,
+  flags: LegacyFlags | null
 ): string {
-  const canonical = [
-    FINGERPRINT_VERSION,
+  return [
+    flags ? LEGACY_FINGERPRINT_VERSION : FINGERPRINT_VERSION,
     "split",
     part(parent.date),
     part(parent.payeeId),
     part(parent.payeeName),
-    part(parent.cleared),
-    part(parent.reconciled),
+    ...statusParts(flags),
     part(lineIndex),
     part(line.amount),
     part(line.payeeId),
@@ -124,21 +144,31 @@ export function splitLineFingerprint(
     part(line.categoryName),
     part(line.notes),
   ].join(FIELD_SEP);
-  return fnv1aHex(canonical);
 }
 
-/** Fingerprint of a whole split parent (all lines), for grouped-split sync. */
-export function splitParentFingerprint(txn: SyncSourceTransaction): string {
-  const canonical = [
-    FINGERPRINT_VERSION,
+/**
+ * Fingerprint of a single split line. Includes parent context (date and parent
+ * payee) so that a line's fingerprint changes when the surrounding parent is
+ * edited, plus the line position so reordered lines are detectable.
+ */
+export function splitLineFingerprint(
+  parent: SyncSourceTransaction,
+  line: SyncSourceSplitLine,
+  lineIndex: number
+): string {
+  return fnv1aHex(splitLineCanonical(parent, line, lineIndex, null));
+}
+
+function splitParentCanonical(txn: SyncSourceTransaction, flags: LegacyFlags | null): string {
+  return [
+    flags ? LEGACY_FINGERPRINT_VERSION : FINGERPRINT_VERSION,
     "split_parent",
     part(txn.date),
     part(txn.amount),
     part(txn.payeeId),
     part(txn.payeeName),
     part(txn.notes),
-    part(txn.cleared),
-    part(txn.reconciled),
+    ...statusParts(flags),
     part(txn.importedId),
     ...txn.splitLines.flatMap((line, i) => [
       part(i),
@@ -148,7 +178,15 @@ export function splitParentFingerprint(txn: SyncSourceTransaction): string {
       part(line.notes),
     ]),
   ].join(FIELD_SEP);
-  return fnv1aHex(canonical);
+}
+
+/** Fingerprint of a whole split parent (all lines), for grouped-split sync. */
+export function splitParentFingerprint(txn: SyncSourceTransaction): string {
+  return fnv1aHex(splitParentCanonical(txn, null));
+}
+
+function legacyFingerprints(canonical: (flags: LegacyFlags) => string): string[] {
+  return LEGACY_FLAG_STATES.map((flags) => fnv1aHex(canonical(flags)));
 }
 
 /**
@@ -177,6 +215,7 @@ export function expandSourceTransaction(
         sourceSplitId: null,
         usedFallbackKey: false,
         fingerprint: splitParentFingerprint(txn),
+        legacyFingerprints: legacyFingerprints((flags) => splitParentCanonical(txn, flags)),
         date: txn.date,
         amount: txn.amount,
         payeeId: txn.payeeId,
@@ -206,6 +245,7 @@ export function expandSourceTransaction(
         sourceSplitId: hasStableId ? (line.id as string) : null,
         usedFallbackKey: !hasStableId,
         fingerprint,
+        legacyFingerprints: legacyFingerprints((flags) => splitLineCanonical(txn, line, lineIndex, flags)),
         date: txn.date,
         amount: line.amount,
         // Split children inherit the parent payee when they lack their own.
@@ -230,6 +270,7 @@ export function expandSourceTransaction(
       sourceSplitId: null,
       usedFallbackKey: false,
       fingerprint: transactionFingerprint(txn),
+      legacyFingerprints: legacyFingerprints((flags) => transactionCanonical(txn, flags)),
       date: txn.date,
       amount: txn.amount,
       payeeId: txn.payeeId,

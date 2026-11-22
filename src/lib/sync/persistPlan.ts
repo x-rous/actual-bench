@@ -2,6 +2,7 @@ import {
   buildEphemeralSyncFlowRunItem,
   createSyncFlowRun,
   createSyncFlowRunItem,
+  failAbandonedSyncRuns,
 } from "@/lib/app-db/syncRunRepository";
 import type {
   JsonObject,
@@ -48,6 +49,9 @@ export type PersistDraftPreviewOptions = {
  */
 const EPHEMERAL_CLASSIFICATIONS: ReadonlySet<SyncPlannedItem["classification"]> = new Set(["already_synced"]);
 
+/** Longer than the longest unattended run (20 minutes). */
+const ABANDONED_APPLY_MS = 30 * 60_000;
+
 function shouldPersist(item: SyncPlannedItem): boolean {
   return !EPHEMERAL_CLASSIFICATIONS.has(item.classification);
 }
@@ -86,6 +90,7 @@ export function persistDraftPreviewRun(
   // Persist the run + all its items in ONE transaction: 1 commit instead of
   // N+1, which is the difference between one fsync and hundreds for a big run.
   const persist = db.transaction((): PersistDraftPreviewResult => {
+    failAbandonedSyncRuns(db, plan.flowId, new Date(Date.now() - ABANDONED_APPLY_MS).toISOString());
     const run = createSyncFlowRun(db, {
       flowId: plan.flowId,
       status: "draft_preview",

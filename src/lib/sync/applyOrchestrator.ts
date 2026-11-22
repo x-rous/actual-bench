@@ -1,7 +1,7 @@
 import { getBudgetFileSyncCapabilities } from "./capabilities";
 import "./adapters"; // register all data-type adapters (side-effect)
 import { connectionMatchesBudget } from "./connectionRef";
-import { decodeFlowPlanConfig, type SyncFlowPlanConfig } from "./flowConfig";
+import { decodeFlowPlanConfig, flowPlanHash, type SyncFlowPlanConfig } from "./flowConfig";
 import { generateSyncMarker } from "./marker";
 import {
   describeSyncError as describe,
@@ -46,6 +46,11 @@ export type ApplyTransportProvider = {
 };
 
 export type ApplyStore = {
+  /**
+   * Atomically take the run for this apply; false when another apply holds it.
+   * Stores without it fall back to a plain status write.
+   */
+  claimRun?(runId: string, retry: boolean): Promise<boolean>;
   loadRun(runId: string): Promise<SyncFlowRun | null>;
   loadRunItems(runId: string): Promise<SyncFlowRunItem[]>;
   loadFlow(flowId: string): Promise<SyncFlow | null>;
@@ -66,6 +71,8 @@ export type ApplyStore = {
 export type FxSnapshotUpdate = {
   transactionId: string;
   fxRateId: string | null;
+  /** The source amount now converted; the source may have been edited. */
+  sourceAmount?: number;
   appliedRate: string;
   convertedAmount: number;
   requestedDate: string;
@@ -134,6 +141,7 @@ export type ApplySyncRunInput = {
 export type ApplyErrorCode =
   | "run_not_found"
   | "run_not_applyable"
+  | "preview_stale"
   | "flow_not_found"
   | "route_mismatch"
   | "unsupported_connection"
@@ -224,7 +232,15 @@ export async function applySyncRun(
   const counts: ApplyCounts = { ...EMPTY_COUNTS, selected: eligible.length };
   const items: ApplyItemResult[] = [];
 
-  await deps.store.updateRunStatus(runId, { status: "applying" });
+  const isRetry = input.selection != null && "selection" in input.selection && input.selection.selection === "retry_failed";
+  if (deps.store.claimRun) {
+    if (!(await deps.store.claimRun(runId, isRetry))) {
+      const error: ApplyError = { code: "run_not_applyable", message: "This run is already being applied." };
+      return { status: "failed", runId, error, counts: { ...EMPTY_COUNTS }, items: [] };
+    }
+  } else {
+    await deps.store.updateRunStatus(runId, { status: "applying" });
+  }
 
   let transport: ActualBenchTransport;
   let markerIndex: Map<string, string>;
@@ -252,7 +268,7 @@ export async function applySyncRun(
     items.push(result);
     tally(counts, result.outcome);
   }
-  for (const result of await applyCreateBatch(eligible.filter((e) => e.mode === "create"), ctx, deps.store)) {
+  for (const result of await applyCreateBatch(eligible.filter((e) => e.mode === "create" || e.mode === "recreate"), ctx, deps.store)) {
     items.push(result);
     tally(counts, result.outcome);
   }
@@ -287,7 +303,7 @@ export async function applySyncRun(
 
 // --- Validation / preparation ----------------------------------------------
 
-type ApplyItemMode = "create" | "repair" | "map" | "update" | "delete";
+type ApplyItemMode = "create" | "recreate" | "repair" | "map" | "update" | "delete";
 
 type EligibleItem = {
   item: SyncFlowRunItem;
@@ -308,6 +324,16 @@ type PreparedApply = {
 function isEligibleNew(item: SyncFlowRunItem): boolean {
   return (
     item.classification === "new" &&
+    item.plannedAction === "create" &&
+    item.applyState !== "applied" &&
+    item.plannedTargetPayload != null
+  );
+}
+
+/** A mapped item whose target was deleted; recreated only when explicitly selected. */
+function isEligibleRecreate(item: SyncFlowRunItem): boolean {
+  return (
+    item.classification === "target_missing" &&
     item.plannedAction === "create" &&
     item.applyState !== "applied" &&
     item.plannedTargetPayload != null
@@ -422,6 +448,7 @@ async function validateAndPrepare(
     throw new ApplyPreflightError("route_mismatch", `Unsupported sync type: ${flow.flowType}.`);
   }
   const config = decodeFlowPlanConfig(flow);
+  assertPreviewFresh(run, flow, isRetry);
 
   // Direct-only support gate first - an unsupported mode can never apply,
   // regardless of route. (Create-capability checks come after eligibility.)
@@ -452,6 +479,8 @@ async function validateAndPrepare(
       }
       if (isEligibleNew(item)) {
         eligible.push(toCreateCandidate(item));
+      } else if (isEligibleRecreate(item)) {
+        eligible.push({ ...toCreateCandidate(item), mode: "recreate" });
       } else if (isRepairable(item)) {
         eligible.push({ item, mode: "repair", payloadJson: null, targetTransactionId: readTargetTxnId(item) });
       } else if (isExactDupAutoMap(item)) {
@@ -469,6 +498,7 @@ async function validateAndPrepare(
     for (const item of allItems) {
       if (item.applyState !== "failed") continue;
       if (isEligibleNew(item)) eligible.push(toCreateCandidate(item));
+      else if (isEligibleRecreate(item)) eligible.push({ ...toCreateCandidate(item), mode: "recreate" });
       else if (isRepairable(item)) eligible.push({ item, mode: "repair", payloadJson: null, targetTransactionId: readTargetTxnId(item) });
       else if (isExactDupAutoMap(item)) eligible.push({ item, mode: "map", payloadJson: null, targetTransactionId: readTargetTxnId(item) });
       else if (isEligibleUpdate(item)) eligible.push(toMutateCandidate(item, "update"));
@@ -499,7 +529,12 @@ async function validateAndPrepare(
 
   // Write-capability gate only matters when we actually create (repair/map write
   // no Actual entity - they only record a mapping to an existing target).
-  const willCreate = eligible.some((e) => e.mode === "create");
+  const willCreate = eligible.some((e) => e.mode === "create" || e.mode === "recreate");
+
+  // A planned row must still point at the flow's target account.
+  if (config.targetAccountId && eligible.some((e) => typeof e.payloadJson?.accountId === "string" && e.payloadJson.accountId !== config.targetAccountId)) {
+    throw new ApplyPreflightError("preview_stale", "This preview was planned for a different target account. Run a new preview.");
+  }
   try {
     adapter.assertCanApply(caps.capabilities, willCreate);
   } catch (err) {
@@ -527,6 +562,22 @@ async function validateAndPrepare(
   }
 
   return { flow, config, adapter, eligible };
+}
+
+/** A preview older than this may no longer describe the source. */
+const MAX_PREVIEW_AGE_MS = 24 * 60 * 60_000;
+
+/** Refuse a run planned for settings the flow no longer has, or a very old draft. */
+function assertPreviewFresh(run: SyncFlowRun, flow: SyncFlow, isRetry: boolean): void {
+  const plannedHash = run.summary?.data?.flowPlanHash;
+  if (typeof plannedHash === "string" && plannedHash !== flowPlanHash(flow)) {
+    throw new ApplyPreflightError("preview_stale", "This flow's settings changed after the preview. Run a new preview.");
+  }
+  if (isRetry || run.status !== "draft_preview") return;
+  const startedAt = Date.parse(run.startedAt);
+  if (Number.isFinite(startedAt) && Date.now() - startedAt > MAX_PREVIEW_AGE_MS) {
+    throw new ApplyPreflightError("preview_stale", "This preview is more than a day old. Run a new preview.");
+  }
 }
 
 function toCreateCandidate(item: SyncFlowRunItem): EligibleItem {
@@ -572,7 +623,7 @@ async function applyCreateBatch(
   store: ApplyStore
 ): Promise<ApplyItemResult[]> {
   const results: ApplyItemResult[] = [];
-  const toCreate: { item: SyncFlowRunItem; payloadJson: JsonObject; marker: string | null }[] = [];
+  const toCreate: { item: SyncFlowRunItem; payloadJson: JsonObject; marker: string | null; replaces: SyncMapping | null }[] = [];
 
   // Phase A - no writes: skip already-mapped items; for transactions, repair a
   // lost mapping when the marker is already on the target; queue the rest.
@@ -584,7 +635,9 @@ async function applyCreateBatch(
     const base = { itemId: item.id, sourceItemKey: item.sourceItemKey ?? "" };
     try {
       const existingMapping = await store.getMappingBySource(ctx.config.flowId, item.sourceItemKey ?? "");
-      if (existingMapping) {
+      // A recreate replaces its mapping's deleted target; any other mapped row is done.
+      const replaces = eligible.mode === "recreate" ? existingMapping : null;
+      if (existingMapping && !replaces) {
         await store.updateRunItemStatus(item.id, {
           status: "skipped",
           applyState: "skipped",
@@ -595,7 +648,8 @@ async function applyCreateBatch(
       }
       const markerHit = marker ? ctx.markerIndex.get(marker) : undefined;
       if (marker && markerHit) {
-        await recordMapping(store, ctx.config, item, markerHit, marker, null);
+        if (replaces) await repointMapping(store, replaces, item, markerHit, null);
+        else await recordMapping(store, ctx.config, item, markerHit, marker, null);
         await store.updateRunItemStatus(item.id, {
           status: "skipped",
           applyState: "skipped",
@@ -607,7 +661,7 @@ async function applyCreateBatch(
         results.push({ ...base, outcome: "repaired", targetTransactionId: markerHit, message: "repaired mapping" });
         continue;
       }
-      toCreate.push({ item, payloadJson, marker });
+      toCreate.push({ item, payloadJson, marker, replaces });
     } catch (err) {
       await store.updateRunItemStatus(item.id, {
         status: "failed",
@@ -645,7 +699,7 @@ async function applyCreateBatch(
   const resultByItem = new Map(created.map((r) => [r.itemId, r]));
 
   // Phase C - per created item: verify id, record the mapping, set status.
-  for (const { item, marker, payloadJson } of toCreate) {
+  for (const { item, marker, payloadJson, replaces } of toCreate) {
     const base = { itemId: item.id, sourceItemKey: item.sourceItemKey ?? "" };
     const res = resultByItem.get(item.id);
     const targetId = res?.targetId ?? null;
@@ -666,7 +720,8 @@ async function applyCreateBatch(
     try {
       // Store the persisted target field hash so a later update can detect a
       // manual edit before overwriting (RD-057 §4).
-      await recordMapping(store, ctx.config, item, targetId, marker, res?.targetFingerprint ?? null);
+      if (replaces) await repointMapping(store, replaces, item, targetId, res?.targetFingerprint ?? null);
+      else await recordMapping(store, ctx.config, item, targetId, marker, res?.targetFingerprint ?? null);
       // RD-056: record the immutable FX snapshot for a converted create. Audit
       // only — never fail the create over it.
       const fx = (payloadJson as { fx?: PlannedFx | null; amount?: number }).fx;
@@ -811,6 +866,7 @@ async function applyMutateBatch(
             await store.updateFxSnapshot({
               transactionId: res.targetId,
               fxRateId: fx.fxRateId,
+              sourceAmount: fx.sourceAmount,
               appliedRate: fx.rate,
               convertedAmount: (item.plannedTargetPayload?.data as { amount?: number }).amount ?? 0,
               requestedDate: fx.requestedDate,
@@ -887,6 +943,24 @@ async function recordMapping(
     targetFingerprint,
     targetMarker,
     createdRunId: item.runId,
+    lastAppliedAt: nowIso(),
+  });
+}
+
+/** Point an existing mapping at the row that replaced its deleted target. */
+async function repointMapping(
+  store: ApplyStore,
+  mapping: SyncMapping,
+  item: SyncFlowRunItem,
+  targetTransactionId: string,
+  targetFingerprint: string | null
+): Promise<void> {
+  await store.updateMapping(mapping.id, {
+    sourceFingerprint: item.sourceFingerprint ?? mapping.sourceFingerprint,
+    targetTransactionId,
+    targetItemKey: "txn:" + targetTransactionId,
+    targetFingerprint,
+    status: "active",
     lastAppliedAt: nowIso(),
   });
 }

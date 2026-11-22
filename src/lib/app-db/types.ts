@@ -121,6 +121,8 @@ export type SyncItemClassification =
   | "strong_duplicate"
   | "weak_duplicate"
   | "source_missing"
+  /** Mapped, but the target transaction no longer exists; waits for a decision. */
+  | "target_missing"
   | "blocked"
   | "warning";
 

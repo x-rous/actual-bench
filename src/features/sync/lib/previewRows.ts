@@ -11,6 +11,7 @@ export type PreviewGroup =
   | "duplicate"
   | "source_changed"
   | "source_deleted"
+  | "target_missing"
   | "marker_match"
   | "blocked"
   | "other";
@@ -77,6 +78,7 @@ const REVIEW_REQUIRED_CLASSIFICATIONS: readonly SyncItemClassification[] = [
   "weak_duplicate",
   "source_changed_since_sync",
   "source_missing",
+  "target_missing",
   "blocked",
   "warning",
 ];
@@ -99,6 +101,8 @@ export function classificationGroup(classification: SyncItemClassification | nul
       return "source_changed";
     case "source_missing":
       return "source_deleted";
+    case "target_missing":
+      return "target_missing";
     case "target_marker_match":
     case "target_name_match":
       return "marker_match";
@@ -126,6 +130,7 @@ export function toPreviewRow(item: SyncFlowRunItem): PreviewRow {
   // both explicitly selectable so the user drives them (RD-057 §4/§5).
   const isUpdate = item.plannedAction === "update";
   const isDelete = item.plannedAction === "delete";
+  const isRecreate = item.classification === "target_missing" && item.plannedAction === "create";
   return {
     id: item.id,
     classification: item.classification,
@@ -140,7 +145,8 @@ export function toPreviewRow(item: SyncFlowRunItem): PreviewRow {
       item.classification === "target_name_match" ||
       isExactDupAutoMap ||
       isUpdate ||
-      isDelete,
+      isDelete ||
+      isRecreate,
     isSafeNew,
     reviewRequired: isReviewRequired(item.classification) && !isExactDupAutoMap,
     applyState: item.applyState,
@@ -204,6 +210,7 @@ const GROUP_LABELS: Record<PreviewGroup, string> = {
   duplicate: "Duplicate",
   source_changed: "Source changed",
   source_deleted: "Source deleted",
+  target_missing: "Deleted on target",
   marker_match: "Marker match",
   blocked: "Blocked",
   other: "Other",
@@ -217,6 +224,7 @@ export function groupLabel(group: PreviewGroup): string {
 export function statusLabel(row: PreviewRow): string {
   if (row.flags.includes("fx_rate_pending")) return "FX pending";
   if (row.flags.includes("fx_rate_changed")) return "Rate changed";
+  if (row.flags.includes("split_mode_changed")) return "Split setting changed";
   if (row.classification === "target_name_match") return "Name match";
   return GROUP_LABELS[row.group];
 }
@@ -307,7 +315,7 @@ export function previewFilters(kind: SyncKind): { key: PreviewFilter; label: str
 export type PreviewFilter = "all" | "needs_review" | "review_queue" | PreviewGroup;
 
 /** The three groups the "Needs review" tile/filter covers. */
-const NEEDS_REVIEW_GROUPS: PreviewGroup[] = ["duplicate", "source_changed", "source_deleted", "marker_match"];
+const NEEDS_REVIEW_GROUPS: PreviewGroup[] = ["duplicate", "source_changed", "source_deleted", "target_missing", "marker_match"];
 
 /** Chips shown above the table (detailed statuses; "needs_review" is tile-only). */
 export const PREVIEW_FILTERS: { key: PreviewFilter; label: string }[] = [
@@ -316,6 +324,7 @@ export const PREVIEW_FILTERS: { key: PreviewFilter; label: string }[] = [
   { key: "duplicate", label: "Duplicates" },
   { key: "source_changed", label: "Source changed" },
   { key: "source_deleted", label: "Source deleted" },
+  { key: "target_missing", label: "Deleted on target" },
   { key: "marker_match", label: "Marker match" },
   { key: "already_synced", label: "Already synced" },
   { key: "blocked", label: "Blocked" },
@@ -371,6 +380,7 @@ export function tileCounts(rows: PreviewRow[]): PreviewTileCounts {
       row.group === "duplicate" ||
       row.group === "source_changed" ||
       row.group === "source_deleted" ||
+      row.group === "target_missing" ||
       row.group === "marker_match"
     ) {
       counts.needsReview += 1;

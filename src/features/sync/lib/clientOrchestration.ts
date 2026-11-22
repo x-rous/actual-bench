@@ -10,6 +10,7 @@ import {
   type ApplyRunResult,
   type ApplyStore,
   type ApplySelection,
+  type FxSnapshotInput,
   type ApplyTransportProvider,
   type RunItemStatusPatch,
 } from "@/lib/sync/applyOrchestrator";
@@ -69,6 +70,7 @@ function applyStore(): ApplyStore {
   // deferred flush cannot cause duplicates even if the tab closes mid-run.
   const pendingMappings: SyncMappingInput[] = [];
   const pendingItemPatches: { itemId: string; patch: RunItemStatusPatch }[] = [];
+  const pendingFxSnapshots: FxSnapshotInput[] = [];
 
   async function flush(): Promise<void> {
     if (pendingMappings.length > 0) {
@@ -79,9 +81,15 @@ function applyStore(): ApplyStore {
       await api.updateRunItems(pendingItemPatches);
       pendingItemPatches.length = 0;
     }
+    // Audit only: a failure here must not fail the run or block the writes above.
+    if (pendingFxSnapshots.length > 0) {
+      const snapshots = pendingFxSnapshots.splice(0);
+      await api.persistFxSnapshots(snapshots).catch(() => undefined);
+    }
   }
 
   return {
+    claimRun: async (runId, retry) => (await api.claimRun(runId, retry)).claimed,
     loadRun: async (runId) => (await api.getRun(runId)).run,
     loadRunItems: async (runId) => (await api.getRun(runId)).items,
     loadFlow: async (flowId) => (await api.getFlow(flowId)).flow,
@@ -117,7 +125,7 @@ function applyStore(): ApplyStore {
       });
     },
     persistFxSnapshot: async (input) => {
-      await api.persistFxSnapshot(input);
+      pendingFxSnapshots.push(input);
     },
     updateFxSnapshot: async (input) => {
       await api.updateFxSnapshot(input);
@@ -169,6 +177,11 @@ export function runClientSafeSync(input: {
       context: { sourceConnection: input.sourceConnection, targetConnection: input.targetConnection },
       allowDisabled: input.allowDisabled,
     },
-    { transport: browserTransportProvider, previewStore: previewStore(), applyStore: applyStore() }
+    {
+      transport: browserTransportProvider,
+      previewStore: previewStore(),
+      applyStore: applyStore(),
+      resolveFx: (needs, allowProvider) => api.resolveFxRates(needs, allowProvider),
+    }
   );
 }

@@ -68,6 +68,8 @@ export type AdapterSummary = {
   sourceChangedWarnings: number;
   targetMarkerMatches: number;
   blocked: number;
+  /** Mapped rows whose target transaction no longer exists. */
+  targetMissing?: number;
 };
 
 export type AdapterApplyContext = {
@@ -155,6 +157,8 @@ export interface SyncKindAdapter {
     targetCapabilities: SyncCapabilitySet;
     /** Resolved FX rate info per transaction date (RD-056); omitted when FX is off. */
     fxRateByDate?: Map<string, import("./plannedChanges").FxRateInfo>;
+    /** Why a date has no rate, for its pending rows. */
+    fxPendingByDate?: Map<string, string>;
   }): SyncPlanResult;
 
   /** Non-secret source snapshot summary stored on the run. */
