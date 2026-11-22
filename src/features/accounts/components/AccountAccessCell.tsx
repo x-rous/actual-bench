@@ -15,11 +15,11 @@ export type AccountFlagEdit = { flag: AccountFlag; on: boolean };
 /** What a class without access says in the Accessible column. */
 function noAccessText(accountClass: AccountClass): string {
   switch (accountClass) {
-    case "credit-card": return "Owed amount comes off cash";
+    case "credit-card": return "Comes off cash";
     case "property":
     case "vehicle":
     case "fixed-asset": return "Sell to use";
-    default: return "Not money you hold";
+    default: return "Debt";
   }
 }
 
@@ -48,9 +48,9 @@ export const AccountAccessCell = React.memo(function AccountAccessCell({
   disabled: boolean;
   onChange: (accountId: string, edits: AccountFlagEdit[]) => void;
 }) {
-  const muted = "px-2 text-xs text-muted-foreground";
+  const muted = "block truncate whitespace-nowrap px-2 text-xs text-muted-foreground";
   if (!accountClass) return <span className={`${muted} text-muted-foreground/70`}>Choose a class first</span>;
-  if (!classHasAccess(accountClass)) return <span className={muted}>{noAccessText(accountClass)}</span>;
+  if (!classHasAccess(accountClass)) return <span className={muted} title={accountClass === "credit-card" ? "What you owe on the card comes off cash" : undefined}>{noAccessText(accountClass)}</span>;
   const access = accessOf(accountClass, offBudget, flags)!;
   if (!accessChoosable(accountClass, offBudget)) {
     return <span className={muted} title="On budget: Actual lets you assign this money, so it counts as available now.">Available (on budget)</span>;
