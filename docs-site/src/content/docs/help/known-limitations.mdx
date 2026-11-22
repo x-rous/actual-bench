@@ -105,7 +105,8 @@ credentials.
 
 Not currently in scope:
 
-- True Actual **transfer-linked** sync (same-budget flows use a plain copy).
+- **Automatic** transfer linking. Source transfers sync without a transfer payee; a converting flow can
+  link them one at a time from **Currency position**.
 - **Automatic (non-review) target deletes** - deletion is always review-first.
 - Transaction-flow **category auto-create**. Dedicated Category flows can create missing categories
   under a placeable target group.
@@ -114,7 +115,7 @@ Not currently in scope:
 
 ## FX / multi-currency
 
-- **No FX gain/loss accounting.**
+- **No full FX gain/loss accounting.** **Currency position** can post a revaluation entry per account.
 - **No silent recalculation** of past conversions - rates lock at first sync.
 - **No multi-currency within a single budget file** - conversion applies to cross-currency sync between
   budgets.

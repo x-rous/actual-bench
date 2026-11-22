@@ -12,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { isValidPercent, isValidRate } from "@/lib/fx/fxMath";
 import { clampSyncInterval } from "@/lib/sync/flowConfig";
 import { buildSyncNotesMarker } from "@/lib/sync/notesMarker";
 import { useFlowAccounts } from "../hooks/useSyncData";
@@ -235,7 +236,12 @@ export function FlowEditDialog({
     form.transform.fxEnabled && !entityMode &&
     (!form.transform.fxSourceCurrency.trim() || !form.transform.fxTargetCurrency.trim());
 
-  const canSave = routeMissing.length === 0 && !blockedRoute && !invalidUnattended && !invalidFx;
+  const fxFixedRate = form.transform.fxFixedRate.trim();
+  const fxMarkup = form.transform.fxMarkupPercent.trim();
+  const invalidFxRate = form.transform.fxEnabled && !entityMode && form.transform.fxRatePolicy === "fixed" && !isValidRate(fxFixedRate);
+  const invalidFxMarkup = form.transform.fxEnabled && !entityMode && !!fxMarkup && !isValidPercent(fxMarkup);
+
+  const canSave = routeMissing.length === 0 && !blockedRoute && !invalidUnattended && !invalidFx && !invalidFxRate && !invalidFxMarkup;
 
   const set = (patch: Partial<SyncFlowFormState>) => onChange({ ...form, ...patch });
   const setFilter = (patch: Partial<SyncFlowFormState["filter"]>) => onChange({ ...form, filter: { ...form.filter, ...patch } });
@@ -277,8 +283,8 @@ export function FlowEditDialog({
   // shown via an inline (i). Kept as data so the markup stays a simple map.
   const syncToggles: { key: keyof SyncFlowFormState["automation"]; label: string; detail: string }[] = [
     { key: "exactDuplicateAutoMap", label: "Link exact duplicates instead of creating them", detail: "When a transaction with the same date, amount, payee and category already exists on the target, link to it instead of creating a copy. Fuzzy (near) matches still go to review." },
-    { key: "updateMappedTargets", label: "Update the target when the source changes", detail: "If a source transaction is edited after it was synced, push the change to its mapped target. A target you edited by hand is never overwritten." },
-    { key: "detectDeletedSource", label: "Delete the target when the source is deleted", detail: "If a synced source transaction is later deleted, offer to delete its mapped target. Review-first: never automatic, never in bulk, and only for whole-account flows (no date range)." },
+    { key: "updateMappedTargets", label: "Update the target when the source changes", detail: "If a source transaction is edited after it was synced, push the change to its mapped target. The category and cleared state you set on the target are kept. A target whose amount, date, payee or notes you edited is never overwritten." },
+    { key: "detectDeletedSource", label: "Delete the target when the source is deleted", detail: "If a synced source transaction is later deleted, offer to delete its mapped target. Review-first: never automatic and never in bulk. A transaction that only left this flow's filters is not treated as deleted." },
     { key: "createTargetSplits", label: "Keep split transactions grouped", detail: "Recreate a split transaction as one grouped split on the target (parent + child lines) instead of separate transactions." },
   ];
 
@@ -521,6 +527,35 @@ export function FlowEditDialog({
                         <Input aria-label="Target currency" size="sm" className="w-16 uppercase" maxLength={3} placeholder="AUD" value={form.transform.fxTargetCurrency} onChange={(e) => setTransform({ fxTargetCurrency: e.target.value.toUpperCase() })} />
                         <span className="text-[11px] text-muted-foreground">ISO 4217 codes - target is your master currency</span>
                       </div>
+                      <div className="flex flex-wrap items-end gap-3">
+                        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                          <span className="flex items-center gap-1">Rate <InfoDot text="Daily uses each transaction's own date. Monthly average uses the mean of that month. Fixed uses one rate, which suits pegged currencies." /></span>
+                          <Select
+                            aria-label="Exchange rate policy"
+                            size="sm"
+                            className="w-40"
+                            value={form.transform.fxRatePolicy}
+                            onValueChange={(value) => setTransform({ fxRatePolicy: value as SyncFlowFormState["transform"]["fxRatePolicy"] })}
+                            options={[
+                              { value: "daily", label: "Daily rate (default)" },
+                              { value: "monthly_average", label: "Monthly average" },
+                              { value: "fixed", label: "Fixed rate" },
+                            ]}
+                          />
+                        </label>
+                        {form.transform.fxRatePolicy === "fixed" && (
+                          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                            Fixed rate
+                            <Input aria-label="Fixed exchange rate" aria-invalid={invalidFxRate} size="sm" className="w-28 tabular-nums" inputMode="decimal" placeholder="3.6725" value={form.transform.fxFixedRate} onChange={(e) => setTransform({ fxFixedRate: e.target.value })} />
+                          </label>
+                        )}
+                        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                          <span className="flex items-center gap-1">Bank fee % <InfoDot text="Added to the rate on spending and taken off it on money received, to match what your bank charges." /></span>
+                          <Input aria-label="Bank fee percent" aria-invalid={invalidFxMarkup} size="sm" className="w-20 tabular-nums" inputMode="decimal" placeholder="0" value={form.transform.fxMarkupPercent} onChange={(e) => setTransform({ fxMarkupPercent: e.target.value })} />
+                        </label>
+                      </div>
+                      {invalidFxRate && <span className="text-xs text-destructive">Enter a fixed rate greater than zero.</span>}
+                      {invalidFxMarkup && <span className="text-xs text-destructive">Enter a fee from 0 to under 100.</span>}
                       <label className="flex items-center gap-2 text-xs text-muted-foreground">
                         <Checkbox checked={form.transform.fxAllowProvider} onCheckedChange={(checked) => setTransform({ fxAllowProvider: checked })} />
                         Fetch missing rates automatically (Frankfurter)

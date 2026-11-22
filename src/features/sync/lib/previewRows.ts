@@ -53,6 +53,8 @@ export type PreviewRow = {
   target: { date: string; amount: number | null; payeeName: string | null; categoryName: string | null; notes: string | null };
   /** FX conversion applied to this row (RD-056), for currency-labelled amounts + rate. */
   fx: { sourceCurrency: string; targetCurrency: string; rate: string; effectiveDate: string } | null;
+  /** A converted, unsplit create whose amount can be set to what the bank charged. */
+  canOverrideAmount?: boolean;
 };
 
 function record(value: unknown): Record<string, unknown> {
@@ -169,7 +171,17 @@ export function toPreviewRow(item: SyncFlowRunItem): PreviewRow {
       notes: str(payload.notes),
     },
     fx: fxInfo(payload.fx),
+    canOverrideAmount: (isSafeNew || isRecreate) && !!fxInfo(payload.fx) && !payload.subtransactions,
   };
+}
+
+/** A typed amount as positive minor units, or null when it is not a valid amount. */
+export function parseAmountToMinor(text: string): number | null {
+  const cleaned = text.trim().replace(/,/g, "").replace(/^-/, "");
+  if (!/^\d+(\.\d{1,2})?$/.test(cleaned)) return null;
+  const [whole, fraction = ""] = cleaned.split(".");
+  const minor = Number(whole) * 100 + Number(fraction.padEnd(2, "0"));
+  return Number.isSafeInteger(minor) && minor > 0 ? minor : null;
 }
 
 function fxInfo(value: unknown): PreviewRow["fx"] {

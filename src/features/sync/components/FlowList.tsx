@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Plus } from "lucide-react";
+import { Coins, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useNowMs } from "@/hooks/useNowMs";
@@ -33,6 +33,8 @@ type FlowListProps = {
   enginePauses?: Map<string, EnginePause | null>;
   onSelect: (flowId: string) => void;
   onCreate: () => void;
+  /** Open the guided setup for a foreign-currency budget. */
+  onAddCurrency?: () => void;
 };
 
 function connectionAvailable(
@@ -56,6 +58,7 @@ export function FlowList({
   enginePauses = new Map<string, EnginePause | null>(),
   onSelect,
   onCreate,
+  onAddCurrency,
 }: FlowListProps) {
   const [search, setSearch] = useState("");
   const nowMs = useNowMs();
@@ -78,9 +81,16 @@ export function FlowList({
       <div className="flex h-28 flex-col justify-center gap-2 border-b border-border px-3">
         <div className="flex items-center justify-between">
           <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Sync flows</span>
-          <Button size="sm" variant="outline" className="text-xs" onClick={onCreate} aria-label="Create sync flow">
-            <Plus className="h-3.5 w-3.5" /> New
-          </Button>
+          <span className="flex items-center gap-1">
+            {onAddCurrency && (
+              <Button size="sm" variant="ghost" className="text-xs" onClick={onAddCurrency} title="Set up the flows for a foreign-currency budget">
+                <Coins className="h-3.5 w-3.5" /> Add currency
+              </Button>
+            )}
+            <Button size="sm" variant="outline" className="text-xs" onClick={onCreate} aria-label="Create sync flow">
+              <Plus className="h-3.5 w-3.5" /> New
+            </Button>
+          </span>
         </div>
         <SearchInput
           value={search}

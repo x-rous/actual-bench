@@ -276,7 +276,11 @@ Consolidate budgets kept in **different currencies**: a transaction flow can con
 - **Import a CSV** of rates for a pair
 - Currency pairs are seeded from your FX-enabled flows, and you can add your own
 
-- Not in scope: true Actual transfer-linked sync (same-budget uses a plain copy), automatic (non-review) target deletes, category auto-create, fuzzy duplicate auto-mapping, unattended sync for **Direct**-mode flows (HTTP API mode is supported), FX gain/loss accounting, multi-currency within a single budget file, and silent recalculation of past conversions
+- **Rate choice per flow**: daily, monthly average or a fixed rate, with an optional bank fee added to spending and taken off money received. A new preview row can take the amount the bank really charged; it keeps the implied rate through later rate changes
+- **Currency position**: for a converting flow, shows the synced foreign balance, what the main budget holds, today's value and the unrealised difference, with warnings for unsynced rows, rows deleted on either side and rows converted at an earlier date's rate. **Revalue** posts one confirmed adjustment per account per day to a chosen category. **Transfers to link** pairs a synced transfer with its likely other side and makes them a true Actual transfer at the real amount
+- **Add currency**: creates the payee, category and per-account converting flows for a foreign-currency budget, matching accounts by name; every flow starts manual
+- The target budget owns **category and cleared state**: categorising a synced row no longer blocks later corrections, and updates never overwrite either. A row deleted on the target is reported, to recreate or stop syncing. Source transfers are written without a transfer payee so they cannot create a second leg
+- Not in scope: automatic transfer linking, automatic (non-review) target deletes, category auto-create, fuzzy duplicate auto-mapping, full FX gain/loss accounting, multi-currency within a single budget file, and silent recalculation of past conversions
 
 ## Bank Statement Reconciliation
 

@@ -21,6 +21,8 @@ export type ApplyArgs = {
   runId: string;
   targetConnection: ConnectionInstance;
   selection?: ApplySelection;
+  /** Amounts the user set for converted rows, by run item id (positive minor units). */
+  amountOverrides?: Record<string, number>;
 };
 
 /** Runs the Slice 4 apply via the client orchestrator (browser transport). */
