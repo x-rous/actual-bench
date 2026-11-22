@@ -12,6 +12,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { generateId } from "@/lib/uuid";
 import { accountClassLabel } from "@/lib/account-class";
+import { ACCESS_LABEL } from "@/lib/account-class/access";
 import { accountRole, defaultAccountRole, type Snapshot } from "@/lib/cashflow-planning/actuals";
 import { MAX_GOALS, NAME_MAX, countOutside, planEndMonth, setHorizon } from "@/lib/cashflow-planning/document";
 import { lengthLabel, monthsBetween } from "@/lib/cashflow-planning/months";
@@ -91,7 +92,7 @@ export function PlanSettingsDialog({ doc, snapshot, onEdit, onClose }: { doc: Pl
             <TabsContent value="accounts" className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-muted/20 p-5 text-xs">
               <p className="rounded-lg border bg-background p-4 text-muted-foreground">
                 <strong className="font-medium text-foreground">Cash</strong> is what the plan balances and forecasts: bank accounts, cash and, by default, credit cards (so a card purchase counts when it is made and paying the card moves nothing).{" "}
-                <strong className="font-medium text-foreground">Savings</strong> is tracked beside it. Transfers to anything else show as money leaving. The automatic choice follows each account&apos;s class, set on the <Link href="/accounts" className="underline underline-offset-2">Accounts</Link> page.
+                <strong className="font-medium text-foreground">Savings</strong> is tracked beside it, split into what you can use now and what is locked, as the Accessible column on the Accounts page says. Transfers to anything else show as money leaving. The automatic choice follows each account&apos;s class, set on the <Link href="/accounts" className="underline underline-offset-2">Accounts</Link> page.
               </p>
               <div className="max-w-sm"><SearchInput value={find} onValueChange={setFind} placeholder="Find an account" aria-label="Find an account" className="h-8 w-full bg-background text-xs" /></div>
               <div className="overflow-hidden rounded-lg border bg-background">
@@ -103,7 +104,7 @@ export function PlanSettingsDialog({ doc, snapshot, onEdit, onClose }: { doc: Pl
                   {accounts.map((a) => (
                     <tr key={a.id}>
                       <td className="h-9 max-w-[260px] truncate border-b border-border/40 px-4" title={a.name}>{a.name}{a.closed && <span className="ml-1.5 text-muted-foreground">closed</span>}</td>
-                      <td className="border-b border-border/40 px-3 text-muted-foreground">{a.accountClass ? accountClassLabel(a.accountClass) : "No class"}</td>
+                      <td className="border-b border-border/40 px-3 text-muted-foreground">{a.accountClass ? `${accountClassLabel(a.accountClass)}${a.access ? ` · ${ACCESS_LABEL[a.access]}` : ""}` : "No class"}</td>
                       <td className="border-b border-border/40 px-3 text-muted-foreground">{a.offBudget ? "Off budget" : "On budget"}</td>
                       <td className="border-b border-border/40 px-3">
                         <Select
@@ -134,7 +135,7 @@ export function PlanSettingsDialog({ doc, snapshot, onEdit, onClose }: { doc: Pl
                   {doc.goals.map((goal) => (
                     <tr key={goal.id}>
                       <td className="border-b border-border/40 px-3 py-1.5"><TextField aria-label="Goal name" value={goal.name} maxLength={NAME_MAX} onCommit={(name) => setGoal(goal.id, { name })} /></td>
-                      <td className="border-b border-border/40 px-3 py-1.5"><Select size="sm" className="w-40" value={goal.basis} onValueChange={(v) => setGoal(goal.id, { basis: v as Goal["basis"] })} options={[{ value: "cash", label: "Cash" }, { value: "total", label: "Cash + savings" }]} /></td>
+                      <td className="border-b border-border/40 px-3 py-1.5"><Select size="sm" className="w-40" value={goal.basis} onValueChange={(v) => setGoal(goal.id, { basis: v as Goal["basis"] })} options={[{ value: "cash", label: "Cash" }, { value: "usable", label: "Cash + usable savings" }, { value: "total", label: "Cash + all savings" }]} /></td>
                       <td className="border-b border-border/40 px-3 py-1.5"><MonthField aria-label="Month to reach it by" className="w-24" min={doc.startMonth} max={end} value={goal.month} onCommit={(m) => { if (m) setGoal(goal.id, { month: m }); }} /></td>
                       <td className="border-b border-border/40 px-3 py-1.5"><AmountField aria-label="Amount to reach" className="w-32" value={goal.amount} onCommit={(amount) => { if (amount !== null) setGoal(goal.id, { amount }); }} /></td>
                       <td className="border-b border-border/40 px-2 py-1.5"><Button size="icon-xs" variant="ghost" aria-label={`Remove ${goal.name}`} onClick={() => onEdit((d) => ({ ...d, goals: d.goals.filter((g) => g.id !== goal.id) }))}><Trash2 className="size-3" aria-hidden /></Button></td>

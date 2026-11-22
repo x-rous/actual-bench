@@ -708,6 +708,7 @@ function MemoPanel({ doc, computed, snapshot, placed, line, column, onShowTransa
       {line.hint && <p className="text-muted-foreground">{line.hint}</p>}
       {line.key === "net" && <p className="text-muted-foreground">Income, less expenses, less what goes to savings and to debts. A month with a negative net lowers the cash balance.</p>}
       {line.key === "total" && <p className="text-muted-foreground">The closing cash balance and the savings estimate together.</p>}
+      {line.key === "locked" && <p className="text-muted-foreground">Savings you cannot use now: accounts marked Locked in Accounts (a term deposit, a pension), and the savings rows that only put money into them. Part of Cash + savings, not of what you can use.</p>}
       <FigureBlock doc={doc} computed={computed} snapshot={snapshot} placed={placed} line={line} column={column} onShowTransactions={onShowTransactions} />
     </>
   );

@@ -177,6 +177,8 @@ export type LinkConflict = { rowId: string; what: string; kind: "category" | "gr
 export type Placed = {
   cashIds: ReadonlySet<string>;
   savingsIds: ReadonlySet<string>;
+  /** The savings accounts whose money cannot be used now: locked, or of a class without access that the plan counts as savings. */
+  lockedSavingsIds: ReadonlySet<string>;
   /** Natural amounts by row id and month. */
   rowActual: Map<string, Map<Month, number>>;
   /** Natural amounts by section and month for what no row claims. */
@@ -187,6 +189,8 @@ export type Placed = {
   inTransit: Map<Month, number>;
   startingCash: Map<Month, number>;
   savingsChange: Map<Month, number>;
+  /** The part of `savingsChange` in locked savings accounts. */
+  lockedSavingsChange: Map<Month, number>;
   /** The first month with anything recorded in a cash account. */
   firstMonth: Month | null;
   /** Links that another row already holds, so they have no effect. */
@@ -211,6 +215,7 @@ export function placeActuals(doc: PlacementDoc, snapshot: Snapshot): Placed {
   const roleOf = new Map(snapshot.accounts.map((a) => [a.id, accountRole(doc, a)]));
   const cashIds = new Set(snapshot.accounts.filter((a) => roleOf.get(a.id) === "cash").map((a) => a.id));
   const savingsIds = new Set(snapshot.accounts.filter((a) => roleOf.get(a.id) === "savings").map((a) => a.id));
+  const lockedSavingsIds = new Set(snapshot.accounts.filter((a) => savingsIds.has(a.id) && a.access !== "available").map((a) => a.id));
   const category = new Map(snapshot.categories.map((c) => [c.id, c]));
   const sectionOf = new Map(doc.rows.map((r) => [r.id, r.section]));
   const currentMonth = snapshot.today.slice(0, 7);
@@ -248,9 +253,9 @@ export function placeActuals(doc: PlacementDoc, snapshot: Snapshot): Placed {
   };
 
   const placed: Placed = {
-    cashIds, savingsIds, rowActual: new Map(), contributions: [], conflicts,
+    cashIds, savingsIds, lockedSavingsIds, rowActual: new Map(), contributions: [], conflicts,
     unplanned: { income: new Map(), expenses: new Map(), savings: new Map(), debt: new Map() },
-    cashChange: new Map(), inTransit: new Map(), startingCash: new Map(), savingsChange: new Map(), firstMonth: null,
+    cashChange: new Map(), inTransit: new Map(), startingCash: new Map(), savingsChange: new Map(), lockedSavingsChange: new Map(), firstMonth: null,
     moved: new Map(), shifted: new Map(), shiftNotes: new Map(),
   };
   /** `cash` is the signed effect on the plan's cash. */
@@ -279,6 +284,7 @@ export function placeActuals(doc: PlacementDoc, snapshot: Snapshot): Placed {
   const addCell = (c: Cell) => { const k = cellKey(c); const cell = cells.get(k); if (cell) cell.amountMinor += c.amountMinor; else cells.set(k, { ...c }); };
   for (const row of snapshot.movement) {
     if (savingsIds.has(row.accountId)) bump(placed.savingsChange, row.month, row.amountMinor);
+    if (lockedSavingsIds.has(row.accountId)) bump(placed.lockedSavingsChange, row.month, row.amountMinor);
     if (!cashIds.has(row.accountId)) continue;
     bump(placed.cashChange, row.month, row.amountMinor);
     if (!placed.firstMonth || row.month < placed.firstMonth) placed.firstMonth = row.month;
@@ -408,6 +414,7 @@ export function placeActuals(doc: PlacementDoc, snapshot: Snapshot): Placed {
 
   for (const row of snapshot.startingBalances) {
     if (savingsIds.has(row.accountId)) bump(placed.savingsChange, row.month, row.amountMinor);
+    if (lockedSavingsIds.has(row.accountId)) bump(placed.lockedSavingsChange, row.month, row.amountMinor);
     if (!cashIds.has(row.accountId)) continue;
     bump(placed.cashChange, row.month, row.amountMinor);
     bump(placed.startingCash, row.month, row.amountMinor);
