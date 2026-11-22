@@ -19,6 +19,9 @@ export type SyncAmountDirection = "reverse" | "same";
 /** What to do when a source payee has no normalized-name match on the target. */
 export type SyncMissingPayeePolicy = "create" | "leave_empty";
 
+/** Which rate a converting flow uses for a transaction's date. */
+export type SyncFxRatePolicy = "daily" | "monthly_average" | "fixed";
+
 export type SyncFlowPlanConfig = {
   flowId: string;
   // Non-secret route references (fingerprints, ids, display names).
@@ -106,6 +109,12 @@ export type SyncFlowPlanConfig = {
    * "not edited outside sync" guard.
    */
   fxUpdateOnRateChange: boolean;
+  /** `daily` (default), the mean of the transaction's month, or one fixed rate. */
+  fxRatePolicy: SyncFxRatePolicy;
+  /** Decimal-string rate for the `fixed` policy (useful for pegged currencies). */
+  fxFixedRate: string;
+  /** Bank fee as a decimal-string percentage; empty means none. */
+  fxMarkupPercent: string;
 };
 
 /**
@@ -163,6 +172,9 @@ export const SYNC_PLAN_CONFIG_DEFAULTS = {
   fxTargetCurrency: "",
   fxAllowProvider: true,
   fxUpdateOnRateChange: false,
+  fxRatePolicy: "daily" as SyncFxRatePolicy,
+  fxFixedRate: "",
+  fxMarkupPercent: "",
 };
 
 type PartialRoute = Partial<
@@ -204,6 +216,9 @@ export function buildPlanConfig(
         | "fxTargetCurrency"
         | "fxAllowProvider"
         | "fxUpdateOnRateChange"
+        | "fxRatePolicy"
+        | "fxFixedRate"
+        | "fxMarkupPercent"
       >
     >
 ): SyncFlowPlanConfig {
@@ -244,6 +259,9 @@ export function buildPlanConfig(
     fxTargetCurrency: input.fxTargetCurrency ?? SYNC_PLAN_CONFIG_DEFAULTS.fxTargetCurrency,
     fxAllowProvider: input.fxAllowProvider ?? SYNC_PLAN_CONFIG_DEFAULTS.fxAllowProvider,
     fxUpdateOnRateChange: input.fxUpdateOnRateChange ?? SYNC_PLAN_CONFIG_DEFAULTS.fxUpdateOnRateChange,
+    fxRatePolicy: input.fxRatePolicy ?? SYNC_PLAN_CONFIG_DEFAULTS.fxRatePolicy,
+    fxFixedRate: input.fxFixedRate ?? SYNC_PLAN_CONFIG_DEFAULTS.fxFixedRate,
+    fxMarkupPercent: input.fxMarkupPercent ?? SYNC_PLAN_CONFIG_DEFAULTS.fxMarkupPercent,
   };
 }
 
@@ -340,5 +358,11 @@ export function decodeFlowPlanConfig(flow: SyncFlow): SyncFlowPlanConfig {
     fxTargetCurrency: (str(transform.fxTargetCurrency) ?? "").toUpperCase() || undefined,
     fxAllowProvider: transform.fxAllowProvider == null ? undefined : bool(transform.fxAllowProvider),
     fxUpdateOnRateChange: bool(transform.fxUpdateOnRateChange),
+    fxRatePolicy:
+      transform.fxRatePolicy === "monthly_average" || transform.fxRatePolicy === "fixed" || transform.fxRatePolicy === "daily"
+        ? transform.fxRatePolicy
+        : undefined,
+    fxFixedRate: str(transform.fxFixedRate)?.trim(),
+    fxMarkupPercent: str(transform.fxMarkupPercent)?.trim(),
   });
 }

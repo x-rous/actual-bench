@@ -24,6 +24,7 @@ import {
   type AdapterValidateInput,
   type SyncKindAdapter,
 } from "../syncKind";
+import { fxNeedDates } from "../fxPolicy";
 import { hashTargetFields, targetMatchesBaseline } from "../targetFingerprint";
 import type {
   ActualBenchTransport,
@@ -61,7 +62,7 @@ function allItemKeys(transactions: SyncSourceTransaction[]): string[] {
 async function readTargetRows(
   transport: ActualBenchTransport,
   accountId: string
-): Promise<Map<string, SyncAppliedSnapshot>> {
+): Promise<Map<string, SyncAppliedSnapshot & { transferId: string | null }>> {
   const rows = await transport.listTransactionsForSync({ accountId, resolveNames: false });
   return new Map(
     rows.map((row) => [
@@ -74,6 +75,7 @@ async function readTargetRows(
         payeeId: row.payeeId,
         notes: row.notes,
         importedPayee: row.importedPayee ?? null,
+        transferId: row.transferId ?? null,
       },
     ])
   );
@@ -203,11 +205,12 @@ export const transactionAdapter: SyncKindAdapter = {
     const source = materialized as MaterializedSource;
     const { config } = source;
     if (!config.fxEnabled || config.fxSourceCurrency === config.fxTargetCurrency) return [];
-    const dates = new Set(source.items.map((item) => item.date));
-    return [...dates].map((date) => ({ baseCurrency: config.fxSourceCurrency, quoteCurrency: config.fxTargetCurrency, date }));
+    const today = new Date().toISOString().slice(0, 10);
+    return fxNeedDates(config, source.items.map((item) => item.date), today)
+      .map((date) => ({ baseCurrency: config.fxSourceCurrency, quoteCurrency: config.fxTargetCurrency, date }));
   },
 
-  plan({ flow, materialized, target, mappings, targetCapabilities, fxRateByDate, fxPendingByDate }): SyncPlanResult {
+  plan({ flow, materialized, target, mappings, targetCapabilities, fxRateByDate, fxPendingByDate, manualFxRates }): SyncPlanResult {
     const source = materialized as MaterializedSource;
     void flow;
     return planExpandedItems({
@@ -220,6 +223,7 @@ export const transactionAdapter: SyncKindAdapter = {
       presentSourceKeys: source.presentSourceKeys ? new Set(source.presentSourceKeys) : undefined,
       fxRateByDate,
       fxPendingByDate,
+      manualFxRates,
     });
   },
 
@@ -332,14 +336,20 @@ export const transactionAdapter: SyncKindAdapter = {
           results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "Target was edited outside sync; left unchanged." });
           continue;
         }
+        // A linked transfer's amount and payee are shared with its other leg.
+        if (live.transferId) {
+          results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "Target is a linked transfer; left unchanged." });
+          continue;
+        }
+        const keepPayee = payload.keepTargetPayee === true;
         const plannedCategory = (payload.categoryId as string | null) ?? null;
         await transport.updateTransactionForSync({
           transactionId: input.targetId,
           accountId: config.targetAccountId,
           date: String(payload.date ?? live.date),
           amount: Number(payload.amount ?? live.amount),
-          payeeId: (payload.payeeId as string | null) ?? null,
-          payeeName: (payload.payeeName as string | null) ?? null,
+          payeeId: keepPayee ? undefined : (payload.payeeId as string | null) ?? null,
+          payeeName: keepPayee ? undefined : (payload.payeeName as string | null) ?? null,
           // Category and cleared state belong to the target budget. A category is
           // only filled in when the target row has none.
           categoryId: live.categoryId == null && plannedCategory ? plannedCategory : undefined,
@@ -393,6 +403,11 @@ export const transactionAdapter: SyncKindAdapter = {
         }
         if (!targetMatchesBaseline(live, input.expectedTargetFingerprint)) {
           results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "Target was edited outside sync; not deleted." });
+          continue;
+        }
+        // Deleting one leg of a linked transfer would delete the other account's row too.
+        if (live.transferId) {
+          results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "Target is a linked transfer; not deleted." });
           continue;
         }
         await transport.deleteTransactionForSync({ transactionId: input.targetId });

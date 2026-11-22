@@ -159,6 +159,8 @@ export interface SyncKindAdapter {
     fxRateByDate?: Map<string, import("./plannedChanges").FxRateInfo>;
     /** Why a date has no rate, for its pending rows. */
     fxPendingByDate?: Map<string, string>;
+    /** Rates the user set for individual target rows, by target transaction id. */
+    manualFxRates?: Map<string, import("./plannedChanges").ManualFxRate>;
   }): SyncPlanResult;
 
   /** Non-secret source snapshot summary stored on the run. */

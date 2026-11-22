@@ -110,17 +110,18 @@ export function findAffectedTransactionFx(db: SqliteDatabase, fxRateId: string):
 export function updateTransactionFxSnapshot(
   db: SqliteDatabase,
   transactionId: string,
-  patch: { fxRateId: string | null; sourceAmount?: number; appliedRate: string; convertedAmount: number; requestedDate: string; effectiveDate: string; source: FxRateSource; provider: string | null }
+  patch: { fxRateId: string | null; isManual?: boolean; sourceAmount?: number; appliedRate: string; convertedAmount: number; requestedDate: string; effectiveDate: string; source: FxRateSource; provider: string | null }
 ): TransactionFxRecord | null {
   const row = db
     .prepare(
       `UPDATE transaction_fx
-       SET fx_rate_id = ?, source_amount = COALESCE(?, source_amount), applied_rate = ?, converted_amount = ?, requested_date = ?, effective_date = ?,
+       SET fx_rate_id = ?, is_manual = COALESCE(?, is_manual), source_amount = COALESCE(?, source_amount), applied_rate = ?, converted_amount = ?, requested_date = ?, effective_date = ?,
            source = ?, provider = ?, updated_at = ?
        WHERE transaction_id = ? RETURNING *`
     )
     .get<TransactionFxRow>(
       patch.fxRateId,
+      patch.isManual === undefined ? null : patch.isManual ? 1 : 0,
       patch.sourceAmount ?? null,
       patch.appliedRate,
       patch.convertedAmount,
@@ -132,6 +133,18 @@ export function updateTransactionFxSnapshot(
       transactionId
     );
   return row ? rowToSnapshot(row) : null;
+}
+
+/** Every FX snapshot for the rows a sync flow has written. */
+export function listTransactionFxForFlow(db: SqliteDatabase, flowId: string): TransactionFxRecord[] {
+  return db
+    .prepare(
+      `SELECT fx.* FROM transaction_fx fx
+       JOIN sync_mappings m ON m.target_transaction_id = fx.transaction_id
+       WHERE m.flow_id = ?`
+    )
+    .all<TransactionFxRow>(flowId)
+    .map(rowToSnapshot);
 }
 
 /** Snapshots for a currency pair on a requested date (for a rate-change impact view, 025f). */

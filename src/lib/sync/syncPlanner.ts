@@ -1,4 +1,6 @@
 import { classifyDuplicate } from "./duplicateClassifier";
+import { createFxRateResolver } from "./fxPolicy";
+import { isRevaluationKey } from "./fxPosition";
 import { resolveCategory, resolvePayee } from "./entityResolution";
 import { generateSyncMarker } from "./marker";
 import { expandSourceTransactions, sourceTransactionItemKey, type SyncSourceItem } from "./sourceItems";
@@ -30,12 +32,14 @@ type PlanContext = {
   claimedTargetIds: Set<string>;
   /** Parent ids synced as separate split lines. */
   explodedParentIds: Set<string>;
+  /** The flow's rate for one row: its policy and bank fee applied. */
+  rateFor: (date: string, sourceAmount: number) => FxRateInfo | null;
 };
 
 const dateAmountKey = (date: string, amount: number) => `${date}:${amount}`;
 
 function buildPlanContext(
-  input: Pick<SyncPlannerInput, "target" | "existingMappings">
+  input: Pick<SyncPlannerInput, "config" | "target" | "existingMappings" | "fxRateByDate">
 ): PlanContext {
   const targetsByDateAmount = new Map<string, SyncTargetTransactionForDedupe[]>();
   const targetById = new Map<string, SyncTargetTransactionForDedupe>();
@@ -54,7 +58,13 @@ function buildPlanContext(
       explodedParentIds.add(mapping.sourceTransactionId);
     }
   }
-  return { targetsByDateAmount, targetById, claimedTargetIds, explodedParentIds };
+  return {
+    targetsByDateAmount,
+    targetById,
+    claimedTargetIds,
+    explodedParentIds,
+    rateFor: createFxRateResolver(input.config, input.fxRateByDate),
+  };
 }
 
 /**
@@ -114,6 +124,8 @@ export function planExpandedItems(
     const presentKeys = input.presentSourceKeys ?? new Set(input.sourceItems.map((item) => item.itemKey));
     for (const mapping of input.existingMappings) {
       if (mapping.status !== "active") continue;
+      // A revaluation entry has no source transaction to go missing.
+      if (isRevaluationKey(mapping.sourceItemKey)) continue;
       if (presentKeys.has(mapping.sourceItemKey)) continue;
       // A positional split key embeds the line's content, so an edit changes it.
       // Only the parent's existence can say whether that line was really deleted.
@@ -221,15 +233,16 @@ function fxRateChangeUpdate(
   const targetTxn = context.targetById.get(mapping.targetTransactionId);
   if (!targetTxn || targetTxn.amount === currentConverted) return null;
 
-  const payee = resolvePayee(item, config, target.payees);
-  const category = resolveCategory(item, target.categories);
+  const planned = withoutTransferPayee(item);
+  const payee = resolvePayee(planned, config, target.payees);
+  const category = resolveCategory(planned, target.categories);
   const importedId = generateSyncMarker({
     sourceBudgetId: config.sourceBudgetId,
     targetBudgetId: config.targetBudgetId,
     targetAccountId: config.targetAccountId,
     sourceItemKey: item.itemKey,
   });
-  const payload = buildPlannedTargetPayload({ item, config, payee, category, importedId, fx: fxInfo });
+  const payload = { ...buildPlannedTargetPayload({ item: planned, config, payee, category, importedId, fx: fxInfo }), keepTargetPayee: !!item.isTransfer };
   return baseItem(item, {
     classification: "source_changed_since_sync",
     action: "update",
@@ -251,13 +264,30 @@ function fxPendingItem(item: SyncSourceItem, reason?: string): SyncPlannedItem {
   });
 }
 
+const transferNote = (name: string | null | undefined, notes: string | null) => {
+  const label = name ? `Transfer: ${name}` : "Transfer";
+  return notes?.trim() ? `${label} - ${notes.trim()}` : label;
+};
+
+/**
+ * A source transfer is one leg of a pair inside the source budget. If its payee
+ * resolved to a transfer payee on the target, Actual would create a counterpart
+ * leg there, and syncing the other leg would then double it. It is written with
+ * no payee and the other side named in its notes.
+ */
+function withoutTransferPayee(item: SyncSourceItem): SyncSourceItem {
+  if (!item.isTransfer) return item;
+  return { ...item, payeeId: null, payeeName: null, notes: transferNote(item.payeeName, item.notes) };
+}
+
 /** The target payload for creating this item, with grouped-split children resolved. */
 function buildCreatePayload(
-  item: SyncSourceItem,
+  sourceItem: SyncSourceItem,
   input: Pick<SyncPlannerInput, "config" | "target">,
   fxInfo: FxRateInfo | null
 ) {
   const { config, target } = input;
+  const item = withoutTransferPayee(sourceItem);
   const fxRate = fxInfo?.rate ?? null;
   const payee = resolvePayee(item, config, target.payees);
   const category = resolveCategory(item, target.categories);
@@ -270,7 +300,9 @@ function buildCreatePayload(
   // Grouped split (RD-057 §6): resolve each child's payee/category by name and
   // apply the flow's amount direction, so the parent creates as one target split.
   const subtransactions = item.splitLines?.map((line) => {
-    const childPayee = resolvePayee({ payeeName: line.payeeName ?? item.payeeName }, config, target.payees);
+    const childPayee = line.transferId
+      ? resolvePayee({ payeeName: null }, config, target.payees)
+      : resolvePayee({ payeeName: line.payeeName ?? item.payeeName }, config, target.payees);
     const childCategory = resolveCategory({ categoryName: line.categoryName }, target.categories);
     const directedChild = config.amountDirection === "same" ? line.amount : -line.amount;
     return {
@@ -278,7 +310,7 @@ function buildCreatePayload(
       categoryId: childCategory.categoryId,
       payeeId: childPayee.payeeId,
       payeeName: childPayee.payeeName,
-      notes: line.notes,
+      notes: line.transferId ? transferNote(line.payeeName, line.notes) : line.notes,
     };
   }) ?? null;
   // With FX, converting each child independently can round the children so they
@@ -303,7 +335,7 @@ function splitModeChanged(item: SyncSourceItem, mappingByKey: Map<string, SyncMa
 
 function planSourceItem(
   item: SyncSourceItem,
-  input: Pick<SyncPlannerInput, "config" | "target" | "fxRateByDate" | "fxPendingByDate">,
+  input: Pick<SyncPlannerInput, "config" | "target" | "fxRateByDate" | "fxPendingByDate" | "manualFxRates">,
   mappingByKey: Map<string, SyncMapping>,
   canWriteMarker: boolean,
   context: PlanContext
@@ -314,7 +346,13 @@ function planSourceItem(
   // no rate for its date is "pending" and routed to review before it could be
   // matched/created with an unconverted amount.
   const needsFx = config.fxEnabled && config.fxSourceCurrency !== config.fxTargetCurrency;
-  const fxInfo = needsFx ? input.fxRateByDate?.get(item.date) ?? null : null;
+  // A row whose amount the user set keeps that rate through later changes.
+  const manualRate = needsFx ? input.manualFxRates?.get(mappingByKey.get(item.itemKey)?.targetTransactionId ?? "") : undefined;
+  const fxInfo: FxRateInfo | null = !needsFx
+    ? null
+    : manualRate
+      ? { rate: manualRate.rate, effectiveDate: manualRate.effectiveDate, source: "manual", provider: null, fxRateId: null }
+      : context.rateFor(item.date, item.amount);
   const fxRate = fxInfo?.rate ?? null;
   const fxPending = needsFx && fxInfo == null;
   const fxPendingReason = input.fxPendingByDate?.get(item.date);
@@ -349,7 +387,7 @@ function planSourceItem(
     if (mapping.sourceFingerprint === item.fingerprint || item.legacyFingerprints?.includes(mapping.sourceFingerprint)) {
       // The source is unchanged, but the FX rate may have been corrected since
       // sync. When the flow opts in, offer to update the target amount (RD-056).
-      const fxUpdate = fxRateChangeUpdate(item, input, mapping, fxInfo, fxRate, context);
+      const fxUpdate = manualRate ? null : fxRateChangeUpdate(item, input, mapping, fxInfo, fxRate, context);
       if (fxUpdate) return fxUpdate;
       return baseItem(item, {
         classification: "already_synced",
@@ -369,22 +407,26 @@ function planSourceItem(
     const isGroupedSplit = !!item.splitLines && item.splitLines.length > 0;
     if (config.updateMappedTargets && mapping.targetTransactionId && !isGroupedSplit) {
       if (fxPending) return fxPendingItem(item, fxPendingReason);
-      const upPayee = resolvePayee(item, config, input.target.payees);
-      const upCategory = resolveCategory(item, input.target.categories);
+      const planned = withoutTransferPayee(item);
+      const upPayee = resolvePayee(planned, config, input.target.payees);
+      const upCategory = resolveCategory(planned, input.target.categories);
       const upImportedId = generateSyncMarker({
         sourceBudgetId: config.sourceBudgetId,
         targetBudgetId: config.targetBudgetId,
         targetAccountId: config.targetAccountId,
         sourceItemKey: item.itemKey,
       });
-      const upPayload = buildPlannedTargetPayload({
-        item,
-        config,
-        payee: upPayee,
-        category: upCategory,
-        importedId: upImportedId,
-        fx: fxInfo,
-      });
+      const upPayload = {
+        ...buildPlannedTargetPayload({
+          item: planned,
+          config,
+          payee: upPayee,
+          category: upCategory,
+          importedId: upImportedId,
+          fx: fxInfo,
+        }),
+        keepTargetPayee: !!item.isTransfer,
+      };
       return baseItem(item, {
         classification: "source_changed_since_sync",
         action: "update",
@@ -491,6 +533,7 @@ function planSourceItem(
   if (payee.willCreateOnApply) flags.push("missing_payee_created_on_apply");
   if (payee.leftEmpty) flags.push("missing_payee_left_empty");
   if (category.leftEmpty) flags.push("missing_category_left_empty");
+  if (item.isTransfer) flags.push("source_transfer");
 
   return baseItem(item, {
     classification: "new",
@@ -500,7 +543,11 @@ function planSourceItem(
     plannedTargetPayload: payload,
     // Surface the applied FX rate in the preview's Details (RD-056); the source
     // and target amount columns already show original vs converted.
-    message: fxRate ? `FX ${config.fxSourceCurrency}→${config.fxTargetCurrency} @ ${fxRate}` : null,
+    message: fxRate
+      ? `FX ${config.fxSourceCurrency}→${config.fxTargetCurrency} @ ${fxRate}${item.isTransfer ? " · source transfer, created without a transfer payee" : ""}`
+      : item.isTransfer
+        ? "Transfer in the source budget; created without a transfer payee."
+        : null,
   });
 }
 

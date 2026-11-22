@@ -1,7 +1,7 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { getAppDb } from "@/lib/app-db/connection";
 import { appDbErrorResponse, readJsonBody } from "@/lib/app-db/routeResponses";
-import { saveTransactionFx, updateTransactionFxSnapshot } from "@/lib/fx/repositories/transactionFxRepository";
+import { listTransactionFxForFlow, saveTransactionFx, updateTransactionFxSnapshot } from "@/lib/fx/repositories/transactionFxRepository";
 import type { SqliteDatabase } from "@/lib/app-db/types";
 import type { FxRateSource, TransactionFxInput } from "@/lib/fx/types";
 
@@ -37,6 +37,17 @@ function saveSnapshot(db: SqliteDatabase, body: SnapshotBody) {
  * (RD-056 / PR-025c). Called by the client apply; the server apply writes the
  * snapshot directly. Idempotent on transaction_id.
  */
+/** The FX snapshots of the rows a flow has written. */
+export function GET(request: NextRequest) {
+  try {
+    const flowId = request.nextUrl.searchParams.get("flowId");
+    if (!flowId) return NextResponse.json({ error: "flowId is required." }, { status: 400 });
+    return NextResponse.json({ snapshots: listTransactionFxForFlow(getAppDb(), flowId) });
+  } catch (error) {
+    return appDbErrorResponse(error);
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const body = (await readJsonBody(request)) as (SnapshotBody & { snapshots?: unknown }) | null;
@@ -75,6 +86,7 @@ export async function PATCH(request: Request) {
     const updated = updateTransactionFxSnapshot(getAppDb(), body.transactionId, {
       fxRateId: body.fxRateId ?? null,
       sourceAmount: typeof body.sourceAmount === "number" ? body.sourceAmount : undefined,
+      isManual: typeof (body as { isManual?: unknown }).isManual === "boolean" ? (body as { isManual: boolean }).isManual : undefined,
       appliedRate: body.appliedRate,
       convertedAmount: body.convertedAmount,
       requestedDate: body.requestedDate,

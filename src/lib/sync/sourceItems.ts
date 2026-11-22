@@ -44,6 +44,8 @@ export type SyncSourceItem = {
   cleared: boolean;
   reconciled: boolean;
   importedId: string | null;
+  /** The source row is one leg of a transfer inside the source budget. */
+  isTransfer?: boolean;
   /**
    * Present only for a grouped split parent (RD-057 §6, `createTargetSplits`):
    * the child lines to create as subtransactions under one target parent. Absent
@@ -226,6 +228,7 @@ export function expandSourceTransaction(
         cleared: txn.cleared,
         reconciled: txn.reconciled,
         importedId: txn.importedId,
+        isTransfer: !!txn.transferId,
         splitLines: txn.splitLines,
       } satisfies SyncSourceItem,
     ];
@@ -258,6 +261,7 @@ export function expandSourceTransaction(
         reconciled: txn.reconciled,
         // A split line has no independent Actual imported_id.
         importedId: null,
+        isTransfer: !!line.transferId,
       } satisfies SyncSourceItem;
     });
   }
@@ -281,6 +285,7 @@ export function expandSourceTransaction(
       cleared: txn.cleared,
       reconciled: txn.reconciled,
       importedId: txn.importedId,
+      isTransfer: !!txn.transferId,
     } satisfies SyncSourceItem,
   ];
 }

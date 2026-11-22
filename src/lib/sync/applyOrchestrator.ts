@@ -2,6 +2,7 @@ import { getBudgetFileSyncCapabilities } from "./capabilities";
 import "./adapters"; // register all data-type adapters (side-effect)
 import { connectionMatchesBudget } from "./connectionRef";
 import { decodeFlowPlanConfig, flowPlanHash, type SyncFlowPlanConfig } from "./flowConfig";
+import { impliedRate } from "@/lib/fx/fxMath";
 import { generateSyncMarker } from "./marker";
 import {
   describeSyncError as describe,
@@ -93,6 +94,7 @@ export type FxSnapshotInput = {
   effectiveDate: string;
   source: string;
   provider: string | null;
+  isManual?: boolean;
 };
 
 export type RunStatusPatch = {
@@ -136,6 +138,11 @@ export type ApplySyncRunInput = {
   targetConnection: ConnectionInstance;
   /** Defaults to all safe `new` create candidates. */
   selection?: ApplySelection;
+  /**
+   * The amount the bank actually charged, by run item id: a positive magnitude in
+   * target minor units. The planned sign is kept and the row's rate is derived.
+   */
+  amountOverrides?: Record<string, number>;
 };
 
 export type ApplyErrorCode =
@@ -228,7 +235,8 @@ export async function applySyncRun(
     throw err;
   }
 
-  const { config, adapter, flow, eligible } = prepared;
+  const { config, adapter, flow } = prepared;
+  const eligible = applyAmountOverrides(prepared.eligible, input.amountOverrides);
   const counts: ApplyCounts = { ...EMPTY_COUNTS, selected: eligible.length };
   const items: ApplyItemResult[] = [];
 
@@ -564,6 +572,23 @@ async function validateAndPrepare(
   return { flow, config, adapter, eligible };
 }
 
+/** Replace a converted create's amount with the one the bank charged, deriving its rate. */
+function applyAmountOverrides(eligible: EligibleItem[], overrides: Record<string, number> | undefined): EligibleItem[] {
+  if (!overrides) return eligible;
+  return eligible.map((entry) => {
+    const magnitude = overrides[entry.item.id];
+    const payload = entry.payloadJson as (JsonObject & { amount?: number; notes?: string | null; fx?: PlannedFx | null; subtransactions?: unknown }) | null;
+    if (magnitude === undefined || !payload?.fx || payload.subtransactions) return entry;
+    if ((entry.mode !== "create" && entry.mode !== "recreate") || !Number.isInteger(magnitude) || magnitude <= 0) return entry;
+    const fx = payload.fx;
+    const rate = impliedRate(fx.sourceAmount, magnitude);
+    const notes = typeof payload.notes === "string" ? payload.notes.replace(`@ ${fx.rate}]`, `@ ${rate}]`) : payload.notes ?? null;
+    const amount = (payload.amount ?? 0) < 0 ? -magnitude : magnitude;
+    const nextFx: PlannedFx = { ...fx, rate, source: "manual", provider: null, fxRateId: null, isManual: true };
+    return { ...entry, payloadJson: { ...payload, amount, notes, fx: nextFx } as unknown as JsonObject };
+  });
+}
+
 /** A preview older than this may no longer describe the source. */
 const MAX_PREVIEW_AGE_MS = 24 * 60 * 60_000;
 
@@ -739,6 +764,7 @@ async function applyCreateBatch(
             effectiveDate: fx.effectiveDate,
             source: fx.source,
             provider: fx.provider,
+            isManual: fx.isManual === true,
           });
         } catch {
           // best-effort audit

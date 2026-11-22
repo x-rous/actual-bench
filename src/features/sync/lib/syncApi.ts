@@ -12,6 +12,7 @@ import type {
   SyncRunTrigger,
 } from "@/lib/app-db/types";
 import { startAndWaitForRun } from "@/features/automations/lib/runPolling";
+import type { TransactionFxRecord } from "@/lib/fx/types";
 import type { SyncPlanResult } from "@/lib/sync/plannedChanges";
 import type {
   UpdateSyncFlowRunItemPatch,
@@ -287,8 +288,14 @@ export function persistFxSnapshot(input: {
   effectiveDate: string;
   source: string;
   provider: string | null;
+  isManual?: boolean;
 }): Promise<{ snapshot: unknown }> {
   return jsonFetch("/api/fx/snapshot", { method: "POST", body: JSON.stringify(input) });
+}
+
+/** FX snapshots for the rows a flow has written. */
+export function listFlowFxSnapshots(flowId: string): Promise<{ snapshots: TransactionFxRecord[] }> {
+  return jsonFetch(`/api/fx/snapshot?flowId=${encodeURIComponent(flowId)}`);
 }
 
 /** Persist many FX snapshots in one request and one commit. */
@@ -301,6 +308,7 @@ export function updateFxSnapshot(input: {
   transactionId: string;
   fxRateId: string | null;
   sourceAmount?: number;
+  isManual?: boolean;
   appliedRate: string;
   convertedAmount: number;
   requestedDate: string;

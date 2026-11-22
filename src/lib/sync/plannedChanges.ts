@@ -43,7 +43,9 @@ export type SyncPlanFlag =
   /** Mapped target no longer exists; the user chooses to recreate it or stop syncing it. */
   | "target_missing_review"
   /** The flow's split setting changed after this split was synced; creating it would duplicate it. */
-  | "split_mode_changed";
+  | "split_mode_changed"
+  /** A transfer in the source budget, created without a transfer payee so it cannot create a second leg. */
+  | "source_transfer";
 
 /** The transaction the engine would create on the target (create-only, no splits). */
 export type PlannedTargetPayload = {
@@ -71,6 +73,8 @@ export type PlannedTargetPayload = {
    * the converted amount; `sourceAmount` here is the original.
    */
   fx?: PlannedFx | null;
+  /** An update leaves the target's payee alone: this row is a transfer in the source. */
+  keepTargetPayee?: boolean;
 };
 
 /** FX provenance carried on a planned payload; the source layer stays decimal-string decoupled. */
@@ -84,6 +88,8 @@ export type PlannedFx = {
   source: string;
   provider: string | null;
   fxRateId: string | null;
+  /** The user set this row's amount; later rate changes leave it alone. */
+  isManual?: boolean;
 };
 
 /** Resolved rate info for a transaction date (RD-056), threaded into the planner. */
@@ -94,6 +100,9 @@ export type FxRateInfo = {
   provider: string | null;
   fxRateId: string | null;
 };
+
+/** A rate fixed by the user for one synced row. Later rate changes do not touch it. */
+export type ManualFxRate = { rate: string; effectiveDate: string };
 
 /** A resolved split child line to create under a grouped target split. */
 export type PlannedSplitChild = {
@@ -202,6 +211,8 @@ export type SyncPlannerInput = {
   fxRateByDate?: Map<string, FxRateInfo>;
   /** Why a date has no rate, shown on its pending rows (provider down, bad code, future date). */
   fxPendingByDate?: Map<string, string>;
+  /** Rates the user set for individual target rows, by target transaction id. */
+  manualFxRates?: Map<string, ManualFxRate>;
   /**
    * When true, active mappings with no matching source item are emitted as
    * review-first `source_missing` delete candidates (RD-057 §5).

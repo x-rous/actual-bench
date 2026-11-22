@@ -14,6 +14,7 @@ import {
   type ApplyTransportProvider,
   type RunItemStatusPatch,
 } from "@/lib/sync/applyOrchestrator";
+import { manualFxRates } from "@/lib/sync/fxPosition";
 import { runSafeSync, type SafeSyncResult } from "@/lib/sync/safeSyncOrchestrator";
 import type { ConnectionInstance } from "@/store/connection";
 import type { SyncMapping, SyncMappingInput } from "@/lib/app-db/types";
@@ -39,6 +40,7 @@ function previewStore(): PreviewStore {
   return {
     loadFlow: async (flowId) => (await api.getFlow(flowId)).flow,
     loadMappings: async (flowId) => (await api.listMappings(flowId)).mappings,
+    loadManualFxRates: async (flowId) => manualFxRates((await api.listFlowFxSnapshots(flowId)).snapshots),
     persistPlan: async (plan, meta) =>
       api.persistDraftRun({ plan, summary: meta.summary, sourceSnapshotSummary: meta.sourceSnapshotSummary, trigger: meta.trigger }),
     persistFailedRun: async (flowId, error, meta) => {
@@ -153,9 +155,10 @@ export function runClientApply(input: {
   runId: string;
   targetConnection: ConnectionInstance;
   selection?: ApplySelection;
+  amountOverrides?: Record<string, number>;
 }): Promise<ApplyRunResult> {
   return applySyncRun(
-    { runId: input.runId, targetConnection: input.targetConnection, selection: input.selection },
+    { runId: input.runId, targetConnection: input.targetConnection, selection: input.selection, amountOverrides: input.amountOverrides },
     { transport: browserTransportProvider, store: applyStore() }
   );
 }

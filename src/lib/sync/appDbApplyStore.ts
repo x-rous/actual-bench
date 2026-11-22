@@ -49,7 +49,7 @@ export function createAppDbApplyStore(db: SqliteDatabase): ApplyStore {
       });
     },
     persistFxSnapshot: async (input) => {
-      saveTransactionFx(db, { ...input, source: input.source as import("@/lib/fx/types").FxRateSource, isManual: false });
+      saveTransactionFx(db, { ...input, source: input.source as import("@/lib/fx/types").FxRateSource, isManual: input.isManual === true });
     },
     updateFxSnapshot: async (input) => {
       updateTransactionFxSnapshot(db, input.transactionId, { ...input, source: input.source as import("@/lib/fx/types").FxRateSource });

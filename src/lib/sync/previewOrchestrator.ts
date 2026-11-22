@@ -40,6 +40,8 @@ export type PreviewPersistMeta = {
 export type PreviewStore = {
   loadFlow(flowId: string): Promise<SyncFlow | null>;
   loadMappings(flowId: string): Promise<SyncMapping[]>;
+  /** Rates the user set for individual synced rows, by target transaction id. */
+  loadManualFxRates?(flowId: string): Promise<Map<string, import("./plannedChanges").ManualFxRate>>;
   /**
    * `items` is the FULL planned list, including classifications the store
    * chose not to persist (e.g. `already_synced` — see
@@ -225,9 +227,13 @@ export async function runLiveDryRunPreview(
       );
     }
 
+    const manualFxRates = decodeFlowPlanConfig(flow).fxEnabled
+      ? await deps.store.loadManualFxRates?.(flowId)
+      : undefined;
+
     // 5. Plan (pure) + summary.
     const targetCapabilities = getBudgetFileSyncCapabilities({ mode: input.context.targetConnection.mode }).capabilities;
-    const plan = adapter.plan({ flow, materialized: source.materialized, target, mappings, targetCapabilities, fxRateByDate, fxPendingByDate });
+    const plan = adapter.plan({ flow, materialized: source.materialized, target, mappings, targetCapabilities, fxRateByDate, fxPendingByDate, manualFxRates });
     const summary = adapter.buildSummary(plan, source.stats);
 
     // 6. Persist the draft preview run (one transaction).
