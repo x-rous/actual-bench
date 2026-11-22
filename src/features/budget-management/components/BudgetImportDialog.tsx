@@ -326,9 +326,14 @@ export function BudgetImportDialog({
     const request = ++requestRef.current;
     setIsWorking(true);
     try {
-      const { monthStates, failed } = await loadMonthStates(months.filter((m) => available.has(m)));
+      const attempted = months.filter((m) => available.has(m));
+      const { monthStates, failed } = await loadMonthStates(attempted);
       if (request !== requestRef.current) return;
-      setCategoryLoadFailed(failed.sort());
+      // Only the months tried here change state: an earlier failure for a
+      // month not in this load keeps its message and retry.
+      setCategoryLoadFailed((prev) =>
+        [...new Set([...prev.filter((m) => !attempted.includes(m)), ...failed])].sort()
+      );
       const merged = mergeCategories(
         matchCategories,
         Object.values(monthStates).filter((st): st is LoadedMonthState => st != null)

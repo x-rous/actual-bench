@@ -241,6 +241,54 @@ describe("BudgetImportDialog", () => {
     expect(screen.queryByText(/Could not load the categories of/)).not.toBeInTheDocument();
   });
 
+  it("keeps an earlier failed month's retry when a later range move loads other months", async () => {
+    const jan = month("2026-01", [category("c1", "Groceries", 45000)]);
+    const feb = month("2026-02", [category("c1", "Groceries", 45000), category("c2", "Dining", 0)]);
+    const mar = month("2026-03", [category("c1", "Groceries", 45000)]);
+    // February is in view but fails on the first read; March is out of view.
+    mockServerMonths = { "2026-01": jan, "2026-03": mar };
+    const client = new QueryClient({
+      defaultOptions: { queries: { staleTime: Infinity, retry: false } },
+    });
+    const props = {
+      availableMonths: ["2026-01", "2026-02", "2026-03"],
+      categories: Object.values(jan.categoriesById),
+      groups: [group],
+      categoriesById: jan.categoriesById,
+      onClose: jest.fn(),
+    };
+    const ui = (activeMonths: string[]) => (
+      <QueryClientProvider client={client}>
+        <BudgetImportDialog {...props} activeMonths={activeMonths} onExtendRange={jest.fn()} />
+      </QueryClientProvider>
+    );
+    const view = render(ui(["2026-01", "2026-02"]));
+    fireEvent.change(screen.getByLabelText(/Or paste cells/), {
+      target: {
+        value:
+          "Group Name\tCategory Name\tJan-26\tFeb-26\tMar-26\n" +
+          "Food\tGroceries\t450.00\t450.00\t450.00\n" +
+          "Food\tDining\t\t80.00\t\n",
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Use pasted data" }));
+    expect(await screen.findByText(/Could not load the categories of/)).toHaveTextContent("Feb 26");
+
+    // Moving the range loads March successfully; February's failure stays.
+    fireEvent.click(screen.getByRole("button", { name: /Move the visible range/ }));
+    view.rerender(ui(["2026-01", "2026-02", "2026-03"]));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Try again" })).not.toBeDisabled()
+    );
+    expect(screen.getByText(/Could not load the categories of/)).toHaveTextContent("Feb 26");
+
+    // Retrying February clears it and matches Dining.
+    mockServerMonths = { "2026-01": jan, "2026-02": feb, "2026-03": mar };
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(screen.getAllByText("Exact")).toHaveLength(2));
+    expect(screen.queryByText(/Could not load the categories of/)).not.toBeInTheDocument();
+  });
+
   it("drops an approval when moving the range changes the suggested category", async () => {
     const jan = month("2026-01", [category("c1", "Batsx", 0)]);
     const feb = month("2026-02", [category("c1", "Batsx", 0), category("c2", "Cuts", 0)]);
