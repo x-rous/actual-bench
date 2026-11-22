@@ -1992,13 +1992,13 @@ describe("v60 loan tracking", () => {
     seed.exec(`CREATE TABLE app_meta (key text PRIMARY KEY, value text NOT NULL, updated_at text NOT NULL);${ACCOUNT_CLASS_TABLE_SQL}${ACCOUNT_REPORTING_TABLE_SQL}${ACCOUNT_FLAGS_TABLE_SQL}${CASH_BUFFER_SETTINGS_TABLE_SQL}`);
     seed.prepare("INSERT INTO app_meta (key, value, updated_at) VALUES ('schema_version', '67', ?)").run("2026-11-01T00:00:00.000Z");
     const cls = seed.prepare("INSERT INTO account_classes (budget_sync_id, scope, account_id, account_class, updated_at) VALUES (?,?,?,?,?)");
-    for (const [id, c] of [["deposit", "bank"], ["gold", "other-asset"], ["saver", "bank"], ["wallet", "cash"], ["inv", "investment"], ["dormant", "cash"]]) cls.run("b1", "account", id, c, "2026-11-02T00:00:00.000Z");
+    for (const [id, c] of [["deposit", "bank"], ["gold", "other-asset"], ["saver", "bank"], ["wallet", "cash"], ["inv", "investment"], ["dormant", "cash"], ["combo", "cash"]]) cls.run("b1", "account", id, c, "2026-11-02T00:00:00.000Z");
     cls.run("b1", "group", "grp", "bank", "2026-11-02T00:00:00.000Z");
     const reporting = seed.prepare("INSERT INTO account_reporting (budget_sync_id, account_id, treatment, updated_at) VALUES (?,?,?,?)");
     // "dormant" is a Cash account with a Bank treatment that never applied; "member" has no own class (its group's applied).
-    for (const [id, t] of [["deposit", "fixed-deposit"], ["gold", "fixed-asset"], ["dormant", "fixed-deposit"], ["member", "fixed-deposit"]]) reporting.run("b1", id, t, "2026-11-02T00:00:00.000Z");
+    for (const [id, t] of [["deposit", "fixed-deposit"], ["gold", "fixed-asset"], ["dormant", "fixed-deposit"], ["member", "fixed-deposit"], ["combo", "fixed-deposit"]]) reporting.run("b1", id, t, "2026-11-02T00:00:00.000Z");
     const flag = seed.prepare("INSERT INTO account_flags (budget_sync_id, scope, target_id, flag, updated_at) VALUES (?,?,?,?,?)");
-    for (const id of ["saver", "wallet", "inv", "deposit"]) flag.run("b1", "account", id, "offbudget-income", "2026-11-02T00:00:00.000Z");
+    for (const id of ["saver", "wallet", "inv", "deposit", "combo"]) flag.run("b1", "account", id, "offbudget-income", "2026-11-02T00:00:00.000Z");
     seed.prepare("INSERT INTO cash_buffer_settings (budget_sync_id, goal_months, average_months, method, updated_at) VALUES ('b1', 6, 12, 'average', 'x')").run();
     seed.close();
 
@@ -2011,6 +2011,7 @@ describe("v60 loan tracking", () => {
       });
       const first = read();
       expect(first.classes).toEqual([
+        { scope: "account", id: "combo", cls: "savings" },
         { scope: "account", id: "deposit", cls: "fixed-deposit" },
         { scope: "account", id: "dormant", cls: "cash" },
         { scope: "account", id: "gold", cls: "fixed-asset" },
@@ -2028,6 +2029,9 @@ describe("v60 loan tracking", () => {
       expect(resolveAccountClass("dormant", "grp", maps)).toEqual({ accountClass: "fixed-deposit", source: "account" });
       expect(resolveAccountClass("dormant", null, maps)).toEqual({ accountClass: "cash", source: "account" });
       expect(resolveAccountClass("member", "grp", maps)).toEqual({ accountClass: "fixed-deposit", source: "account" });
+      // Own class Cash with the income flag became Savings, but inside the Bank group its Fixed deposit choice still applies first.
+      expect(resolveAccountClass("combo", "grp", maps)).toEqual({ accountClass: "fixed-deposit", source: "account" });
+      expect(resolveAccountClass("combo", null, maps)).toEqual({ accountClass: "savings", source: "account" });
       expect(runMigrations(db).schemaVersion).toBe(LATEST_SCHEMA_VERSION);
       expect(read()).toEqual(first);
       // Choosing the account's own class replaces the kept choice, so it cannot outlive the user's decision.

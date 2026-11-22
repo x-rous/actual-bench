@@ -161,11 +161,12 @@ export function resolveAccountClass(
 ): EffectiveAccountClass {
   const groupClass = groupId ? maps.groups.get(groupId) : undefined;
   const own = maps.accounts.get(accountId);
-  if (groupClass && !refinesClass(own, groupClass)) {
-    // A narrower class kept from a pre-schema-68 choice applies inside the group, as the choice did; the own class stays as it was.
+  if (groupClass) {
+    // A narrower class kept from a pre-schema-68 choice applies inside the group first: it is what applied there before the upgrade,
+    // and choosing the account's own class since would have cleared it. Then an own class that is narrower; otherwise the group's.
     const kept = maps.refinements?.get(accountId);
     if (kept && refinesClass(kept, groupClass)) return { accountClass: kept, source: "account" };
-    return { accountClass: groupClass, source: "group" };
+    if (!refinesClass(own, groupClass)) return { accountClass: groupClass, source: "group" };
   }
   if (own) return { accountClass: own, source: "account" };
   return { accountClass: null, source: "none" };
