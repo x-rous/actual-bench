@@ -18,11 +18,16 @@ export type StagedEntity<T extends BaseEntity> = {
   saveError?: string;
   /** Account rows only: Bench metadata staged until creation returns a real id, or awaiting a retry. Never sent to Actual. */
   pendingAccountClass?: AccountClass | null;
+  /** Account rows only: the access and report flags of an account not yet created (or whose flag save failed), written to Bench once it has a permanent id. Never sent to Actual. */
+  pendingAccountFlags?: PendingAccountFlags;
   /** Category and category-group rows only: on delete, the category that takes over their transactions and budget amounts. */
   transferCategoryId?: string | null;
   /** Account rows only: where the balance goes when the staged close is saved. */
   closeTransfer?: import("./entities").AccountCloseTransfer | null;
 };
+
+/** The saved flags a new account will get: each true flag is written once the account exists. */
+export type PendingAccountFlags = { excluded: boolean; accessible: boolean; locked: boolean };
 
 export type StagedMap<T extends BaseEntity> = Record<string, StagedEntity<T>>;
 

@@ -13,6 +13,9 @@ import type { GroupBy } from "../lib/accountClusters";
 export type StatusFilter = "all" | "open" | "closed";
 export type BudgetFilter = "all" | "on" | "off";
 export type RulesFilter = "all" | "with_rules" | "no_rules";
+/** A bulk access choice: an access for off-budget accounts whose class has one, or leaving accounts out of (or back in) reports. */
+export type BulkAccessChoice = "available" | "locked" | "exclude" | "include";
+
 /** "excluded" keeps only the accounts left out of reports. */
 export type ReportingFilter = "all" | "excluded";
 
@@ -72,6 +75,7 @@ export function FilterBar({
   onGroupByChange,
   groupByOptions,
   onBulkSetClass,
+  onBulkSetAccess,
   onBulkAssignGroup,
   filteredCount,
   totalCount,
@@ -106,6 +110,8 @@ export function FilterBar({
   groupByOptions?: { value: GroupBy; label: string }[];
   /** Sets (or, with null, clears) the class of the selected accounts. Shown with the class filter. */
   onBulkSetClass?: (accountClass: AccountClass | null) => void;
+  /** Sets the access, or whether they count in reports, of the selected accounts. */
+  onBulkSetAccess?: (choice: BulkAccessChoice) => void;
   /** Open accounts with no class; shown as a shortcut to the Unclassified filter. */
   unclassifiedCount?: number;
   /** Shown with the class filter when `leftOutCount` is provided (saved settings loaded). */
@@ -162,6 +168,23 @@ export function FilterBar({
               options={UNCLASSIFIED_OPTIONS}
               groups={buildAccountClassGroups(selectedHasOnBudgetAccounts, selectedHasOffBudgetAccounts)}
               onValueChange={(next) => onBulkSetClass(next === UNCLASSIFIED ? null : (next as AccountClass))}
+            />
+          </div>
+        )}
+        {onBulkSetAccess && (
+          <div className="w-44">
+            <Select
+              size="sm"
+              value=""
+              placeholder="Set access…"
+              aria-label="Set the access of the selected accounts"
+              options={[
+                { value: "available", label: "Available now" },
+                { value: "locked", label: "Locked" },
+                { value: "exclude", label: "Leave out of reports" },
+                { value: "include", label: "Include in reports" },
+              ]}
+              onValueChange={(next) => { if (next) onBulkSetAccess(next as BulkAccessChoice); }}
             />
           </div>
         )}

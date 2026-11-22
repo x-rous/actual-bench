@@ -100,6 +100,16 @@ describe("accounts table access and reports", () => {
     await waitFor(() => expect(sessionStorage.getItem("filters:accounts") ?? "").not.toContain("excluded"));
   });
 
+  it("sets access for the selected accounts at once, and says which it left unchanged", async () => {
+    renderTable();
+    await screen.findByText("Sell to use");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select account Brokerage" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select account Flat" }));
+    await chooseSelectOption(screen.getByRole("combobox", { name: "Set the access of the selected accounts" }), "Available now");
+    await waitFor(() => expect([...flags.keys()]).toEqual(["account:inv:accessible"]));
+    expect(jest.requireMock("sonner").toast.info).toHaveBeenCalledWith(expect.stringContaining("1 account was left unchanged"));
+  });
+
   it("says when the settings could not be loaded, and retries", async () => {
     fakeServer({ failFlags: true });
     renderTable();

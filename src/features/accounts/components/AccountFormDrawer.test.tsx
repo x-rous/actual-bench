@@ -36,6 +36,31 @@ describe("new account class selection", () => {
     await waitFor(() => expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ offBudget: true, accountClass: "retirement" })));
   });
 
+  it("submits an access that differs from the class default and leaving out of reports, off budget only", async () => {
+    const onSubmit = jest.fn();
+    render(<AccountFormDrawer open onOpenChange={jest.fn()} onSubmit={onSubmit} />);
+    fireEvent.change(screen.getByLabelText("Account Name"), { target: { value: "Notice saver" } });
+    expect(screen.getByText("On budget: always available now.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("switch", { name: "Off Budget" }));
+    await chooseClass("Savings");
+    fireEvent.click(screen.getByRole("combobox", { name: "Accessible" }));
+    const locked = await screen.findByRole("option", { name: "Locked" });
+    fireEvent.pointerDown(locked, { pointerType: "mouse" }); fireEvent.pointerUp(locked, { pointerType: "mouse" }); fireEvent.click(locked);
+    fireEvent.click(screen.getByRole("checkbox", { name: /Leave out of reports/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Add Account" }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ accountClass: "savings" }), { excluded: true, accessible: false, locked: true }));
+  });
+
+  it("submits no flags when everything is the class default", async () => {
+    const onSubmit = jest.fn();
+    render(<AccountFormDrawer open onOpenChange={jest.fn()} onSubmit={onSubmit} />);
+    fireEvent.change(screen.getByLabelText("Account Name"), { target: { value: "Pension" } });
+    fireEvent.click(screen.getByRole("switch", { name: "Off Budget" }));
+    await chooseClass("Retirement");
+    fireEvent.click(screen.getByRole("button", { name: "Add Account" }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ accountClass: "retirement" })));
+  });
+
   it("resets the draft class when the drawer is reopened", async () => {
     const props = { onOpenChange: jest.fn(), onSubmit: jest.fn() };
     const { rerender } = render(<AccountFormDrawer open {...props} />);

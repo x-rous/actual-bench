@@ -251,4 +251,34 @@ describe("useAccountsSave", () => {
     expect(transport.createAccount).toHaveBeenCalledTimes(1);
     expect(transport.updateAccount).not.toHaveBeenCalled();
   });
+
+  it("writes a new account's access and report flags once it has a permanent id, and retries only them after a failure", async () => {
+    const transport = makeTransport("http-api");
+    mockGetTransport.mockReturnValue(transport);
+    stageNewAccount("savings");
+    useStagedStore.getState().stageAccountFlags("client-account-1", { excluded: false, accessible: false, locked: true });
+    const calls: { url: string; body: { changes: { id: string; flag?: string; on?: boolean }[] } }[] = [];
+    let failFlags = true;
+    (global.fetch as jest.Mock).mockImplementation(async (url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      calls.push({ url, body });
+      if (url.startsWith("/api/account-flags")) return failFlags ? { ok: false } : { ok: true, json: async () => ({ accountFlags: [] }) };
+      return { ok: true, json: async () => ({ accountClasses: [] }) };
+    });
+    const { result } = renderHook(() => useAccountsSave(), { wrapper: makeWrapper(new QueryClient()) });
+    await act(async () => { await result.current.save(); });
+    expect(useStagedStore.getState().accounts["server-account-1"]).toMatchObject({ pendingAccountFlags: { locked: true }, saveError: expect.stringContaining("Access and report settings were not saved") });
+    failFlags = false;
+    await act(async () => { await result.current.save(); });
+    expect(transport.createAccount).toHaveBeenCalledTimes(1);
+    expect(transport.updateAccount).not.toHaveBeenCalled();
+    const lastFlags = calls.filter((c) => c.url.startsWith("/api/account-flags")).at(-1)!;
+    expect(lastFlags.body.changes).toEqual([
+      { scope: "account", id: "server-account-1", flag: "excluded", on: false },
+      { scope: "account", id: "server-account-1", flag: "accessible", on: false },
+      { scope: "account", id: "server-account-1", flag: "locked", on: true },
+    ]);
+    expect(useStagedStore.getState().accounts["server-account-1"]?.pendingAccountFlags).toBeUndefined();
+    expect(result.current.hasPendingChanges).toBe(false);
+  });
 });

@@ -16,6 +16,10 @@ export const accountFormSchema = z.object({
   initialBalance: z.number().optional(),
   groupId: z.string().min(1).nullable().optional(),
   accountClass: z.enum(ACCOUNT_CLASSES).nullable().optional(),
+  /** Off budget only: whether the money can be used now; absent means the class default. */
+  access: z.enum(["available", "locked"]).nullable().optional(),
+  /** Off budget only: leave the account out of reports. */
+  excluded: z.boolean().optional(),
 }).superRefine((values, ctx) => {
   if (!isAccountClassAllowed(values.accountClass, values.offBudget)) {
     ctx.addIssue({ code: "custom", path: ["accountClass"], message: values.offBudget ? "On-budget accounts only" : "Off-budget accounts only" });

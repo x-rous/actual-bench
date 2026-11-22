@@ -12,6 +12,9 @@ export type AccountFlagState = { excluded: boolean; accessible: boolean; locked:
 
 export type AccountFlagEdit = { flag: AccountFlag; on: boolean };
 
+/** No flag saved: the class defaults apply and the account is included. */
+export const NO_FLAGS: AccountFlagState = { excluded: false, accessible: false, locked: false };
+
 /** What a class without access says in the Accessible column. */
 function noAccessText(accountClass: AccountClass): string {
   switch (accountClass) {
@@ -34,7 +37,6 @@ export const AccountAccessCell = React.memo(function AccountAccessCell({
   accountClass,
   offBudget,
   flags,
-  unsaved,
   disabled,
   onChange,
 }: {
@@ -43,8 +45,6 @@ export const AccountAccessCell = React.memo(function AccountAccessCell({
   accountClass: AccountClass | null;
   offBudget: boolean;
   flags: AccountFlagState;
-  /** The account has not been saved to Actual yet, so it has no permanent id to attach a choice to. */
-  unsaved: boolean;
   disabled: boolean;
   onChange: (accountId: string, edits: AccountFlagEdit[]) => void;
 }) {
@@ -55,7 +55,6 @@ export const AccountAccessCell = React.memo(function AccountAccessCell({
   if (!accessChoosable(accountClass, offBudget)) {
     return <span className={muted} title="On budget: Actual lets you assign this money, so it counts as available now.">Available (on budget)</span>;
   }
-  if (unsaved) return <span className={`${muted} text-muted-foreground/70`}>{ACCESS_LABEL[access]} · save to change</span>;
   return (
     <Select
       size="sm"
@@ -89,7 +88,6 @@ export const AccountReportsCell = React.memo(function AccountReportsCell({
   excludedByGroup = false,
   classFromGroup = false,
   groupName,
-  unsaved,
   disabled,
   onChange,
 }: {
@@ -101,13 +99,12 @@ export const AccountReportsCell = React.memo(function AccountReportsCell({
   excludedByGroup?: boolean;
   classFromGroup?: boolean;
   groupName?: string;
-  unsaved: boolean;
   disabled: boolean;
   onChange: (accountId: string, edits: AccountFlagEdit[]) => void;
 }) {
   const leftOut = excluded || excludedByGroup;
   const savedOnBudget = excluded && !offBudget;
-  if (unsaved || (!offBudget && !savedOnBudget)) return <span className="px-2 text-xs text-muted-foreground">Included</span>;
+  if (!offBudget && !savedOnBudget) return <span className="px-2 text-xs text-muted-foreground">Included</span>;
   const byGroup = excludedByGroup || classFromGroup;
   const name = accountName || "unnamed account";
   const label = savedOnBudget ? "Left out (not applied: on budget)" : leftOut ? "Left out of reports" : "Included";
