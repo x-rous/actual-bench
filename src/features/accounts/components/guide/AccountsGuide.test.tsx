@@ -35,7 +35,8 @@ describe("the Accounts guide", () => {
     render(<Guide start="access" />);
     const table = screen.getByLabelText("Accessible, for each class");
     for (const info of ACCOUNT_CLASS_INFO) expect(within(table).getAllByText(info.label).length).toBeGreaterThan(0);
-    const cells = (label: string) => [...(within(table).getByText(label).parentElement as HTMLElement).children];
+    const cells = (label: string) => [...(within(table).getByRole("rowheader", { name: label }).parentElement as HTMLElement).children];
+    expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Class", "Off budget, by default", "Counts as"]);
     expect(cells("Savings")[1]).toHaveTextContent("Available now");
     expect(cells("Fixed Deposit")[1]).toHaveTextContent("Locked");
     expect(cells("Retirement")[1]).toHaveTextContent("you can change it");

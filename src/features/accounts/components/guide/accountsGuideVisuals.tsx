@@ -48,27 +48,31 @@ export function AccessTable() {
   return (
     <Figure wide label="Accessible, for each class" caption={<><Key colour="#16a34a">Available now by default</Key><Key colour="#94a3b8">Locked by default</Key><Key colour="#cbd5e1">No access: nothing to pick</Key></>}>
       <div className="overflow-hidden rounded-lg border text-xs">
-        <div className="grid grid-cols-[9rem_minmax(0,1fr)_minmax(0,1.2fr)] items-center gap-px bg-border">
-          {["Class", "Off budget, by default", "Counts as"].map((h) => <span key={h} className="bg-muted/40 px-3 py-1.5 text-[11px] font-semibold">{h}</span>)}
-          {ACCOUNT_CLASS_INFO.map((c) => {
-            const value = c.value as AccountClass;
-            const access = defaultAccess(value, true);
-            const tone: Tone = access === "available" ? "income" : access === "locked" ? "kept" : "neutral";
-            const cell: ReactNode = classHasAccess(value)
-              ? <span className="flex flex-wrap items-center gap-1"><Chip tone={tone}>{ACCESS_LABEL[access!]}</Chip><span className="text-muted-foreground">you can change it</span></span>
-              : <span className="text-muted-foreground">Nothing to choose</span>;
-            const counts = classHasAccess(value)
-              ? `${COUNTS_AS[rungOf(value, "available")]} when available; ${COUNTS_AS.locked.toLowerCase()} when locked`
-              : COUNTS_AS[rungOf(value, null)];
-            return (
-              <div key={c.value} className="contents">
-                <span className="self-stretch bg-background px-3 py-2 font-medium">{c.label}</span>
-                <span className="self-stretch bg-background px-3 py-1.5">{cell}</span>
-                <span className="self-stretch bg-background px-3 py-1.5 text-muted-foreground">{counts}</span>
-              </div>
-            );
-          })}
-        </div>
+        <table className="w-full border-collapse">
+          <thead className="bg-muted/40 text-left text-[11px]">
+            <tr>{["Class", "Off budget, by default", "Counts as"].map((h) => <th key={h} scope="col" className="border-b px-3 py-1.5 font-semibold">{h}</th>)}</tr>
+          </thead>
+          <tbody>
+            {ACCOUNT_CLASS_INFO.map((c) => {
+              const value = c.value as AccountClass;
+              const access = defaultAccess(value, true);
+              const tone: Tone = access === "available" ? "income" : access === "locked" ? "kept" : "neutral";
+              const cell: ReactNode = classHasAccess(value)
+                ? <span className="flex flex-wrap items-center gap-1"><Chip tone={tone}>{ACCESS_LABEL[access!]}</Chip><span className="text-muted-foreground">you can change it</span></span>
+                : <span className="text-muted-foreground">Nothing to choose</span>;
+              const counts = classHasAccess(value)
+                ? `${COUNTS_AS[rungOf(value, "available")]} when available; ${COUNTS_AS.locked.toLowerCase()} when locked`
+                : COUNTS_AS[rungOf(value, null)];
+              return (
+                <tr key={c.value} className="border-b last:border-0">
+                  <th scope="row" className="w-36 px-3 py-2 text-left font-medium">{c.label}</th>
+                  <td className="px-3 py-1.5">{cell}</td>
+                  <td className="px-3 py-1.5 text-muted-foreground">{counts}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     </Figure>
   );

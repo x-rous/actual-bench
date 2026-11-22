@@ -118,17 +118,34 @@ export type AccountClassMaps = {
 
 /**
  * A group with a class wins over the account's own class, which stays stored
- * but unused while the account is in that group. Otherwise the account's own
+ * but unused while the account is in that group, unless the own class is a
+ * narrower kind of the group's (`refinesClass`). Otherwise the account's own
  * class applies; otherwise it has none.
  */
+/**
+ * Classes that are a narrower kind of another: a Savings or Fixed Deposit account is still a bank account, and an Other Fixed Asset
+ * is still an Other Asset. An account's own narrower class applies inside a group of the broader class, as the Fixed / restricted
+ * deposit and Fixed asset choices did before they became classes.
+ */
+const REFINES: Partial<Record<AccountClass, readonly AccountClass[]>> = {
+  bank: ["savings", "fixed-deposit"],
+  cash: ["savings"],
+  "other-asset": ["fixed-asset"],
+};
+
+/** Whether `own` is a narrower kind of `group` (see `REFINES`). */
+export function refinesClass(own: AccountClass | null | undefined, group: AccountClass | null | undefined): boolean {
+  return !!own && !!group && (REFINES[group]?.includes(own) ?? false);
+}
+
 export function resolveAccountClass(
   accountId: string,
   groupId: string | null | undefined,
   maps: AccountClassMaps
 ): EffectiveAccountClass {
   const groupClass = groupId ? maps.groups.get(groupId) : undefined;
-  if (groupClass) return { accountClass: groupClass, source: "group" };
   const own = maps.accounts.get(accountId);
+  if (groupClass && !refinesClass(own, groupClass)) return { accountClass: groupClass, source: "group" };
   if (own) return { accountClass: own, source: "account" };
   return { accountClass: null, source: "none" };
 }
@@ -146,7 +163,8 @@ export type GroupAccountClassPlan = {
 
 /**
  * Setting a group class clears the explicit classes of its current members, so
- * the group's value is the only one that applies. Removing a group class
+ * the group's value is the only one that applies, except an own class that is a
+ * narrower kind of it, which keeps applying. Removing a group class
  * changes nothing else. The caller shows `cleared` as a preview before applying.
  */
 export function planGroupAccountClass(
@@ -159,7 +177,8 @@ export function planGroupAccountClass(
   if (accountClass) {
     for (const id of memberIds) {
       const own = maps.accounts.get(id);
-      if (own) cleared.push({ id, accountClass: own });
+      // A narrower kind of the group's class (a Fixed Deposit in a Checking group) still applies, so it is kept.
+      if (own && !refinesClass(own, accountClass)) cleared.push({ id, accountClass: own });
     }
   }
   return {

@@ -499,7 +499,8 @@ export function FinancialInsightsGuide({ section, onSection, onClose, docsUrl }:
         <Para>The cash buffer on the Summary tab answers “if my income stopped, how many months could I cover?”. It is always as of today, whatever period is selected.</Para>
         <BufferSketch />
         <Example caption="How the real figure is worked out" head={["Part", "What it is"]} rows={[
-          ["Cash", "Cash today as the header switch counts it (Checking and Cash, or with Savings and Fixed Deposits, that you can use now), less what you owe on credit cards. Locked money is not cash; other money you can use now is the second figure"],
+          ["Cash", "Cash today as the header switch counts it: Checking and Cash, or with Savings and Fixed Deposits, that you can use now. Locked money is not cash; other money you can use now is the second figure"],
+          ["Cards owed", "What you owe on credit cards today; a card in credit is ignored"],
           ["Spending per month", "A typical month of recorded spending, without the interest and fees of tracked loans"],
           ["Loan repayments", "Each loan you owe, in full: its scheduled repayment (principal and interest) if it is tracked and agrees with Actual; if it is tracked but does not agree, the buffer is unavailable; if it is not tracked, its recorded repayments over the same recent months as your typical month (what was paid in, which can include interest the lender charged), which needs three complete months"],
           ["Months of cover", "(Cash − cards owed) ÷ (spending per month + loan repayments)"],

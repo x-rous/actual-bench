@@ -731,7 +731,8 @@ const MIGRATIONS: readonly Migration[] = [
 function applyAccountClassAccess(db: SqliteDatabase): void {
   const now = new Date().toISOString();
   // An account takes the new class when its own class is the one the old choice belonged to, or when it has no own class (its class
-  // came from a group, which still decides; the Accounts page points out an own class that differs from the group's).
+  // came from a group). Each new class is a narrower kind of the old one (`refinesClass`), so inside a group of that class it applies,
+  // as the old choice did; in a group of another class the group still decides, as it did before.
   const reclass = (treatment: string, from: string, to: string) => db.prepare(`
     INSERT INTO account_classes (budget_sync_id, scope, account_id, account_class, updated_at)
     SELECT r.budget_sync_id, 'account', r.account_id, ?, ? FROM account_reporting r

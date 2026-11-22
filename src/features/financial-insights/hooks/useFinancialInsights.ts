@@ -258,6 +258,8 @@ export type FinancialInsightsView = {
   setPeriod: (period: PeriodChoice) => void;
   /** What the cash figures count: Checking and Cash you can use now, or those and Savings and Fixed Deposits you can use now. Saved per budget. */
   cashBasis: CashBasis;
+  /** Whether the saved settings have been read; until then the basis cannot be changed (it would save the defaults over them). */
+  cashBasisReady: boolean;
   setCashBasis: (basis: CashBasis) => void;
   /** Loading, or failed, or ready; the figures exist only when ready. */
   data:
@@ -272,7 +274,7 @@ export function useFinancialInsights(): FinancialInsightsView {
   const queryClient = useQueryClient();
   const today = useLocalToday();
   const gate = useFinancialInsightsGate();
-  const { settings: bufferSettings, save: saveBufferSettings } = useCashBufferSettings();
+  const { settings: bufferSettings, save: saveBufferSettings, loaded: bufferSettingsLoaded } = useCashBufferSettings();
   const [filters, setFilters] = usePersistedFilters("filters:financial-insights", { period: DEFAULT_PERIOD, tab: "summary" as TabId });
   const accounts = gate.state === "ready" ? gate.accounts : null;
   const excluded = gate.state === "ready" ? gate.excluded : null;
@@ -402,7 +404,9 @@ export function useFinancialInsights(): FinancialInsightsView {
     setTab: (next) => setFilters((f) => ({ ...f, tab: next })),
     setPeriod: (next) => setFilters((f) => ({ ...f, period: next })),
     cashBasis: bufferSettings.cashBasis,
-    setCashBasis: (cashBasis) => saveBufferSettings({ ...bufferSettings, cashBasis }),
+    cashBasisReady: bufferSettingsLoaded,
+    // Only the basis changes; the goal, averaging window and method are the saved ones.
+    setCashBasis: (cashBasis) => { if (bufferSettingsLoaded) saveBufferSettings({ ...bufferSettings, cashBasis }); },
     // The same path as the toolbar's Refresh: pull the budget from the server first, then re-read.
     refresh: () => void refreshFromServer({
       sync: async () => { if (connection) await getTransport(connection).sync(); },

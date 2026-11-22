@@ -50,6 +50,8 @@ it("honors the asset classes, group inheritance, budget placement and effective 
     expect(eligibility({ ...account, closed: true }, key, maps)).toMatch(/closed/);
     // The class alone decides: an Other Asset (a holding) cannot hold an asset of any type.
     expect(eligibility(account, key, { accounts: new Map(), groups: new Map([["g", "other-asset" as const]]) })).toMatch(/account class/);
+    // An Other Fixed Asset account inside an Other Asset group (what the upgrade gives a Fixed asset account in such a group) stays eligible.
+    if (type.accountClass === "fixed-asset") expect(eligibility(account, key, { accounts: new Map([["a", "fixed-asset" as const]]), groups: new Map([["g", "other-asset" as const]]) })).toBeNull();
   }
   expect(ownershipAt(assets[0], "2024-01-01")).toBeNull(); expect(ownershipAt(assets[0], "2026-01-01")).toBe(10000);
 });
