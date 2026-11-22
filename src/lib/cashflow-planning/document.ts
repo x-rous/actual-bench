@@ -1,7 +1,7 @@
 import { generateId } from "@/lib/uuid";
 import {
   AVERAGE_WINDOWS, MAX_MONTHS, MIN_MONTHS, SCHEMA_VERSION, SECTIONS,
-  type AccountLink, type GroupColor, isGroupColor, type Basis, type Goal, type Month, type PlanAccountRole, type PlanDocument, type PlanGroup, type PlanRow, type RepeatRule, type RowLinks, type SectionId,
+  type AccountLink, type GroupColor, isGroupColor, isSavingsBasis, type Basis, type Goal, type Month, type PlanAccountRole, type PlanDocument, type PlanGroup, type PlanRow, type RepeatRule, type RowLinks, type SectionId,
 } from "./types";
 import { addMonths, isMonth, monthsBetween } from "./months";
 
@@ -166,7 +166,7 @@ export function parsePlanDocument(value: unknown): PlanDocument {
 
   const goals = list(value.goals, "Goals", MAX_GOALS).map((entry): Goal => {
     if (!isRecord(entry)) return fail("A goal is not valid");
-    return { id: id(entry.id, "A goal"), name: text(entry.name, "A goal name", NAME_MAX).trim() || "Goal", month: month(entry.month, "A goal's month"), amount: amount(entry.amount, "A goal's amount"), basis: entry.basis === "total" ? "total" : "cash" };
+    return { id: id(entry.id, "A goal"), name: text(entry.name, "A goal name", NAME_MAX).trim() || "Goal", month: month(entry.month, "A goal's month"), amount: amount(entry.amount, "A goal's amount"), basis: isSavingsBasis(entry.basis) ? entry.basis : "cash" };
   });
 
   const moves: Record<string, Month> = {};

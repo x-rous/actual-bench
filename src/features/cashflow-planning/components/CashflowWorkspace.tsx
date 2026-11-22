@@ -22,7 +22,7 @@ import { NAME_MAX, PlanDocumentError, addGroup, addRow, duplicateDocument, expor
 import { computePlan, type Computed } from "@/lib/cashflow-planning/engine";
 import { linkNotes as buildLinkNotes } from "@/lib/cashflow-planning/linkNotes";
 import { monthLabel, yearOf } from "@/lib/cashflow-planning/months";
-import { SECTIONS, SECTION_LABEL, type Month, type PlanDocument, type PlanRow, type SectionId, type UnreadablePlan } from "@/lib/cashflow-planning/types";
+import { SECTIONS, SECTION_LABEL, type Month, type PlanDocument, type PlanRow, type SavingsBasis, type SectionId, type UnreadablePlan } from "@/lib/cashflow-planning/types";
 import { FEATURES } from "@/lib/features/catalogue";
 import { requestFor } from "../lib/transactions";
 import { MonthJumpPopover } from "@/features/budget-management/components/MonthJumpPopover";
@@ -42,7 +42,7 @@ import { MonthSummary } from "./MonthSummary";
 import { BalanceChart, SummaryStrip } from "./Summary";
 import { TransactionsDialog } from "./TransactionsDialog";
 
-type ViewPrefs = { mode: "months" | "years"; cents: boolean; chart: boolean; pastMode: PastMode; /** Whether each year in the months view is followed by its Total column. */ totals: boolean; details: boolean; collapsed: string[]; panelWidth: number };
+type ViewPrefs = { mode: "months" | "years"; cents: boolean; chart: boolean; pastMode: PastMode; /** Whether each year in the months view is followed by its Total column. */ totals: boolean; details: boolean; collapsed: string[]; panelWidth: number; /** The balance the details panel shows, per plan id. */ savingsBasis?: Record<string, SavingsBasis> };
 const navButton = "flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-40";
 /** How many years the grid draws at once; the navigator and the month picker move through the rest of the plan. */
 const YEARS_ON_SCREEN = 2;
@@ -485,7 +485,7 @@ function PlanView({ session, doc, data, today, planOptions, onNewPlan, onRetrySa
                 onClose={() => setView((v) => ({ ...v, details: false }))}
                 overviewSubtitle={pickedColumnValue ? (pickedColumnValue.kind === "year" ? (pickedColumnValue.partial ? "Year total (part of the year)" : "Year total") : !doc.useActuals ? "Plan" : computed.kinds[pickedColumnValue.index] === "actual" ? "Actual" : computed.kinds[pickedColumnValue.index] === "current" ? "This month, recorded so far and expected" : "Forecast") : undefined}
                 overviewTitle={pickedColumn && pickedColumnValue ? (pickedColumnValue.kind === "month" ? monthLabel(pickedColumnValue.month) : String(pickedColumnValue.year)) : undefined}
-                overview={pickedColumnValue ? <MonthSummary doc={doc} computed={computed} snapshot={snapshot} placed={placed} column={pickedColumnValue} onShowTransactions={setTransactions} onSelectLine={selectLine} /> : <Overview doc={doc} computed={computed} data={data} problems={problems} placed={placed} onShowUnplanned={showUnplanned} onSelectLine={selectLine} onOpenSettings={() => setSettings(true)} onHelp={() => setGuide("working")} />}
+                overview={pickedColumnValue ? <MonthSummary doc={doc} computed={computed} snapshot={snapshot} placed={placed} column={pickedColumnValue} basis={view.savingsBasis?.[session.id] ?? "cash"} onBasis={(basis) => setView((v) => ({ ...v, savingsBasis: { ...v.savingsBasis, [session.id]: basis } }))} onShowTransactions={setTransactions} onSelectLine={selectLine} /> : <Overview doc={doc} computed={computed} data={data} problems={problems} placed={placed} onShowUnplanned={showUnplanned} onSelectLine={selectLine} onOpenSettings={() => setSettings(true)} onHelp={() => setGuide("working")} />}
               />
             )}
           </div>

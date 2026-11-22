@@ -83,8 +83,12 @@ export const isGroupColor = (value: unknown): value is GroupColor => typeof valu
 
 export type PlanGroup = { id: string; name: string; section: SectionId; color?: GroupColor };
 
-/** A balance to reach by a month: of the plan's cash, or of cash and savings together. */
-export type Goal = { id: string; name: string; month: Month; /** Minor units. */ amount: number; basis: "cash" | "total" };
+/** What a balance counts: the plan's cash, cash and the savings you can use now, or cash and all savings (locked ones too). */
+export type SavingsBasis = "cash" | "usable" | "total";
+export const isSavingsBasis = (value: unknown): value is SavingsBasis => value === "cash" || value === "usable" || value === "total";
+
+/** A balance to reach by a month, on one of the savings bases. */
+export type Goal = { id: string; name: string; month: Month; /** Minor units. */ amount: number; basis: SavingsBasis };
 
 /** How an account counts in a plan: part of its cash, part of its savings, or outside both. */
 export type PlanAccountRole = "cash" | "savings" | "outside";

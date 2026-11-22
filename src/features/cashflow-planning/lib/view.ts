@@ -41,7 +41,7 @@ export type Line =
   | { kind: "group"; key: string; group: PlanGroup; values: number[]; aggregate: "sum"; collapsed: boolean; count: number }
   | { kind: "row"; key: string; row: PlanRow; result: RowResult; aggregate: "sum"; depth: 1 | 2 }
   | { kind: "unplanned"; key: string; section: SectionId; label: string; values: number[]; aggregate: "sum" }
-  | { kind: "memo"; key: "inTransit" | "moved" | "starting" | "net" | "savings" | "total"; label: string; values: number[]; aggregate: Aggregate; hint?: string };
+  | { kind: "memo"; key: "inTransit" | "moved" | "starting" | "net" | "savings" | "locked" | "total"; label: string; values: number[]; aggregate: Aggregate; hint?: string };
 
 export const lineKey = {
   section: (section: SectionId) => `section:${section}`,
@@ -54,7 +54,7 @@ export const lineKey = {
 /** The width of the name column in the grid, and of the first key figure above it. */
 export const LABEL_WIDTH = 259;
 
-export const isPinned = (line: Line): boolean => (line.kind === "memo" && (line.key === "net" || line.key === "savings" || line.key === "total")) || (line.kind === "balance" && line.key === "closing");
+export const isPinned = (line: Line): boolean => (line.kind === "memo" && (line.key === "net" || line.key === "savings" || line.key === "locked" || line.key === "total")) || (line.kind === "balance" && line.key === "closing");
 
 /** `find` keeps only the rows whose name contains it (with their groups and sections), whatever is collapsed. */
 export function buildLines(doc: PlanDocument, computed: Computed, collapsed: ReadonlySet<string>, find = ""): Line[] {
@@ -90,8 +90,16 @@ export function buildLines(doc: PlanDocument, computed: Computed, collapsed: Rea
   lines.push({ kind: "balance", key: "closing", label: "Closing balance", values: computed.closing, aggregate: "last" });
   // With savings accounts, the savings balance and cash plus savings close the pinned block, as a small sum under the closing balance.
   if (computed.savings) {
-    lines.push({ kind: "memo", key: "savings", label: "Savings (estimate)", values: computed.savings, aggregate: "last", hint: "The balance of the plan's savings accounts in Actual, then what the plan puts aside each month, with the yearly growth set in Plan settings. Market changes are not forecast." });
-    lines.push({ kind: "memo", key: "total", label: "Cash + savings", values: computed.closing.map((v, i) => v + computed.savings![i]), aggregate: "last" });
+    const all = computed.savings, locked = computed.lockedSavings;
+    const hint = "The balance of the plan's savings accounts in Actual, then what the plan puts aside each month, with the yearly growth set in Plan settings. Market changes are not forecast.";
+    if (locked) {
+      // Split by access: what could be used now, and what is locked (a term deposit, a pension), as the Accounts page sets it.
+      lines.push({ kind: "memo", key: "savings", label: "Savings you can use (estimate)", values: all.map((v, i) => v - locked[i]), aggregate: "last", hint: `${hint} Savings accounts marked Available now in Accounts.` });
+      lines.push({ kind: "memo", key: "locked", label: "Locked savings (estimate)", values: locked, aggregate: "last", hint: `${hint} Savings, investments and retirement accounts you cannot use now, and the savings rows that only put money into them.` });
+    } else {
+      lines.push({ kind: "memo", key: "savings", label: "Savings (estimate)", values: all, aggregate: "last", hint });
+    }
+    lines.push({ kind: "memo", key: "total", label: "Cash + savings", values: computed.closing.map((v, i) => v + all[i]), aggregate: "last" });
   }
   return lines;
 }
