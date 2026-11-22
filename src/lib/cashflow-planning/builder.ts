@@ -109,7 +109,7 @@ export function buildPlanFromActuals(snapshot: Snapshot, options: BuildOptions):
       rows.push(createRow({ name: info.accountClass === "credit-card" ? `${info.name} payments` : info.name, section: "debt", basis: loan?.state === "ready" ? { kind: "loan" } : basisFor(transferMonths.get(id)!), links: { accounts: [info.accountClass === "loan" ? { id, flow: "out" } : { id }] } }));
       // Borrowing is not a monthly habit: the row shows what was drawn, and the next amounts are typed by hand.
       if (borrowedFrom.has(id)) rows.push(createRow({ name: `${info.name} borrowed`, section: "income", basis: { kind: "manual" }, links: { accounts: [{ id, flow: "in" }] } }));
-    } else if (info.accountClass === "property" || info.accountClass === "vehicle" || info.accountClass === "other-asset") {
+    } else if (info.accountClass === "property" || info.accountClass === "vehicle" || info.accountClass === "fixed-asset" || info.accountClass === "other-asset") {
       // What was put into an asset is rarely a monthly habit: the row is there to plan the next amounts by hand.
       rows.push(createRow({ name: info.name, section: "expenses", groupId: options.detail === "categories" ? group("expenses", "Assets") : null, basis: { kind: "manual" }, links: { accounts: [{ id }] } }));
     } else {

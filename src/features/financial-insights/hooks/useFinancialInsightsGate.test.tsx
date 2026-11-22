@@ -1,7 +1,7 @@
 import React from "react";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { AccountClassRecord, AccountFlagRecord, AccountReportingRecord } from "@/lib/app-db/types";
+import type { AccountClassRecord, AccountFlagRecord } from "@/lib/app-db/types";
 import { useFinancialInsightsGate } from "./useFinancialInsights";
 
 jest.mock("../../../store/connection", () => ({
@@ -15,12 +15,10 @@ jest.mock("@/lib/actual", () => ({
 jest.mock("@/lib/api/query", () => ({ runQuery: jest.fn(async () => ({ data: [] })) }));
 
 let classes: AccountClassRecord[] = [];
-let reporting: AccountReportingRecord[] = [];
 let flags: AccountFlagRecord[] = [];
 let failClasses = false;
 beforeEach(() => {
   classes = [];
-  reporting = [];
   flags = [];
   failClasses = false;
   mockAccounts.mockResolvedValue([
@@ -30,7 +28,7 @@ beforeEach(() => {
   global.fetch = jest.fn(async (url: RequestInfo | URL) => {
     if (String(url).startsWith("/api/account-classes")) return failClasses ? { ok: false, json: async () => ({}) } : { ok: true, json: async () => ({ accountClasses: classes }) };
     if (String(url).startsWith("/api/account-flags")) return { ok: true, json: async () => ({ accountFlags: flags }) };
-    return { ok: true, json: async () => ({ accountReporting: reporting }) };
+    return { ok: false, json: async () => ({}) };
   }) as unknown as typeof fetch;
 });
 
@@ -55,7 +53,7 @@ describe("Financial Insights gate", () => {
     classes = [record("chk", "bank"), record("inv", "investment")];
     const { result } = setup();
     await waitFor(() => expect(result.current.state).toBe("ready"));
-    expect(result.current).toMatchObject({ state: "ready", accounts: [{ id: "chk" }, { id: "inv", accessible: false }] });
+    expect(result.current).toMatchObject({ state: "ready", accounts: [{ id: "chk", access: "available" }, { id: "inv", access: "locked" }] });
   });
 
   it("flags an off-budget credit card and says why, and an excluded on-budget account", async () => {
@@ -87,18 +85,28 @@ describe("Financial Insights gate", () => {
     expect(result.current).toMatchObject({ rows: [{ name: "Grouped", status: "needs-class" }] });
   });
 
-  it("counts the accessible and off-budget-income flags only while they are allowed", async () => {
+  it("resolves access from the class default, the saved choice and the placement", async () => {
     mockAccounts.mockResolvedValue([
       { id: "inv", name: "Brokerage", offBudget: true, closed: false },
-      { id: "sav", name: "Savings", offBudget: true, closed: false },
+      { id: "sav", name: "Notice saver", offBudget: true, closed: false },
+      { id: "chk", name: "Checking", offBudget: false, closed: false },
       { id: "loan", name: "Mortgage", offBudget: true, closed: false },
     ]);
-    classes = [record("inv", "investment"), record("sav", "bank"), record("loan", "loan")];
-    flags = [flag("inv", "accessible"), flag("sav", "offbudget-income"), flag("loan", "accessible"), flag("inv", "offbudget-income")];
+    classes = [record("inv", "investment"), record("sav", "savings"), record("chk", "bank"), record("loan", "loan")];
+    // "locked" on an on-budget account and "accessible" on a loan cannot apply: they are kept but not counted.
+    flags = [flag("inv", "accessible"), flag("sav", "locked"), flag("chk", "locked"), flag("loan", "accessible")];
     const { result } = setup();
     await waitFor(() => expect(result.current.state).toBe("ready"));
-    const accounts = (result.current as { accounts: { id: string; accessible: boolean; offBudgetIncome: boolean }[] }).accounts;
-    expect(Object.fromEntries(accounts.map((a) => [a.id, [a.accessible, a.offBudgetIncome]]))).toEqual({ inv: [true, false], sav: [false, true], loan: [false, false] });
+    const accounts = (result.current as { accounts: { id: string; access: string | null }[] }).accounts;
+    expect(Object.fromEntries(accounts.map((a) => [a.id, a.access]))).toEqual({ inv: "available", sav: "locked", chk: "available", loan: null });
+  });
+
+  it("blocks an on-budget Fixed Deposit and says why", async () => {
+    mockAccounts.mockResolvedValue([{ id: "fd", name: "Term deposit", offBudget: false, closed: false }]);
+    classes = [record("fd", "fixed-deposit")];
+    const { result } = setup();
+    await waitFor(() => expect(result.current.state).toBe("setup"));
+    expect(result.current).toMatchObject({ rows: [{ name: "Term deposit", status: "incompatible-placement", detail: expect.stringContaining("must be off budget") }] });
   });
 
   it("unlocks only from saved state, and locks again when an account is added", async () => {

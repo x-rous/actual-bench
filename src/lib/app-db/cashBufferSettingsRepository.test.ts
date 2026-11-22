@@ -18,9 +18,9 @@ describe("cash buffer settings repository", () => {
   it("uses the defaults until something is saved, then keeps what was saved", () => {
     const db = tempDb();
     expect(readCashBufferSettings(db, "b1")).toEqual(DEFAULT_BUFFER_SETTINGS);
-    expect(saveCashBufferSettings(db, { budgetSyncId: "b1", settings: { goalMonths: 6, averageMonths: 3, method: "median" } })).toEqual({ goalMonths: 6, averageMonths: 3, method: "median" });
-    expect(saveCashBufferSettings(db, { budgetSyncId: "b1", settings: { goalMonths: null, averageMonths: 6, method: "average" } })).toEqual({ goalMonths: null, averageMonths: 6, method: "average" });
-    expect(readCashBufferSettings(db, "b1")).toEqual({ goalMonths: null, averageMonths: 6, method: "average" });
+    expect(saveCashBufferSettings(db, { budgetSyncId: "b1", settings: { goalMonths: 6, averageMonths: 3, method: "median" } })).toEqual({ goalMonths: 6, averageMonths: 3, method: "median", cashBasis: "cash-savings" });
+    expect(saveCashBufferSettings(db, { budgetSyncId: "b1", settings: { goalMonths: null, averageMonths: 6, method: "average", cashBasis: "cash" } })).toEqual({ goalMonths: null, averageMonths: 6, method: "average", cashBasis: "cash" });
+    expect(readCashBufferSettings(db, "b1")).toEqual({ goalMonths: null, averageMonths: 6, method: "average", cashBasis: "cash" });
   });
 
   it("scopes the settings to one budget", () => {

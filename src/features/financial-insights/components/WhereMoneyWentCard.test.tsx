@@ -6,9 +6,9 @@ import { WhereMoneyWentCard } from "./WhereMoneyWentCard";
 import { TipProvider } from "./charts/Tip";
 
 const accounts: AccountFact[] = [
-  { id: "chk", name: "Checking", accountClass: "bank", treatment: null, offBudget: false },
-  { id: "loan", name: "Mortgage", accountClass: "loan", treatment: null, offBudget: true },
-  { id: "visa", name: "Visa", accountClass: "credit-card", treatment: null, offBudget: false },
+  { id: "chk", name: "Checking", accountClass: "bank", offBudget: false },
+  { id: "loan", name: "Mortgage", accountClass: "loan", offBudget: true },
+  { id: "visa", name: "Visa", accountClass: "credit-card", offBudget: false },
 ];
 const row = (accountId: string, amountMinor: number, categoryId: string): MovementRow => ({ month: "2026-09", accountId, categoryId, transferAccountId: null, amountMinor, count: 1 });
 
@@ -29,7 +29,7 @@ describe("Where your money came from and went", () => {
     card([row("chk", 500_000, "salary"), row("chk", -100_000, "food")]);
     expect(side("Money in").getByRole("row", { name: /^Received/ })).toHaveTextContent("5,000.00");
     expect(side("Money out").getByRole("row", { name: /^Spent/ })).toHaveTextContent("1,000.00");
-    expect(side("Money out").getByRole("row", { name: /^Added to cash & bank/ })).toHaveTextContent("4,000.00");
+    expect(side("Money out").getByRole("row", { name: /^Added to cash/ })).toHaveTextContent("4,000.00");
     expect(side("Money in").getByRole("row", { name: /^Total money in/ })).toHaveTextContent("5,000.00");
     expect(side("Money out").getByRole("row", { name: /^Total money out/ })).toHaveTextContent("5,000.00");
     // No word "kept", and no negative amount anywhere.
@@ -56,7 +56,7 @@ describe("Where your money came from and went", () => {
     expect(onDrill).toHaveBeenLastCalledWith({ kind: "spent" });
     fireEvent.click(screen.getByRole("button", { name: /^Paid off loans \(principal\) .*Show the transactions/ }));
     expect(onDrill).toHaveBeenLastCalledWith({ kind: "loanPrincipal" });
-    for (const label of ["Received", "Spent", "Paid off loans (principal)", "Added to cash & bank"]) {
+    for (const label of ["Received", "Spent", "Paid off loans (principal)", "Added to cash"]) {
       expect(screen.getByRole("button", { name: `About ${label} in where your money went` })).toBeInTheDocument();
     }
     expect(screen.getByText(/Paying off loan principal is money out, not spending/)).toBeInTheDocument();
@@ -65,12 +65,12 @@ describe("Where your money came from and went", () => {
   it("leaves a balance change as plain text: only lines with transactions behind them are links", () => {
     card([row("chk", 500_000, "salary"), row("visa", -100_000, "food")]);
     expect(screen.queryByRole("button", { name: /^More owed on credit cards .*Show the transactions/ })).toBeNull();
-    expect(screen.queryByRole("button", { name: /^Added to cash & bank .*Show the transactions/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Added to cash .*Show the transactions/ })).toBeNull();
   });
 
   it("puts money drawn from cash on the money-in side when more went out than came in", () => {
     card([row("chk", 100_000, "salary"), row("chk", -300_000, "food")]);
-    expect(side("Money in").getByRole("row", { name: /^Taken from cash & bank/ })).toHaveTextContent("2,000.00");
+    expect(side("Money in").getByRole("row", { name: /^Taken from cash/ })).toHaveTextContent("2,000.00");
     expect(side("Money out").getByRole("row", { name: /^Spent/ })).toHaveTextContent("3,000.00");
     expect(side("Money in").getByRole("row", { name: /^Total money in/ })).toHaveTextContent("3,000.00");
   });

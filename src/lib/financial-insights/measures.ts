@@ -1,6 +1,6 @@
 import type { AccountClass } from "@/lib/account-class";
-import { isCashEquivalent, type ReportingTreatment } from "@/lib/account-class/reporting";
-import { median } from "./bufferScenario";
+import { countsUncategorizedInAsIncome, defaultAccess, rungOf, type Access, type Rung } from "@/lib/account-class/access";
+import { DEFAULT_CASH_BASIS, median, type CashBasis } from "./bufferScenario";
 import { addMonths, lastCompleteMonths, monthOf, type ResolvedPeriod } from "./period";
 import { money } from "@/features/financial-insights/format";
 
@@ -15,7 +15,8 @@ import { money } from "@/features/financial-insights/format";
  *  3. a categorized row follows its category: income in an income group, spending otherwise, never inferred from the sign;
  *  4. an uncategorized row in an on-budget account is income or spending by its sign;
  *  5. an uncategorized row in an off-budget account is not income or spending: in an Investment or Retirement account it is an
- *     investment result (a gain, loss, dividend or fee recorded without a category), in any other it is an unidentified movement.
+ *     investment result (a gain, loss, dividend or fee recorded without a category); in a Savings or Fixed Deposit account, money in
+ *     is income (interest, in practice) and money out is an unidentified movement; in any other it is an unidentified movement.
  */
 
 // ─── Facts ───────────────────────────────────────────────────────────────────
@@ -55,16 +56,20 @@ export type AccountFact = {
   groupName?: string | null;
   /** Left-out accounts are not facts, they are only named in `FinancialFacts.excluded`. */
   accountClass: AccountClass;
-  treatment: ReportingTreatment | null;
-  /** Actual's budget placement: it decides what an uncategorized entry means. */
+  /** Actual's budget placement: it decides what an uncategorized entry means, and an on-budget account is always available. */
   offBudget: boolean;
   /** Whether the account is closed in Actual. Its historical balance remains in the ledger. */
   closed?: boolean;
-  /** The account's balance counts as money you can reach (the "Accessible money" setting), resolved through `flagAllowed`. Absent means no. */
-  accessible?: boolean;
-  /** Uncategorized money in, in this off-budget Cash or Bank account, is income (the "Interest & income" setting), resolved through `flagAllowed`. Absent means no. */
-  offBudgetIncome?: boolean;
+  /** Whether the money can be used now, resolved through `accessOf` (the class default and the user's choice). Absent means the class default. */
+  access?: Access | null;
 };
+
+/** The access that applies to an account fact: its resolved access, or the class default for its placement. */
+export const accessOfFact = (a: Pick<AccountFact, "accountClass" | "offBudget" | "access">): Access | null => a.access === undefined ? defaultAccess(a.accountClass, a.offBudget) : a.access;
+/** How the account's balance counts as money (see `Rung`). */
+export const rungOfFact = (a: Pick<AccountFact, "accountClass" | "offBudget" | "access">): Rung => rungOf(a.accountClass, accessOfFact(a));
+/** Uncategorized money in is income in this account: an off-budget Savings or Fixed Deposit account. */
+export const offBudgetIncomeOf = (a: Pick<AccountFact, "accountClass" | "offBudget">): boolean => countsUncategorizedInAsIncome(a.accountClass, a.offBudget);
 
 export type FinancialFacts = {
   accounts: readonly AccountFact[];
@@ -99,19 +104,27 @@ export type AssetReview = { unavailableReason: string | null; rowCount: number; 
 
 // ─── Roles ───────────────────────────────────────────────────────────────────
 
-/** How an account counts in the money picture. */
+/**
+ * How an account counts in the money picture. `cash` is what the cash figures measure: Checking and Cash you can use now, and with the
+ * `cash-savings` basis also Savings and Fixed Deposits you can use now. `fixed` is every other Checking, Cash, Savings or Fixed Deposit
+ * account (locked, or savings left out by the `cash` basis): money moved to it leaves cash for "savings & deposits".
+ */
 export type Role = "cash" | "fixed" | "card" | "investment" | "loan" | "asset" | "liability";
 
-export function roleOf(account: AccountFact): Role {
+export function roleOf(account: AccountFact, basis: CashBasis = DEFAULT_CASH_BASIS): Role {
+  const rung = rungOfFact(account);
   switch (account.accountClass) {
-    case "cash": return "cash";
-    case "bank": return isCashEquivalent("bank", account.treatment) ? "cash" : "fixed";
+    case "cash":
+    case "bank": return rung === "cash" ? "cash" : "fixed";
+    case "savings":
+    case "fixed-deposit": return rung === "savings" && basis === "cash-savings" ? "cash" : "fixed";
     case "credit-card": return "card";
     case "investment":
     case "retirement": return "investment";
     case "loan": return "loan";
     case "property":
     case "vehicle":
+    case "fixed-asset":
     case "other-asset": return "asset";
     case "other-liability": return "liability";
   }
@@ -121,6 +134,8 @@ export function roleOf(account: AccountFact): Role {
 
 export type Ledger = {
   facts: FinancialFacts;
+  /** What the cash figures count (see `CashBasis`). */
+  basis: CashBasis;
   account: ReadonlyMap<string, AccountFact>;
   role: ReadonlyMap<string, Role>;
   /** The first month with any movement; null when the budget has none. */
@@ -129,9 +144,9 @@ export type Ledger = {
   balanceAt: (accountId: string, month: string) => number;
 };
 
-export function buildLedger(facts: FinancialFacts): Ledger {
+export function buildLedger(facts: FinancialFacts, basis: CashBasis = DEFAULT_CASH_BASIS): Ledger {
   const account = new Map(facts.accounts.map((a) => [a.id, a]));
-  const role = new Map(facts.accounts.map((a) => [a.id, roleOf(a)]));
+  const role = new Map(facts.accounts.map((a) => [a.id, roleOf(a, basis)]));
   const byAccount = new Map<string, Map<string, number>>();
   const add = (accountId: string, month: string, amount: number) => {
     if (!account.has(accountId)) return;
@@ -161,7 +176,7 @@ export function buildLedger(facts: FinancialFacts): Ledger {
     return [id, { months: ordered.map(([m]) => m), balances: ordered.map(([, amount]) => (total += amount)) }] as const;
   }));
   return {
-    facts, account, role, firstMonth,
+    facts, basis, account, role, firstMonth,
     balanceAt: (accountId, month) => {
       const history = running.get(accountId);
       if (!history) return 0;
@@ -185,10 +200,10 @@ export type Flows = {
   /** Uncategorized entries in on-budget accounts, by sign. */
   uncategorizedIn: number;
   uncategorizedOut: number;
-  /** Uncategorized money out in off-budget accounts, and everything uncategorized in off-budget accounts not set to count money in as income: not income or spending. */
+  /** Uncategorized money out in off-budget accounts, and everything uncategorized in off-budget accounts other than Savings and Fixed Deposits: not income or spending. */
   unidentified: number;
   unidentifiedCount: number;
-  /** Uncategorized money in, in off-budget Cash and Bank accounts set to count it as income (interest, for example). Already part of `income`; kept apart so the Income tab can name it. */
+  /** Uncategorized money in, in off-budget Savings and Fixed Deposit accounts (interest, in practice). Already part of `income`; kept apart so the Income tab can name it. */
   offBudgetIncome: number;
   /** Interest and fees the lender charged as their own rows in the accounts of tracked loans (negative = cost). Part of Spent. */
   loanCharges: number;
@@ -230,6 +245,7 @@ export type CashBridge = {
   investmentIn: number;
   loanOut: number;
   loanIn: number;
+  /** Transfers with the other Checking, Cash, Savings and Fixed Deposit accounts: locked ones, and savings when the basis is `cash`. */
   fixedDeposits: number;
   /** Transfers with an excluded account. */
   excluded: number;
@@ -262,8 +278,8 @@ function takeOut(flows: Flows, cash: CashBridge | null, account: AccountFact, ro
   } else if (account.offBudget && role === "loan") {
     flows.loanAccountOther -= amountMinor;
     flows.loanAccountOtherCount -= 1;
-  } else if (account.offBudget && account.offBudgetIncome && amountMinor > 0) {
-    // Money in, in an off-budget Cash or Bank account set to count it as income.
+  } else if (offBudgetIncomeOf(account) && amountMinor > 0) {
+    // Money in, in an off-budget Savings or Fixed Deposit account: income.
     flows.income -= amountMinor;
     flows.offBudgetIncome -= amountMinor;
     if (cash) cash.operatingIncome -= amountMinor;
@@ -367,8 +383,8 @@ export function computeFlows(ledger: Ledger, period: ResolvedPeriod): Computed {
       // An entry in a loan account that is not a transfer: often interest or fees the lender charged. Charges of a tracked loan are moved to `loanCharges` below.
       flows.loanAccountOther += amount;
       flows.loanAccountOtherCount += row.count;
-    } else if (owner.offBudget && owner.offBudgetIncome) {
-      // An off-budget Cash or Bank account set to count money in as income: the positive part is income, the rest stays unidentified.
+    } else if (offBudgetIncomeOf(owner)) {
+      // An off-budget Savings or Fixed Deposit account: the positive part is income (interest), the rest stays unidentified.
       // The cell holds both signs; the entries that are money in are counted by the read of the positive part (when it counts them).
       const key = `${row.month}|${row.accountId}`;
       const positive = uncatIn.get(key) ?? 0;
@@ -428,8 +444,10 @@ export function computeFlows(ledger: Ledger, period: ResolvedPeriod): Computed {
 
 // ─── Summary ─────────────────────────────────────────────────────────────────
 
+/** Balances by class line, as "What you own and owe" shows them. `eligibleCash` is the Cash line (Checking and Cash accounts), whatever their access. */
 export type Positions = {
   eligibleCash: number;
+  savings: number;
   fixedDeposits: number;
   investments: number;
   property: number;
@@ -452,6 +470,7 @@ export type Summary = {
   /** What is owed, as a positive amount. */
   liabilities: number;
   netWorth: { opening: number; closing: number; change: number };
+  /** The cash figures: the balance of the `cash` role accounts (see `cashAt`), not the Cash line of `Positions`. */
   eligibleCash: { opening: number; closing: number; change: number };
   invested: number;
   /** Income, including uncategorized money in (on-budget). */
@@ -468,28 +487,36 @@ export type Summary = {
   series: SeriesPoint[];
 };
 
-/** Which line of `Positions` an account's balance belongs to: the one definition behind Summary's "What you own and owe" and the Balance Sheet. */
-export function positionKey(account: AccountFact, role: Role | undefined): keyof Positions {
+/** Which line of `Positions` an account's balance belongs to: the one definition behind Summary's "What you own and owe" and the Balance Sheet. By class: a locked savings account is still savings. */
+export function positionKey(account: Pick<AccountFact, "accountClass">): keyof Positions {
   switch (account.accountClass) {
+    case "bank":
+    case "cash": return "eligibleCash";
+    case "savings": return "savings";
+    case "fixed-deposit": return "fixedDeposits";
+    case "investment":
+    case "retirement": return "investments";
     case "property": return "property";
     case "vehicle": return "vehicle";
+    case "fixed-asset":
     case "other-asset": return "otherAssets";
     case "loan": return "loans";
     case "credit-card": return "cards";
     case "other-liability": return "otherLiabilities";
-    default:
-      switch (role) {
-        case "fixed": return "fixedDeposits";
-        case "investment": return "investments";
-        default: return "eligibleCash";
-      }
   }
 }
 
 export function positionsAt(ledger: Ledger, month: string): Positions {
-  const p: Positions = { eligibleCash: 0, fixedDeposits: 0, investments: 0, property: 0, vehicle: 0, otherAssets: 0, loans: 0, cards: 0, otherLiabilities: 0 };
-  for (const account of ledger.account.values()) p[positionKey(account, ledger.role.get(account.id))] += ledger.balanceAt(account.id, month);
+  const p: Positions = { eligibleCash: 0, savings: 0, fixedDeposits: 0, investments: 0, property: 0, vehicle: 0, otherAssets: 0, loans: 0, cards: 0, otherLiabilities: 0 };
+  for (const account of ledger.account.values()) p[positionKey(account)] += ledger.balanceAt(account.id, month);
   return p;
+}
+
+/** The cash figure at the end of `month`: the balances of the accounts the ledger's basis counts as cash. */
+export function cashAt(ledger: Ledger, month: string): number {
+  let total = 0;
+  for (const [id, role] of ledger.role) if (role === "cash") total += ledger.balanceAt(id, month);
+  return total;
 }
 
 /**
@@ -516,10 +543,11 @@ export function summarize(ledger: Ledger, period: ResolvedPeriod, review: AssetR
   const opening = positionsAt(ledger, addMonths(period.startMonth, -1));
   const { flows, cashBridge } = computeFlows(ledger, period);
 
-  const assets = closing.eligibleCash + closing.fixedDeposits + closing.investments + closing.property + closing.vehicle + closing.otherAssets;
+  const assets = closing.eligibleCash + closing.savings + closing.fixedDeposits + closing.investments + closing.property + closing.vehicle + closing.otherAssets;
   const liabilities = 0 - (closing.loans + closing.cards + closing.otherLiabilities);
   const netWorth = { opening: sumPositions(opening), closing: sumPositions(closing), change: sumPositions(closing) - sumPositions(opening) };
-  const eligibleCash = { opening: opening.eligibleCash, closing: closing.eligibleCash, change: closing.eligibleCash - opening.eligibleCash };
+  const cashOpening = cashAt(ledger, addMonths(period.startMonth, -1)), cashClosing = cashAt(ledger, period.endMonth);
+  const eligibleCash = { opening: cashOpening, closing: cashClosing, change: cashClosing - cashOpening };
 
   const received = receivedOf(flows);
   const spent = spentOf(flows);
@@ -535,8 +563,7 @@ export function summarize(ledger: Ledger, period: ResolvedPeriod, review: AssetR
   const explained = flows.income + flows.spending + flows.uncategorizedIn + flows.uncategorizedOut + flows.unidentified + flows.loanCharges + flows.loanAccountOther + flows.investmentResults + flows.valueChanges + flows.assetSales + flows.openingBalances + flows.excludedTransfers + flows.inTransit;
   const series: SeriesPoint[] = period.months.map((month, index) => {
     if (!ledger.firstMonth || month < ledger.firstMonth) return { month, netWorthMinor: null, cashMinor: null, partial: false };
-    const at = positionsAt(ledger, month);
-    return { month, netWorthMinor: sumPositions(at), cashMinor: at.eligibleCash, partial: period.partial && index === period.months.length - 1 };
+    return { month, netWorthMinor: sumPositions(positionsAt(ledger, month)), cashMinor: cashAt(ledger, month), partial: period.partial && index === period.months.length - 1 };
   });
 
   return {
@@ -554,7 +581,7 @@ export type BufferLoan = { accountId: string; name: string; monthlyMinor: number
 
 export type CashBuffer = {
   months: number;
-  /** Cash & bank less what is owed on credit cards (`grossCashMinor` − `cardsOwedMinor`): what the months are measured on. Never negative. */
+  /** Cash less what is owed on credit cards (`grossCashMinor` − `cardsOwedMinor`): what the months are measured on. Never negative. */
   cashMinor: number;
   /** Eligible cash today, before cards. */
   grossCashMinor: number;
@@ -565,7 +592,7 @@ export type CashBuffer = {
   spendingMinor: number;
   spendingMonths: number;
   loans: BufferLoan[];
-  /** Today's positive balances of the accounts set to "Accessible money" (investments you could reach), in minor units. Absent when no account is set. */
+  /** Today's positive balances of the other money you can use now (see `cashBuffer`), in minor units. Absent when there is none. */
   accessibleMinor?: number;
   /** Those accounts and their balances (positive only), largest first. Absent when no account is set. */
   accessibleAccounts?: { accountId: string; name: string; balanceMinor: number }[];
@@ -655,14 +682,15 @@ export function cashBuffer(ledger: Ledger, today: string, schedules: ReadonlyMap
   const averageSpending = options.spendingMinor ?? Math.round(spendingMinor / months.length);
   const monthlyNeedMinor = averageSpending + loans.reduce((sum, l) => sum + l.monthlyMinor, 0);
   if (monthlyNeedMinor <= 0) return unavailable("There is no regular spending to measure against");
-  const grossCashMinor = positionsAt(ledger, current).eligibleCash;
-  if (grossCashMinor < 0) return unavailable("Cash & bank is below zero");
+  const grossCashMinor = cashAt(ledger, current);
+  if (grossCashMinor < 0) return unavailable("Cash is below zero");
   // Card purchases are in the spending average, and what is already owed on the cards is committed out of this cash.
   const cardsOwedMinor = cardsOwedAt(ledger, current);
   const cashMinor = grossCashMinor - cardsOwedMinor;
-  if (cashMinor < 0) return unavailable("What you owe on credit cards is more than your cash & bank");
-  // Accounts set to "Accessible money" (investments you could reach): a second figure, never part of the main one.
-  const accessibleAccounts = [...ledger.account.values()].filter((a) => a.accessible).map((a) => ({ accountId: a.id, name: a.name, balanceMinor: Math.max(0, ledger.balanceAt(a.id, current)) })).sort((a, b) => b.balanceMinor - a.balanceMinor);
+  if (cashMinor < 0) return unavailable("What you owe on credit cards is more than your cash");
+  // Other money you can use now (investments, retirement and other assets set to Available now; and Savings and Fixed Deposits when the
+  // basis leaves them out of cash): a second figure, never part of the main one.
+  const accessibleAccounts = [...ledger.account.values()].filter((a) => ledger.role.get(a.id) !== "cash" && (rungOfFact(a) === "reachable" || rungOfFact(a) === "savings")).map((a) => ({ accountId: a.id, name: a.name, balanceMinor: Math.max(0, ledger.balanceAt(a.id, current)) })).sort((a, b) => b.balanceMinor - a.balanceMinor);
   const accessibleMinor = accessibleAccounts.reduce((sum, a) => sum + a.balanceMinor, 0);
   return ready({
     months: cashMinor / monthlyNeedMinor, cashMinor, grossCashMinor, cardsOwedMinor, monthlyNeedMinor, spendingMinor: averageSpending, spendingMonths: months.length, loans,

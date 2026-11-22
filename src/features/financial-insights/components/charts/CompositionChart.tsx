@@ -11,7 +11,7 @@ import { TipNote, TipRow, TipTitle, useTip, useWidth } from "./Tip";
 const NET_WORTH_LABEL_MIN_SLOT = 44;
 
 export const CLASS_COLOUR: Record<ClassKey, string> = {
-  cash: "var(--fi-cash)", fixed: "var(--fi-fixed)", invest: "var(--fi-invest)", property: "var(--fi-property)", vehicle: "var(--fi-vehicle)", other: "var(--fi-other-asset)",
+  cash: "var(--fi-cash)", savings: "var(--fi-savings)", fixed: "var(--fi-fixed)", invest: "var(--fi-invest)", property: "var(--fi-property)", vehicle: "var(--fi-vehicle)", other: "var(--fi-other-asset)",
   loans: "var(--fi-loan)", cards: "var(--fi-card)", otherLiability: "var(--fi-other-liability)",
 };
 

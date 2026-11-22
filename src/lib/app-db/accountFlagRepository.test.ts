@@ -30,7 +30,7 @@ describe("account flag repository", () => {
 
   it("keeps budgets apart", () => {
     const db = tempDb();
-    applyAccountFlagChanges(db, { budgetSyncId: "b1", changes: [{ scope: "account", id: "a1", flag: "offbudget-income", on: true }] });
+    applyAccountFlagChanges(db, { budgetSyncId: "b1", changes: [{ scope: "account", id: "a1", flag: "locked", on: true }] });
     expect(listAccountFlags(db, "b2")).toEqual([]);
   });
 
@@ -68,7 +68,7 @@ describe("account flag repository", () => {
   it("exists on a new database at the latest version", () => {
     const db = tempDb();
     expect(runMigrations(db).schemaVersion).toBe(LATEST_SCHEMA_VERSION);
-    expect(LATEST_SCHEMA_VERSION).toBe(67);
+    expect(LATEST_SCHEMA_VERSION).toBe(68);
     expect(db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='account_flags'").all()).toHaveLength(1);
   });
 });

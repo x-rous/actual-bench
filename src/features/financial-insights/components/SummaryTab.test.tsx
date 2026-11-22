@@ -8,8 +8,8 @@ import { TipProvider } from "./charts/Tip";
 jest.mock("../hooks/useCashBufferScenarios", () => ({ useCashBufferScenarios: () => ({ scenarios: [], active: null, loading: false, failed: false, select: jest.fn(), saveScenario: jest.fn(), deleteScenario: jest.fn(), saving: false }) }));
 jest.mock("../hooks/useCashBufferSettings", () => ({ useCashBufferSettings: () => ({ settings: { goalMonths: null, averageMonths: 12, method: "average" }, save: jest.fn(), saving: false }) }));
 
-const chk: AccountFact = { id: "chk", name: "Checking", accountClass: "bank", treatment: null, offBudget: false };
-const inv: AccountFact = { id: "inv", name: "Brokerage", accountClass: "investment", treatment: null, offBudget: true };
+const chk: AccountFact = { id: "chk", name: "Checking", accountClass: "bank", offBudget: false };
+const inv: AccountFact = { id: "inv", name: "Brokerage", accountClass: "investment", offBudget: true };
 const row = (month: string, accountId: string, amountMinor: number, extra: Partial<MovementRow> = {}): MovementRow => ({ month, accountId, categoryId: null, transferAccountId: null, amountMinor, count: 1, ...extra });
 
 function data(accounts: AccountFact[], movement: MovementRow[], over: Record<string, unknown> = {}) {
@@ -49,22 +49,22 @@ describe("the Summary's net worth change", () => {
 });
 
 describe("the Summary's start and end card", () => {
-  const dataWith = () => data([chk, inv, { id: "idle", name: "Idle account", accountClass: "bank", treatment: null, offBudget: false } as AccountFact], [row("2026-09", "chk", 100_000), row("2026-09", "inv", 4_000)], { buffer: { state: "unavailable", reason: "none" }, bufferSpending: [] });
+  const dataWith = () => data([chk, inv, { id: "idle", name: "Idle account", accountClass: "bank", offBudget: false } as AccountFact], [row("2026-09", "chk", 100_000), row("2026-09", "inv", 4_000)], { buffer: { state: "unavailable", reason: "none" }, bufferSpending: [] });
   const open = () => render(<TipProvider><SummaryTab data={dataWith() as never} today="2026-11-18" accountNames={new Map()} onDrill={jest.fn()} /></TipProvider>);
 
   it("starts collapsed, shows a class's accounts largest first when opened, and keeps the totals", () => {
     open();
     expect(screen.queryByRole("rowheader", { name: /Checking/ })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Cash & bank: show accounts" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cash & checking: show accounts" }));
     expect(screen.getByRole("rowheader", { name: /Checking/ })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Cash & bank: hide accounts" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cash & checking: hide accounts" }));
     expect(screen.queryByRole("rowheader", { name: /Checking/ })).not.toBeInTheDocument();
     expect(screen.getAllByRole("rowheader", { name: "Net worth" }).length).toBeGreaterThan(0);
   });
 
   it("leaves out accounts with no balance at the start or the end, and says how many", () => {
     open();
-    fireEvent.click(screen.getByRole("button", { name: "Cash & bank: show accounts" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cash & checking: show accounts" }));
     expect(screen.queryByRole("rowheader", { name: /Idle account/ })).not.toBeInTheDocument();
     expect(screen.getByText(/1 account with no balance at the start or the end is not listed/)).toBeInTheDocument();
   });
@@ -76,7 +76,7 @@ describe("the Summary's start and end card", () => {
 });
 
 describe("the Money kept tile and loans", () => {
-  const loan: AccountFact = { id: "loan", name: "Mortgage", accountClass: "loan", treatment: null, offBudget: true };
+  const loan: AccountFact = { id: "loan", name: "Mortgage", accountClass: "loan", offBudget: true };
   const show = (accounts: AccountFact[], movement: MovementRow[]) => render(<TipProvider><SummaryTab data={data(accounts, movement, { buffer: { state: "unavailable", reason: "none" }, bufferSpending: [] }) as never} today="2026-11-18" accountNames={new Map()} onDrill={jest.fn()} /></TipProvider>);
 
   it("explains in the (i), not on the tile, that loan principal is not spending and interest is", () => {

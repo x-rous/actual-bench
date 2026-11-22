@@ -47,7 +47,7 @@ describe("the Financial Insights guide", () => {
   it("distinguishes budget placement and portfolio transfers from investment activity", () => {
     render(<Guide start="counted" />);
     const examples = screen.getByRole("region", { name: "Explore more examples" });
-    expect(within(examples).getByText("Cash & bank")).toBeInTheDocument();
+    expect(within(examples).getByText("Cash & savings")).toBeInTheDocument();
     fireEvent.click(within(examples).getByText("Investments"));
     expect(screen.getByText(/neither side has a category/i)).toBeInTheDocument();
     expect(screen.getByText(/Other per account/)).toBeInTheDocument();

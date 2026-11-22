@@ -1,4 +1,4 @@
-import { resolveAccountClass, type AccountClassMaps, type EffectiveAccountClass } from "@/lib/account-class";
+import { resolveAccountClass, type AccountClass, type AccountClassMaps, type EffectiveAccountClass } from "@/lib/account-class";
 import type { StagedMap } from "@/types/staged";
 import type { Account, AccountGroup } from "@/types/entities";
 
@@ -17,10 +17,25 @@ export function effectiveAccountClasses(
   for (const entry of Object.values(staged)) {
     const { entity } = entry;
     const groupId = liveGroupIds && entity.groupId && liveGroupIds.has(entity.groupId) ? entity.groupId : null;
-    const effective = resolveAccountClass(entity.id, groupId, maps);
-    result.set(entity.id, effective.source !== "group" && entry.pendingAccountClass !== undefined
-      ? { accountClass: entry.pendingAccountClass, source: entry.pendingAccountClass ? "account" : "none" }
-      : effective);
+    // A pending own class takes the place of the saved one before the group's precedence is applied, so a pending class that is a
+    // narrower kind of the group's (a Fixed Deposit moving into a Checking group) applies, and any other still yields to the group.
+    const pending = entry.pendingAccountClass;
+    // A chosen class also replaces a narrower class kept from before schema 68, as saving it will (the server clears it then).
+    const own = pending === undefined ? maps : { ...maps, accounts: withOwn(maps.accounts, entity.id, pending), refinements: withoutKept(maps.refinements, entity.id) };
+    result.set(entity.id, resolveAccountClass(entity.id, groupId, own));
   }
   return result;
+}
+
+function withOwn(accounts: ReadonlyMap<string, AccountClass>, id: string, accountClass: AccountClass | null): Map<string, AccountClass> {
+  const next = new Map(accounts);
+  if (accountClass) next.set(id, accountClass); else next.delete(id);
+  return next;
+}
+
+function withoutKept(refinements: ReadonlyMap<string, AccountClass> | undefined, id: string): Map<string, AccountClass> | undefined {
+  if (!refinements?.has(id)) return refinements as Map<string, AccountClass> | undefined;
+  const next = new Map(refinements);
+  next.delete(id);
+  return next;
 }

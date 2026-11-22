@@ -16,8 +16,17 @@ export type BufferCategoryRow = { id: string | null; name: string; group: string
  * What the user chose for the cash buffer of one budget: the months of cover they aim for, and how a typical month is worked out
  * (the average or the median of the last 3, 6 or 12 complete months). It applies to the real buffer and to every scenario.
  */
-export type BufferSettings = { goalMonths: number | null; averageMonths: 3 | 6 | 12; method: "average" | "median" };
-export const DEFAULT_BUFFER_SETTINGS: BufferSettings = { goalMonths: null, averageMonths: 12, method: "average" };
+/**
+ * What Financial Insights counts as cash: Checking and Cash you can use now (`cash`), or those plus Savings and Fixed Deposits you can
+ * use now (`cash-savings`, the default and what "Cash & bank" counted before Savings was a class). Saved with the buffer settings
+ * because the cash buffer is measured on it; it also drives Summary's cash figures and Money in & out.
+ */
+export type CashBasis = "cash" | "cash-savings";
+export const DEFAULT_CASH_BASIS: CashBasis = "cash-savings";
+export const isCashBasis = (value: unknown): value is CashBasis => value === "cash" || value === "cash-savings";
+
+export type BufferSettings = { goalMonths: number | null; averageMonths: 3 | 6 | 12; method: "average" | "median"; cashBasis: CashBasis };
+export const DEFAULT_BUFFER_SETTINGS: BufferSettings = { goalMonths: null, averageMonths: 12, method: "average", cashBasis: DEFAULT_CASH_BASIS };
 export const AVERAGE_MONTH_CHOICES = [3, 6, 12] as const;
 export const GOAL_MONTHS_MAX = 120;
 
@@ -29,7 +38,9 @@ export function parseBufferSettings(input: unknown): BufferSettings | null {
   if (goal !== null && !(typeof goal === "number" && Number.isInteger(goal) && goal >= 1 && goal <= GOAL_MONTHS_MAX)) return null;
   if (o.averageMonths !== 3 && o.averageMonths !== 6 && o.averageMonths !== 12) return null;
   if (o.method !== "average" && o.method !== "median") return null;
-  return { goalMonths: goal, averageMonths: o.averageMonths, method: o.method };
+  // Absent (saved before v68, or by an older client) means the default; an unknown value is not valid.
+  if (o.cashBasis !== undefined && o.cashBasis !== null && !isCashBasis(o.cashBasis)) return null;
+  return { goalMonths: goal, averageMonths: o.averageMonths, method: o.method, cashBasis: isCashBasis(o.cashBasis) ? o.cashBasis : DEFAULT_CASH_BASIS };
 }
 
 /** The middle value of a list (the mean of the two in the middle when there is an even number); zero for none. */
@@ -88,7 +99,7 @@ export type AdjustedBuffer = {
   /** Spending per month in the scenario, including what no category row holds (loan interest taken out, rounding). */
   spendingMinor: number;
   loans: AdjustedLoan[];
-  /** The months of cover with the accessible accounts counted too, in this scenario; absent when no account is set to "Accessible money". */
+  /** The months of cover with the accessible accounts counted too, in this scenario; absent when there is no other money you can use now. */
   monthsWithAccessible?: number;
   /** How many categories and loans are left out or have another amount. */
   leftOut: number;

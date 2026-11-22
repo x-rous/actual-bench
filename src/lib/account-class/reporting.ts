@@ -1,88 +1,10 @@
 import { isAccountClassAllowed, type AccountClass } from "./index";
 
 /**
- * Financial Reporting: how an account counts in Financial Insights, next to its
- * class. Bench-owned metadata, like the class: it never changes Actual's
- * balances, transactions, budget placement or transfers. Safe to import from
- * client and server code (no I/O).
- *
- * Every class has an automatic label. The user can make two optional choices: a Bank account can be marked as a fixed or
- * restricted deposit, and an Other Asset can be marked as a fixed asset. Nothing here is required: the gate needs only a
- * class and a placement the class accepts. Further choices (accessible money, income in off-budget accounts, including an
- * account in Financial Insights) are flags, see `flags.ts`.
+ * Readiness for Financial Insights: every account needs a class, and a placement the class accepts. Safe to import from client and
+ * server code (no I/O). How an account then counts is decided by its class and its access (see `access.ts`); earlier versions also
+ * saved a Financial Reporting "treatment" per account, which migration v68 folded into the Fixed Deposit and Other Fixed Asset classes.
  */
-
-export const REPORTING_TREATMENTS = [
-  /** A tangible asset that is held and revalued or depreciated (gold, a collectible); the only Other Asset treatment the Assets module accepts. */
-  "fixed-asset",
-  /** A Bank deposit that cannot readily be withdrawn: still an asset and in net worth, but not cash. */
-  "fixed-deposit",
-] as const;
-
-export type ReportingTreatment = (typeof REPORTING_TREATMENTS)[number];
-
-export function isReportingTreatment(value: unknown): value is ReportingTreatment {
-  return typeof value === "string" && (REPORTING_TREATMENTS as readonly string[]).includes(value);
-}
-
-export const REPORTING_LABELS: Record<ReportingTreatment | "cash-equivalent" | "loan-liability" | "investment" | "retirement-holding" | "other-asset-holding" | "credit-card-liability" | "liability", string> = {
-  "fixed-asset": "Fixed asset",
-  "fixed-deposit": "Fixed / restricted deposit",
-  "cash-equivalent": "Cash & cash equivalents",
-  "loan-liability": "Loan liability",
-  investment: "Investment",
-  "retirement-holding": "Retirement holding",
-  "other-asset-holding": "Holding",
-  "credit-card-liability": "Credit card liability",
-  liability: "Liability",
-};
-
-/** What the user can choose, per class. */
-export type ReportingRequirement =
-  | { kind: "automatic"; label: string }
-  /** Counted under `label` unless the user picks one of `options`. */
-  | { kind: "optional"; label: string; options: readonly ReportingTreatment[] }
-  /** Cash equivalent by default; the user may mark the account as a fixed / restricted deposit. */
-  | { kind: "bank-default"; label: string };
-
-const REQUIREMENTS: Record<AccountClass, ReportingRequirement> = {
-  cash: { kind: "automatic", label: REPORTING_LABELS["cash-equivalent"] },
-  bank: { kind: "bank-default", label: REPORTING_LABELS["cash-equivalent"] },
-  vehicle: { kind: "automatic", label: REPORTING_LABELS["fixed-asset"] },
-  property: { kind: "automatic", label: REPORTING_LABELS["fixed-asset"] },
-  investment: { kind: "automatic", label: REPORTING_LABELS.investment },
-  retirement: { kind: "automatic", label: REPORTING_LABELS["retirement-holding"] },
-  "other-asset": { kind: "optional", label: REPORTING_LABELS["other-asset-holding"], options: ["fixed-asset"] },
-  "credit-card": { kind: "automatic", label: REPORTING_LABELS["credit-card-liability"] },
-  loan: { kind: "automatic", label: REPORTING_LABELS["loan-liability"] },
-  "other-liability": { kind: "automatic", label: REPORTING_LABELS.liability },
-};
-
-export function reportingRequirement(accountClass: AccountClass): ReportingRequirement {
-  return REQUIREMENTS[accountClass];
-}
-
-/** The treatments the class accepts as a saved choice. */
-function acceptedTreatments(accountClass: AccountClass): readonly ReportingTreatment[] {
-  const requirement = REQUIREMENTS[accountClass];
-  if (requirement.kind === "optional") return requirement.options;
-  if (requirement.kind === "bank-default") return ["fixed-deposit"];
-  return [];
-}
-
-/** A saved choice counts only while the account's class still accepts it. */
-export function validSavedTreatment(accountClass: AccountClass, saved: ReportingTreatment | null | undefined): ReportingTreatment | null {
-  return saved && acceptedTreatments(accountClass).includes(saved) ? saved : null;
-}
-
-/**
- * Cash and Bank count as cash equivalents, on or off budget; a Bank account marked as a fixed / restricted
- * deposit does not. Nothing else does, however quickly it can be sold.
- */
-export function isCashEquivalent(accountClass: AccountClass, saved: ReportingTreatment | null | undefined): boolean {
-  if (accountClass === "cash") return true;
-  return accountClass === "bank" && validSavedTreatment(accountClass, saved) !== "fixed-deposit";
-}
 
 // ─── Readiness ───────────────────────────────────────────────────────────────
 

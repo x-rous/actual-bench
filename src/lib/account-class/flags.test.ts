@@ -1,38 +1,32 @@
-import { ACCOUNT_FLAGS, flagAllowed, GROUP_FLAGS, hasFlag, isAccountFlag, isExcluded, type AccountFlagMaps } from "./flags";
+import { ACCOUNT_FLAGS, accessOverrides, flagAllowed, GROUP_FLAGS, hasFlag, isAccountFlag, isExcluded, type AccountFlagMaps } from "./flags";
 import { ACCOUNT_CLASSES } from "./index";
 
 describe("account flags", () => {
-  it("knows exactly three flags, and only Excluded can be set on a group", () => {
-    expect([...ACCOUNT_FLAGS]).toEqual(["excluded", "accessible", "offbudget-income"]);
+  it("knows exactly three flags, and only Excluded can be set on a group; the retired off-budget income flag is unknown", () => {
+    expect([...ACCOUNT_FLAGS]).toEqual(["excluded", "accessible", "locked"]);
     expect([...GROUP_FLAGS]).toEqual(["excluded"]);
-    expect(isAccountFlag("accessible")).toBe(true);
-    expect(isAccountFlag("nope")).toBe(false);
+    expect(isAccountFlag("locked")).toBe(true);
+    expect(isAccountFlag("offbudget-income")).toBe(false);
   });
 
   it("allows Excluded on any off-budget account and no on-budget one", () => {
     for (const c of ACCOUNT_CLASSES) {
-      expect(flagAllowed("excluded", c, true, null)).toBe(true);
-      expect(flagAllowed("excluded", c, false, null)).toBe(false);
+      expect(flagAllowed("excluded", c, true)).toBe(true);
+      expect(flagAllowed("excluded", c, false)).toBe(false);
     }
-    expect(flagAllowed("excluded", null, true, null)).toBe(true);
+    expect(flagAllowed("excluded", null, true)).toBe(true);
   });
 
-  it("allows Accessible money on Investment, and on an Other Asset that is not a fixed asset", () => {
-    expect(flagAllowed("accessible", "investment", true, null)).toBe(true);
-    expect(flagAllowed("accessible", "other-asset", true, null)).toBe(true);
-    expect(flagAllowed("accessible", "other-asset", false, null)).toBe(true);
-    expect(flagAllowed("accessible", "other-asset", true, "fixed-asset")).toBe(false);
-    for (const c of ACCOUNT_CLASSES.filter((c) => c !== "investment" && c !== "other-asset")) expect(flagAllowed("accessible", c, true, null)).toBe(false);
+  it("allows Accessible only against a locked default, and Locked only against an available one, off budget", () => {
+    expect(ACCOUNT_CLASSES.filter((c) => flagAllowed("accessible", c, true))).toEqual(["fixed-deposit", "investment", "retirement", "other-asset"]);
+    expect(ACCOUNT_CLASSES.filter((c) => flagAllowed("locked", c, true))).toEqual(["bank", "cash", "savings"]);
+    for (const c of ACCOUNT_CLASSES) {
+      expect(flagAllowed("accessible", c, false)).toBe(false);
+      expect(flagAllowed("locked", c, false)).toBe(false);
+    }
   });
 
-  it("allows the off-budget income flag on off-budget Cash and Bank only", () => {
-    expect(flagAllowed("offbudget-income", "cash", true, null)).toBe(true);
-    expect(flagAllowed("offbudget-income", "bank", true, "fixed-deposit")).toBe(true);
-    expect(flagAllowed("offbudget-income", "bank", false, null)).toBe(false);
-    expect(flagAllowed("offbudget-income", "investment", true, null)).toBe(false);
-  });
-
-  const maps = (accounts: Partial<Record<"excluded" | "accessible" | "offbudget-income", string[]>>, groups: string[] = []): AccountFlagMaps => ({
+  const maps = (accounts: Partial<Record<"excluded" | "accessible" | "locked", string[]>>, groups: string[] = []): AccountFlagMaps => ({
     accounts: new Map(Object.entries(accounts).map(([flag, ids]) => [flag as "excluded", new Set(ids)])),
     groups: new Set(groups),
   });
@@ -46,14 +40,14 @@ describe("account flags", () => {
   });
 
   it("counts a saved account flag only while it is still allowed, and never deletes it", () => {
-    const m = maps({ accessible: ["a"], "offbudget-income": ["a"] });
-    expect(hasFlag("accessible", "a", "investment", true, null, m)).toBe(true);
-    // The class changed: the flag is still saved, but it no longer counts.
-    expect(hasFlag("accessible", "a", "loan", true, null, m)).toBe(false);
-    expect(hasFlag("accessible", "a", "other-asset", true, "fixed-asset", m)).toBe(false);
-    expect(hasFlag("offbudget-income", "a", "bank", true, null, m)).toBe(true);
-    expect(hasFlag("offbudget-income", "a", "bank", false, null, m)).toBe(false);
-    expect(hasFlag("accessible", "b", "investment", true, null, m)).toBe(false);
+    const m = maps({ accessible: ["a"], locked: ["a"] });
+    expect(hasFlag("accessible", "a", "investment", true, m)).toBe(true);
+    // The class or the placement changed: the flag is still saved, but it no longer counts.
+    expect(hasFlag("accessible", "a", "loan", true, m)).toBe(false);
+    expect(hasFlag("accessible", "a", "investment", false, m)).toBe(false);
+    expect(accessOverrides("a", "savings", true, m)).toEqual({ accessible: false, locked: true });
+    expect(accessOverrides("a", "fixed-deposit", true, m)).toEqual({ accessible: true, locked: false });
+    expect(hasFlag("accessible", "b", "investment", true, m)).toBe(false);
   });
 });
 

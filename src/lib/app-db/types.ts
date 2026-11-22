@@ -849,7 +849,8 @@ export type FinancialPostingRecord = {
 /** A Bench-owned account class for one Actual account or account group (scoped to one budget). */
 export type AccountClassRecord = {
   budgetSyncId: string;
-  scope: "account" | "group";
+  /** "refinement": a narrower class kept from a pre-schema-68 Financial Reporting choice (read-only; see `AccountClassMaps.refinements`). */
+  scope: "account" | "group" | "refinement";
   /** Actual account id, or the account group id when scope is "group". */
   accountId: string;
   accountClass: import("@/lib/account-class").AccountClass;
@@ -878,10 +879,3 @@ export type AccountFlagRecord = {
   updatedAt: string;
 };
 
-/** A Bench-owned Financial Reporting choice for one Actual account (scoped to one budget). */
-export type AccountReportingRecord = {
-  budgetSyncId: string;
-  accountId: string;
-  treatment: import("@/lib/account-class/reporting").ReportingTreatment;
-  updatedAt: string;
-};

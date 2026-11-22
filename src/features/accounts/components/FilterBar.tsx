@@ -13,7 +13,10 @@ import type { GroupBy } from "../lib/accountClusters";
 export type StatusFilter = "all" | "open" | "closed";
 export type BudgetFilter = "all" | "on" | "off";
 export type RulesFilter = "all" | "with_rules" | "no_rules";
-/** "excluded" keeps only the accounts left out of Financial Insights. */
+/** A bulk access choice: an access for off-budget accounts whose class has one, or leaving accounts out of (or back in) reports. */
+export type BulkAccessChoice = "available" | "locked" | "exclude" | "include";
+
+/** "excluded" keeps only the accounts left out of reports. */
 export type ReportingFilter = "all" | "excluded";
 
 /** Group filter value for "any group"; NO_GROUP and group ids are the other values. */
@@ -72,6 +75,8 @@ export function FilterBar({
   onGroupByChange,
   groupByOptions,
   onBulkSetClass,
+  onBulkSetAccess,
+  bulkAccessBusy = false,
   onBulkAssignGroup,
   filteredCount,
   totalCount,
@@ -106,12 +111,16 @@ export function FilterBar({
   groupByOptions?: { value: GroupBy; label: string }[];
   /** Sets (or, with null, clears) the class of the selected accounts. Shown with the class filter. */
   onBulkSetClass?: (accountClass: AccountClass | null) => void;
+  /** Sets the access, or whether they count in reports, of the selected accounts. */
+  onBulkSetAccess?: (choice: BulkAccessChoice) => void;
+  /** A flag save is in flight: a new access choice waits until it has landed. */
+  bulkAccessBusy?: boolean;
   /** Open accounts with no class; shown as a shortcut to the Unclassified filter. */
   unclassifiedCount?: number;
   /** Shown with the class filter when `leftOutCount` is provided (saved settings loaded). */
   reportingFilter?: ReportingFilter;
   onReportingFilterChange?: (v: ReportingFilter) => void;
-  /** Accounts left out of Financial Insights, by their own setting or their group's. */
+  /** Accounts left out of reports, by their own setting or their group's. */
   leftOutCount?: number;
   /** `groupId` is a group id, NO_GROUP-resolved `null`, or NEW_GROUP to open the new-group dialog. */
   onBulkAssignGroup: (groupId: string | null | typeof NEW_GROUP) => void;
@@ -162,6 +171,24 @@ export function FilterBar({
               options={UNCLASSIFIED_OPTIONS}
               groups={buildAccountClassGroups(selectedHasOnBudgetAccounts, selectedHasOffBudgetAccounts)}
               onValueChange={(next) => onBulkSetClass(next === UNCLASSIFIED ? null : (next as AccountClass))}
+            />
+          </div>
+        )}
+        {onBulkSetAccess && (
+          <div className="w-44">
+            <Select
+              size="sm"
+              value=""
+              placeholder="Set access…"
+              aria-label="Set the access of the selected accounts"
+              disabled={bulkAccessBusy}
+              options={[
+                { value: "available", label: "Available now" },
+                { value: "locked", label: "Locked" },
+                { value: "exclude", label: "Leave out of reports" },
+                { value: "include", label: "Include in reports" },
+              ]}
+              onValueChange={(next) => { if (next) onBulkSetAccess(next as BulkAccessChoice); }}
             />
           </div>
         )}
@@ -231,8 +258,8 @@ export function FilterBar({
               className="whitespace-nowrap text-xs text-muted-foreground underline hover:text-foreground"
             >
               {reportingFilter === "excluded"
-                ? `Showing ${leftOutCount} left out of Financial Insights · show all`
-                : `${leftOutCount} left out of Financial Insights`}
+                ? `Showing ${leftOutCount} left out of reports · show all`
+                : `${leftOutCount} left out of reports`}
             </button>
           )}
         </div>

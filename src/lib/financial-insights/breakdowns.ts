@@ -176,7 +176,7 @@ export function incomeBreakdown(ledger: Ledger, period: ResolvedPeriod, categori
   // Money in that off-budget Cash and Bank accounts are set to count as income (interest, for example): a row of its own, so the rows still add up to Received.
   const offBudget = monthly.map((m) => m.offBudgetIncome);
   const uncategorized = monthly.map((m, i) => m.received - categorised[i] - offBudget[i]);
-  if (offBudget.some((v) => v !== 0)) rows.push({ id: SPECIAL_ROW_ID.offBudgetIncome, special: "offBudgetIncome", name: "Interest & income in off-budget accounts", group: "Interest & income in off-budget accounts", hidden: false, ...finish(offBudget, offBudget.map(() => 0)) });
+  if (offBudget.some((v) => v !== 0)) rows.push({ id: SPECIAL_ROW_ID.offBudgetIncome, special: "offBudgetIncome", name: "Interest & income in off-budget savings", group: "Interest & income in off-budget accounts", hidden: false, ...finish(offBudget, offBudget.map(() => 0)) });
   if (uncategorized.some((v) => v !== 0)) rows.push({ id: null, name: "Uncategorized", group: "Uncategorized", hidden: false, ...finish(uncategorized, uncategorized.map(() => 0)) });
   const kept = rows.filter((r) => r.totalMinor !== 0 || r.byMonth.some((v) => v !== 0)).sort((a, b) => b.totalMinor - a.totalMinor);
   return { months: [...period.months], rows: kept, totalMinor: kept.reduce((a, r) => a + r.totalMinor, 0), hasHidden: kept.some((r) => r.hidden) };
@@ -250,7 +250,7 @@ export function cashBridgeLines(summary: Summary): CashBridgeLines {
     { key: "withdrawn", label: "Withdrawn from investments", amountMinor: b.investmentIn, drill: "withdrawn" },
     { key: "repaid", label: "Paid to loans", amountMinor: b.loanOut, drill: "repaid" },
     { key: "borrowed", label: "Borrowed (received from loans)", amountMinor: b.loanIn, drill: "borrowed" },
-    { key: "fixedDeposits", label: "Fixed / restricted deposits", amountMinor: b.fixedDeposits },
+    { key: "fixedDeposits", label: "Moved to and from savings & deposits", amountMinor: b.fixedDeposits },
     { key: "assets", label: "Moved to and from other assets", amountMinor: b.assets },
     { key: "liabilities", label: "Moved to and from other liabilities", amountMinor: b.liabilities },
     { key: "excluded", label: "Transfers with excluded accounts", amountMinor: b.excluded },
@@ -289,9 +289,9 @@ export function moneyInOut(summary: Summary, debt: DebtRepayments): { receivedMi
     { amountMinor: debt.principalMinor, use: ["debtRepaid", "Paid off loans (principal)"], source: ["addedToLoans", "Added to loans (charges beyond payments)"] },
     { amountMinor: 0 - b.loanIn, use: ["borrowingPaidBack", "Borrowing paid back"], source: ["borrowed", "Borrowed"] },
     { amountMinor: 0 - (b.investmentOut + b.investmentIn), use: ["invested", "Put into investments (net)"], source: ["withdrawn", "Taken out of investments (net)"] },
-    { amountMinor: 0 - (b.fixedDeposits + b.assets + b.liabilities + b.excluded), use: ["depositsAndAssets", "Moved to deposits, assets & other liabilities"], source: ["released", "Released from deposits, assets & other liabilities"] },
+    { amountMinor: 0 - (b.fixedDeposits + b.assets + b.liabilities + b.excluded), use: ["depositsAndAssets", "Moved to savings, deposits, assets & other liabilities"], source: ["released", "Released from savings, deposits, assets & other liabilities"] },
     { amountMinor: summary.closing.cards - summary.opening.cards, use: ["cardsPaid", "Paid down credit cards"], source: ["moreOwedCards", "More owed on credit cards"] },
-    { amountMinor: summary.eligibleCash.change, use: ["cash", "Added to cash & bank"], source: ["fromCash", "Taken from cash & bank"] },
+    { amountMinor: summary.eligibleCash.change, use: ["cash", "Added to cash"], source: ["fromCash", "Taken from cash"] },
   ];
   const other = summary.received - figures.reduce((sum, f) => sum + f.amountMinor, 0);
   figures.push({ amountMinor: other, use: ["otherOut", "Other (not explained)"], source: ["otherIn", "Other (not explained)"] });
@@ -449,17 +449,17 @@ export function netWorthSteps(summary: Summary) {
 
 // ─── What you own and owe ────────────────────────────────────────────────────
 
-export type ClassKey = "cash" | "fixed" | "invest" | "property" | "vehicle" | "other" | "loans" | "cards" | "otherLiability";
-export const ASSET_CLASSES: ClassKey[] = ["cash", "fixed", "invest", "property", "vehicle", "other"];
+export type ClassKey = "cash" | "savings" | "fixed" | "invest" | "property" | "vehicle" | "other" | "loans" | "cards" | "otherLiability";
+export const ASSET_CLASSES: ClassKey[] = ["cash", "savings", "fixed", "invest", "property", "vehicle", "other"];
 export const LIABILITY_CLASSES: ClassKey[] = ["loans", "cards", "otherLiability"];
-export const CLASS_LABEL: Record<ClassKey, string> = { cash: "Cash & bank", fixed: "Fixed / restricted deposits", invest: "Investments", property: "Property", vehicle: "Vehicles", other: "Other assets", loans: "Loans", cards: "Credit cards", otherLiability: "Other liabilities" };
+export const CLASS_LABEL: Record<ClassKey, string> = { cash: "Cash & checking", savings: "Savings", fixed: "Fixed deposits", invest: "Investments", property: "Property", vehicle: "Vehicles", other: "Other assets", loans: "Loans", cards: "Credit cards", otherLiability: "Other liabilities" };
 
 /** The class line each `Positions` field is shown under. */
-export const CLASS_OF_POSITION: Record<keyof Positions, ClassKey> = { eligibleCash: "cash", fixedDeposits: "fixed", investments: "invest", property: "property", vehicle: "vehicle", otherAssets: "other", loans: "loans", cards: "cards", otherLiabilities: "otherLiability" };
+export const CLASS_OF_POSITION: Record<keyof Positions, ClassKey> = { eligibleCash: "cash", savings: "savings", fixedDeposits: "fixed", investments: "invest", property: "property", vehicle: "vehicle", otherAssets: "other", loans: "loans", cards: "cards", otherLiabilities: "otherLiability" };
 
 /** Balances by class, assets positive and liabilities negative, as the Accounts page classes them. */
 export function classBalances(p: Positions): Record<ClassKey, number> {
-  return { cash: p.eligibleCash, fixed: p.fixedDeposits, invest: p.investments, property: p.property, vehicle: p.vehicle, other: p.otherAssets, loans: p.loans, cards: p.cards, otherLiability: p.otherLiabilities };
+  return { cash: p.eligibleCash, savings: p.savings, fixed: p.fixedDeposits, invest: p.investments, property: p.property, vehicle: p.vehicle, other: p.otherAssets, loans: p.loans, cards: p.cards, otherLiability: p.otherLiabilities };
 }
 
 /** Month-end balances by class for each month of the period, with the opening balances before the first day. */

@@ -1,11 +1,14 @@
 import {
   ACCOUNT_CLASSES,
+  ACCOUNT_CLASS_HEADINGS,
   ACCOUNT_CLASS_INFO,
   accountClassRequiresOnBudget,
   isAccountClass,
   isAccountClassAllowed,
   isLiability,
   planGroupAccountClass,
+  refinesClass,
+  classMapsFromRecords,
   resolveAccountClass,
   type AccountClass,
   type AccountClassMaps,
@@ -19,9 +22,12 @@ describe("account classes", () => {
   it("describes every class exactly once", () => {
     expect(ACCOUNT_CLASS_INFO.map((i) => i.value)).toEqual([...ACCOUNT_CLASSES]);
     expect(ACCOUNT_CLASSES).toEqual([
-      "cash", "bank", "vehicle", "property", "investment", "retirement", "other-asset",
-      "credit-card", "loan", "other-liability",
+      "bank", "cash", "savings", "fixed-deposit", "credit-card", "investment", "retirement",
+      "property", "vehicle", "fixed-asset", "other-asset", "loan", "other-liability",
     ]);
+    // Every class sits under one of the picker's headings, in heading order.
+    const order = ACCOUNT_CLASS_INFO.map((i) => ACCOUNT_CLASS_HEADINGS.indexOf(i.heading));
+    expect(order.every((h, i) => h >= 0 && (i === 0 || h >= order[i - 1]))).toBe(true);
     // Excluded is a flag now, not a class.
     expect(isAccountClass("excluded")).toBe(false);
   });
@@ -40,9 +46,9 @@ describe("account classes", () => {
     expect(isLiability(undefined)).toBe(false);
   });
 
-  it("requires off-budget placement for vehicle, property, investment, retirement and loan, and on-budget placement for a credit card", () => {
+  it("requires off-budget placement for fixed deposits, investments, retirement, fixed assets and loans, and on-budget placement for a credit card", () => {
     expect(ACCOUNT_CLASSES.filter((t) => !isAccountClassAllowed(t, false)))
-      .toEqual(["vehicle", "property", "investment", "retirement", "loan"]);
+      .toEqual(["fixed-deposit", "investment", "retirement", "property", "vehicle", "fixed-asset", "loan"]);
     expect(ACCOUNT_CLASSES.filter((t) => !isAccountClassAllowed(t, true))).toEqual(["credit-card"]);
     expect(accountClassRequiresOnBudget("credit-card")).toBe(true);
     expect(accountClassRequiresOnBudget("bank")).toBe(false);
@@ -72,6 +78,27 @@ describe("resolveAccountClass", () => {
     expect(resolveAccountClass("a1", null, maps({ a1: "bank" }, { g1: "loan" }))).toEqual({ accountClass: "bank", source: "account" });
   });
 
+  it("keeps an account's own narrower class inside a group of the broader class, and only then", () => {
+    const m = maps({ dep: "fixed-deposit", sav: "savings", gold: "fixed-asset", inv: "investment" }, { banks: "bank", wallets: "cash", things: "other-asset" });
+    expect(resolveAccountClass("dep", "banks", m)).toEqual({ accountClass: "fixed-deposit", source: "account" });
+    expect(resolveAccountClass("sav", "wallets", m)).toEqual({ accountClass: "savings", source: "account" });
+    expect(resolveAccountClass("gold", "things", m)).toEqual({ accountClass: "fixed-asset", source: "account" });
+    // Not a narrower kind of the group's class: the group wins.
+    expect(resolveAccountClass("inv", "banks", m)).toEqual({ accountClass: "bank", source: "group" });
+    expect(resolveAccountClass("dep", "things", m)).toEqual({ accountClass: "other-asset", source: "group" });
+    expect(refinesClass("savings", "bank")).toBe(true);
+    expect(refinesClass("bank", "savings")).toBe(false);
+  });
+
+  it("applies a narrower class kept from before schema 68 only inside a group whose class it narrows", () => {
+    const m = { ...maps({ a1: "cash" }, { banks: "bank", invest: "investment" }), refinements: new Map([["a1", "fixed-deposit" as const]]) };
+    expect(resolveAccountClass("a1", "banks", m)).toEqual({ accountClass: "fixed-deposit", source: "account" });
+    expect(resolveAccountClass("a1", "invest", m)).toEqual({ accountClass: "investment", source: "group" });
+    expect(resolveAccountClass("a1", null, m)).toEqual({ accountClass: "cash", source: "account" });
+    expect(classMapsFromRecords([{ scope: "refinement", accountId: "a1", accountClass: "fixed-asset" }, { scope: "group", accountId: "g", accountClass: "other-asset" }]))
+      .toEqual({ accounts: new Map(), groups: new Map([["g", "other-asset"]]), refinements: new Map([["a1", "fixed-asset"]]) });
+  });
+
   it("ignores a group with no class", () => {
     expect(resolveAccountClass("a1", "g2", maps({}, { g1: "loan" }))).toEqual({ accountClass: null, source: "none" });
   });
@@ -89,6 +116,11 @@ describe("planGroupAccountClass", () => {
       { scope: "account", id: "a1", accountClass: null },
       { scope: "account", id: "a3", accountClass: null },
     ]);
+  });
+
+  it("keeps a member's own class that is a narrower kind of the group's", () => {
+    const plan = planGroupAccountClass("g1", "bank", ["a1", "a2"], maps({ a1: "fixed-deposit", a2: "investment" }));
+    expect(plan.cleared).toEqual([{ id: "a2", accountClass: "investment" }]);
   });
 
   it("changes only the group when no member has its own class", () => {

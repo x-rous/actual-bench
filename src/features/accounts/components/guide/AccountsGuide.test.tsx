@@ -1,7 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { useState } from "react";
 import { ACCOUNT_CLASS_INFO } from "@/lib/account-class";
-import { REPORTING_LABELS, reportingRequirement } from "@/lib/account-class/reporting";
 import { ACCOUNTS_GUIDE_SECTIONS, AccountsGuide, type AccountsGuideSection } from "./AccountsGuide";
 
 function Guide({ start = "start" as AccountsGuideSection, onClose = jest.fn() }) {
@@ -11,7 +10,7 @@ function Guide({ start = "start" as AccountsGuideSection, onClose = jest.fn() })
 
 describe("the Accounts guide", () => {
   it("has a section for each part, each with its own heading and something to read", () => {
-    expect(ACCOUNTS_GUIDE_SECTIONS.map(([id]) => id)).toEqual(["start", "classes", "reporting", "matters", "ready"]);
+    expect(ACCOUNTS_GUIDE_SECTIONS.map(([id]) => id)).toEqual(["start", "classes", "access", "matters", "ready"]);
     for (const [id, label] of ACCOUNTS_GUIDE_SECTIONS) {
       const { unmount } = render(<Guide start={id} />);
       expect(screen.getByRole("heading", { name: label, level: 2 })).toBeInTheDocument();
@@ -24,48 +23,40 @@ describe("the Accounts guide", () => {
   it("lists every class the Class column offers, from the real definitions, and marks the off-budget-only ones", () => {
     render(<Guide start="classes" />);
     const map = screen.getByLabelText("The account classes");
-    for (const info of ACCOUNT_CLASS_INFO) expect(within(map).getByText(info.label)).toBeInTheDocument();
+    for (const info of ACCOUNT_CLASS_INFO) expect(within(map).getAllByText(info.label).length).toBeGreaterThan(0);
     const marked = [...map.querySelectorAll("li")].filter((li) => li.textContent?.includes("off-budget only")).map((li) => li.querySelector("b")?.textContent);
-    expect(marked).toEqual(["Vehicle", "Property", "Investment", "Retirement", "Loan"]);
+    expect(marked).toEqual(["Fixed Deposit", "Investment", "Retirement", "Property", "Vehicle", "Other Fixed Asset", "Loan"]);
     const onBudget = [...map.querySelectorAll("li")].filter((li) => li.textContent?.includes("on-budget only")).map((li) => li.querySelector("b")?.textContent);
     expect(onBudget).toEqual(["Credit Card"]);
     expect(within(map).queryByText("Excluded")).not.toBeInTheDocument();
   });
 
-  it("shows what Financial Reporting does for every class: the default, the alternative and the choices", () => {
-    render(<Guide start="reporting" />);
-    const table = screen.getByLabelText("Financial Reporting for each class");
-    for (const info of ACCOUNT_CLASS_INFO) {
-      const r = reportingRequirement(info.value);
-      expect(within(table).getAllByText(info.label).length).toBeGreaterThan(0);
-      if (r.kind === "optional") for (const option of r.options) expect(within(table).getAllByText(REPORTING_LABELS[option]).length).toBeGreaterThan(0);
-    }
-    // Bank shows both: the default, in green, and the alternative.
-    const bankCells = [...(within(table).getByText("Bank").parentElement as HTMLElement).children];
-    expect(bankCells[1]).toHaveTextContent("Cash & cash equivalents · default");
-    expect(bankCells[1].querySelector("span")?.className).toMatch(/green/);
-    expect(bankCells[2]).toHaveTextContent("Fixed / restricted deposit");
-    // Nothing is required: no row asks the user to choose, and Other Asset shows its default and its alternatives.
-    expect(within(table).queryByText("Choose…")).not.toBeInTheDocument();
-    const otherCells = [...(within(table).getByText("Other Asset").parentElement as HTMLElement).children];
-    expect(otherCells[1]).toHaveTextContent("Holding · default");
-    expect(otherCells[2]).toHaveTextContent("Accessible money");
-    expect(otherCells[2]).toHaveTextContent("Fixed asset");
+  it("shows each class's access off budget, from the real definitions", () => {
+    render(<Guide start="access" />);
+    const table = screen.getByLabelText("Accessible, for each class");
+    for (const info of ACCOUNT_CLASS_INFO) expect(within(table).getAllByText(info.label).length).toBeGreaterThan(0);
+    const cells = (label: string) => [...(within(table).getByRole("rowheader", { name: label }).parentElement as HTMLElement).children];
+    expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Class", "Off budget, by default", "Counts as"]);
+    expect(cells("Savings")[1]).toHaveTextContent("Available now");
+    expect(cells("Fixed Deposit")[1]).toHaveTextContent("Locked");
+    expect(cells("Retirement")[1]).toHaveTextContent("you can change it");
+    expect(cells("Property")[1]).toHaveTextContent("Nothing to choose");
+    expect(cells("Property")[2]).toHaveTextContent("A thing you own");
   });
 
   it("names where the classes are used by page or module, not by tab, and says what happens without them", () => {
     render(<Guide start="matters" />);
-    const map = screen.getByLabelText("Where classes and Financial Reporting are used");
-    for (const name of ["Financial Insights", "Assets", "Credit Cards", "Bank Reconciliation"]) expect(within(map).getByText(name)).toBeInTheDocument();
+    const map = screen.getByLabelText("Where classes and access are used");
+    for (const name of ["Financial Insights", "Assets", "Cashflow Planning", "Credit Cards", "Bank Reconciliation"]) expect(within(map).getByText(name)).toBeInTheDocument();
     expect(within(map).queryByText(/tab$/)).not.toBeInTheDocument();
-    expect(within(map).getAllByText("If not set:")).toHaveLength(4);
+    expect(within(map).getAllByText("If not set:")).toHaveLength(5);
   });
 
   it("explains why it matters with one balance read four ways, laid out in aligned columns", () => {
     render(<Guide start="matters" />);
     const figure = screen.getByLabelText("The same balance, read four ways");
-    expect(figure).toHaveTextContent("Bank · fixed / restricted deposit");
-    expect(figure).toHaveTextContent("does not count toward your cash buffer");
+    expect(figure).toHaveTextContent("Fixed Deposit · locked");
+    expect(figure).toHaveTextContent("does not count toward cash or your cash buffer");
     expect(within(figure).getAllByText(/^−?50,000$/)).toHaveLength(4);
   });
 

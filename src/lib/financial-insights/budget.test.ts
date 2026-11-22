@@ -142,8 +142,8 @@ describe("my budget: envelope", () => {
 
 describe("my budget: reconciliation to the Spending tab", () => {
   const accounts: AccountFact[] = [
-    { id: "chk", name: "Checking", accountClass: "bank", treatment: null, offBudget: false },
-    { id: "sav", name: "Savings", accountClass: "bank", treatment: null, offBudget: true },
+    { id: "chk", name: "Checking", accountClass: "bank", offBudget: false },
+    { id: "sav", name: "Savings", accountClass: "bank", offBudget: true },
   ];
   const categories = new Map<string, CategoryInfo>([
     ["food", { id: "food", name: "Food", groupName: "Daily", hidden: false, isIncome: false }],
@@ -180,7 +180,7 @@ describe("my budget: reconciliation to the Spending tab", () => {
 
   it("explains the interest and fees a lender charged to a loan account: Spending counts them, Actual cannot see them", () => {
     // 200.00 charged to a tracked loan's off-budget account in October: Spent includes it, the budget does not.
-    const loanAccounts: AccountFact[] = [...accounts, { id: "loan", name: "Mortgage", accountClass: "loan", treatment: null, offBudget: true }];
+    const loanAccounts: AccountFact[] = [...accounts, { id: "loan", name: "Mortgage", accountClass: "loan", offBudget: true }];
     const charged = buildLedger({ ...facts, accounts: loanAccounts, movement: [...movement, row("2026-10", "loan", null, -20_000)], loanCosts: [{ id: "c1", month: "2026-10", accountId: "loan", categoryId: null, amountMinor: -20_000, loanAccountId: "loan", kind: "interest", charged: true }] });
     const bd = spendingBreakdown(charged, period, categories, monthlyFlows(charged, period, today, true));
     const rec = buildBudgetPlan({ mode: "tracking", today, reads, ledger: charged, breakdown: bd }).reconciliation;
@@ -210,8 +210,8 @@ describe("my budget: reconciliation to the Spending tab", () => {
 
 describe("my budget: hidden categories in a Tracking budget", () => {
   const accounts: AccountFact[] = [
-    { id: "chk", name: "Checking", accountClass: "bank", treatment: null, offBudget: false },
-    { id: "sav", name: "Savings", accountClass: "bank", treatment: null, offBudget: true },
+    { id: "chk", name: "Checking", accountClass: "bank", offBudget: false },
+    { id: "sav", name: "Savings", accountClass: "bank", offBudget: true },
   ];
   const categories = new Map<string, CategoryInfo>([
     ["food", { id: "food", name: "Food", groupName: "Daily", hidden: false, isIncome: false }],

@@ -10,8 +10,8 @@ import { TipProvider } from "./charts/Tip";
 jest.mock("../hooks/useCashBufferScenarios", () => ({ useCashBufferScenarios: () => ({ scenarios: [], active: null, loading: false, failed: false, select: jest.fn(), saveScenario: jest.fn(), deleteScenario: jest.fn(), saving: false }) }));
 jest.mock("../hooks/useCashBufferSettings", () => ({ useCashBufferSettings: () => ({ settings: { goalMonths: null, averageMonths: 12, method: "average" }, save: jest.fn(), saving: false }) }));
 
-const chk: AccountFact = { id: "chk", name: "Checking", accountClass: "bank", treatment: null, offBudget: false };
-const inv: AccountFact = { id: "inv", name: "Brokerage", accountClass: "investment", treatment: null, offBudget: true };
+const chk: AccountFact = { id: "chk", name: "Checking", accountClass: "bank", offBudget: false };
+const inv: AccountFact = { id: "inv", name: "Brokerage", accountClass: "investment", offBudget: true };
 const row = (month: string, accountId: string, amountMinor: number, extra: Partial<MovementRow> = {}): MovementRow => ({ month, accountId, categoryId: null, transferAccountId: null, amountMinor, count: 1, ...extra });
 const today = "2026-11-18";
 

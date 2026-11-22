@@ -37,13 +37,12 @@ import { DataTable, Stack, Text, type Column, type SortState } from "@/features/
 import { useConnectionStore, selectActiveInstance, type ConnectionInstance } from "@/store/connection";
 import { useStagedStore } from "@/store/staged";
 import { useAccountClasses } from "@/features/accounts/hooks/useAccountClasses";
-import { useAccountReporting } from "@/features/accounts/hooks/useAccountReporting";
 import { getTransport } from "@/lib/actual";
 import { ASSET_TYPES, eligibility, ownershipAt, type Asset, type Registry } from "@/lib/asset-registry/models";
 import { readBook, sumMinor } from "@/lib/asset-registry/ledger";
 import { freshActionContext } from "@/lib/asset-registry/actions";
 import { bankToday } from "@/features/credit-cards/lib/cycles";
-import type { AccountClass } from "@/lib/account-class";
+import { classMapsFromRecords, type AccountClassRecordLike } from "@/lib/account-class";
 import { pruneRequest, registryRequest } from "./api";
 import { buildPruneEvidence, planPrune, pruneSize } from "@/lib/asset-registry/prune";
 import { normalizeActivity } from "@/features/credit-cards/lib/activity";
@@ -91,7 +90,6 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
   const [error, setError] = useState("");
   const docsUrl = FEATURES.find((f) => f.id === "assets")?.docsUrl;
   const classes = useAccountClasses();
-  const reporting = useAccountReporting();
   const transport = getTransport(connection);
   const key = ["assetRegistry", connection.id, connection.budgetSyncId];
   const query = useQuery({ queryKey: key, queryFn: () => registryRequest(connection.budgetSyncId) });
@@ -129,23 +127,19 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
   const currentQuery = asset ? books.get(asset.actualAccountId) : undefined;
   const snapshot = currentQuery?.isSuccess ? currentQuery.data : undefined;
   const book = snapshot ? attributedBook(snapshot, registry) : undefined;
-  const reason = asset ? eligibility(accounts.find((a) => a.id === asset.actualAccountId), asset.assetType, classes.maps, reporting.byAccount) : null;
-  // The saved Financial Reporting choices matter only to Other Asset accounts (a Vehicle or Property is eligible by class alone),
-  // so a failed read of them does not hide the values of a registry that holds none.
-  const reportingNeeded = registry.assets.some((a) => a.status !== "archived" && ASSET_TYPES[a.assetType as keyof typeof ASSET_TYPES]?.accountClass === "other-asset");
+  const reason = asset ? eligibility(accounts.find((a) => a.id === asset.actualAccountId), asset.assetType, classes.maps) : null;
+  // Eligibility is by account class alone, so the registry, the accounts and their classes are all an asset needs.
   const dataReady = query.isSuccess && accountsQuery.isSuccess && classes.available;
-  const available = dataReady && (reporting.available || !reportingNeeded);
-  // The choices matter to an asset only when its account is an Other Asset: a Vehicle or Property keeps its value and state without them.
-  const availableFor = (a: Asset) => dataReady && (reporting.available || ASSET_TYPES[a.assetType as keyof typeof ASSET_TYPES]?.accountClass !== "other-asset");
+  const available = dataReady;
   // Attribution and reports are cached per account read and registry (derivedCache), so cells, sorting and typing reuse them.
   const value = (a: Asset): number | null => {
     const q = books.get(a.actualAccountId);
-    return q?.isSuccess && q.data && availableFor(a) ? attributedValueAt(q.data, registry, a.id) : null;
+    return q?.isSuccess && q.data && dataReady ? attributedValueAt(q.data, registry, a.id) : null;
   };
   /** Recorded owned value from this asset's Actual book rows on or before a date; null when unavailable. */
   const valueAt = (a: Asset, on: string): number | null => {
     const q = books.get(a.actualAccountId);
-    return q?.isSuccess && q.data && availableFor(a) ? attributedValueAt(q.data, registry, a.id, on) : null;
+    return q?.isSuccess && q.data && dataReady ? attributedValueAt(q.data, registry, a.id, on) : null;
   };
   /** Positive Actual debt per linked loan on a date from its liability account's own ledger; never a loan forecast. */
   const debtsAt = (on: string): DatedDebt[] => linkedDebtIds.map((debtId, index) => {
@@ -172,11 +166,11 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
   const computeAttention = (a: Asset): AssetAttention => {
     if (a.status === "archived") return { label: "Archived", tone: "neutral", detail: "Archived assets are not checked for attention" };
     const q = books.get(a.actualAccountId);
-    if (!availableFor(a) || !q?.isSuccess || !q.data) return { label: "Unavailable", tone: "danger", detail: "Refresh to read the account book" };
+    if (!dataReady || !q?.isSuccess || !q.data) return { label: "Unavailable", tone: "danger", detail: "Refresh to read the account book" };
     const result = attributedBook(q.data, registry);
     const gap = report(a)?.gaps[0];
     if (gap) return { label: "Needs review", tone: "attention", detail: gap };
-    const invalid = eligibility(accounts.find((row) => row.id === a.actualAccountId), a.assetType, classes.maps, reporting.byAccount);
+    const invalid = eligibility(accounts.find((row) => row.id === a.actualAccountId), a.assetType, classes.maps);
     if (invalid || result.issues.length) return { label: "Needs review", tone: "attention", detail: invalid ?? result.issues[0] };
     if (result.rows.some((r) => !r.assetId)) return { label: "Unassigned rows", tone: "attention", detail: "Some account rows need attribution" };
     const count = result.rows.filter((r) => r.assetId === a.id && bookTypeLabel(r.classification) === "Unclassified").length;
@@ -189,7 +183,6 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
       if (next) client.setQueryData(key, next); else await query.refetch({ throwOnError: true });
       await accountsQuery.refetch({ throwOnError: true });
       await client.invalidateQueries({ queryKey: ["accountClasses", connection.budgetSyncId] });
-      await client.invalidateQueries({ queryKey: ["accountReporting", connection.budgetSyncId] });
       await externalQuery.refetch({ throwOnError: true });
       await client.invalidateQueries({ queryKey: ["assetLoans", connection.id] });
       await client.invalidateQueries({ queryKey: ["assetLoanLedger", connection.id] });
@@ -206,16 +199,9 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
     const directory = await context.transport.getAccounts();
     const response = await fetch(`/api/account-classes?budgetSyncId=${encodeURIComponent(connection.budgetSyncId)}`);
     if (!response.ok) throw new Error("Could not confirm current account class");
-    const records = (await response.json()).accountClasses as { scope: string; accountId: string; accountClass: AccountClass }[];
-    const maps = { accounts: new Map(records.filter((r) => r.scope === "account").map((r) => [r.accountId, r.accountClass])), groups: new Map(records.filter((r) => r.scope === "group").map((r) => [r.accountId, r.accountClass])) };
-    // Only an Other Asset reads the saved Financial Reporting treatment; a Vehicle or Property must not fail on it.
-    let treatments = new Map<string, string>();
-    if (ASSET_TYPES[context.asset.assetType as keyof typeof ASSET_TYPES]?.accountClass === "other-asset") {
-      const reportingResponse = await fetch(`/api/account-reporting?budgetSyncId=${encodeURIComponent(connection.budgetSyncId)}`);
-      if (!reportingResponse.ok) throw new Error("Could not confirm the account's Financial Reporting");
-      treatments = new Map(((await reportingResponse.json()).accountReporting as { accountId: string; treatment: string }[]).map((r) => [r.accountId, r.treatment]));
-    }
-    const invalid = eligibility(directory.find((a) => a.id === context.asset.actualAccountId), context.asset.assetType, maps, treatments);
+    const records = (await response.json()).accountClasses as AccountClassRecordLike[];
+    const maps = classMapsFromRecords(records);
+    const invalid = eligibility(directory.find((a) => a.id === context.asset.actualAccountId), context.asset.assetType, maps);
     if (invalid) throw new Error(invalid);
     const pending = useStagedStore.getState().accounts[context.asset.actualAccountId];
     if (pending && (pending.isNew || pending.isUpdated || pending.isDeleted || pending.pendingAccountClass !== undefined || pending.saveError)) throw new Error("Save pending changes to this account in Accounts first");
@@ -243,7 +229,7 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
   const firstDateOf = (a: Asset): string => {
     const known = firstDates.get(a.id); if (known) return known;
     const q = books.get(a.actualAccountId);
-    const ledger = q?.isSuccess && q.data && availableFor(a) ? attributedBook(q.data, registry).rows.filter((r) => r.assetId === a.id).map((r) => r.date).sort()[0] : undefined;
+    const ledger = q?.isSuccess && q.data && dataReady ? attributedBook(q.data, registry).rows.filter((r) => r.assetId === a.id).map((r) => r.date).sort()[0] : undefined;
     const first = earliestDate(ledger, firstCashDate(a)) ?? date;
     firstDates.set(a.id, first); return first;
   };
@@ -257,7 +243,7 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
   const gainOf = (a: Asset) => {
     if (gains.has(a.id)) return gains.get(a.id)!;
     const q = books.get(a.actualAccountId); let result: { gainMinor: number; capitalMinor: number } | null = null;
-    if (q?.isSuccess && q.data && availableFor(a)) {
+    if (q?.isSuccess && q.data && dataReady) {
       const book = attributedBook(q.data, registry);
       if (book.available) { const b = valueBridge(book.rows.filter((r) => r.assetId === a.id), null, date); result = { gainMinor: b.revaluationMinor + b.depreciationMinor, capitalMinor: b.capitalMinor }; }
     }
@@ -312,7 +298,7 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
     } },
     { key: "attention", header: "Attention", width: 150, cell: (a) => <AttentionBadge status={attention(a)} /> },
     { key: "actions", header: "Actions", hiddenHeader: true, width: 44, align: "right", sticky: "end", cell: (a) => {
-      const writable = a.status === "active" && availableFor(a);
+      const writable = a.status === "active" && dataReady;
       const start = (action: QuickAction) => { setQuickAction({ assetId: a.id, action }); open(a); };
       return <DropdownMenu><DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="size-7" aria-label={`Actions for ${a.name}`} />}><MoreHorizontal className="size-3.5" aria-hidden /></DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">

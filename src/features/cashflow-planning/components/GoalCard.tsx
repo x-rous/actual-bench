@@ -1,9 +1,13 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import type { Computed, GoalResult } from "@/lib/cashflow-planning/engine";
+import { savingsOnBasis, type Computed, type GoalResult } from "@/lib/cashflow-planning/engine";
+import type { SavingsBasis } from "@/lib/cashflow-planning/types";
 import { monthLabel } from "@/lib/cashflow-planning/months";
 import { money } from "@/features/financial-insights/format";
+
+/** What a goal is measured on, in the words of its card. */
+export const GOAL_BASIS_TEXT: Record<SavingsBasis, string> = { cash: "cash", usable: "cash and the savings you can use", total: "cash and all savings" };
 
 const W = 320, H = 76, PAD = { l: 6, r: 6, t: 8, b: 16 };
 
@@ -15,13 +19,13 @@ export function GoalCard({ result, computed }: { result: GoalResult; computed: C
   const { goal, projected, shortfall, perMonth } = result;
   const end = computed.months.indexOf(goal.month);
   const from = Math.max(0, computed.currentIndex);
-  const balance = (i: number) => computed.closing[i] + (goal.basis === "total" ? computed.savings?.[i] ?? 0 : 0);
+  const balance = (i: number) => computed.closing[i] + savingsOnBasis(goal.basis, computed.savings, computed.lockedSavings, i);
   const outside = projected === null || end < 0;
   // A goal month already behind us has no road from today to it to draw.
   const past = !outside && end < from;
   const reached = !outside && !shortfall;
   // Today's cash, not this month's closing forecast; the savings estimate of the month before stands for today's savings.
-  const today = computed.kpis.cashNow + (goal.basis === "total" ? computed.savings?.[Math.max(0, from - 1)] ?? 0 : 0);
+  const today = computed.kpis.cashNow + savingsOnBasis(goal.basis, computed.savings, computed.lockedSavings, Math.max(0, from - 1));
   const share = goal.amount > 0 ? Math.max(0, Math.min(1, today / goal.amount)) : 1;
   const tone = outside ? "text-muted-foreground" : reached ? "text-emerald-700 dark:text-emerald-400" : "text-destructive";
 
@@ -43,7 +47,7 @@ export function GoalCard({ result, computed }: { result: GoalResult; computed: C
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="truncate font-medium" title={goal.name}>{goal.name}</p>
-          <p className="text-muted-foreground">{money(goal.amount)} by {monthLabel(goal.month)} · {goal.basis === "total" ? "cash and savings" : "cash"}</p>
+          <p className="text-muted-foreground">{money(goal.amount)} by {monthLabel(goal.month)} · {GOAL_BASIS_TEXT[goal.basis]}</p>
         </div>
         <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium", reached ? "border-emerald-600/30 bg-emerald-600/10" : outside ? "border-border bg-muted" : "border-destructive/30 bg-destructive/10", tone)}>
           {outside ? "Outside the plan" : reached ? "On track" : "Short"}

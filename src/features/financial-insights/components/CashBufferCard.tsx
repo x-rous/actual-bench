@@ -12,7 +12,7 @@ import { AVERAGE_MONTH_CHOICES, GOAL_MONTHS_MAX, adjustedBuffer, type BufferSett
 import type { FinancialInsightsView } from "../hooks/useFinancialInsights";
 import { useCashBufferScenarios } from "../hooks/useCashBufferScenarios";
 import { useCashBufferSettings } from "../hooks/useCashBufferSettings";
-import { formatDay, money } from "../format";
+import { formatDay, money, CASH_BASIS_DETAIL } from "../format";
 import { CashBufferScenarioDialog } from "./CashBufferScenarioDialog";
 import { CardTitle, InfoTip } from "./InfoTip";
 
@@ -22,17 +22,17 @@ type Ready = Extract<FinancialInsightsView["data"], { state: "ready" }>;
 type Accessible = { months: number; accounts: { accountId: string; name: string; balanceMinor: number }[]; totalMinor: number };
 
 /**
- * The one (i) beside the headline: what the months of cover are measured on and, when some accounts are set to "Accessible money",
+ * The one (i) beside the headline: what the months of cover are measured on and, when other money can be used now,
  * which accounts the second figure under the headline counts. The main figure, the goal and scenarios stay cash-based.
  */
 function CoverInfo({ accessible, today }: { accessible?: Accessible; today: string }) {
   return (
     <InfoTip label="the months of cover">
-      <p>Months of cover are your cash &amp; bank balance, less what you owe on credit cards, divided by what you need each month.</p>
+      <p>Months of cover are your cash balance, less what you owe on credit cards, divided by what you need each month.</p>
       {accessible && (
         <>
-          <p className="font-medium text-foreground">With accessible investments: {accessible.months.toFixed(1)} months</p>
-          <p>Counts the accounts you set to Accessible money as well, as of {formatDay(today)} (positive balances only). The main figure, your goal and scenarios do not include them.</p>
+          <p className="font-medium text-foreground">With other money you can use now: {accessible.months.toFixed(1)} months</p>
+          <p>Also counts the accounts you can use now that the main figure leaves out (investments, retirement and other assets set to Available now, and savings when cash is counted on its own), as of {formatDay(today)} (positive balances only). The main figure, your goal and scenarios do not include them.</p>
           <table className="w-full border-collapse">
             <tbody>
               {accessible.accounts.filter((a) => a.balanceMinor > 0).map((a) => <tr key={a.accountId} className="border-b border-border/40 last:border-0"><th scope="row" className="py-1 text-left font-normal">{a.name}</th><td className="py-1 text-right tabular-nums">{money(a.balanceMinor)}</td></tr>)}
@@ -49,7 +49,7 @@ function CoverInfo({ accessible, today }: { accessible?: Accessible; today: stri
 function AccessibleLine({ accessible }: { accessible: Accessible }) {
   return (
     <p className="mt-2 text-xs text-muted-foreground">
-      <b className="font-semibold tabular-nums text-foreground">{accessible.months.toFixed(1)} months</b> with accessible investments
+      <b className="font-semibold tabular-nums text-foreground">{accessible.months.toFixed(1)} months</b> with other money you can use now
     </p>
   );
 }
@@ -64,16 +64,16 @@ function CashAccountsTip({ data, today, cashMinor, grossMinor, cardsOwedMinor }:
   // Do not show a breakdown when it cannot explain the displayed total.
   if (!ledger || accounts.reduce((sum, account) => sum + account.balanceMinor, closedBalanceMinor) !== grossMinor) return <>{withSmallDecimals(money(cashMinor))}</>;
   return <Popover>
-    <PopoverTrigger openOnHover delay={150} render={<button type="button" aria-label={`Cash & bank less card balances today ${money(cashMinor)}: see account balances`} className="cursor-help tabular-nums underline decoration-dotted underline-offset-4 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">{withSmallDecimals(money(cashMinor))}</button>} />
+    <PopoverTrigger openOnHover delay={150} render={<button type="button" aria-label={`Cash less card balances today ${money(cashMinor)}: see account balances`} className="cursor-help tabular-nums underline decoration-dotted underline-offset-4 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">{withSmallDecimals(money(cashMinor))}</button>} />
     <PopoverContent align="end" className="w-80 p-3 text-xs">
-      <p className="mb-1.5 font-medium">Cash &amp; bank less card balances, by account</p>
-      <p className="mb-2 text-muted-foreground">Balances as of {formatDay(today)}. Fixed / restricted deposits are excluded. What you owe on credit cards is taken off, because it is already committed out of this cash.</p>
+      <p className="mb-1.5 font-medium">Cash less card balances, by account</p>
+      <p className="mb-2 text-muted-foreground">Balances as of {formatDay(today)} of the {ledger.basis === "cash" ? CASH_BASIS_DETAIL.cash : CASH_BASIS_DETAIL["cash-savings"]}. Locked money is left out. What you owe on credit cards is taken off, because it is already committed out of this cash.</p>
       <table className="w-full border-collapse">
         <tbody>
           {accounts.map((account) => <tr key={account.id} className="border-b border-border/40"><th scope="row" className="max-w-52 py-1 text-left font-normal"><span className="block truncate" title={account.name}>{account.name}</span></th><td className="text-right tabular-nums">{money(account.balanceMinor)}</td></tr>)}
           {closedBalanceMinor !== 0 && <tr className="border-b border-border/40"><th scope="row" className="py-1 text-left font-normal">Closed account balances</th><td className="text-right tabular-nums">{money(closedBalanceMinor)}</td></tr>}
           <tr className="border-b border-border/40"><th scope="row" className="py-1 text-left font-normal">Credit cards owed</th><td className="text-right tabular-nums">{money(0 - cardsOwedMinor)}</td></tr>
-          <tr className="font-semibold"><th scope="row" className="py-1.5 text-left">Cash &amp; bank less card balances</th><td className="text-right tabular-nums">{money(cashMinor)}</td></tr>
+          <tr className="font-semibold"><th scope="row" className="py-1.5 text-left">Cash less card balances</th><td className="text-right tabular-nums">{money(cashMinor)}</td></tr>
         </tbody>
       </table>
     </PopoverContent>
@@ -106,7 +106,7 @@ function SpendingBreakdownTip({ groups, spendingMinor, months }: { groups: Ready
 const GOAL_PRESETS = [3, 6, 12];
 
 /** The goal and how a typical month is worked out: each change is saved as it is made and applies to the real buffer and every scenario. */
-function BufferSettingsPopover({ settings, onChange }: { settings: BufferSettings; onChange: (next: BufferSettings) => void }) {
+function BufferSettingsPopover({ settings, onChange, disabled = false }: { settings: BufferSettings; onChange: (next: BufferSettings) => void; /** The saved settings are not read yet. */ disabled?: boolean }) {
   const [goalText, setGoalText] = useState<string | null>(null);
   const commitGoal = () => {
     if (goalText === null) return;
@@ -118,7 +118,7 @@ function BufferSettingsPopover({ settings, onChange }: { settings: BufferSetting
   };
   return (
     <Popover>
-      <PopoverTrigger render={<Button size="icon-sm" variant="outline" aria-label="Goal and how a typical month is worked out" title="Goal and typical month" />}><SlidersHorizontal className="size-3.5" aria-hidden /></PopoverTrigger>
+      <PopoverTrigger disabled={disabled} render={<Button size="icon-sm" variant="outline" aria-label="Goal and how a typical month is worked out" title={disabled ? "Reading your saved settings…" : "Goal and typical month"} />}><SlidersHorizontal className="size-3.5" aria-hidden /></PopoverTrigger>
       <PopoverContent align="end" className="w-80 space-y-3 p-3 text-xs">
         <div>
           <p className="font-medium">Months of cover I aim for</p>
@@ -151,7 +151,7 @@ const savedOn = (iso: string) => formatDay(iso.slice(0, 10));
  */
 export function CashBuffer({ buffer, groups, today, data }: { buffer: Ready["buffer"]; groups: Ready["bufferSpending"]; today: string; /** The page's data: the group colours of the Spending tab, and what lists the transactions behind an amount. */ data?: Ready }) {
   const scenarios = useCashBufferScenarios();
-  const { settings, save: saveSettings } = useCashBufferSettings();
+  const { settings, save: saveSettings, loaded: settingsLoaded } = useCashBufferSettings();
   const [dialog, setDialog] = useState<"new" | "edit" | null>(null);
   const categories = groups?.categories ?? [];
   const canSimulate = buffer.state === "ready" && categories.length > 0;
@@ -171,7 +171,7 @@ export function CashBuffer({ buffer, groups, today, data }: { buffer: Ready["buf
             <Button size="icon-sm" variant="outline" aria-label="New scenario" title="New scenario" onClick={() => setDialog("new")}><Plus className="size-3.5" aria-hidden /></Button>
           </>
         : <Button size="sm" variant="outline" onClick={() => setDialog("new")}><FlaskConical className="size-3.5" aria-hidden />Simulate</Button>)}
-      <BufferSettingsPopover settings={settings} onChange={saveSettings} />
+      <BufferSettingsPopover settings={settings} onChange={saveSettings} disabled={!settingsLoaded} />
     </div>
   );
 
@@ -193,7 +193,7 @@ export function CashBuffer({ buffer, groups, today, data }: { buffer: Ready["buf
         <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <CardTitle title="Your cash buffer" hint={`As of ${formatDay(today)}`} infoLabel="your cash buffer"
-          info={<><p>It is always as of today, whatever period is selected. How many months your cash &amp; bank balance, less what you owe on credit cards, would cover at your usual spending, plus every loan repayment.</p><p>The all-in figure counts every recorded expense. Investments and fixed / restricted deposits are not counted as cash; card payments and loan interest are not counted twice. The 0–12 month scale is not a recommended target.</p><p>Simulate shows what the buffer would be if you left some spending out or changed what it costs. It is your own what-if, saved here; the real buffer is never changed.</p><p>The goal is the months of cover you aim for, and a typical month can be the average or the median of the last 3, 6 or 12 complete months: both are set with the sliders button and apply everywhere here.</p></>} />
+          info={<><p>It is always as of today, whatever period is selected. How many months your cash balance, less what you owe on credit cards, would cover at your usual spending, plus every loan repayment.</p><p>The all-in figure counts every recorded expense. Locked money (investments, retirement and deposits you cannot use now) is not counted as cash; Savings and Fixed Deposits you can use now count when the header switch is on Cash + savings. Card payments and loan interest are not counted twice. The 0–12 month scale is not a recommended target.</p><p>Simulate shows what the buffer would be if you left some spending out or changed what it costs. It is your own what-if, saved here; the real buffer is never changed.</p><p>The goal is the months of cover you aim for, and a typical month can be the average or the median of the last 3, 6 or 12 complete months: both are set with the sliders button and apply everywhere here.</p></>} />
         {active && (
           <p className="inline-flex w-fit shrink-0 items-center gap-1.5 rounded-full border border-amber-500/60 px-2 py-0.5 text-[11px] text-amber-700 dark:text-amber-400" role="status">
             <FlaskConical className="size-3" aria-hidden />Simulated: {active.name}
@@ -221,7 +221,7 @@ export function CashBuffer({ buffer, groups, today, data }: { buffer: Ready["buf
               </div>}
             </div>
             <div className="ml-auto shrink-0 rounded-md border border-border bg-muted/40 px-4 py-2 text-right">
-              <p className="text-xs text-muted-foreground">Cash &amp; bank less card balances</p>
+              <p className="text-xs text-muted-foreground">Cash less card balances</p>
               <p className="text-xl font-semibold leading-tight tabular-nums"><CashAccountsTip data={data} today={today} cashMinor={shown.cashMinor} grossMinor={buffer.value.grossCashMinor} cardsOwedMinor={buffer.value.cardsOwedMinor} /></p>
             </div>
           </div>
@@ -243,7 +243,7 @@ export function CashBuffer({ buffer, groups, today, data }: { buffer: Ready["buf
             <p className={`mt-1 text-xs ${shown.months >= goal ? "text-green-700 dark:text-green-400" : "text-amber-700 dark:text-amber-400"}`} role="status">
               {shown.months >= goal
                 ? `Your ${goal}-month goal is covered, with ${(shown.months - goal).toFixed(1)} months to spare.`
-                : `${(goal - shown.months).toFixed(1)} months short of your ${goal}-month goal: ${money(Math.max(0, Math.round(goal * shown.monthlyNeedMinor - shown.cashMinor)))} more cash & bank would reach it.`}
+                : `${(goal - shown.months).toFixed(1)} months short of your ${goal}-month goal: ${money(Math.max(0, Math.round(goal * shown.monthlyNeedMinor - shown.cashMinor)))} more cash would reach it.`}
             </p>
           )}
           {active?.result && Math.abs(active.result.months - shown.months) >= 0.05 && (

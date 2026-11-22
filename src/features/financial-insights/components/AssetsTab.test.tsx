@@ -11,10 +11,10 @@ import { TipProvider } from "./charts/Tip";
 jest.mock("../hooks/useWealth", () => ({ useWealth: jest.fn() }));
 const useWealth = jest.requireMock("../hooks/useWealth").useWealth as jest.Mock;
 
-const chk: AccountFact = { id: "chk", name: "Checking", accountClass: "bank", treatment: null, offBudget: false };
-const house: AccountFact = { id: "house", name: "House", accountClass: "property", treatment: null, offBudget: true };
-const car: AccountFact = { id: "car", name: "Car", accountClass: "vehicle", treatment: null, offBudget: true };
-const mortgage: AccountFact = { id: "mortgage", name: "Mortgage", accountClass: "loan", treatment: null, offBudget: true };
+const chk: AccountFact = { id: "chk", name: "Checking", accountClass: "bank", offBudget: false };
+const house: AccountFact = { id: "house", name: "House", accountClass: "property", offBudget: true };
+const car: AccountFact = { id: "car", name: "Car", accountClass: "vehicle", offBudget: true };
+const mortgage: AccountFact = { id: "mortgage", name: "Mortgage", accountClass: "loan", offBudget: true };
 const row = (month: string, accountId: string, amountMinor: number, extra: Partial<MovementRow> = {}): MovementRow => ({ month, accountId, categoryId: null, transferAccountId: null, amountMinor, count: 1, ...extra });
 
 function data(accounts: AccountFact[], movement: MovementRow[], over: Record<string, unknown> = {}) {
@@ -123,8 +123,8 @@ describe("offered tabs for property", () => {
     expect(names([chk, { ...house, accountClass: "investment" }])).toContain("wealth");
   });
   it("does not count a current or non-current Other Asset as a property or asset account", () => {
-    const owed: AccountFact = { id: "owed", name: "Owed to me", accountClass: "other-asset", treatment: null, offBudget: true };
-    const gold: AccountFact = { id: "gold", name: "Gold", accountClass: "other-asset", treatment: "fixed-asset", offBudget: true };
+    const owed: AccountFact = { id: "owed", name: "Owed to me", accountClass: "other-asset", offBudget: true };
+    const gold: AccountFact = { id: "gold", name: "Gold", accountClass: "fixed-asset", offBudget: true };
     expect(names([chk, owed])).not.toContain("property");
     expect(names([chk, gold])).toContain("property");
   });

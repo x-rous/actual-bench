@@ -62,3 +62,11 @@ export function compactAxis(marks: readonly number[]): string[] {
 
 export const percent = (value: number): string => `${value.toFixed(1)}%`;
 export { formatDay } from "@/lib/financial-insights/period";
+
+/** The cash basis as the header switch names it, and as figures that follow it name their cash ("Cash" or "Cash + savings"). */
+export const CASH_BASIS_LABEL = { cash: "Cash", "cash-savings": "Cash + savings" } as const;
+/** What the basis counts, in one line, for tooltips and table notes. */
+export const CASH_BASIS_DETAIL = {
+  cash: "Checking and Cash accounts you can use now",
+  "cash-savings": "Checking, Cash, Savings and Fixed Deposit accounts you can use now",
+} as const;

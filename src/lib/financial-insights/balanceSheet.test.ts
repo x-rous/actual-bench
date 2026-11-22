@@ -3,18 +3,19 @@ import { buildBalanceSheet } from "./balanceSheet";
 import { buildLedger, positionsAt, type AccountFact, type FinancialFacts } from "./measures";
 
 const accounts: AccountFact[] = [
-  { id: "cash", name: "Cash", accountClass: "cash", treatment: null, offBudget: false },
-  { id: "deposit", name: "Restricted", accountClass: "bank", treatment: "fixed-deposit", offBudget: true },
-  { id: "invest", name: "Investment", groupId: "g1", groupName: "Savings", accountClass: "investment", treatment: null, offBudget: true },
-  { id: "retire", name: "Pension", accountClass: "retirement", treatment: null, offBudget: true },
-  { id: "asset", name: "Property", accountClass: "property", treatment: null, offBudget: true },
-  { id: "car", name: "Car", accountClass: "vehicle", treatment: null, offBudget: true },
-  { id: "gold", name: "Gold", accountClass: "other-asset", treatment: "fixed-asset", offBudget: true },
-  { id: "card", name: "Card", accountClass: "credit-card", treatment: null, offBudget: false },
-  { id: "loan", name: "Loan", accountClass: "loan", treatment: null, offBudget: true, closed: true },
-  { id: "other", name: "Other debt", accountClass: "other-liability", treatment: null, offBudget: true },
+  { id: "cash", name: "Cash", accountClass: "cash", offBudget: false },
+  { id: "saver", name: "Saver", accountClass: "savings", offBudget: true },
+  { id: "deposit", name: "Restricted", accountClass: "fixed-deposit", offBudget: true },
+  { id: "invest", name: "Investment", groupId: "g1", groupName: "Savings", accountClass: "investment", offBudget: true },
+  { id: "retire", name: "Pension", accountClass: "retirement", offBudget: true },
+  { id: "asset", name: "Property", accountClass: "property", offBudget: true },
+  { id: "car", name: "Car", accountClass: "vehicle", offBudget: true },
+  { id: "gold", name: "Gold", accountClass: "fixed-asset", offBudget: true },
+  { id: "card", name: "Card", accountClass: "credit-card", offBudget: false },
+  { id: "loan", name: "Loan", accountClass: "loan", offBudget: true, closed: true },
+  { id: "other", name: "Other debt", accountClass: "other-liability", offBudget: true },
 ];
-const amounts = [10000, 5000, 3000, 2000, 20000, 4000, 700, -2000, -7000, 500];
+const amounts = [10000, 1500, 5000, 3000, 2000, 20000, 4000, 700, -2000, -7000, 500];
 const facts: FinancialFacts = { accounts, excluded: new Set(["excluded"]), incomeCategories: new Set(), movement: [], startingBalances: accounts.map((a, i) => ({ accountId: a.id, month: "2026-01", amountMinor: amounts[i] })), uncategorizedIn: [], transfersIn: [], loanCosts: [], reclassified: [] };
 const ledger = buildLedger(facts);
 
@@ -22,10 +23,10 @@ describe("the balance sheet", () => {
   it("groups included balances by account class, in the names and order of What you own and owe, and agrees with net worth", () => {
     const sheet = buildBalanceSheet(ledger, "2026-01");
     expect(sheet.assets.map((g) => [g.label, g.amountMinor])).toEqual([
-      ["Cash & bank", 10000], ["Fixed / restricted deposits", 5000], ["Investments", 5000], ["Property", 20000], ["Vehicles", 4000], ["Other assets", 700],
+      ["Cash & checking", 10000], ["Savings", 1500], ["Fixed deposits", 5000], ["Investments", 5000], ["Property", 20000], ["Vehicles", 4000], ["Other assets", 700],
     ]);
     expect(sheet.liabilities.map((g) => [g.label, g.amountMinor])).toEqual([["Loans", 7000], ["Credit cards", 2000], ["Other liabilities", -500]]);
-    expect(sheet.assets[2].rows.map((row) => [row.name, row.groupName])).toEqual([["Investment", "Savings"], ["Pension", "No Group"]]);
+    expect(sheet.assets[3].rows.map((row) => [row.name, row.groupName])).toEqual([["Investment", "Savings"], ["Pension", "No Group"]]);
     expect(sheet.liabilities[0].rows[0].closed).toBe(true);
     expect(sheet.netWorthMinor).toBe(sheet.assetsMinor - sheet.liabilitiesMinor);
     expect(sheet.netWorthMinor).toBe(Object.values(positionsAt(ledger, "2026-01")).reduce((sum, value) => sum + value, 0));
@@ -49,7 +50,7 @@ describe("the balance sheet", () => {
   it("leaves out a class that holds no account", () => {
     const only = buildLedger({ ...facts, accounts: [accounts[0]], startingBalances: [{ accountId: "cash", month: "2026-01", amountMinor: 100 }] });
     const sheet = buildBalanceSheet(only, "2026-01");
-    expect(sheet.assets.map((g) => g.label)).toEqual(["Cash & bank"]);
+    expect(sheet.assets.map((g) => g.label)).toEqual(["Cash & checking"]);
     expect(sheet.liabilities).toEqual([]);
   });
 });

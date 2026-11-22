@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import type { AccountClassRecord } from "@/lib/app-db/types";
-import type { AccountClassChange, AccountClassMaps } from "@/lib/account-class";
+import { classMapsFromRecords, type AccountClassChange, type AccountClassMaps } from "@/lib/account-class";
 import { saveAccountClasses } from "../lib/accountClassApi";
 
 type AccountClassesResponse = { accountClasses: AccountClassRecord[] };
@@ -41,14 +41,7 @@ export function useAccountClasses() {
     onError: (error: Error) => toast.error(error.message),
   });
 
-  const maps = useMemo<AccountClassMaps>(() => {
-    const accounts = new Map<string, AccountClassRecord["accountClass"]>();
-    const groups = new Map<string, AccountClassRecord["accountClass"]>();
-    for (const record of query.data ?? []) {
-      (record.scope === "group" ? groups : accounts).set(record.accountId, record.accountClass);
-    }
-    return { accounts, groups };
-  }, [query.data]);
+  const maps = useMemo<AccountClassMaps>(() => classMapsFromRecords(query.data ?? []), [query.data]);
 
   // `mutate` is stable, so callers can depend on `apply` without re-rendering memoized rows.
   const { mutate } = mutation;

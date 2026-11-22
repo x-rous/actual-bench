@@ -1,7 +1,8 @@
-import { isCashEquivalent } from "@/lib/account-class/reporting";
+import { isFixedAssetClass } from "@/lib/account-class";
+import { isCashEquivalentRung } from "@/lib/account-class/access";
 import { classificationOf } from "./assetReview";
 import type { CategoryInfo } from "./breakdowns";
-import { isLoanCostInSpent, type Ledger } from "./measures";
+import { isLoanCostInSpent, offBudgetIncomeOf, rungOfFact, type Ledger } from "./measures";
 import { addMonths, type ResolvedPeriod } from "./period";
 import type { AssetEntry, SavedClassification } from "./assetReview";
 
@@ -85,7 +86,8 @@ export function buildStatements(input: {
   });
   const evidenceChanged = classifiedChanged || expected.size !== observed.size || [...observed].some(([key, value]) => expected.get(key)?.amountMinor !== value.amountMinor || expected.get(key)?.count !== value.count);
   const basisIssue = input.basisIssue ?? (evidenceChanged ? "Statement evidence differs from the shared transaction snapshot; Refresh Financial Insights to re-read both" : null);
-  const cashIds = new Set(ledger.facts.accounts.filter((a) => isCashEquivalent(a.accountClass, a.treatment)).map((a) => a.id));
+  // Cash and cash equivalents: Checking, Cash, Savings and Fixed Deposits you can use now, whatever the Financial Insights cash basis.
+  const cashIds = new Set(ledger.facts.accounts.filter((a) => isCashEquivalentRung(rungOfFact(a))).map((a) => a.id));
   const reclassified = new Map(ledger.facts.reclassified.map((r) => [r.id, r.to]));
   const capitalIds = new Set((input.assetEntries ?? []).filter((r) => ["acquisition", "added-capital"].includes(classificationOf(r, saved) ?? "")).map((r) => r.id));
   // The split lines of a repayment, paid from a cash account; a charge the lender added to the loan account is not a cash payment.
@@ -113,7 +115,7 @@ export function buildStatements(input: {
   const appliedLoans = new Set([...paidLoans].filter((id) => chargeSum(id) < 0));
   const overCharged = new Set([...appliedLoans].filter((id) => chargeSum(id) < paymentSum.get(id)!));
   const operating = [line("receipts", "Categorized cash receipts"), line("payments", "Categorized cash payments"), line("card", "Credit-card settlements", "Ordinary card settlements are operating payments. Purchase categories remain in P&L; no allocation of a settlement to particular purchases is inferred."), line("interest", "Recorded loan interest and fees paid"), line("uncategorized-in", "Uncategorized cash receipts"), line("uncategorized-out", "Uncategorized cash payments")];
-  const investing = [line("invest-out", "Put into investments and retirement"), line("invest-in", "Withdrawn from investments and retirement"), line("fixed-out", "Placed in fixed / restricted deposits"), line("fixed-in", "Released from fixed / restricted deposits"), line("asset-out", "Fixed-asset purchases and capital added"), line("asset-in", "Fixed-asset transfers received"), line("sales", "Asset sale proceeds and selling costs")];
+  const investing = [line("invest-out", "Put into investments and retirement"), line("invest-in", "Withdrawn from investments and retirement"), line("fixed-out", "Placed in locked savings and deposits"), line("fixed-in", "Released from locked savings and deposits"), line("asset-out", "Fixed-asset purchases and capital added"), line("asset-in", "Fixed-asset transfers received"), line("sales", "Asset sale proceeds and selling costs")];
   const financing = [line("borrowed", "Borrowing received from loans"), line("principal", "Recorded loan principal repaid"), line("principal-net", "Loan payments less interest and fees the lender charged", "Payments to loans whose lender charges interest and fees as their own entries. What the lender charged is shown as interest and fees paid under operating activities; the rest is principal. Opened from the loan accounts: what was paid in, less what was charged.")];
   const lenderCharges = line("lender-charges", "Interest and fees charged by lenders", "Interest and fees the lender charged as their own entries in the accounts of loans tracked in Loans. They are recorded expenses; the cash that pays them is the loan payments.");
   const principalNetIds: string[] = [];
@@ -127,7 +129,7 @@ export function buildStatements(input: {
     add(existing, entry); rows.set(key, existing);
   };
   const categoryRows = new Map<string, StatementLine>();
-  const uncategorizedIncome = line("uncategorized-income", "Uncategorized income", "Uncategorized non-transfer receipts in on-budget accounts, counted by sign as in the Income tab, and in off-budget Cash and Bank accounts set to count uncategorized money in as income.");
+  const uncategorizedIncome = line("uncategorized-income", "Uncategorized income", "Uncategorized non-transfer receipts in on-budget accounts, counted by sign as in the Income tab, and uncategorized money in, in off-budget Savings and Fixed Deposit accounts.");
   const uncategorizedExpenses = line("uncategorized-expenses", "Uncategorized expenses", "Uncategorized non-transfer payments in on-budget accounts, counted by sign as in the Spending tab. Card purchases count when recorded, not again when settled.");
   const investmentActivity = line("investment-activity", "Recorded investment activity", "Uncategorized non-transfer entries in off-budget Investment and Retirement accounts. These may be recorded gains, losses, dividends, interest or fees; they are investment activity, not available-cash movements or P&L income/expenses. No return or realized profit is inferred.");
   let cardPnlMinor = 0, otherNoncashPnlMinor = 0;
@@ -153,8 +155,8 @@ export function buildStatements(input: {
         unknown(entry, "scope", "Transfers with excluded or unavailable accounts", "The cash side is recorded, but the counterpart is outside the reporting scope or unavailable. Its purpose is not inferred."); continue;
       }
       if (other.accountClass === "investment" || other.accountClass === "retirement") add(investing[entry.amountMinor < 0 ? 0 : 1], entry);
-      else if (other.accountClass === "bank" && other.treatment === "fixed-deposit") add(investing[entry.amountMinor < 0 ? 2 : 3], entry);
-      else if (other.accountClass === "property" || other.accountClass === "vehicle" || (other.accountClass === "other-asset" && other.treatment === "fixed-asset")) add(investing[entry.amountMinor < 0 ? 4 : 5], entry);
+      else if (other.accountClass === "bank" || other.accountClass === "cash" || other.accountClass === "savings" || other.accountClass === "fixed-deposit") add(investing[entry.amountMinor < 0 ? 2 : 3], entry);
+      else if (isFixedAssetClass(other.accountClass)) add(investing[entry.amountMinor < 0 ? 4 : 5], entry);
       else if (other.accountClass === "credit-card" && entry.amountMinor < 0) add(operating[2], entry);
       else if (other.accountClass === "loan" && entry.amountMinor > 0) add(financing[0], entry);
       else if (other.accountClass === "loan" && entry.parentId && expenseParents.has(entry.parentId)) add(financing[1], entry);
@@ -182,8 +184,8 @@ export function buildStatements(input: {
         if (cash) add(operating[income ? 4 : 5], entry);
         else if (owner.accountClass === "credit-card") cardPnlMinor += entry.amountMinor;
         else otherNoncashPnlMinor += entry.amountMinor;
-      } else if (owner.offBudgetIncome && entry.amountMinor > 0) {
-        // An off-budget Cash or Bank account set to count uncategorized money in as income, as Received does.
+      } else if (offBudgetIncomeOf(owner) && entry.amountMinor > 0) {
+        // Money in, in an off-budget Savings or Fixed Deposit account: income, as Received counts it.
         add(uncategorizedIncome, entry);
         if (cash) add(operating[4], entry); else otherNoncashPnlMinor += entry.amountMinor;
       } else if (owner.accountClass === "investment" || owner.accountClass === "retirement") add(investmentActivity, entry);

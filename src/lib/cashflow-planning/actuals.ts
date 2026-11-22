@@ -1,5 +1,5 @@
 import type { AccountClass } from "@/lib/account-class";
-import { isCashEquivalent, type ReportingTreatment } from "@/lib/account-class/reporting";
+import type { Access } from "@/lib/account-class/access";
 import type { DatedAmount, MovementRow } from "@/lib/financial-insights/measures";
 import { SECTION_SIGN, type Month, type PlanAccountRole, type PlanDocument, type SectionId } from "./types";
 
@@ -20,7 +20,8 @@ export type SnapAccount = {
   id: string; name: string; offBudget: boolean; closed: boolean;
   /** The effective account class (the account's own or its group's), or null when it has none. */
   accountClass: AccountClass | null;
-  treatment: ReportingTreatment | null;
+  /** Whether the money can be used now (see `accessOf`); null for a class without access, or no class. */
+  access: Access | null;
   /** Left out of Financial Insights by the owner. */
   excluded: boolean;
   groupName: string | null;
@@ -91,19 +92,24 @@ export type Snapshot = {
 // ─── Accounts ────────────────────────────────────────────────────────────────
 
 /**
- * How an account counts when the user has not said: Cash and Bank accounts and credit cards are the plan's cash (so a card
- * purchase lowers it when it is made, and paying the card moves nothing); a fixed deposit, an investment or a retirement
- * account is savings; everything else is outside. An account without a class is cash when it is on budget.
+ * How an account counts when the user has not said: Checking and Cash accounts you can use now, and credit cards, are the plan's
+ * cash (so a card purchase lowers it when it is made, and paying the card moves nothing); Savings, Fixed Deposits, investments and
+ * retirement accounts are savings, locked or not (a goal can count a deposit that matures before it), and an Other Asset is savings
+ * when you can use it now; everything else, a locked Checking or Cash account among them, is outside. An account without a class is
+ * cash when it is on budget.
  */
 export function defaultAccountRole(account: SnapAccount): PlanAccountRole {
   if (account.excluded) return "outside";
   switch (account.accountClass) {
     case null: return account.offBudget ? "outside" : "cash";
-    case "cash":
+    case "bank":
+    case "cash": return account.access === "locked" ? "outside" : "cash";
     case "credit-card": return "cash";
-    case "bank": return isCashEquivalent("bank", account.treatment) ? "cash" : "savings";
+    case "savings":
+    case "fixed-deposit":
     case "investment":
     case "retirement": return "savings";
+    case "other-asset": return account.access === "available" ? "savings" : "outside";
     default: return "outside";
   }
 }
@@ -121,6 +127,7 @@ export function counterpartSection(role: PlanAccountRole | undefined, account: S
     case "other-liability": return "debt";
     case "property":
     case "vehicle":
+    case "fixed-asset":
     case "other-asset": return "expenses";
     default: return "savings";
   }
@@ -170,6 +177,8 @@ export type LinkConflict = { rowId: string; what: string; kind: "category" | "gr
 export type Placed = {
   cashIds: ReadonlySet<string>;
   savingsIds: ReadonlySet<string>;
+  /** The savings accounts whose money cannot be used now: locked, or of a class without access that the plan counts as savings. */
+  lockedSavingsIds: ReadonlySet<string>;
   /** Natural amounts by row id and month. */
   rowActual: Map<string, Map<Month, number>>;
   /** Natural amounts by section and month for what no row claims. */
@@ -180,6 +189,8 @@ export type Placed = {
   inTransit: Map<Month, number>;
   startingCash: Map<Month, number>;
   savingsChange: Map<Month, number>;
+  /** The part of `savingsChange` in locked savings accounts. */
+  lockedSavingsChange: Map<Month, number>;
   /** The first month with anything recorded in a cash account. */
   firstMonth: Month | null;
   /** Links that another row already holds, so they have no effect. */
@@ -204,6 +215,7 @@ export function placeActuals(doc: PlacementDoc, snapshot: Snapshot): Placed {
   const roleOf = new Map(snapshot.accounts.map((a) => [a.id, accountRole(doc, a)]));
   const cashIds = new Set(snapshot.accounts.filter((a) => roleOf.get(a.id) === "cash").map((a) => a.id));
   const savingsIds = new Set(snapshot.accounts.filter((a) => roleOf.get(a.id) === "savings").map((a) => a.id));
+  const lockedSavingsIds = new Set(snapshot.accounts.filter((a) => savingsIds.has(a.id) && a.access !== "available").map((a) => a.id));
   const category = new Map(snapshot.categories.map((c) => [c.id, c]));
   const sectionOf = new Map(doc.rows.map((r) => [r.id, r.section]));
   const currentMonth = snapshot.today.slice(0, 7);
@@ -241,9 +253,9 @@ export function placeActuals(doc: PlacementDoc, snapshot: Snapshot): Placed {
   };
 
   const placed: Placed = {
-    cashIds, savingsIds, rowActual: new Map(), contributions: [], conflicts,
+    cashIds, savingsIds, lockedSavingsIds, rowActual: new Map(), contributions: [], conflicts,
     unplanned: { income: new Map(), expenses: new Map(), savings: new Map(), debt: new Map() },
-    cashChange: new Map(), inTransit: new Map(), startingCash: new Map(), savingsChange: new Map(), firstMonth: null,
+    cashChange: new Map(), inTransit: new Map(), startingCash: new Map(), savingsChange: new Map(), lockedSavingsChange: new Map(), firstMonth: null,
     moved: new Map(), shifted: new Map(), shiftNotes: new Map(),
   };
   /** `cash` is the signed effect on the plan's cash. */
@@ -272,6 +284,7 @@ export function placeActuals(doc: PlacementDoc, snapshot: Snapshot): Placed {
   const addCell = (c: Cell) => { const k = cellKey(c); const cell = cells.get(k); if (cell) cell.amountMinor += c.amountMinor; else cells.set(k, { ...c }); };
   for (const row of snapshot.movement) {
     if (savingsIds.has(row.accountId)) bump(placed.savingsChange, row.month, row.amountMinor);
+    if (lockedSavingsIds.has(row.accountId)) bump(placed.lockedSavingsChange, row.month, row.amountMinor);
     if (!cashIds.has(row.accountId)) continue;
     bump(placed.cashChange, row.month, row.amountMinor);
     if (!placed.firstMonth || row.month < placed.firstMonth) placed.firstMonth = row.month;
@@ -401,6 +414,7 @@ export function placeActuals(doc: PlacementDoc, snapshot: Snapshot): Placed {
 
   for (const row of snapshot.startingBalances) {
     if (savingsIds.has(row.accountId)) bump(placed.savingsChange, row.month, row.amountMinor);
+    if (lockedSavingsIds.has(row.accountId)) bump(placed.lockedSavingsChange, row.month, row.amountMinor);
     if (!cashIds.has(row.accountId)) continue;
     bump(placed.cashChange, row.month, row.amountMinor);
     bump(placed.startingCash, row.month, row.amountMinor);

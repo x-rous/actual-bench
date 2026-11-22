@@ -9,7 +9,7 @@ import { TipProvider } from "./charts/Tip";
 
 jest.mock("../hooks/useFinancialInsights", () => ({ usePayeeSpending: () => ({ payees: null, isLoading: true, isError: false, retry: jest.fn() }) }));
 
-const chk: AccountFact = { id: "chk", name: "Checking", accountClass: "bank", treatment: null, offBudget: false };
+const chk: AccountFact = { id: "chk", name: "Checking", accountClass: "bank", offBudget: false };
 const salary: CategoryInfo = { id: "salary", name: "Salary", groupName: "Income", hidden: false, isIncome: true, order: 0 };
 const bonus: CategoryInfo = { id: "bonus", name: "Bonus", groupName: "Income", hidden: false, isIncome: true, order: 1 };
 const rent: CategoryInfo = { id: "rentIn", name: "Rent received", groupName: "Other income", hidden: false, isIncome: true, order: 2 };

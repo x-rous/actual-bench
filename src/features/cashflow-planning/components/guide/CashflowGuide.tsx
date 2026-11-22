@@ -55,7 +55,7 @@ export function CashflowGuide({ section, onSection, onClose, docsUrl }: { sectio
           ["Group", "A subtotal you create, tinted and bold. It adds up its rows and is not typed into."],
           ["Row", "One thing you plan, on a white background in the forecast. This is where you type amounts."],
           ["Not in plan", "What Actual recorded that no row follows. It keeps the months adding up, and its details can turn each item into a row."],
-          ["Net cashflow, Closing balance, Savings (estimate), Cash + savings", "Pinned at the bottom of the grid, so they stay in view while you scroll. The last two appear when the plan has savings accounts."],
+          ["Net cashflow, Closing balance, Savings (estimate), Cash + savings", "Pinned at the bottom of the grid, so they stay in view while you scroll. The savings lines appear when the plan has savings accounts; when some are locked (Accessible is Locked on the Accounts page), Savings splits into Savings you can use and Locked savings."],
         ]} />
         <Callout title="Amounts are positive in their section’s direction">An expense of 500 is typed as 500. A negative amount is the reverse: a refund in Expenses, a withdrawal in Savings, new borrowing in Loans & debt.</Callout>
         <Heading>Past months, three ways</Heading>
@@ -118,7 +118,7 @@ export function CashflowGuide({ section, onSection, onClose, docsUrl }: { sectio
         <Heading>Goals and savings</Heading>
         <Para>A <b>goal</b> is an amount of cash, or of cash plus savings, to reach by a month. The plan shows whether the forecast gets there and how much more a month it would take. The <b>savings estimate</b> starts from the balance of your savings accounts, adds what the plan puts aside each month, and can grow at an expected yearly rate.</Para>
         <Heading>The month summary</Heading>
-        <Para>Click a month, or a year’s Total, to see it in the details panel: the closing balance and its change, where the cash went (income, expenses, savings, debt and other movements, with the transactions behind each), the biggest lines of every section, a Cash or Cash + savings switch, and any minimum-cash or goal alerts.</Para>
+        <Para>Click a month, or a year’s Total, to see it in the details panel: the closing balance and its change, where the cash went (income, expenses, savings, debt and other movements, with the transactions behind each), the biggest lines of every section, a switch between Cash, Cash + the savings you can use and Cash + all savings (remembered for each plan), and any minimum-cash or goal alerts.</Para>
         <Callout title="The chart">A chart under the key figures draws the balance over the whole plan: recorded solid, forecast dashed, with the minimum, your goals and, when there are savings accounts, cash plus savings. Hide it under View.</Callout>
       </>}
 
@@ -137,7 +137,7 @@ export function CashflowGuide({ section, onSection, onClose, docsUrl }: { sectio
         <Example caption="What you can set" head={["Setting", "What it does"]} rows={[
           ["First and last month", "The plan runs from the first month to the last, 6 months to 50 years, ending in any month. Shortening it removes typed amounts and goals outside the new months; Undo brings them back."],
           ["Minimum cash", "The floor the key figures and the balance row warn about."],
-          ["Accounts", "Per plan, each account is cash, savings or outside. By default Cash and Bank accounts and credit cards are cash, fixed deposits, investments and retirement accounts are savings, and everything else is outside. Classes come from the Accounts page."],
+          ["Accounts", "Per plan, each account is cash, savings or outside. By default Checking and Cash accounts you can use now and credit cards are cash; Savings, Fixed Deposits, investments and retirement accounts are savings (locked or not), as is an Other Asset you can use now; everything else is outside. Classes and access come from the Accounts page."],
           ["Goals and savings growth", "The targets and the expected yearly growth the answers use."],
         ]} />
         <Heading>Plan menu</Heading>

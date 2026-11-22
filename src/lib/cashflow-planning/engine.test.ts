@@ -1,11 +1,11 @@
 import { SECTIONS, SECTION_SIGN, type PlanDocument } from "./types";
-import { contributionsOf, placeActuals, unplannedTarget, type SnapAccount, type Snapshot } from "./actuals";
+import { contributionsOf, defaultAccountRole, placeActuals, unplannedTarget, type SnapAccount, type Snapshot } from "./actuals";
 import { buildPlanFromActuals } from "./builder";
 import { createPlanDocument, createRow, exportPlanJson, importPlanJson, parseAmount, parseAmountExpression, parsePlanDocument, planEndMonth, ruleAmount, setCells, setHorizon } from "./document";
-import { computePlan } from "./engine";
+import { computePlan, savingsOnBasis } from "./engine";
 import { linkNotes } from "./linkNotes";
 
-const account = (id: string, accountClass: SnapAccount["accountClass"], offBudget = false): SnapAccount => ({ id, name: id, offBudget, closed: false, accountClass, treatment: null, excluded: false, groupName: null });
+const account = (id: string, accountClass: SnapAccount["accountClass"], offBudget = false): SnapAccount => ({ id, name: id, offBudget, closed: false, accountClass, access: null, excluded: false, groupName: null });
 
 /**
  * A small household, today 15 Mar 2026. Bank and card are cash; the broker is savings; the mortgage is outside.
@@ -445,5 +445,48 @@ describe("plan documents", () => {
     expect(parseAmountExpression("abc")).toBeNull();
     expect(parseAmountExpression("")).toBeNull();
     expect(parseAmountExpression("99999999999*99999999999")).toBeNull();
+  });
+});
+
+describe("savings by access", () => {
+  it("counts accounts by class and access when the plan has not said", () => {
+    const role = (cls: SnapAccount["accountClass"], offBudget: boolean, access: SnapAccount["access"]) => defaultAccountRole({ ...account("x", cls, offBudget), access });
+    expect(role("bank", false, "available")).toBe("cash");
+    expect(role("bank", true, "locked")).toBe("outside");
+    expect(role("savings", true, "available")).toBe("savings");
+    expect(role("fixed-deposit", true, "locked")).toBe("savings");
+    expect(role("retirement", true, "locked")).toBe("savings");
+    expect(role("other-asset", true, "locked")).toBe("outside");
+    expect(role("other-asset", false, "available")).toBe("savings");
+    expect(role("fixed-asset", true, null)).toBe("outside");
+    expect(role(null, false, null)).toBe("cash");
+  });
+
+  it("splits the savings estimate into what you can use now and what is locked", () => {
+    const doc = plan();
+    // The broker has no saved access here, so it is locked: all savings are locked.
+    const locked = run(doc);
+    expect(locked.lockedSavings).toEqual(locked.savings);
+    expect(savingsOnBasis("usable", locked.savings, locked.lockedSavings, 5)).toBe(0);
+    expect(savingsOnBasis("total", locked.savings, locked.lockedSavings, 5)).toBe(locked.savings![5]);
+    expect(savingsOnBasis("cash", locked.savings, locked.lockedSavings, 5)).toBe(0);
+    // A row that follows both a locked and an available account counts as locked: usable savings are never overstated.
+    const mixedSnapshot = household();
+    mixedSnapshot.accounts = [...mixedSnapshot.accounts.map((a) => (a.id === "broker" ? { ...a, access: "available" as const } : a)), { ...account("pension", "retirement", true), access: "locked" }];
+    const mixed = run(plan((d) => ({ ...d, rows: d.rows.map((r) => (r.name === "Broker" ? { ...r, links: { ...r.links, accounts: [{ id: "broker" }, { id: "pension" }] } } : r)) })), mixedSnapshot);
+    expect(mixed.lockedSavings).not.toBeNull();
+    expect(mixed.lockedSavings![8]).toBeGreaterThan(0);
+    expect(savingsOnBasis("usable", mixed.savings, mixed.lockedSavings, 8)).toBeLessThan(mixed.savings![8]);
+    // A withdrawal on such a row comes out of the usable part, never the locked one.
+    const withdrawing = run(plan((d) => ({ ...d, rows: d.rows.map((r) => (r.name === "Broker" ? { ...r, basis: { kind: "manual" as const }, links: { ...r.links, accounts: [{ id: "broker" }, { id: "pension" }] }, cells: { "2026-06": -30_000 } } : r)) })), mixedSnapshot);
+    const june = withdrawing.months.indexOf("2026-06"), may = june - 1;
+    expect(withdrawing.lockedSavings![june]).toBe(withdrawing.lockedSavings![may]);
+    expect(savingsOnBasis("usable", withdrawing.savings, withdrawing.lockedSavings, june) - savingsOnBasis("usable", withdrawing.savings, withdrawing.lockedSavings, may)).toBe(-30_000);
+    // Marked available now, nothing is locked any more.
+    const snapshot = household();
+    snapshot.accounts = snapshot.accounts.map((a) => (a.id === "broker" ? { ...a, access: "available" as const } : a));
+    const usable = run(doc, snapshot);
+    expect(usable.lockedSavings).toBeNull();
+    expect(savingsOnBasis("usable", usable.savings, usable.lockedSavings, 5)).toBe(usable.savings![5]);
   });
 });

@@ -3,7 +3,7 @@ import type { CategoryInfo } from "@/lib/financial-insights/breakdowns";
 import { adjustedBuffer, type BufferSettings } from "@/lib/financial-insights/bufferScenario";
 import { bufferSpendingGroups } from "./useFinancialInsights";
 
-const chk: AccountFact = { id: "chk", name: "Checking", accountClass: "bank", treatment: null, offBudget: false };
+const chk: AccountFact = { id: "chk", name: "Checking", accountClass: "bank", offBudget: false };
 const spend = (month: string, categoryId: string, amountMinor: number): MovementRow => ({ month, accountId: "chk", categoryId, transferAccountId: null, amountMinor: -amountMinor, count: 1 });
 const months = ["2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10"];
 // Food is 1,000 a month except one month of 7,000; rent is steady.
@@ -14,7 +14,7 @@ const categories = new Map<string, CategoryInfo>([
   ["food", { id: "food", name: "Food", groupName: "Daily", hidden: false, isIncome: false, order: 100_001 }],
   ["rent", { id: "rent", name: "Rent", groupName: "Housing", hidden: false, isIncome: false, order: 0 }],
 ]);
-const settings = (over: Partial<BufferSettings>): BufferSettings => ({ goalMonths: null, averageMonths: 12, method: "average", ...over });
+const settings = (over: Partial<BufferSettings>): BufferSettings => ({ goalMonths: null, averageMonths: 12, method: "average", cashBasis: "cash-savings", ...over });
 const food = (r: ReturnType<typeof bufferSpendingGroups>) => r?.categories.find((c) => c.id === "food");
 
 describe("the typical month behind the cash buffer", () => {
@@ -85,7 +85,7 @@ describe("loan interest in the typical month", () => {
 });
 
 describe("the typical month behind the cash buffer when a lender charges interest to the loan account", () => {
-  const loan: AccountFact = { id: "loan", name: "Mortgage", accountClass: "loan", treatment: null, offBudget: true };
+  const loan: AccountFact = { id: "loan", name: "Mortgage", accountClass: "loan", offBudget: true };
   const withCharge = (tagged: boolean) => {
     const charges: MovementRow[] = months.map((m) => ({ month: m, accountId: "loan", categoryId: null, transferAccountId: null, amountMinor: -20_000, count: 1 }));
     const tags = tagged ? months.map((m) => ({ id: `c-${m}`, month: m, accountId: "loan", categoryId: null, amountMinor: -20_000, loanAccountId: "loan", kind: "interest" as const, charged: true })) : [];

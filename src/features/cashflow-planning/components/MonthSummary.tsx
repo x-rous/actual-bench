@@ -1,14 +1,14 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { AlertTriangle, ArrowDownRight, ArrowUpRight, Info } from "lucide-react";
 import { PillGroup } from "@/components/ui/pill-group";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import type { Placed, Snapshot } from "@/lib/cashflow-planning/actuals";
-import type { Computed } from "@/lib/cashflow-planning/engine";
+import { savingsOnBasis, type Computed } from "@/lib/cashflow-planning/engine";
 import { monthLabel } from "@/lib/cashflow-planning/months";
-import { SECTIONS, SECTION_LABEL, SECTION_SIGN, type PlanDocument, type SectionId } from "@/lib/cashflow-planning/types";
+import { SECTIONS, SECTION_LABEL, SECTION_SIGN, type PlanDocument, type SavingsBasis, type SectionId } from "@/lib/cashflow-planning/types";
 import { money, signedMoney } from "@/features/financial-insights/format";
 import { requestFor, type TransactionsRequest } from "../lib/transactions";
 import type { Column } from "../lib/view";
@@ -71,8 +71,10 @@ function CashWaterfall({ points, description }: { points: Point[]; description: 
  * What the details panel shows for a month (or a year) picked in the grid's header: where the cash came from and went, how the
  * month compares with the one before, the lines that moved most, and anything that needs a look.
  */
-export function MonthSummary({ doc, computed, snapshot, placed, column, onShowTransactions, onSelectLine }: {
+export function MonthSummary({ doc, computed, snapshot, placed, column, basis, onBasis, onShowTransactions, onSelectLine }: {
   doc: PlanDocument; computed: Computed; snapshot: Snapshot | null; placed: Placed | null; column: Column;
+  /** What the closing balance counts: cash, cash and the savings you can use now, or cash and all savings. Remembered per plan. */
+  basis: SavingsBasis; onBasis: (basis: SavingsBasis) => void;
   onShowTransactions: (request: TransactionsRequest) => void; onSelectLine: (key: string | null) => void;
 }) {
   const indexes = column.kind === "month" ? [column.index] : column.indexes;
@@ -80,10 +82,11 @@ export function MonthSummary({ doc, computed, snapshot, placed, column, onShowTr
   const label = column.kind === "month" ? monthLabel(column.month) : String(column.year);
   const kind = column.kind === "month" ? computed.kinds[column.index] : null;
   const first = indexes[0], last = indexes[indexes.length - 1];
-  // The balance can be the plan's cash, or cash and the savings & investments estimate together.
-  const [basis, setBasis] = useState<"cash" | "total">("cash");
-  const withSavings = basis === "total" && computed.savings !== null;
-  const savingsAt = (i: number) => (withSavings ? computed.savings?.[Math.max(0, i)] ?? 0 : 0);
+  // The balance can be the plan's cash, cash and the savings you can use now, or cash and every savings & investments account.
+  // A basis this plan cannot show (it has no savings, or nothing locked) falls back to the nearest one it can.
+  const shown: SavingsBasis = computed.savings === null ? "cash" : basis === "usable" && computed.lockedSavings === null ? "total" : basis;
+  const withSavings = shown !== "cash";
+  const savingsAt = (i: number) => savingsOnBasis(shown, computed.savings, computed.lockedSavings, Math.max(0, i));
   const opening = computed.opening[first] + (first > 0 ? savingsAt(first - 1) : savingsAt(first));
   const closing = computed.closing[last] + savingsAt(last);
   const cashOpening = computed.opening[first], cashClosing = computed.closing[last];
@@ -133,7 +136,7 @@ export function MonthSummary({ doc, computed, snapshot, placed, column, onShowTr
         <div className="rounded-lg border border-border bg-muted/40 p-3">
           <div className="flex items-center justify-between gap-2">
             <p className="text-muted-foreground">{kind === "forecast" || kind === "current" ? "Expected closing balance" : "Closing balance"}</p>
-            {computed.savings !== null && <PillGroup<"cash" | "total"> options={[{ value: "cash", label: "Cash" }, { value: "total", label: "Cash + savings" }]} value={basis} onChange={setBasis} />}
+            {computed.savings !== null && <PillGroup<SavingsBasis> options={[{ value: "cash", label: "Cash" }, ...(computed.lockedSavings !== null ? [{ value: "usable" as const, label: "+ usable", title: "Cash + savings you can use now" }] : []), { value: "total", label: computed.lockedSavings !== null ? "+ all savings" : "+ savings", title: "Cash + all savings, locked ones too" }]} value={shown} onChange={onBasis} />}
           </div>
           <p className="text-xl font-semibold tabular-nums">{money(closing)}</p>
           <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 tabular-nums">
@@ -181,7 +184,7 @@ export function MonthSummary({ doc, computed, snapshot, placed, column, onShowTr
           ))}
           <li className="flex items-baseline justify-between gap-2 border-t border-border pt-1.5 font-semibold"><span>Net cashflow</span><span className="tabular-nums">{signedMoney(net)}</span></li>
           <li className="flex items-baseline justify-between gap-2 font-semibold"><span>Closing balance</span><span className="tabular-nums">{money(cashClosing)}</span></li>
-          {withSavings && <><li className="flex items-baseline justify-between gap-2 text-muted-foreground"><span>Savings & investments (estimate)</span><span className="tabular-nums">{money(savingsAt(last))}</span></li><li className="flex items-baseline justify-between gap-2 font-semibold"><span>Cash + savings</span><span className="tabular-nums">{money(closing)}</span></li></>}
+          {withSavings && <><li className="flex items-baseline justify-between gap-2 text-muted-foreground"><span>{shown === "usable" ? "Savings you can use (estimate)" : "Savings & investments (estimate)"}</span><span className="tabular-nums">{money(savingsAt(last))}</span></li><li className="flex items-baseline justify-between gap-2 font-semibold"><span>{shown === "usable" ? "Cash + savings you can use" : "Cash + savings"}</span><span className="tabular-nums">{money(closing)}</span></li></>}
         </ul>
       </section>
 

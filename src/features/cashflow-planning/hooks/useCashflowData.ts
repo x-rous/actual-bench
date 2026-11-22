@@ -4,11 +4,10 @@ import { useCallback, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { selectActiveInstance, useConnectionStore } from "@/store/connection";
 import { resolveAccountClass } from "@/lib/account-class";
-import { isExcluded } from "@/lib/account-class/flags";
-import { validSavedTreatment } from "@/lib/account-class/reporting";
+import { accessOf } from "@/lib/account-class/access";
+import { accessOverrides, isExcluded } from "@/lib/account-class/flags";
 import { useAccountClasses } from "@/features/accounts/hooks/useAccountClasses";
 import { useAccountFlags } from "@/features/accounts/hooks/useAccountFlags";
-import { useAccountReporting } from "@/features/accounts/hooks/useAccountReporting";
 import { useLocalToday } from "@/features/assets-debt/lib/useLocalToday";
 import type { OptionalRead, SnapAccount, Snapshot } from "@/lib/cashflow-planning/actuals";
 import { readBudget, readLedger, readLoanForecasts, readShifts } from "../lib/reads";
@@ -33,14 +32,13 @@ export type CashflowData =
 /**
  * Everything a plan lays over its own figures, read from Actual through the active transport: one ledger read (accounts,
  * categories, monthly movements, schedules), then the loans' projections and, only when a row follows it, the budget.
- * Account classes, Financial Reporting choices and flags come from the app database, as on the Accounts page. Read-only.
+ * Account classes and flags come from the app database, as on the Accounts page. Read-only.
  */
 export function useCashflowData(options: { enabled: boolean; needBudget: boolean; /** Ids of the transactions the open plan counts in another month. */ movedIds?: readonly string[] }): CashflowData {
   const connection = useConnectionStore(selectActiveInstance);
   const queryClient = useQueryClient();
   const today = useLocalToday();
   const classes = useAccountClasses();
-  const reporting = useAccountReporting();
   const flags = useAccountFlags();
   const [stage, setStage] = useState<string | undefined>(undefined);
   const budgetSyncId = connection?.budgetSyncId ?? null;
@@ -54,7 +52,7 @@ export function useCashflowData(options: { enabled: boolean; needBudget: boolean
     refetchOnMount: "always",
   });
 
-  const metaReady = classes.available && reporting.available && flags.available;
+  const metaReady = classes.available && flags.available;
   const accounts = useMemo((): SnapAccount[] | null => {
     if (!ledger.data || !metaReady) return null;
     const groupNames = new Map((ledger.data.accountGroups ?? []).map((g) => [g.id, g.name]));
@@ -63,12 +61,12 @@ export function useCashflowData(options: { enabled: boolean; needBudget: boolean
       const resolved = resolveAccountClass(a.id, groupId, classes.maps);
       return {
         id: a.id, name: a.name, offBudget: a.offBudget, closed: a.closed, accountClass: resolved.accountClass,
-        treatment: resolved.accountClass ? validSavedTreatment(resolved.accountClass, reporting.byAccount.get(a.id)) : null,
+        access: accessOf(resolved.accountClass, a.offBudget, accessOverrides(a.id, resolved.accountClass, a.offBudget, flags.maps)),
         excluded: isExcluded(a.id, groupId, flags.maps, resolved.source === "group"),
         groupName: groupId ? groupNames.get(groupId) ?? null : null,
       };
     });
-  }, [ledger.data, metaReady, classes.maps, reporting.byAccount, flags.maps]);
+  }, [ledger.data, metaReady, classes.maps, flags.maps]);
 
   const loanIds = useMemo(() => (accounts ?? []).filter((a) => a.accountClass === "loan" && !a.closed).map((a) => a.id).sort(), [accounts]);
   const loans = useQuery({
@@ -107,9 +105,8 @@ export function useCashflowData(options: { enabled: boolean; needBudget: boolean
     void queryClient.invalidateQueries({ queryKey: ["cashflow-planning", "budget", connection?.id] });
     void queryClient.invalidateQueries({ queryKey: ["budget-month-data", connection?.id] });
     void classes.refetch();
-    void reporting.refetch();
     void flags.refetch();
-  }, [queryClient, connection?.id, classes, reporting, flags]);
+  }, [queryClient, connection?.id, classes, flags]);
 
   const { isError: loansFailed } = loans, { isError: shiftsFailed } = shifts;
   const schedulesFailed = ledger.data?.schedulesFailed ?? false;
@@ -126,7 +123,7 @@ export function useCashflowData(options: { enabled: boolean; needBudget: boolean
   }, [ledger.data, accounts, today, loans.data, shifts.data, budget.data, failedReads]);
 
   const { isError: ledgerFailed, error: ledgerError, isFetching: ledgerFetching, data: ledgerData } = ledger;
-  const metaFailed = classes.failed || reporting.failed || flags.failed;
+  const metaFailed = classes.failed || flags.failed;
   const loansPending = loans.isFetching && !loans.data, budgetPending = budget.isFetching && !budget.data;
 
   return useMemo((): CashflowData => {

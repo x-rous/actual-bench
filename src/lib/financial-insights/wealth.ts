@@ -1,9 +1,9 @@
-import type { AccountClass } from "@/lib/account-class";
-import { REPORTING_LABELS, isCashEquivalent, reportingRequirement, validSavedTreatment } from "@/lib/account-class/reporting";
+import { accountClassLabel, isFixedAssetClass, type AccountClass } from "@/lib/account-class";
+import { ACCESS_LABEL } from "@/lib/account-class/access";
 import { trackedEquity, type AssetDebtLink } from "@/lib/asset-registry/financing";
 import { valueBridge, type ValueBridge } from "@/lib/asset-registry/valueBridge";
-import { ASSET_CLASSES, CLASS_LABEL, LIABILITY_CLASSES, type ClassKey } from "./breakdowns";
-import { ledgersByMonth, type AccountFact, type Ledger, type Role } from "./measures";
+import { ASSET_CLASSES, CLASS_LABEL, CLASS_OF_POSITION, LIABILITY_CLASSES, type ClassKey } from "./breakdowns";
+import { accessOfFact, ledgersByMonth, positionKey, type AccountFact, type Ledger } from "./measures";
 import { addMonths, dayBefore, lastDayOf, type ResolvedPeriod } from "./period";
 
 /**
@@ -18,7 +18,7 @@ import { addMonths, dayBefore, lastDayOf, type ResolvedPeriod } from "./period";
 export type AccountBridge = {
   accountId: string;
   name: string;
-  /** The label of the account's Financial Reporting treatment. */
+  /** The account's class and access, in words (see `reportingLabel`). */
   treatment: string;
   offBudget: boolean;
   /** Balance at the end of the month before the period starts. */
@@ -52,13 +52,10 @@ const emptySums = (): Sums => ({
   openingBalances: 0, unexplained: 0,
 });
 
-/** The label of the account's reporting treatment: automatic for most classes, the saved choice (or the default label) for Bank and Other Asset. */
-export function treatmentLabel(account: AccountFact): string {
-  const requirement = reportingRequirement(account.accountClass);
-  if (requirement.kind === "automatic") return requirement.label;
-  if (requirement.kind === "bank-default") return isCashEquivalent("bank", account.treatment) ? requirement.label : REPORTING_LABELS["fixed-deposit"];
-  const saved = validSavedTreatment(account.accountClass, account.treatment);
-  return saved ? REPORTING_LABELS[saved] : requirement.label;
+/** The account's class, and for a class whose money can be available or locked, its access: "Investment · Locked". */
+export function reportingLabel(account: Pick<AccountFact, "accountClass" | "offBudget" | "access">): string {
+  const access = accessOfFact(account);
+  return access ? `${accountClassLabel(account.accountClass)} · ${ACCESS_LABEL[access]}` : accountClassLabel(account.accountClass);
 }
 
 export function portfolioBridge(ledger: Ledger, period: ResolvedPeriod): PortfolioBridge {
@@ -117,7 +114,7 @@ export function portfolioBridge(ledger: Ledger, period: ResolvedPeriod): Portfol
     mine.closing = ledger.balanceAt(a.id, period.endMonth);
     mine.unexplained = mine.closing - mine.opening - (mine.funding + mine.withdrawals + mine.between + mine.activity + mine.openingBalances);
     for (const k of Object.keys(total) as (keyof Sums)[]) total[k] += mine[k];
-    return { accountId: a.id, name: a.name, treatment: treatmentLabel(a), offBudget: a.offBudget, ...mine };
+    return { accountId: a.id, name: a.name, treatment: reportingLabel(a), offBudget: a.offBudget, ...mine };
   });
   return { accounts, total };
 }
@@ -167,10 +164,10 @@ export type AssetValueRow =
   | { kind: "unregistered"; accountId: string; name: string; accountClass: AccountClass; openingMinor: number; closingMinor: number; /** Set when the registry could not be read: the account is not known to be missing from it. */ reason?: string };
 
 /**
- * An account that is a fixed asset: Property, Vehicle, or an Other Asset marked Fixed asset. An Other Asset that is only a holding
- * (money owed to you, a deposit) is not one: it has no place among the assets of the Assets module.
+ * An account that is a fixed asset: Property, Vehicle or Other Fixed Asset. An Other Asset (money owed to you, a deposit paid) is not
+ * one: it has no place among the assets of the Assets module.
  */
-export const isFixedAssetAccount = (a: Pick<AccountFact, "accountClass" | "treatment">): boolean => a.accountClass === "property" || a.accountClass === "vehicle" || (a.accountClass === "other-asset" && a.treatment === "fixed-asset");
+export const isFixedAssetAccount = (a: Pick<AccountFact, "accountClass">): boolean => isFixedAssetClass(a.accountClass);
 
 /** Positive Actual debt of a linked loan on a month end (the account's own balance), or null when that account is not counted here. */
 function debtOn(ledger: Ledger, loan: LoanRef | undefined, month: string): number | null {
@@ -219,10 +216,10 @@ export function assetValues(input: { ledger: Ledger; period: ResolvedPeriod; ass
   for (const asset of assets) {
     const owner = ledger.account.get(asset.actualAccountId);
     if (!owner || asset.status === "archived") continue;
-    // A fixed asset by class and treatment. An asset whose account has lost that (an Other Asset no longer marked as a
-    // fixed asset) stays in the list as unavailable, so its linked loan and its value are not silently dropped.
+    // A fixed asset by class. An asset whose account has lost that (an Other Fixed Asset changed to Other Asset) stays in the list
+    // as unavailable, so its linked loan and its value are not silently dropped.
     if (!isFixedAssetAccount(owner)) {
-      if (owner.accountClass === "property" || owner.accountClass === "vehicle" || owner.accountClass === "other-asset") {
+      if (isFixedAssetClass(owner.accountClass) || owner.accountClass === "other-asset") {
         rows.push({ kind: "registered", assetId: asset.id, name: asset.name, accountId: asset.actualAccountId, accountClass: owner.accountClass, linked: links.some((l) => l.assetId === asset.id), loans: [], state: "unavailable", reason: "Its account is no longer a fixed asset in Financial Reporting, so Assets and Financial Insights disagree about it; review it in Assets", openingMinor: ledger.balanceAt(asset.actualAccountId, before), closingMinor: ledger.balanceAt(asset.actualAccountId, period.endMonth) });
       }
       continue;
@@ -359,27 +356,18 @@ export function assetSeries(input: { ledger: Ledger; period: ResolvedPeriod; ass
 export type HoldingRow = { accountId: string; name: string; treatment: string; openingMinor: number; closingMinor: number; changeMinor: number };
 export type HoldingGroup = { key: ClassKey; label: string; openingMinor: number; closingMinor: number; changeMinor: number; rows: HoldingRow[] };
 
-export function classKeyOf(account: AccountFact, role: Role | undefined): ClassKey {
-  switch (account.accountClass) {
-    case "property": return "property";
-    case "vehicle": return "vehicle";
-    case "other-asset": return "other";
-    case "loan": return "loans";
-    case "credit-card": return "cards";
-    case "other-liability": return "otherLiability";
-    default: return role === "fixed" ? "fixed" : role === "investment" ? "invest" : "cash";
-  }
-}
+/** The class line an account is listed under: the same as "What you own and owe" and the Balance Sheet. */
+export const classKeyOf = (account: Pick<AccountFact, "accountClass">): ClassKey => CLASS_OF_POSITION[positionKey(account)];
 
 /** Every counted account, grouped by class, at the start and end of the period. Liabilities are negative and appear once. */
 export function holdings(ledger: Ledger, period: ResolvedPeriod): { groups: HoldingGroup[]; netWorth: { openingMinor: number; closingMinor: number } } {
   const before = addMonths(period.startMonth, -1);
   const groups = new Map<ClassKey, HoldingGroup>();
   for (const a of ledger.account.values()) {
-    const key = classKeyOf(a, ledger.role.get(a.id));
+    const key = classKeyOf(a);
     const group = groups.get(key) ?? { key, label: CLASS_LABEL[key], openingMinor: 0, closingMinor: 0, changeMinor: 0, rows: [] };
     const openingMinor = ledger.balanceAt(a.id, before), closingMinor = ledger.balanceAt(a.id, period.endMonth);
-    group.rows.push({ accountId: a.id, name: a.name, treatment: treatmentLabel(a), openingMinor, closingMinor, changeMinor: closingMinor - openingMinor });
+    group.rows.push({ accountId: a.id, name: a.name, treatment: reportingLabel(a), openingMinor, closingMinor, changeMinor: closingMinor - openingMinor });
     group.openingMinor += openingMinor; group.closingMinor += closingMinor; group.changeMinor += closingMinor - openingMinor;
     groups.set(key, group);
   }

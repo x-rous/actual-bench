@@ -1137,9 +1137,9 @@ CREATE TABLE IF NOT EXISTS account_classes (
 `;
 
 // ── Account reporting ────────────────────────────────────────────────────────
-// Bench-owned metadata: the Financial Reporting choice for one Actual account
-// (a Bank account that is a fixed / restricted deposit, or an Other Asset that is a fixed asset). One row per
-// account, scoped to one budget; the class itself stays in `account_classes`.
+// Legacy (unread since migration v68, which folded these choices into the Fixed Deposit and Other Fixed Asset classes):
+// the Financial Reporting choice for one Actual account (a Bank account that is a fixed / restricted deposit, or an Other
+// Asset that is a fixed asset). Kept because migrations are additive.
 // `treatment` is validated by the repository and read tolerantly, so a value
 // added by a later version does not break an older reader.
 export const ACCOUNT_REPORTING_TABLE_SQL = `
@@ -1154,8 +1154,8 @@ CREATE TABLE IF NOT EXISTS account_reporting (
 
 // ── Account flags ────────────────────────────────────────────────────────────
 // Bench-owned yes/no choices for one Actual account or account group (migration v65): "excluded" (left out of
-// Financial Insights), "accessible" (balance counts as money you can reach) and "offbudget-income" (uncategorized money
-// in, in an off-budget Cash or Bank account, is income). One row per flag that is on; turning a flag off deletes the row.
+// reports), "accessible" (an off-budget account locked by default is available now) and, since v68, "locked" (an
+// off-budget account available by default is locked). Rows of the retired "offbudget-income" flag are left in place, unread. One row per flag that is on; turning a flag off deletes the row.
 // Scoped to one budget. `flag` is validated by the repository and read tolerantly, so a flag added by a later version
 // does not break an older reader.
 export const ACCOUNT_FLAGS_TABLE_SQL = `

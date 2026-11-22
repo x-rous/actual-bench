@@ -7,7 +7,7 @@ import { TipProvider } from "./charts/Tip";
 
 jest.mock("../hooks/useFinancialInsights", () => ({ usePayeeSpending: () => ({ payees: null, isLoading: true, isError: false, retry: jest.fn() }) }));
 
-const chk: AccountFact = { id: "chk", name: "Checking", accountClass: "bank", treatment: null, offBudget: false };
+const chk: AccountFact = { id: "chk", name: "Checking", accountClass: "bank", offBudget: false };
 const food: CategoryInfo = { id: "food", name: "Groceries", groupName: "Food", hidden: false, isIncome: false, order: 0 };
 const row = (month: string, amountMinor: number): MovementRow => ({ month, accountId: "chk", categoryId: "food", transferAccountId: null, amountMinor, count: 1 });
 const today = "2026-11-18";

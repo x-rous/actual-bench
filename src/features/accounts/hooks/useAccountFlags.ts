@@ -67,5 +67,7 @@ export function useAccountFlags() {
     refetch: query.refetch,
     maps,
     apply,
+    /** A save is in flight or the list is being read again after it: a new choice made now would be worked out from stale flags. */
+    busy: mutation.isPending || query.isFetching,
   };
 }

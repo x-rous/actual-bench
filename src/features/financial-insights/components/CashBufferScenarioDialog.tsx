@@ -283,7 +283,7 @@ export function CashBufferScenarioDialog({ buffer, rows, basis, colours, window,
                   {result.value.months === buffer.months ? "Same as" : `${result.value.months > buffer.months ? "+" : "−"}${Math.abs(result.value.months - buffer.months).toFixed(1)} months against`} the real {buffer.months.toFixed(1)}
                 </p>
                 {result.value.monthsWithAccessible !== undefined && (buffer.accessibleMinor ?? 0) > 0 && (
-                  <p className="mt-1 text-xs text-muted-foreground">With accessible investments: {result.value.monthsWithAccessible.toFixed(1)} months (the real {(buffer.monthsWithAccessible ?? buffer.months).toFixed(1)})</p>
+                  <p className="mt-1 text-xs text-muted-foreground">With other money you can use now: {result.value.monthsWithAccessible.toFixed(1)} months (the real {(buffer.monthsWithAccessible ?? buffer.months).toFixed(1)})</p>
                 )}
                 <div className="mt-3" role="img" aria-label={`Real ${buffer.months.toFixed(1)} months, this scenario ${result.value.months.toFixed(1)} months, on a scale of 0 to ${scaleMax}${goalMonths !== null ? `, your goal is ${goalMonths}` : ""}`}>
                   <div className="relative px-px">
@@ -304,7 +304,7 @@ export function CashBufferScenarioDialog({ buffer, rows, basis, colours, window,
                   <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Spending per month</dt><dd className="tabular-nums">{money(result.value.spendingMinor)}<span className="block text-right text-[11px] text-muted-foreground">real {money(buffer.spendingMinor)}</span></dd></div>
                   {result.value.loans.length > 0 && <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Loan repayments</dt><dd className="tabular-nums">{money(result.value.loans.reduce((a, l) => a + l.monthlyMinor, 0))}<span className="block text-right text-[11px] text-muted-foreground">real {money(buffer.loans.reduce((a, l) => a + l.monthlyMinor, 0))}</span></dd></div>}
                   <div className="flex justify-between gap-3 border-t border-border pt-1.5 font-semibold"><dt>Needed per month</dt><dd className="tabular-nums">{money(result.value.monthlyNeedMinor)}<span className="block text-right text-[11px] font-normal text-muted-foreground">{signedMoney(result.value.monthlyNeedMinor - buffer.monthlyNeedMinor)} against real</span></dd></div>
-                  <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Cash &amp; bank today</dt><dd className="tabular-nums">{money(result.value.cashMinor)}</dd></div>
+                  <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Cash today</dt><dd className="tabular-nums">{money(result.value.cashMinor)}</dd></div>
                 </dl>
                 <p className="mt-3 text-xs text-muted-foreground">{result.value.leftOut} left out · {result.value.edited} {result.value.edited === 1 ? "amount" : "amounts"} changed</p>
               </>

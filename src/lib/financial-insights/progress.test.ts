@@ -68,7 +68,7 @@ describe("the percentage guards", () => {
 
   it("replaces a reason that could carry a name, and keeps the plain ones", () => {
     expect(safeReason(`${NAMES[3]}: its schedule does not agree`, "generic")).toBe("generic");
-    expect(safeReason("Cash & bank is below zero", "generic")).toBe("Cash & bank is below zero");
+    expect(safeReason("Cash is below zero", "generic")).toBe("Cash is below zero");
   });
 });
 

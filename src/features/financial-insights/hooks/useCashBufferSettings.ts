@@ -53,7 +53,10 @@ export function useCashBufferSettings() {
 
   return {
     settings: query.data ?? DEFAULT_BUFFER_SETTINGS,
-    save: (settings: BufferSettings) => { if (budgetSyncId) mutation.mutate({ budget: budgetSyncId, settings }); },
+    /** The saved settings have been read. Until then `settings` holds the defaults, which must not be saved over the user's own. */
+    loaded,
+    // No write before the saved settings are read: it would replace them with the defaults.
+    save: (settings: BufferSettings) => { if (budgetSyncId && loaded) mutation.mutate({ budget: budgetSyncId, settings }); },
     saving: mutation.isPending,
   };
 }

@@ -6,12 +6,12 @@ import { resolvePeriod } from "./period";
 
 const today = "2026-11-18";
 const accounts: AccountFact[] = [
-  { id: "chk", name: "Checking", accountClass: "bank", treatment: null, offBudget: false },
-  { id: "sav", name: "Savings", accountClass: "bank", treatment: null, offBudget: true },
-  { id: "inv", name: "Brokerage", accountClass: "investment", treatment: null, offBudget: true },
-  { id: "loan", name: "Mortgage", accountClass: "loan", treatment: null, offBudget: true },
-  { id: "visa", name: "Visa", accountClass: "credit-card", treatment: null, offBudget: false },
-  { id: "house", name: "House", accountClass: "property", treatment: null, offBudget: true },
+  { id: "chk", name: "Checking", accountClass: "bank", offBudget: false },
+  { id: "sav", name: "Savings", accountClass: "bank", offBudget: true },
+  { id: "inv", name: "Brokerage", accountClass: "investment", offBudget: true },
+  { id: "loan", name: "Mortgage", accountClass: "loan", offBudget: true },
+  { id: "visa", name: "Visa", accountClass: "credit-card", offBudget: false },
+  { id: "house", name: "House", accountClass: "property", offBudget: true },
 ];
 const categories = new Map<string, CategoryInfo>([
   ["salary", { id: "salary", name: "Salary", groupName: "Income", hidden: false, isIncome: true }],
@@ -408,8 +408,8 @@ describe("financial insights: category groups, what changed net worth, debt repa
   });
 
   it("keeps vehicles apart from other assets and credit cards apart from other liabilities", () => {
-    const b = classBalances({ eligibleCash: 1, fixedDeposits: 2, investments: 3, property: 4, vehicle: 5, otherAssets: 6, loans: -7, cards: -8, otherLiabilities: -9 });
-    expect(b).toEqual({ cash: 1, fixed: 2, invest: 3, property: 4, vehicle: 5, other: 6, loans: -7, cards: -8, otherLiability: -9 });
+    const b = classBalances({ eligibleCash: 1, savings: 10, fixedDeposits: 2, investments: 3, property: 4, vehicle: 5, otherAssets: 6, loans: -7, cards: -8, otherLiabilities: -9 });
+    expect(b).toEqual({ cash: 1, savings: 10, fixed: 2, invest: 3, property: 4, vehicle: 5, other: 6, loans: -7, cards: -8, otherLiability: -9 });
   });
 
   it("separates recorded principal from interest and fees, and says what cannot be identified", () => {
@@ -544,9 +544,9 @@ describe("financial insights: a lender that charges interest to the loan account
 
   it("counts money moved from another loan or a card as moved between debts, not repaid, and leaves net worth alone", () => {
     const debts: AccountFact[] = [
-      { id: "old", name: "Old loan", accountClass: "loan", treatment: null, offBudget: true },
-      { id: "new", name: "New loan", accountClass: "loan", treatment: null, offBudget: true },
-      { id: "visa", name: "Visa", accountClass: "credit-card", treatment: null, offBudget: false },
+      { id: "old", name: "Old loan", accountClass: "loan", offBudget: true },
+      { id: "new", name: "New loan", accountClass: "loan", offBudget: true },
+      { id: "visa", name: "Visa", accountClass: "credit-card", offBudget: false },
     ];
     const row = (accountId: string, transferAccountId: string, amountMinor: number): MovementRow => ({ month: "2026-10", accountId, categoryId: null, transferAccountId, amountMinor, count: 1 });
     const f: FinancialFacts = {
@@ -639,7 +639,7 @@ describe("financial insights: lender charges, loan accounts and excluded account
   });
 
   it("figures one loan's other entries without subtracting a charged row that carries a category", () => {
-    const second: AccountFact = { id: "loan2", name: "Car loan", accountClass: "loan", treatment: null, offBudget: true };
+    const second: AccountFact = { id: "loan2", name: "Car loan", accountClass: "loan", offBudget: true };
     const rows = [...base, tx("categorized-charge", "2026-10-06", "loan", -5_000, { category: "food" }), tx("other", "2026-10-07", "loan", -3_000), tx("other2", "2026-10-07", "loan2", -1_000)];
     const costs = [charge, { id: "categorized-charge", month: "2026-10", accountId: "loan", categoryId: "food", amountMinor: -5_000, loanAccountId: "loan", kind: "fee" as const, charged: true }];
     const m = model(rows, costs, { accounts: [...accounts, second] });
@@ -698,7 +698,7 @@ describe("financial insights: lender charges, loan accounts and excluded account
 describe("financial insights: income in off-budget accounts", () => {
   const range = resolvePeriod({ kind: "custom", startMonth: "2026-10", endMonth: "2026-10" }, today, "2026-09");
   const review = { unavailableReason: null, rowCount: 0, amountMinor: 0 };
-  const flagged = accounts.map((a) => (a.id === "sav" ? { ...a, offBudgetIncome: true } : a));
+  const flagged = accounts.map((a) => (a.id === "sav" ? { ...a, accountClass: "savings" as const } : a));
   const base: Tx[] = [
     tx("start", "2026-09-01", "sav", 900_000, { payee: "p-start", payeeName: STARTING }),
     tx("salary", "2026-10-01", "chk", 500_000, { category: "salary", payee: "p1" }),
@@ -727,7 +727,7 @@ describe("financial insights: income in off-budget accounts", () => {
     const monthly = monthlyFlows(m.ledger, range, today, true);
     const bd = incomeBreakdown(m.ledger, range, categories, monthly);
     expect(bd.totalMinor).toBe(summary.received);
-    expect(bd.rows.find((r) => r.special === "offBudgetIncome")).toMatchObject({ id: SPECIAL_ROW_ID.offBudgetIncome, name: "Interest & income in off-budget accounts", totalMinor: 5_000 });
+    expect(bd.rows.find((r) => r.special === "offBudgetIncome")).toMatchObject({ id: SPECIAL_ROW_ID.offBudgetIncome, name: "Interest & income in off-budget savings", totalMinor: 5_000 });
     expect(bd.rows.find((r) => r.id === null)).toBeUndefined();
     const own = listed({ kind: "offBudgetIncome" }, m);
     expect(own.ids).toEqual(["interest"]);

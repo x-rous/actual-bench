@@ -20,7 +20,7 @@ const EXPLAIN: Record<MoneyFlowKey, string> = {
   moreOwedCards: "How much more you owe on your credit cards than at the start. You used the cards instead of cash, so that money came in.",
   withdrawn: "Money you took out of investments, less what you put in.",
   released: "Money that came back from fixed deposits, property, vehicles and other assets or liabilities, including accounts left out of Financial Insights.",
-  fromCash: "Your cash & bank balance went down over the period, so some of what you used came out of cash you already had.",
+  fromCash: "Your cash balance went down over the period, so some of what you used came out of cash you already had.",
   addedToLoans: "Interest and fees charged to your loans were more than you paid in, so what you owe grew.",
   refunds: "Refunds were larger than what you spent.",
   otherIn: OTHER_NOTE,
@@ -31,7 +31,7 @@ const EXPLAIN: Record<MoneyFlowKey, string> = {
   invested: "Money you moved into investments, less what you took back out. See the Investments tab for the accounts.",
   depositsAndAssets: "Money moved into fixed deposits, property, vehicles and other assets or liabilities, including accounts left out of Financial Insights.",
   cardsPaid: "Your credit card balances went down over the period: you paid the cards down.",
-  cash: "Your cash & bank balance went up over the period. This is the money that stayed in cash.",
+  cash: "Your cash balance went up over the period. This is the money that stayed in cash.",
   otherOut: OTHER_NOTE,
 };
 const COLOUR: Record<MoneyFlowKey, string> = {

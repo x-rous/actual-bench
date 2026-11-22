@@ -187,7 +187,7 @@ export function MoneyTab({ data, onDrill }: { data: Ready; onDrill: (target: Dri
           ) : summary.savingsRate.state === "ready" ? "Kept ÷ received" : summary.savingsRate.reason}>
           {summary.savingsRate.state === "ready" ? percent(summary.savingsRate.value) : "Needs review"}
         </Tile>
-        <Tile label="Change in cash" detail="Cash & bank, end of the period less the start">{signedMoney(summary.eligibleCash.change)}</Tile>
+        <Tile label="Change in cash" detail="Cash, end of the period less the start">{signedMoney(summary.eligibleCash.change)}</Tile>
       </div>
 
       <ChartFrame
@@ -201,7 +201,7 @@ export function MoneyTab({ data, onDrill }: { data: Ready; onDrill: (target: Dri
 
       <ChartFrame
         id="cash-change" title="Cash change, one step at a time"
-        hint="Cash & bank, start to end of the period" subtitle={<><p>Cash &amp; bank from {formatDay(period.startDate)} to {formatDay(period.endDate)}, one step at a time.</p><p>Read it in two parts: part 2 (Loans) continues from the balance where part 1 (Everyday movements) ends, so borrowing cannot hide everyday movements. Select a step to see its transactions.</p></>}
+        hint="Cash, start to end of the period" subtitle={<><p>Cash from {formatDay(period.startDate)} to {formatDay(period.endDate)}, one step at a time.</p><p>Read it in two parts: part 2 (Loans) continues from the balance where part 1 (Everyday movements) ends, so borrowing cannot hide everyday movements. Select a step to see its transactions.</p></>}
         legend={[{ label: "Raises cash", colour: "var(--fi-up)" }, { label: "Lowers cash", colour: "var(--fi-down)" }, { label: "Balance", colour: "var(--fi-balance)" }, ...(bridge.unattributedMinor !== 0 ? [{ label: "Unattributed", colour: "var(--fi-gap)", dashed: true }] : [])]}
         table={{ head: ["Step", "Amount"], rows: cashRows }} csvScope={scope}
         detail={{ label: "Reconciliation table", content: reconciliation }}

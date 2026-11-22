@@ -1,26 +1,24 @@
 import type { ReactNode } from "react";
-import { ACCOUNT_CLASS_INFO, accountClassRequiresOffBudget, accountClassRequiresOnBudget, type AccountClass } from "@/lib/account-class";
-import { REPORTING_LABELS, reportingRequirement } from "@/lib/account-class/reporting";
+import { ACCOUNT_CLASS_HEADINGS, ACCOUNT_CLASS_INFO, accountClassRequiresOffBudget, accountClassRequiresOnBudget, type AccountClass } from "@/lib/account-class";
+import { ACCESS_LABEL, classHasAccess, defaultAccess, rungOf } from "@/lib/account-class/access";
 import { Chip, Figure, Key, type Tone } from "@/features/financial-insights/components/guide/guideVisuals";
 import { ACCOUNT_CLASS_ICONS } from "../../lib/accountClassIcons";
 
 /**
- * The pictures of the Accounts guide. They are built from the real class and treatment definitions, so the guide cannot drift from
- * what the Class and Financial Reporting columns offer.
+ * The pictures of the Accounts guide. They are built from the real class and access definitions, so the guide cannot drift from what
+ * the Class and Accessible columns offer.
  */
 
-const SIDE_TITLE = { asset: "Assets: what you own", liability: "Liabilities: what you owe" } as const;
-
-/** Every class, grouped as the Class dropdown groups them, with where it may sit. */
+/** Every class, under the headings the Class dropdown uses, with where it may sit. */
 export function ClassMap() {
   return (
-    <Figure wide label="The account classes" caption={<span>A class marked <b>off-budget only</b> cannot be given to an on-budget account.</span>}>
-      <div className="grid gap-3 md:grid-cols-2">
-        {(["asset", "liability"] as const).map((side) => (
-          <div key={side} className="rounded-lg border bg-card p-2.5">
-            <p className="mb-2 text-[11px] font-semibold text-muted-foreground">{SIDE_TITLE[side]}</p>
+    <Figure wide label="The account classes" caption={<span>A class marked <b>off-budget only</b> cannot be given to an on-budget account, and <b>on-budget only</b> the other way round.</span>}>
+      <div className="grid gap-3 md:grid-cols-3">
+        {ACCOUNT_CLASS_HEADINGS.map((heading) => (
+          <div key={heading} className="rounded-lg border bg-card p-2.5">
+            <p className="mb-2 text-[11px] font-semibold text-muted-foreground">{heading}</p>
             <ul className="space-y-1.5">
-              {ACCOUNT_CLASS_INFO.filter((c) => c.side === side).map((c) => {
+              {ACCOUNT_CLASS_INFO.filter((c) => c.heading === heading).map((c) => {
                 const Icon = ACCOUNT_CLASS_ICONS[c.value];
                 return (
                   <li key={c.value} className="flex items-start gap-2 text-xs">
@@ -37,37 +35,44 @@ export function ClassMap() {
   );
 }
 
+/** What a class counts as when you can use its money now, in the words the guide uses. */
+const COUNTS_AS: Record<ReturnType<typeof rungOf>, string> = {
+  cash: "Cash", savings: "Savings you can use", reachable: "Other money you can reach", locked: "Locked money", owned: "A thing you own", card: "Owed amount comes off cash", debt: "A debt",
+};
+
 /**
- * What the Financial Reporting column shows for each class: what it counts as, and what else you may pick. Nothing is required. A
- * class with a default and an alternative shows both, the default in green; the rest have one fixed answer.
+ * What the Accessible column shows for each class: its default off budget, and whether you can change it. On budget, every class that
+ * has access is available now.
  */
-export function TreatmentTable() {
+export function AccessTable() {
   return (
-    <Figure wide label="Financial Reporting for each class" caption={<><Key colour="#16a34a">Default</Key><Key colour="#94a3b8">Optional, if you pick it</Key><Key colour="#cbd5e1">Fixed: nothing to pick</Key></>}>
+    <Figure wide label="Accessible, for each class" caption={<><Key colour="#16a34a">Available now by default</Key><Key colour="#94a3b8">Locked by default</Key><Key colour="#cbd5e1">No access: nothing to pick</Key></>}>
       <div className="overflow-hidden rounded-lg border text-xs">
-        <div className="grid grid-cols-[7.5rem_minmax(0,1fr)_minmax(0,1.3fr)] items-center gap-px bg-border">
-          {["Class", "Counts as", "Other choices"].map((h) => <span key={h} className="bg-muted/40 px-3 py-1.5 text-[11px] font-semibold">{h}</span>)}
-          {ACCOUNT_CLASS_INFO.map((c) => {
-            const r = reportingRequirement(c.value as AccountClass);
-            const counts: ReactNode = <Chip tone={r.kind === "automatic" ? "neutral" : "income"}>{r.label}{r.kind === "automatic" ? "" : " · default"}</Chip>;
-            const others: ReactNode = (() => {
-              const chips = [
-                ...(r.kind === "optional" ? [<Chip key="acc">Accessible money</Chip>, ...r.options.map((o) => <Chip key={o}>{REPORTING_LABELS[o]}</Chip>)] : []),
-                ...(r.kind === "bank-default" ? [<Chip key="fd">{REPORTING_LABELS["fixed-deposit"]}</Chip>] : []),
-                ...(c.value === "investment" ? [<Chip key="acc">Accessible money</Chip>] : []),
-                ...(c.value === "cash" || c.value === "bank" ? [<Chip key="inc">Uncategorized entries are income (off budget)</Chip>] : []),
-              ];
-              return chips.length ? <span className="flex flex-wrap items-center gap-1">{chips}</span> : <span className="text-muted-foreground">None</span>;
-            })();
-            return (
-              <div key={c.value} className="contents">
-                <span className="self-stretch bg-background px-3 py-2 font-medium">{c.label}</span>
-                <span className="self-stretch bg-background px-3 py-1.5">{counts}</span>
-                <span className="self-stretch bg-background px-3 py-1.5">{others}</span>
-              </div>
-            );
-          })}
-        </div>
+        <table className="w-full border-collapse">
+          <thead className="bg-muted/40 text-left text-[11px]">
+            <tr>{["Class", "Off budget, by default", "Counts as"].map((h) => <th key={h} scope="col" className="border-b px-3 py-1.5 font-semibold">{h}</th>)}</tr>
+          </thead>
+          <tbody>
+            {ACCOUNT_CLASS_INFO.map((c) => {
+              const value = c.value as AccountClass;
+              const access = defaultAccess(value, true);
+              const tone: Tone = access === "available" ? "income" : access === "locked" ? "kept" : "neutral";
+              const cell: ReactNode = classHasAccess(value)
+                ? <span className="flex flex-wrap items-center gap-1"><Chip tone={tone}>{ACCESS_LABEL[access!]}</Chip><span className="text-muted-foreground">you can change it</span></span>
+                : <span className="text-muted-foreground">Nothing to choose</span>;
+              const counts = classHasAccess(value)
+                ? `${COUNTS_AS[rungOf(value, "available")]} when available; ${COUNTS_AS.locked.toLowerCase()} when locked`
+                : COUNTS_AS[rungOf(value, null)];
+              return (
+                <tr key={c.value} className="border-b last:border-0">
+                  <th scope="row" className="w-36 px-3 py-2 text-left font-medium">{c.label}</th>
+                  <td className="px-3 py-1.5">{cell}</td>
+                  <td className="px-3 py-1.5 text-muted-foreground">{counts}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     </Figure>
   );
@@ -83,7 +88,7 @@ export function InheritanceSketch() {
     <Figure wide label="A group's class is inherited by its accounts" caption={<span>Change the class on the <b>group</b>; its accounts follow. An account outside a group (or in a group with no class) keeps its own.</span>}>
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-lg border bg-card p-2.5"><p className="mb-2 text-xs font-semibold">Group “Savings &amp; investments” <Chip tone="value">Investment</Chip></p><ul className="space-y-1.5"><InheritedRow name="Brokerage" cls="Investment" inherited /><InheritedRow name="Index fund" cls="Investment" inherited /></ul></div>
-        <div className="rounded-lg border bg-card p-2.5"><p className="mb-2 text-xs font-semibold">No group</p><ul className="space-y-1.5"><InheritedRow name="Everyday" cls="Bank" /><InheritedRow name="Visa" cls="Credit Card" /></ul></div>
+        <div className="rounded-lg border bg-card p-2.5"><p className="mb-2 text-xs font-semibold">No group</p><ul className="space-y-1.5"><InheritedRow name="Everyday" cls="Checking" /><InheritedRow name="Visa" cls="Credit Card" /></ul></div>
       </div>
     </Figure>
   );
@@ -92,9 +97,9 @@ export function InheritanceSketch() {
 /** One balance, read four ways. */
 export function SameBalanceSketch() {
   const rows: [string, string, string, Tone][] = [
-    ["Bank", "50,000", "Cash. In net worth and in your cash buffer. A transfer in or out is not income or spending.", "income"],
-    ["Bank · fixed / restricted deposit", "50,000", "Still an asset in net worth, but not cash: it does not count toward your cash buffer.", "kept"],
-    ["Investment", "50,000", "Shown on the Investments tab. Price changes are investment activity, not income. Not cash; it can be marked Accessible money for the buffer’s second figure.", "value"],
+    ["Savings · available now", "50,000", "Savings you can use. In net worth, and in cash when Financial Insights counts cash and savings (the default). A transfer in or out is not income or spending.", "income"],
+    ["Fixed Deposit · locked", "50,000", "Still an asset in net worth, but locked: it does not count toward cash or your cash buffer.", "kept"],
+    ["Investment", "50,000", "Shown on the Investments tab. Price changes are investment activity, not income. Locked unless you mark it Available now, which counts it in the cash buffer’s second figure.", "value"],
     ["Loan", "−50,000", "A debt. Shown on Loans & cards. Principal repaid is not spending; interest and fees are.", "loan"],
   ];
   return (
@@ -129,15 +134,18 @@ const Module = ({ name, classes, uses, unset }: { name: string; classes: string[
 /** Which page or module of the app reads which classes, what it does with them and what happens without them. */
 export function ModuleMap() {
   return (
-    <Figure wide label="Where classes and Financial Reporting are used">
+    <Figure wide label="Where classes and access are used">
       <div className="overflow-hidden rounded-lg border text-xs">
         <div className="divide-y divide-border">
           <Module name="Financial Insights" classes={["Every class"]}
-            uses="Builds net worth and every tab from them. Financial Reporting tells cash from a fixed deposit: only Cash and Bank count toward the cash buffer, and a fixed / restricted deposit does not."
+            uses="Builds net worth and every tab from them. Access tells money you can use now from locked money: only Checking, Cash, Savings and Fixed Deposits you can use now count as cash, and other money you can reach is the cash buffer’s second figure."
             unset="The page stays locked and lists the accounts that are missing a class or sit in a placement their class does not accept." />
-          <Module name="Assets" classes={["Property", "Vehicle", "Other Asset (Fixed asset)"]}
-            uses="An asset’s ledger account must hold a class of that kind. Investments are not assets here."
-            unset="An Other Asset that is not marked as a fixed asset is not one: Assets and Financial Insights flag the mismatch and ask you to review it." />
+          <Module name="Assets" classes={["Property", "Vehicle", "Other Fixed Asset"]}
+            uses="An asset’s ledger account must be off budget and hold a class of that kind. Investments are not assets here."
+            unset="An Other Asset (money owed to you, a deposit paid) is not a fixed asset: Assets and Financial Insights flag an asset whose account has that class and ask you to review it." />
+          <Module name="Cashflow Planning" classes={["Every class"]}
+            uses="A plan's automatic cash, savings and outside roles follow the class and access: Checking and Cash you can use now are cash; savings and investments are tracked beside it, split into what you can use and what is locked."
+            unset="An on-budget account without a class counts as cash; an off-budget one is outside the plan." />
           <Module name="Credit Cards" classes={["Credit Card"]}
             uses="The cards listed are your open, on-budget accounts of class Credit Card."
             unset="An account that is not a Credit Card is not listed as a card." />
@@ -152,7 +160,7 @@ export function ModuleMap() {
 
 /** The path from a new account to figures on the page. */
 export function ReadinessSketch() {
-  const steps: [string, string, Tone][] = [["1", "Class", "value"], ["2", "Choice, if the class asks", "warn"], ["3", "Ready", "income"], ["4", "Financial Insights shows figures", "income"]];
+  const steps: [string, string, Tone][] = [["1", "Class", "value"], ["2", "Accessible, if the default is not right", "warn"], ["3", "Ready", "income"], ["4", "Financial Insights shows figures", "income"]];
   return (
     <Figure wide label="From a new account to figures on the page">
       <ol className="flex flex-wrap items-center gap-2 text-xs">
