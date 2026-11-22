@@ -21,10 +21,12 @@ import { useAccountGroups } from "../hooks/useAccountGroups";
 import { useAccountGroupActions } from "../hooks/useAccountGroupActions";
 import { useAccountClasses } from "../hooks/useAccountClasses";
 import { useAccountFlags } from "../hooks/useAccountFlags";
-import { isExcluded } from "@/lib/account-class/flags";
-import type { AccountFlagEdit, AccountFlagState } from "./AccountAccessCell";
+import { isExcluded, type AccountFlagChange } from "@/lib/account-class/flags";
+import { accessChoosable, accessFlagChanges } from "@/lib/account-class/access";
+import { NO_FLAGS, type AccountFlagEdit, type AccountFlagState } from "./AccountAccessCell";
 import { toast } from "sonner";
-import { ACCOUNT_CLASS_INFO, isAccountClass, isAccountClassAllowed, isAccountClassAllowedForSet, type AccountClass } from "@/lib/account-class";
+import { ACCOUNT_CLASS_INFO, accountClassLabel, isAccountClass, isAccountClassAllowed, isAccountClassAllowedForSet, type AccountClass } from "@/lib/account-class";
+import { selectActiveInstance, useConnectionStore } from "@/store/connection";
 import { effectiveAccountClasses } from "../lib/accountClasses";
 import { buildClusters, type GroupBy } from "../lib/accountClusters";
 import { AccountClusterHeader, AccountTotalRow } from "./AccountClusterRows";
@@ -32,7 +34,7 @@ import { UNCLASSIFIED } from "./AccountClassCell";
 import { NEW_GROUP, NO_GROUP, groupLabel, liveGroups } from "../lib/accountGroups";
 import { AccountsTableRow } from "./AccountsTableRow";
 import type { AccountDeleteIntent } from "./AccountsTableOverlays";
-import type { StatusFilter, BudgetFilter, RulesFilter, ReportingFilter } from "./FilterBar";
+import type { StatusFilter, BudgetFilter, RulesFilter, ReportingFilter, BulkAccessChoice } from "./FilterBar";
 import type { StagedEntity } from "@/types/staged";
 import type { Account } from "@/types/entities";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -148,6 +150,37 @@ export function AccountsTable({
   const effectiveClasses = useMemo(() => effectiveAccountClasses(staged, groups, accountClasses.maps), [staged, groups, accountClasses.maps]);
   const groupNames = useMemo(() => new Map((groups ?? []).map((g) => [g.id, g.name])), [groups]);
   const applyAccountClasses = accountClasses.apply;
+
+  // ── An own class the group overrides ──────────────────────────────────────────
+  // A group's class wins, and an account's own class is kept but unused while it is in that group. When they differ (after an
+  // upgrade that turned a saved choice into a class, or an account moved into a group), say so once, so it is not a surprise.
+  const connectionForNotice = useConnectionStore(selectActiveInstance);
+  const noticeKey = `accounts:own-class-notice:${connectionForNotice?.budgetSyncId ?? ""}`;
+  const overridden = useMemo(() => {
+    if (!groups || !accountClasses.available) return [];
+    const live = new Set(groups.map((g) => g.id));
+    return (Object.values(staged) as AccountRow[]).flatMap((r) => {
+      const groupId = r.entity.groupId;
+      const own = accountClasses.maps.accounts.get(r.entity.id);
+      const group = groupId && live.has(groupId) ? accountClasses.maps.groups.get(groupId) : undefined;
+      return !r.isNew && !r.isDeleted && own && group && own !== group ? [{ id: r.entity.id, name: r.entity.name, own, group, groupName: groupNames.get(groupId!) ?? "" }] : [];
+    });
+  }, [groups, accountClasses.available, accountClasses.maps, staged, groupNames]);
+  const overriddenSignature = overridden.map((o) => `${o.id}:${o.own}:${o.group}`).sort().join("|");
+  // What was dismissed, per budget, in this browser only; read again when the budget changes or after a dismissal.
+  const [dismissals, setDismissals] = useState(0);
+  // Also kept in memory, so Dismiss works when the browser blocks storage.
+  const [dismissedHere, setDismissedHere] = useState<string | null>(null);
+  const dismissedNotice = useMemo(() => {
+    void dismissals;
+    try { return typeof window === "undefined" ? null : localStorage.getItem(noticeKey); } catch { return null; }
+  }, [noticeKey, dismissals]);
+  const dismissNotice = () => {
+    try { localStorage.setItem(noticeKey, overriddenSignature); } catch { /* the notice simply shows again next time */ }
+    setDismissedHere(overriddenSignature);
+    setDismissals((n) => n + 1);
+  };
+  const showOverriddenNotice = overridden.length > 0 && dismissedNotice !== overriddenSignature && dismissedHere !== overriddenSignature;
   const handleSetClass = useCallback(
     (accountId: string, accountClass: AccountClass | null) => {
       const entry = staged[accountId];
@@ -176,15 +209,26 @@ export function AccountsTable({
   // class default, and left out of reports. Unsaved rows have no permanent id yet, so their choice waits for the save.
   const applyAccountFlags = accountFlags.apply;
   const handleSetFlags = useCallback(
-    (accountId: string, edits: AccountFlagEdit[]) => applyAccountFlags(edits.map((e) => ({ scope: "account" as const, id: accountId, flag: e.flag, on: e.on }))),
+    (accountId: string, edits: AccountFlagEdit[]) => {
+      const entry = useStagedStore.getState().accounts[accountId];
+      // A new account has no permanent id yet: its choices wait for the save, like its class.
+      if (entry?.isNew) {
+        const next = { ...(entry.pendingAccountFlags ?? NO_FLAGS) };
+        for (const e of edits) next[e.flag] = e.on;
+        useStagedStore.getState().pushUndo();
+        useStagedStore.getState().stageAccountFlags(accountId, next);
+        return;
+      }
+      applyAccountFlags(edits.map((e) => ({ scope: "account" as const, id: accountId, flag: e.flag, on: e.on })));
+    },
     [applyAccountFlags]
   );
-  const flagStateOf = useCallback((accountId: string): AccountFlagState => ({
+  const flagStateOf = useCallback((accountId: string): AccountFlagState => staged[accountId]?.pendingAccountFlags ?? ({
     // An account that takes its class from its group is left out, or not, by the group; its own saved flag is kept but does not apply.
     excluded: effectiveClasses.get(accountId)?.source !== "group" && !!accountFlags.maps.accounts.get("excluded")?.has(accountId),
     accessible: !!accountFlags.maps.accounts.get("accessible")?.has(accountId),
     locked: !!accountFlags.maps.accounts.get("locked")?.has(accountId),
-  }), [accountFlags.maps, effectiveClasses]);
+  }), [accountFlags.maps, effectiveClasses, staged]);
   // Accounts left out of Financial Insights, by their own flag or their group's (a live group only).
   const excludedIds = useMemo(() => {
     const liveGroupIds = groups ? new Set(groups.map((g) => g.id)) : null;
@@ -539,6 +583,50 @@ export function AccountsTable({
     }
   }
 
+  function handleBulkSetAccess(choice: BulkAccessChoice) {
+    const live = [...selectedIds].filter((id) => staged[id] && !staged[id].isDeleted);
+    const savedChanges: AccountFlagChange[] = [];
+    const drafts: { id: string; edits: AccountFlagEdit[] }[] = [];
+    let skipped = 0;
+    for (const id of live) {
+      const entity = staged[id].entity;
+      const effective = effectiveClasses.get(id);
+      const flags = flagStateOf(id);
+      let edits: AccountFlagEdit[];
+      if (choice === "exclude" || choice === "include") {
+        // Only off-budget accounts can be left out, and the group decides for an account in a left-out group or taking its group's class.
+        if (!entity.offBudget || excludedByGroupIds.has(id) || effective?.source === "group") { skipped++; continue; }
+        edits = flags.excluded === (choice === "exclude") ? [] : [{ flag: "excluded", on: choice === "exclude" }];
+      } else {
+        const cls = effective?.accountClass ?? null;
+        if (!cls || !accessChoosable(cls, entity.offBudget)) { skipped++; continue; }
+        const wanted = accessFlagChanges(cls, choice);
+        edits = [
+          ...(flags.accessible !== wanted.accessible ? [{ flag: "accessible" as const, on: wanted.accessible }] : []),
+          ...(flags.locked !== wanted.locked ? [{ flag: "locked" as const, on: wanted.locked }] : []),
+        ];
+      }
+      if (edits.length === 0) continue;
+      if (staged[id].isNew) drafts.push({ id, edits });
+      else savedChanges.push(...edits.map((e) => ({ scope: "account" as const, id, flag: e.flag, on: e.on })));
+    }
+    if (drafts.length > 0) {
+      pushUndo();
+      for (const { id, edits } of drafts) {
+        const next = { ...(staged[id].pendingAccountFlags ?? NO_FLAGS) };
+        for (const e of edits) next[e.flag] = e.on;
+        useStagedStore.getState().stageAccountFlags(id, next);
+      }
+    }
+    if (savedChanges.length > 0) applyAccountFlags(savedChanges);
+    if (skipped > 0) {
+      const why = choice === "exclude" || choice === "include"
+        ? "only off-budget accounts whose group does not decide can be left out"
+        : "access applies only to off-budget Checking, Cash, Savings, Fixed Deposit, Investment, Retirement and Other Asset accounts";
+      toast.info(`${skipped} account${skipped === 1 ? " was" : "s were"} left unchanged: ${why}.`);
+    }
+  }
+
   // ── Paste from Excel / Sheets ─────────────────────────────────────────────────
   function handlePaste(e: React.ClipboardEvent<HTMLDivElement>) {
     if (editingCell) return; // let the input field handle it
@@ -696,7 +784,7 @@ export function AccountsTable({
         classGroupName={entity.groupId ? groupNames.get(entity.groupId) : undefined}
         canSetClass={row.isNew || row.pendingAccountClass !== undefined || accountClasses.available}
         onSetClass={handleSetClass}
-        canSetFlags={accountFlags.available}
+        canSetFlags={row.isNew || accountFlags.available}
         flagState={flagStateOf(entity.id)}
         excludedByGroup={excludedByGroupIds.has(entity.id)}
         onSetFlags={handleSetFlags}
@@ -742,6 +830,7 @@ export function AccountsTable({
           leftOutCount={classesEnabled && accountFlags.available ? excludedIds.size : undefined}
           groupBy={activeGroupBy} onGroupByChange={setGroupBy} groupByOptions={groupByOptions}
           onBulkSetClass={accountClasses.available ? handleBulkSetClass : undefined}
+          onBulkSetAccess={classesEnabled && accountClasses.available && accountFlags.available ? handleBulkSetAccess : undefined}
           onBulkAssignGroup={handleBulkAssignGroup}
           filteredCount={rows.length} totalCount={totalCount}
           selectedCount={activeSelectedCount}
@@ -751,6 +840,20 @@ export function AccountsTable({
           onDeselect={() => clearSelection()}
         />
 
+        {classesEnabled && showOverriddenNotice && (
+          <div role="status" className="flex items-center justify-between gap-3 border-b border-amber-500/40 bg-amber-50 px-4 py-1.5 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+            <span className="min-w-0 truncate" title={overridden.map((o) => `${o.name}: own class ${accountClassLabel(o.own)}, group “${o.groupName}” is ${accountClassLabel(o.group)}`).join("\n")}>
+              {overridden.length === 1
+                ? <>“{overridden[0].name}” has its own class, {accountClassLabel(overridden[0].own)}, but its group “{overridden[0].groupName}” is {accountClassLabel(overridden[0].group)}, and the group’s class applies.</>
+                : <>{overridden.length} accounts have their own class, which their group’s class overrides ({overridden.slice(0, 3).map((o) => o.name).join(", ")}{overridden.length > 3 ? ", …" : ""}).</>}
+              {" "}Change the group’s class or move the account out, or keep the group’s class.
+            </span>
+            <span className="flex shrink-0 gap-1.5">
+              <button type="button" className="rounded border border-amber-600/50 px-2 py-0.5 hover:bg-amber-100 dark:hover:bg-amber-900/40" onClick={() => applyAccountClasses(overridden.map((o) => ({ scope: "account" as const, id: o.id, accountClass: null })))}>Keep the group’s class</button>
+              <button type="button" className="rounded px-2 py-0.5 hover:bg-amber-100 dark:hover:bg-amber-900/40" onClick={dismissNotice}>Dismiss</button>
+            </span>
+          </div>
+        )}
         {classesEnabled && accountFlags.failed && (
           <div role="alert" className="flex items-center justify-between gap-3 border-b border-amber-500/40 bg-amber-50 px-4 py-1.5 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
             <span>Access and report settings could not be loaded, so they cannot be changed or checked here.</span>

@@ -1,5 +1,7 @@
 "use client";
 
+import type { PendingAccountFlags } from "@/types/staged";
+
 import { useRef, useState } from "react";
 import { Plus, Download, Upload, RefreshCw, Landmark, FolderTree, BookOpen } from "lucide-react";
 import { toast } from "sonner";
@@ -69,7 +71,7 @@ export function AccountsView() {
     setFormDrawerOpen(true);
   }
 
-  function handleCreateAccount(values: AccountFormValues) {
+  function handleCreateAccount(values: AccountFormValues, flags?: PendingAccountFlags) {
     pushUndo();
     const id = generateId();
     stageNew("accounts", {
@@ -81,6 +83,7 @@ export function AccountsView() {
       ...(groupsSupported ? { groupId: values.groupId ?? null } : {}),
     });
     if (values.accountClass) useStagedStore.getState().stageAccountClass(id, values.accountClass);
+    if (flags) useStagedStore.getState().stageAccountFlags(id, flags);
   }
 
   async function handleRefreshBalances() {

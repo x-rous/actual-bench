@@ -296,7 +296,6 @@ function AccountsTableRowComponent({
             accountClass={effective.accountClass}
             offBudget={entity.offBudget}
             flags={flagState}
-            unsaved={isNew}
             disabled={isDeleted || !canSetFlags}
             onChange={onSetFlags}
           />
@@ -313,7 +312,6 @@ function AccountsTableRowComponent({
             excludedByGroup={excludedByGroup}
             classFromGroup={effective.source === "group"}
             groupName={classGroupName}
-            unsaved={isNew}
             disabled={isDeleted || !canSetFlags}
             onChange={onSetFlags}
           />

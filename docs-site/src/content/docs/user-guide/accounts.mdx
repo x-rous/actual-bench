@@ -39,8 +39,9 @@ uses.
 4. Choose **on-budget** or **off-budget** with the toggle.
 5. Optionally choose an **Account Group**, where supported, including groups you have staged but not saved. Groups with an off-budget-only class are unavailable for on-budget accounts.
 6. Choose an **Account Class**, or leave it **Unclassified**. If the selected group has a class, the account inherits it. Off-budget-only classes are disabled for on-budget accounts.
-7. Select **Add Account** to stage the account, group assignment and its class.
-8. Select the page’s **Save** to create it in Actual. Its class is then saved in Bench against the returned account id.
+7. For an off-budget account, optionally change **Accessible** from the class default, and tick **Leave out of reports**.
+8. Select **Add Account** to stage the account, group assignment, class and these choices.
+9. Select the page’s **Save** to create it in Actual. Its class and choices are then saved in Bench against the returned account id; if only they fail, **Save** retries them without creating the account again.
 
 To create several at once, use the bottom **Add Rows** / paste flow - the **Balance** column is
 editable there so you can set each new account's initial balance inline.
@@ -131,13 +132,17 @@ The **Accessible** column answers one question: could you use this account's mon
 
 The **Reports** column says whether the account counts in reports. For an off-budget account, the button beside **Included** leaves it out of every figure in Financial Insights and out of Cashflow's automatic roles; it then needs no class. On a group, the same setting is in **Manage Groups** for groups whose accounts are all off budget; an account left out by its group says so and is changed on the group. An account that takes its group's class follows the group's setting. If a left-out account is on budget, Financial Insights blocks until you include it again, which the button still offers. A **left out of reports** shortcut beside the class filter counts these accounts and filters to them.
 
-A saved choice counts only while it can apply. If you change an account's class or placement so a choice no longer fits, Bench keeps it but ignores it until it fits again. A new account shows its default until it is saved. A closed account with no transactions and a zero balance needs nothing.
+**Several at once.** Select accounts and use **Set access…** in the selection bar: **Available now**, **Locked**, **Leave out of reports** or **Include in reports**. Accounts the choice cannot apply to (on budget, a class without access, or a group that decides) are left unchanged, and Bench says how many. A new account’s choices are staged with it and saved once it exists.
+
+**An own class the group overrides.** When an account has its own class but sits in a group with a different class, the group’s class applies. A notice at the top of the table names such accounts (this can happen after the upgrade below, or when an account is moved into a group): **Keep the group’s class** clears their own class, and **Dismiss** hides the notice in this browser until the list changes.
+
+A saved choice counts only while it can apply. If you change an account's class or placement so a choice no longer fits, Bench keeps it but ignores it until it fits again. A new account’s choices are staged with it and saved once it exists. A closed account with no transactions and a zero balance needs nothing.
 
 Choices are saved in Bench, per budget, and apply at once. They are never written to Actual and do not change balances, transactions, budget placement or transfers.
 
 ## Upgrading from earlier versions
 
-The app database upgrade (schema 68) carries every earlier choice over: a Bank account marked **Fixed / restricted deposit** becomes a **Fixed Deposit**, an Other Asset marked **Fixed asset** becomes an **Other Fixed Asset**, and an off-budget Cash or Bank account set to count uncategorized money in as income becomes **Savings**. "Accessible money" carries over as **Available now**. A choice saved on an account whose class came from its group gives the account its own class, which the group still overrides; change the group or move the account out if that is not what you want.
+The app database upgrade (schema 68) carries every earlier choice over: a Bank account marked **Fixed / restricted deposit** becomes a **Fixed Deposit**, an Other Asset marked **Fixed asset** becomes an **Other Fixed Asset**, and an off-budget Cash or Bank account set to count uncategorized money in as income becomes **Savings**. "Accessible money" carries over as **Available now**. A choice saved on an account whose class came from its group gives the account its own class, which the group still overrides; the notice above points these out.
 
 ## Grouped view
 

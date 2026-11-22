@@ -7,6 +7,9 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ACCESS_LABEL, accessFlagChanges, classHasAccess, defaultAccess, type Access } from "@/lib/account-class/access";
+import type { PendingAccountFlags } from "@/types/staged";
 import type { AccountGroup } from "@/types/entities";
 import { NO_GROUP, NEW_GROUP } from "../lib/accountGroups";
 import { buildGroupOptions } from "./AccountGroupCell";
@@ -25,7 +28,8 @@ import { accountFormSchema, type AccountFormValues } from "../schemas/account.sc
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (values: AccountFormValues) => void;
+  /** `flags`: the access and report choices, staged with the new account and saved once it exists. */
+  onSubmit: (values: AccountFormValues, flags?: PendingAccountFlags) => void;
   groups?: AccountGroup[];
   groupClasses?: ReadonlyMap<string, AccountClass>;
   excludedGroups?: ReadonlySet<string>;
@@ -54,11 +58,13 @@ export function AccountFormDrawer({ open, onOpenChange, onSubmit, groups, groupC
       initialBalance: undefined,
       accountClass: null,
       groupId: null,
+      access: null,
+      excluded: false,
     },
   });
 
   useEffect(() => {
-    if (open) reset({ name: "", offBudget: false, initialBalance: undefined, accountClass: null, groupId: null, ...initialValues });
+    if (open) reset({ name: "", offBudget: false, initialBalance: undefined, accountClass: null, groupId: null, access: null, excluded: false, ...initialValues });
   }, [open, reset, initialValues]);
 
   function handleFormSubmit(values: AccountFormValues) {
@@ -68,7 +74,13 @@ export function AccountFormDrawer({ open, onOpenChange, onSubmit, groups, groupC
       setError("groupId", { message: "Choose an available group that supports this budget type." });
       return;
     }
-    onSubmit({ ...values, accountClass: inheritedClass ? null : values.accountClass });
+    // Access and "leave out" apply off budget only. Only a choice that differs from the class default is saved, as in the table.
+    const chosenClass = inheritedClass ?? values.accountClass ?? null;
+    const access = values.offBudget && classHasAccess(chosenClass) && values.access ? accessFlagChanges(chosenClass, values.access) : { accessible: false, locked: false };
+    const excluded = values.offBudget && !!values.excluded;
+    const flags = access.accessible || access.locked || excluded ? { excluded, ...access } : undefined;
+    const submitted = { ...values, accountClass: inheritedClass ? null : values.accountClass };
+    if (flags) onSubmit(submitted, flags); else onSubmit(submitted);
     onOpenChange(false);
   }
 
@@ -78,6 +90,9 @@ export function AccountFormDrawer({ open, onOpenChange, onSubmit, groups, groupC
   const groupId = useWatch({ control, name: "groupId" });
   const inheritedClass = groupId ? groupClasses?.get(groupId) : undefined;
   const effectiveClass = inheritedClass ?? accountClass;
+  const access = useWatch({ control, name: "access" });
+  const excluded = useWatch({ control, name: "excluded" });
+  const classDefault = offBudget ? defaultAccess(effectiveClass, true) : null;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -193,6 +208,28 @@ export function AccountFormDrawer({ open, onOpenChange, onSubmit, groups, groupC
             {inheritedClass && <p className="text-xs text-muted-foreground">Inherited from the selected account group.</p>}
             {errors.accountClass && <p className="text-xs text-destructive" role="alert">{errors.accountClass.message}</p>}
           </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="account-access">Accessible</Label>
+            {classDefault ? (
+              <Select
+                id="account-access"
+                value={access ?? classDefault}
+                options={(["available", "locked"] as const).map((value) => ({ value, label: `${ACCESS_LABEL[value]}${value === classDefault ? " (class default)" : ""}` }))}
+                onValueChange={(next) => setValue("access", next === classDefault ? null : (next as Access), { shouldDirty: true })}
+              />
+            ) : (
+              <p className="text-xs text-muted-foreground">{!offBudget ? "On budget: always available now." : effectiveClass ? "This class has no access to choose." : "Choose a class first."}</p>
+            )}
+            <p className="text-xs text-muted-foreground">Whether you could use this money now. It decides what counts as cash in Financial Insights and Cashflow.</p>
+          </div>
+
+          {offBudget && (
+            <label className="flex items-start gap-2 text-sm">
+              <Checkbox className="mt-0.5" checked={!!excluded} onCheckedChange={(on) => setValue("excluded", on, { shouldDirty: true })} />
+              <span className="flex flex-col"><span>Leave out of reports</span><span className="text-xs text-muted-foreground">Financial Insights and Cashflow leave out its balance, entries and transfers. It then needs no class.</span></span>
+            </label>
+          )}
 
         </form>
 

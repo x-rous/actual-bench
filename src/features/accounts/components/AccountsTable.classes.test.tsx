@@ -49,6 +49,25 @@ describe("accounts table and Groups dialog share account classes", () => {
     fakeServer();
   });
 
+  it("says when an account's own class differs from its group's, and can keep the group's class or be dismissed", async () => {
+    localStorage.clear();
+    await fetch("/api/account-classes", { method: "PUT", body: JSON.stringify({ budgetSyncId: "budget-1", changes: [
+      { scope: "group", id: "g1", accountClass: "bank" }, { scope: "account", id: "a1", accountClass: "fixed-deposit" },
+    ] }) });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity, gcTime: Infinity } } });
+    const { unmount } = render(<QueryClientProvider client={client}><AccountsTable onCreateRule={jest.fn()} onDeleteIntentChange={jest.fn()} onInspectIdChange={jest.fn()} /></QueryClientProvider>);
+    expect(await screen.findByText(/has its own class, Fixed Deposit, but its group “Everyday” is Checking/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(screen.queryByText(/has its own class/)).not.toBeInTheDocument());
+    unmount();
+
+    // Dismissed stays dismissed; a fresh browser sees it again, and keeping the group's class clears the account's own.
+    localStorage.clear();
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><AccountsTable onCreateRule={jest.fn()} onDeleteIntentChange={jest.fn()} onInspectIdChange={jest.fn()} /></QueryClientProvider>);
+    fireEvent.click(await screen.findByRole("button", { name: "Keep the group’s class" }));
+    await waitFor(() => expect(screen.queryByText(/has its own class/)).not.toBeInTheDocument());
+  });
+
   it("shows a class set on a group against its accounts straight away", async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity, gcTime: Infinity } } });
     render(

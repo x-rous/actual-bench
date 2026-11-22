@@ -19,6 +19,8 @@ import type { Account, AccountGroup } from "@/types/entities";
 import type { StagedEntity } from "@/types/staged";
 import { isAccountClassAllowed } from "@/lib/account-class";
 import { saveAccountClasses } from "../lib/accountClassApi";
+import { saveAccountFlags } from "../lib/accountFlagApi";
+import { ACCOUNT_FLAGS } from "@/lib/account-class/flags";
 
 function accountFieldsChanged(account: Account, original: Account | null) {
   return !original || account.name !== original.name || account.offBudget !== original.offBudget
@@ -159,7 +161,7 @@ export function useAccountsSave() {
 
       // ── Updates (parallel) ──────────────────────────────────────────────────
       // A class-only retry belongs to Bench, so it must not repeat an Actual write.
-      const accountUpdates = toUpdate.filter((a) => staged[a.id].pendingAccountClass === undefined
+      const accountUpdates = toUpdate.filter((a) => (staged[a.id].pendingAccountClass === undefined && staged[a.id].pendingAccountFlags === undefined)
         || accountFieldsChanged(a, staged[a.id].original));
       const updateResults = await settleTransportWrites(
         transport,
@@ -273,6 +275,31 @@ export function useAccountsSave() {
         }
       }
 
+      // The access and report flags of new accounts (or a failed flag save), once the account has a permanent id. Bench only.
+      const flagsSucceeded = new Set<string>();
+      for (const [sourceId, entry] of Object.entries(staged)) {
+        if (entry.isDeleted || !entry.pendingAccountFlags) continue;
+        const realId = entry.isNew ? idMap[sourceId] : sourceId;
+        if (!realId) continue;
+        try {
+          if (!connection.budgetSyncId) throw new Error("No budget id is available for the account settings.");
+          const pending = entry.pendingAccountFlags;
+          // Every flag is written, on or off, so a retry ends on exactly what was chosen.
+          const changes = ACCOUNT_FLAGS.map((flag) => ({ scope: "account" as const, id: realId, flag, on: pending[flag] }));
+          await saveAccountFlags(connection.budgetSyncId, changes);
+          void queryClient.invalidateQueries({ queryKey: ["accountFlags", connection.budgetSyncId] });
+          flagsSucceeded.add(sourceId);
+          if (!entry.isNew && !failed.some((r) => r.id === realId) && !succeeded.some((r) => r.id === realId)) {
+            succeeded.push({ status: "success", id: realId });
+          }
+        } catch (error) {
+          const message = `Access and report settings were not saved: ${extractMessage(error, "Save failed")}. Save again to retry them.`;
+          const previous = failed.find((r) => r.id === realId);
+          if (previous?.status === "error") previous.message += ` ${message}`;
+          else failed.push({ status: "error", id: realId, message });
+        }
+      }
+
       const store = useStagedStore.getState();
       const retainedAccounts = new Map<string, StagedEntity<Account>>();
       for (const account of [...toCreate, ...toUpdate]) {
@@ -282,8 +309,10 @@ export function useAccountsSave() {
         if (!realId || !current) continue;
         const classPending = current.pendingAccountClass !== undefined
           && (!classSucceeded.has(account.id) || current.pendingAccountClass !== captured.pendingAccountClass);
+        const flagsPending = current.pendingAccountFlags !== undefined
+          && (!flagsSucceeded.has(account.id) || current.pendingAccountFlags !== captured.pendingAccountFlags);
         const editedDuringSave = accountFieldsChanged(current.entity, captured.entity) || current.isDeleted !== captured.isDeleted;
-        if (!classPending && !editedDuringSave) continue;
+        if (!classPending && !flagsPending && !editedDuringSave) continue;
         const groupId = (value: Account) => value.groupId ? (idMap[value.groupId] ?? value.groupId) : null;
         const entity: Account = { ...current.entity, id: realId, initialBalance: undefined, groupId: groupId(current.entity) };
         const actualSucceeded = captured.isNew || succeeded.some((r) => r.id === realId);
@@ -294,12 +323,23 @@ export function useAccountsSave() {
         retainedAccounts.set(realId, {
           ...current, entity, original, isNew: false, isUpdated: true,
           pendingAccountClass: classPending ? current.pendingAccountClass : undefined,
+          pendingAccountFlags: flagsPending ? current.pendingAccountFlags : undefined,
           saveError: error?.status === "error" ? error.message : undefined,
         });
       }
 
       // Class success is independent of a failed Actual update. Clear only the
       // selection saved by this run, preserving edits made while it was saving.
+      if (flagsSucceeded.size > 0) {
+        useStagedStore.setState((state) => {
+          const accounts = { ...state.accounts };
+          for (const id of flagsSucceeded) {
+            const entry = accounts[id];
+            if (entry && entry.pendingAccountFlags === staged[id].pendingAccountFlags) accounts[id] = { ...entry, pendingAccountFlags: undefined };
+          }
+          return { accounts };
+        });
+      }
       if (classSucceeded.size > 0) {
         useStagedStore.setState((state) => {
           const accounts = { ...state.accounts };

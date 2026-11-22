@@ -11,7 +11,7 @@ import type {
   Schedule,
   Tag,
 } from "@/types/entities";
-import type { StagedEntity, StagedMap } from "@/types/staged";
+import type { PendingAccountFlags, StagedEntity, StagedMap } from "@/types/staged";
 import type { AccountClass } from "@/lib/account-class";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -67,6 +67,7 @@ function applyRestore<T extends BaseEntity>(
   if (!existing) return map;
   const restored = { ...existing };
   delete restored.pendingAccountClass;
+  delete restored.pendingAccountFlags;
   delete restored.transferCategoryId;
   delete restored.closeTransfer;
   return {
@@ -137,6 +138,8 @@ type StagedStoreActions = {
 
   /** Stage Bench-only class metadata for a new account or a failed class save. */
   stageAccountClass: (id: string, accountClass: AccountClass | null) => void;
+  /** Stage the access and report flags of a new account (or a failed flag save), written to Bench once it has a permanent id. */
+  stageAccountFlags: (id: string, flags: PendingAccountFlags) => void;
   /** Sets where a staged account close sends the balance (`null`: close without moving it). */
   stageAccountCloseTransfer: (id: string, transfer: AccountCloseTransfer | null) => void;
   /** Sets the category that takes over a staged category or group delete's transactions and budget amounts. */
@@ -269,7 +272,7 @@ export const useStagedStore = create<StagedStoreState & StagedStoreActions>((set
       // Preserve failed creates and real-id class retries when a fresh server
       // snapshot has not caught up with the newly created account yet.
       for (const [id, entry] of Object.entries(state.accounts)) {
-        if (!serverIds.has(id) && (entry.isNew || (!entry.isDeleted && entry.pendingAccountClass !== undefined))) {
+        if (!serverIds.has(id) && (entry.isNew || (!entry.isDeleted && (entry.pendingAccountClass !== undefined || entry.pendingAccountFlags !== undefined)))) {
           newMap[id] = entry;
         }
       }
@@ -459,6 +462,13 @@ export const useStagedStore = create<StagedStoreState & StagedStoreActions>((set
           [id]: { ...entry, pendingAccountClass: accountClass, isUpdated: !entry.isNew },
         },
       };
+    }),
+
+  stageAccountFlags: (id, flags) =>
+    set((state) => {
+      const entry = state.accounts[id];
+      if (!entry || entry.isDeleted) return state;
+      return { accounts: { ...state.accounts, [id]: { ...entry, pendingAccountFlags: flags, isUpdated: !entry.isNew } } };
     }),
 
   stageAccountCloseTransfer: (id, transfer) =>
