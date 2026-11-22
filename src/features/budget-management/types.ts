@@ -250,7 +250,12 @@ export type BudgetEditsActions = {
   stageHold: (hold: StagedHold) => void;
   removeHold: (month: string) => void;
   clearHoldsForMonths: (months: string[]) => void;
-  setHoldSaveError: (month: string, message: string) => void;
+  /**
+   * Marks a staged hold as failed. `serverAmount`, when known, is the hold
+   * Actual now has: it becomes the draft's baseline (previousAmount), so a
+   * later Free or change is compared with what the server really holds.
+   */
+  setHoldSaveError: (month: string, message: string, serverAmount?: number) => void;
   clearHoldSaveError: (month: string) => void;
   discardAll: () => void;
   clearEditsForMonths: (months: string[]) => void;

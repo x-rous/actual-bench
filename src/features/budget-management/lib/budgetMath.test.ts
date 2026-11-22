@@ -123,6 +123,17 @@ describe("parseBudgetExpression", () => {
       expect(r.ok).toBe(false);
     });
 
+    it("rejects a number with more than one decimal point", () => {
+      expect(parseBudgetExpression("12.3.4").ok).toBe(false);
+      expect(parseBudgetExpression("1..5").ok).toBe(false);
+      expect(parseBudgetExpression("10 + 1.2.3").ok).toBe(false);
+    });
+
+    it("still accepts a leading or trailing decimal point", () => {
+      expect(parseBudgetExpression(".5")).toMatchObject({ ok: true });
+      expect(parseBudgetExpression("5.")).toMatchObject({ ok: true });
+    });
+
     it("rejects letters", () => {
       const r = parseBudgetExpression("abc");
       expect(r.ok).toBe(false);

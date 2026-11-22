@@ -1,5 +1,5 @@
 import React from "react";
-import { act, render } from "@testing-library/react";
+import { act, render, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useBudgetEditsStore } from "@/store/budgetEdits";
 import {
@@ -9,6 +9,10 @@ import {
 } from "./MonthsDataContext";
 import type { LoadedCategory, LoadedMonthState } from "../types";
 
+const mockGetBudgetMonth = jest.fn();
+jest.mock("@/lib/actual", () => ({
+  getTransport: () => ({ getBudgetMonth: (month: string) => mockGetBudgetMonth(month) }),
+}));
 jest.mock("@/store/connection", () => ({
   useConnectionStore: jest.fn(() => ({ id: "conn-1" })),
   selectActiveInstance: jest.fn(),
@@ -184,5 +188,73 @@ describe("MonthsDataProvider Envelope carry", () => {
       });
     });
     expect(view.getByTestId("balance").textContent).toBe("0");
+  });
+
+  function renderAprilWithMarchEdit(client: QueryClient) {
+    const april = monthState("2026-04");
+    april.categoriesById.a = { ...category("a", 0), balance: 0 };
+    client.setQueryData(["budget-month-data", "conn-1", "2026-04"], april);
+    // Staged while March was in view; March is no longer in the cache.
+    useBudgetEditsStore.getState().stageEdit({
+      month: "2026-03",
+      categoryId: "a",
+      nextBudgeted: 80,
+      previousBudgeted: 0,
+      source: "manual",
+    });
+
+    function Probe() {
+      const cat = useEffectiveCategory("2026-04", "a");
+      const { isLoading, carryError } = useMonthsStructure();
+      return (
+        <>
+          <span data-testid="balance">{cat === undefined ? "none" : cat.balance}</span>
+          <span data-testid="loading">{String(isLoading)}</span>
+          <span data-testid="carry-error">{carryError?.month ?? ""}</span>
+        </>
+      );
+    }
+    return render(
+      <QueryClientProvider client={client}>
+        <MonthsDataProvider months={["2026-04"]} availableMonths={["2026-03", "2026-04"]}>
+          <Probe />
+        </MonthsDataProvider>
+      </QueryClientProvider>
+    );
+  }
+
+  it("holds back the window's figures while a month with earlier edits is loading", async () => {
+    let resolveMarch: (value: unknown) => void = () => {};
+    mockGetBudgetMonth.mockImplementation(
+      () => new Promise((resolve) => (resolveMarch = resolve))
+    );
+    const client = new QueryClient({
+      defaultOptions: { queries: { staleTime: Infinity, retry: false } },
+    });
+    const view = renderAprilWithMarchEdit(client);
+
+    expect(view.getByTestId("balance").textContent).toBe("none");
+    expect(view.getByTestId("loading").textContent).toBe("true");
+
+    const march = monthState("2026-03");
+    march.categoriesById.a = { ...category("a", 0), actuals: -80, balance: -80 };
+    client.setQueryData(["budget-month-data", "conn-1", "2026-03"], march);
+    resolveMarch(undefined);
+
+    // Once March is known, its overspend is covered and April stays at 0.
+    await waitFor(() => expect(view.getByTestId("balance").textContent).toBe("0"));
+    expect(view.getByTestId("loading").textContent).toBe("false");
+  });
+
+  it("reports a month with earlier edits that could not be loaded", async () => {
+    mockGetBudgetMonth.mockRejectedValue(new Error("offline"));
+    const client = new QueryClient({
+      defaultOptions: { queries: { staleTime: Infinity, retry: false } },
+    });
+    const view = renderAprilWithMarchEdit(client);
+
+    await waitFor(() => expect(view.getByTestId("carry-error").textContent).toBe("2026-03"));
+    expect(view.getByTestId("balance").textContent).toBe("none");
+    expect(view.getByTestId("loading").textContent).toBe("false");
   });
 });

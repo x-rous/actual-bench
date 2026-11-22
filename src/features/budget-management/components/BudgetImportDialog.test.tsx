@@ -1,5 +1,5 @@
 import React from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BudgetImportDialog } from "./BudgetImportDialog";
 import { useBudgetEditsStore } from "@/store/budgetEdits";
@@ -145,6 +145,52 @@ describe("BudgetImportDialog", () => {
         source: "import",
       },
     });
+  });
+
+  it("matches a category found only in a month brought into view by moving the range", async () => {
+    const jan = month("2026-01", [category("c1", "Groceries", 45000)]);
+    const feb = month("2026-02", [
+      category("c1", "Groceries", 45000),
+      category("c2", "Dining", 0),
+    ]);
+    mockServerMonths = { "2026-01": jan, "2026-02": feb };
+    const client = new QueryClient({
+      defaultOptions: { queries: { staleTime: Infinity, retry: false } },
+    });
+    const props = {
+      availableMonths: ["2026-01", "2026-02"],
+      categories: Object.values(jan.categoriesById),
+      groups: [group],
+      categoriesById: jan.categoriesById,
+      onClose: jest.fn(),
+    };
+    const ui = (activeMonths: string[], onExtendRange: (months: string[]) => void) => (
+      <QueryClientProvider client={client}>
+        <BudgetImportDialog {...props} activeMonths={activeMonths} onExtendRange={onExtendRange} />
+      </QueryClientProvider>
+    );
+    const onExtendRange = jest.fn();
+    const view = render(ui(["2026-01"], onExtendRange));
+
+    fireEvent.change(screen.getByLabelText(/Or paste cells/), {
+      target: {
+        value:
+          "Group Name\tCategory Name\tJan-26\tFeb-26\n" +
+          "Food\tGroceries\t450.00\t450.00\n" +
+          "Food\tDining\t\t80.00\n",
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Use pasted data" }));
+    expect(await screen.findByText("Review Matches")).toBeInTheDocument();
+    expect(screen.getAllByText("Exact")).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: /Move the visible range/ }));
+    expect(onExtendRange).toHaveBeenCalledWith(["2026-02"]);
+    // The workspace then shows February.
+    view.rerender(ui(["2026-01", "2026-02"], onExtendRange));
+
+    await waitFor(() => expect(screen.getAllByText("Exact")).toHaveLength(2));
+    expect(screen.getByRole("button", { name: /Preview 2 approved rows/ })).toBeInTheDocument();
   });
 
   function renderDialog(client: QueryClient, jan: LoadedMonthState) {

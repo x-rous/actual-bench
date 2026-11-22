@@ -112,7 +112,11 @@ export function NextMonthHoldDialog({
             inputMode="text"
             value={amountStr}
             onChange={(e) => setAmountStr(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && amountStr !== "") handleSet(); }}
+            onKeyDown={(e) => {
+              // An IME uses Enter to confirm composed text; that is not a submit.
+              if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+              if (e.key === "Enter" && amountStr !== "") handleSet();
+            }}
             placeholder="0.00"
             size="sm"
             className="font-mono"

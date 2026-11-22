@@ -9,6 +9,7 @@ import { parseBudgetExpression } from "../lib/budgetMath";
 import { isIncomeBlocked } from "../lib/budgetValidation";
 import { buildReadOnlyMissingBudgetMonthSet } from "../lib/monthAvailability";
 import { formatMonthLabel } from "@/lib/budget/monthMath";
+import { getMonthDataErrorMessage } from "../lib/monthDataQuery";
 import {
   parsePastePayload,
   resolveSelectionCells,
@@ -254,7 +255,7 @@ function BudgetWorkspaceInner({
 
   // Provider-supplied data (BM-01, BM-13).
   // P1: structure only, so the workspace does not re-render on each edit.
-  const { raw: rawMonthsMap, merged } = useMonthsStructure();
+  const { raw: rawMonthsMap, merged, carryError } = useMonthsStructure();
 
   // Categories in visual order — derived from the cross-month merged structure
   // so categories that exist in any visible month are reachable in every month.
@@ -1191,6 +1192,12 @@ function BudgetWorkspaceInner({
       tabIndex={-1}
       aria-label="Budget workspace"
     >
+      {carryError && (
+        <p role="alert" className="px-3 py-1.5 text-xs text-destructive border-b border-border/50">
+          Could not load {formatMonthLabel(carryError.month)}, which has staged edits that carry into
+          these months, so their figures are hidden: {getMonthDataErrorMessage(carryError.error)}
+        </p>
+      )}
       <OverlayScrollArea
         className="flex-1 min-w-0"
         onClick={(e) => {

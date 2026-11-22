@@ -155,6 +155,10 @@ class ExpressionParser {
     }
 
     const numStr = this.src.slice(start, this.pos);
+    // parseFloat would quietly read "12.3.4" as 12.3.
+    if (!/^(?:\d+\.?\d*|\.\d+)$/.test(numStr)) {
+      throw new Error(`Invalid number: "${numStr}"`);
+    }
     const value = parseFloat(numStr);
 
     if (isNaN(value)) {

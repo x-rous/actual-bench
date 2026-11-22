@@ -329,10 +329,12 @@ export function useBudgetSave(): UseBudgetSaveReturn {
               staleTime: 0,
             });
 
-          const holdError = (message: string) => {
+          const holdError = (message: string, serverAmount?: number) => {
             // The hold stays staged with its error, so Retry Failed can read the
-            // live hold again and apply only what is still missing.
-            setHoldSaveError(month, message);
+            // live hold again and apply only what is still missing. When the
+            // live hold is known it becomes the draft's baseline: after a short
+            // hold, Free must still clear what Actual did hold.
+            setHoldSaveError(month, message, serverAmount);
             results.push({ month, categoryId: "", status: "error", message });
           };
 
@@ -367,7 +369,8 @@ export function useBudgetSave(): UseBudgetSaveReturn {
               holdError(
                 heldAmount === 0
                   ? "Actual held nothing for next month: To Budget had no money left when the hold was saved."
-                  : `Actual held ${formatMinor(heldAmount)} instead of ${formatMinor(hold.nextAmount)}: a hold cannot be more than To Budget.`
+                  : `Actual held ${formatMinor(heldAmount)} instead of ${formatMinor(hold.nextAmount)}: a hold cannot be more than To Budget.`,
+                heldAmount
               );
             } else {
               succeededHoldMonths.push(month);
@@ -378,7 +381,15 @@ export function useBudgetSave(): UseBudgetSaveReturn {
               err instanceof Error
                 ? err.message
                 : (err as { message?: string }).message ?? "Save failed";
-            holdError(message);
+            // A reset may have gone through before the failure; learn the
+            // live hold if we can, so the draft's baseline stays true.
+            let serverAmount: number | undefined;
+            try {
+              serverAmount = (await readFresh()).summary.forNextMonth;
+            } catch {
+              // Unknown: keep the baseline the draft already has.
+            }
+            holdError(message, serverAmount);
           }
 
           completedCalls++;

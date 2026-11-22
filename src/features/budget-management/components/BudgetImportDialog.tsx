@@ -309,9 +309,40 @@ export function BudgetImportDialog({
     ),
   ];
 
-  const handleExtendRange = () => {
-    if (onExtendRange && outOfRangeMonths.length > 0) {
-      onExtendRange(outOfRangeMonths);
+  const handleExtendRange = async () => {
+    if (!onExtendRange || outOfRangeMonths.length === 0 || !parsed) return;
+    const months = outOfRangeMonths;
+    onExtendRange(months);
+
+    // Categories are matched against the months in view; load the months just
+    // brought into view too, so a category found only there can be matched.
+    // Approvals are kept (row ids are row positions); a row that only now
+    // matches exactly is approved, as it would have been on the first read.
+    const available = new Set(availableMonths);
+    const request = ++requestRef.current;
+    setIsWorking(true);
+    try {
+      const { monthStates } = await loadMonthStates(months.filter((m) => available.has(m)));
+      if (request !== requestRef.current) return;
+      const merged = mergeCategories(
+        matchCategories,
+        Object.values(monthStates).filter((st): st is LoadedMonthState => st != null)
+      );
+      if (merged.length === matchCategories.length) return;
+      const before = matchResults;
+      const after = matchImportRows(parsed.rows, merged, availableMonths, [...activeMonths, ...months]);
+      setMatchCategories(merged);
+      setApprovedIds((prev) => {
+        const next = new Set(prev);
+        after.forEach((r, index) => {
+          if (r.matchStatus === "exact" && r.matchedCategoryId !== null && before[index]?.matchStatus !== "exact") {
+            next.add(getImportRowId(index));
+          }
+        });
+        return next;
+      });
+    } finally {
+      if (request === requestRef.current) setIsWorking(false);
     }
   };
 

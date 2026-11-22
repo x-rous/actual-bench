@@ -273,11 +273,12 @@ export const useBudgetEditsStore = create<BudgetEditsStore>()((set, get) => ({
     set({ holds: next });
   },
 
-  setHoldSaveError(month, message) {
+  setHoldSaveError(month, message, serverAmount) {
     const { holds } = get();
     const existing = holds[month];
     if (!existing) return;
-    set({ holds: { ...holds, [month]: { ...existing, saveError: message } } });
+    const previousAmount = serverAmount ?? existing.previousAmount;
+    set({ holds: { ...holds, [month]: { ...existing, previousAmount, saveError: message } } });
   },
 
   clearHoldSaveError(month) {

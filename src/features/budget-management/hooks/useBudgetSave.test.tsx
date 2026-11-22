@@ -592,16 +592,58 @@ describe("useBudgetSave", () => {
     const { result } = renderHook(() => useBudgetSave(), { wrapper: makeWrapper(client) });
     useBudgetEditsStore.getState().stageHold({ month: "2026-01", previousAmount: 0, nextAmount: 300 });
 
+    let firstResults: BudgetSaveResult[] = [];
     await act(async () => {
-      await result.current.save({}, useBudgetEditsStore.getState().holds);
+      firstResults = await result.current.save({}, useBudgetEditsStore.getState().holds);
     });
 
+    // Retry Failed picks holds by an error row with an empty categoryId.
+    expect(firstResults).toEqual([
+      expect.objectContaining({ month: "2026-01", categoryId: "", status: "error" }),
+    ]);
+    // The draft's baseline is now what Actual really holds; the target stays.
     expect(useBudgetEditsStore.getState().holds["2026-01"]).toMatchObject({
+      previousAmount: 250,
       nextAmount: 300,
       saveError: expect.stringMatching(/held 2\.50 instead of 3\.00/),
     });
     // Actual still changed the month, so it is refreshed.
     expect(invalidate).toHaveBeenCalled();
+
+    // Retry once To Budget has room: only the missing 0.50 is sent, and the
+    // draft is removed after the read-back confirms 3.00.
+    transport.getBudgetMonth
+      .mockResolvedValueOnce({ ...makeRawMonth(), forNextMonth: 250 })
+      .mockResolvedValueOnce({ ...makeRawMonth(), forNextMonth: 300 });
+    transport.holdBudgetForNextMonth.mockClear();
+    await act(async () => {
+      await result.current.save({}, useBudgetEditsStore.getState().holds);
+    });
+
+    expect(transport.holdBudgetForNextMonth).toHaveBeenCalledTimes(1);
+    expect(transport.holdBudgetForNextMonth).toHaveBeenCalledWith("2026-01", 50);
+    expect(useBudgetEditsStore.getState().holds["2026-01"]).toBeUndefined();
+  });
+
+  it("stages a clear for Free after a short hold, because Actual still holds the short amount", async () => {
+    const transport = makeTransport();
+    transport.getBudgetMonth
+      .mockResolvedValueOnce({ ...makeRawMonth(), forNextMonth: 0 })
+      .mockResolvedValueOnce({ ...makeRawMonth(), forNextMonth: 250 });
+    mockGetTransport.mockReturnValue(transport);
+    const client = new QueryClient();
+    const { result } = renderHook(() => useBudgetSave(), { wrapper: makeWrapper(client) });
+    useBudgetEditsStore.getState().stageHold({ month: "2026-01", previousAmount: 0, nextAmount: 300 });
+
+    await act(async () => {
+      await result.current.save({}, useBudgetEditsStore.getState().holds);
+    });
+    useBudgetEditsStore.getState().stageHold({ month: "2026-01", previousAmount: 0, nextAmount: 0 });
+
+    expect(useBudgetEditsStore.getState().holds["2026-01"]).toMatchObject({
+      previousAmount: 250,
+      nextAmount: 0,
+    });
   });
 
   it("does not report a hold saved when it cannot be read back", async () => {
@@ -638,7 +680,11 @@ describe("useBudgetSave", () => {
     });
 
     expect(transport.resetBudgetHold).toHaveBeenCalled();
-    expect(useBudgetEditsStore.getState().holds["2026-01"]?.saveError).toBe("hold failed");
+    // The reset went through: the draft's baseline follows the live hold (0).
+    expect(useBudgetEditsStore.getState().holds["2026-01"]).toMatchObject({
+      previousAmount: 0,
+      saveError: "hold failed",
+    });
     expect(invalidate).toHaveBeenCalled();
   });
 

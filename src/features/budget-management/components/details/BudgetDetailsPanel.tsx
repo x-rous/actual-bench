@@ -17,6 +17,7 @@ import {
 } from "../../lib/effectiveMonth";
 import { useEnvelopeCarry } from "../../hooks/useEnvelopeCarry";
 import { incomeCategoryIdsNeedingBudgetFallback } from "../../lib/monthAuthority";
+import { formatMonthLabel } from "@/lib/budget/monthMath";
 import { buildBudgetDetailsModel } from "../../lib/budgetDetailsModel";
 import {
   buildEnvelopeDetailsMetrics,
@@ -128,11 +129,17 @@ export function BudgetDetailsPanel() {
   const hasIncomeBudgetsError = isTracking && incomeBudgetsError != null;
 
   // Same Envelope carry as the grid (MonthsDataProvider), so both agree.
-  const envelopeCarry = useEnvelopeCarry(displayMonths, dataArr, edits, !isTracking, availableMonthSet);
+  const {
+    carry: envelopeCarry,
+    ready: carryReady,
+    failed: carryError,
+  } = useEnvelopeCarry(displayMonths, dataArr, edits, !isTracking, availableMonthSet);
 
   const statesByMonth = useMemo(() => {
     const result = new Map<string, LoadedMonthState>();
     if (hasMonthQueryError || hasIncomeBudgetsError) return result;
+    // Same as the grid: no Envelope figures until the carry is known.
+    if (!carryReady) return result;
 
     for (let i = 0; i < displayMonths.length; i++) {
       const month = displayMonths[i];
@@ -157,6 +164,7 @@ export function BudgetDetailsPanel() {
     displayMonths,
     edits,
     envelopeCarry,
+    carryReady,
     holds,
     hasIncomeBudgetsError,
     hasMonthQueryError,
@@ -229,6 +237,14 @@ export function BudgetDetailsPanel() {
     );
   }
 
+  if (carryError) {
+    return (
+      <EmptyDetailsState
+        message={`Budget details could not load ${formatMonthLabel(carryError.month)}, which has staged edits that carry into these months: ${getMonthDataErrorMessage(carryError.error)}`}
+      />
+    );
+  }
+
   if (hasIncomeBudgetsError) {
     return (
       <EmptyDetailsState
@@ -241,6 +257,7 @@ export function BudgetDetailsPanel() {
     modeLoading ||
     availableMonthsLoading ||
     isMonthLoading ||
+    (!carryReady && !carryError) ||
     (isTracking && incomeBudgetsLoading);
   if (isLoading && statesByMonth.size === 0) {
     return <DetailsSkeleton />;

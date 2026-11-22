@@ -41,6 +41,12 @@ export type MonthsDataContextValue = {
   isLoading: boolean;
   /** Cross-month union of groups and categories, ordered by first appearance. */
   merged: MergedStructure | null;
+  /**
+   * Envelope: a month before the window that holds staged edits could not be
+   * loaded, so the carry into the window is unknown and the window's figures
+   * are held back.
+   */
+  carryError: { month: string; error: unknown } | null;
 };
 
 /** Everything except the effective states: changes only with server data. */
@@ -156,6 +162,7 @@ const EMPTY_STRUCTURE: MonthsStructureValue = {
   errors: new Map(),
   isLoading: false,
   merged: null,
+  carryError: null,
 };
 
 const EMPTY_STORE = createEffectiveStore(EMPTY_EFFECTIVE);
@@ -228,6 +235,19 @@ export function MonthsDataProvider({
   const allEdits = useBudgetEditsStore((s) => s.edits);
   const allHolds = useBudgetEditsStore((s) => s.holds);
 
+  // H1: Envelope carries staged edits forward with Actual's rules (negative
+  // balances reset, charged to next month's To Budget), not linearly, replayed
+  // from the earliest staged edit even when it is before the window.
+  const loadableStates = useMemo(
+    () => months.map((m, i) => (loadableMonthSet.has(m) ? dataArr[i] : undefined)),
+    [months, loadableMonthSet, dataArr]
+  );
+  const {
+    carry: envelopeCarry,
+    ready: carryReady,
+    failed: carryError,
+  } = useEnvelopeCarry(months, loadableStates, allEdits, !isTracking, loadableMonthSet);
+
   const structure = useMemo<MonthsStructureValue>(() => {
     const raw = new Map<string, LoadedMonthState>();
     const errors = new Map<string, unknown>();
@@ -239,20 +259,22 @@ export function MonthsDataProvider({
       if (err && !isMissingBudgetMonthError(err, m)) errors.set(m, err);
       if (data) raw.set(m, data);
     }
-    return { raw, errors, isLoading, merged: mergeMonthStates(dataArr) };
-  }, [months, loadableMonthSet, isLoading, dataArr, errorArr]);
+    return {
+      raw,
+      errors,
+      // A replay month still loading keeps the window "loading" too.
+      isLoading: isLoading || (!carryReady && !carryError),
+      merged: mergeMonthStates(dataArr),
+      carryError,
+    };
+  }, [months, loadableMonthSet, isLoading, dataArr, errorArr, carryReady, carryError]);
 
-  // H1: Envelope carries staged edits forward with Actual's rules (negative
-  // balances reset, charged to next month's To Budget), not linearly, replayed
-  // from the earliest staged edit even when it is before the window.
-  const loadableStates = useMemo(
-    () => months.map((m, i) => (loadableMonthSet.has(m) ? dataArr[i] : undefined)),
-    [months, loadableMonthSet, dataArr]
-  );
-  const envelopeCarry = useEnvelopeCarry(months, loadableStates, allEdits, !isTracking, loadableMonthSet);
 
   const effective = useMemo<EffectiveMap>(() => {
     const result = new Map<string, LoadedMonthState>();
+    // Without the carry from earlier staged edits, Envelope figures would be
+    // wrong, so the window shows as not loaded until the carry is known.
+    if (!carryReady) return result;
 
     for (let i = 0; i < months.length; i++) {
       const m = months[i]!;
@@ -271,7 +293,7 @@ export function MonthsDataProvider({
       if (eff) result.set(m, eff);
     }
     return result;
-  }, [months, loadableMonthSet, allEdits, allHolds, isTracking, incomeBudgets, dataArr, envelopeCarry]);
+  }, [months, loadableMonthSet, allEdits, allHolds, isTracking, incomeBudgets, dataArr, envelopeCarry, carryReady]);
 
   // The store is created once with the first effective map, so the first
   // render already reads real data; later maps are published before paint.
