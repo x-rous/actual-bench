@@ -6,9 +6,9 @@ import { ProgressHost } from "./ProgressHost";
 const useWealth = jest.fn();
 jest.mock("../hooks/useWealth", () => ({ useWealth: (...args: unknown[]) => useWealth(...args) }));
 
-const house: AccountFact = { id: "house", name: "Maple Cottage", accountClass: "property", treatment: null, offBudget: true };
-const truck: AccountFact = { id: "truck", name: "Quartz Truck", accountClass: "vehicle", treatment: null, offBudget: true };
-const holding: AccountFact = { id: "deposit", name: "Saffron Deposit", accountClass: "other-asset", treatment: null, offBudget: true };
+const house: AccountFact = { id: "house", name: "Maple Cottage", accountClass: "property", offBudget: true };
+const truck: AccountFact = { id: "truck", name: "Quartz Truck", accountClass: "vehicle", offBudget: true };
+const holding: AccountFact = { id: "deposit", name: "Saffron Deposit", accountClass: "other-asset", offBudget: true };
 const input = inputOf(factsOf([chk, house], months(1, 10).map((m) => row(m, "chk", 1_000_000, { categoryId: "salary" }))));
 const registry = (over: Record<string, unknown> = {}) => ({ read: true, assets: [{ id: "home-1", name: "Maple Cottage", actualAccountId: "house", status: "active" }], metadata: [], debtLinks: [{ assetId: "home-1", debtId: "d1" }], assetEntries: [], assetRowCount: 0, savedClassifications: [], ...over });
 const data = (over: Record<string, unknown> = {}) => ({ ...input, registry: registry(), drill: { today: "2026-11-18" }, ...over }) as never;

@@ -6,19 +6,19 @@ import { drillScope } from "./drill";
 
 const period = resolvePeriod({ kind: "custom", startMonth: "2026-09", endMonth: "2026-09" }, "2026-11-06", null);
 const accounts: AccountFact[] = [
-  { id: "cash", name: "Wallet", accountClass: "cash", treatment: null, offBudget: false },
-  { id: "bank", name: "Checking", accountClass: "bank", treatment: null, offBudget: false },
-  { id: "saving", name: "Savings", accountClass: "bank", treatment: null, offBudget: true, closed: true },
-  { id: "fd", name: "Deposit", accountClass: "bank", treatment: "fixed-deposit", offBudget: true },
-  { id: "car", name: "Car", accountClass: "vehicle", treatment: null, offBudget: true },
-  { id: "home", name: "Home", accountClass: "property", treatment: null, offBudget: true },
-  { id: "inv", name: "Broker", accountClass: "investment", treatment: null, offBudget: true },
-  { id: "ret", name: "Retirement", accountClass: "retirement", treatment: null, offBudget: true },
-  { id: "other", name: "Receivable", accountClass: "other-asset", treatment: null, offBudget: true },
-  { id: "fixed", name: "Collectible", accountClass: "other-asset", treatment: "fixed-asset", offBudget: true },
-  { id: "card", name: "Card", accountClass: "credit-card", treatment: null, offBudget: false },
-  { id: "loan", name: "Loan", accountClass: "loan", treatment: null, offBudget: true },
-  { id: "liability", name: "Payable", accountClass: "other-liability", treatment: null, offBudget: true },
+  { id: "cash", name: "Wallet", accountClass: "cash", offBudget: false },
+  { id: "bank", name: "Checking", accountClass: "bank", offBudget: false },
+  { id: "saving", name: "Savings", accountClass: "bank", offBudget: true, closed: true },
+  { id: "fd", name: "Deposit", accountClass: "fixed-deposit", offBudget: true },
+  { id: "car", name: "Car", accountClass: "vehicle", offBudget: true },
+  { id: "home", name: "Home", accountClass: "property", offBudget: true },
+  { id: "inv", name: "Broker", accountClass: "investment", offBudget: true },
+  { id: "ret", name: "Retirement", accountClass: "retirement", offBudget: true },
+  { id: "other", name: "Receivable", accountClass: "other-asset", offBudget: true },
+  { id: "fixed", name: "Collectible", accountClass: "fixed-asset", offBudget: true },
+  { id: "card", name: "Card", accountClass: "credit-card", offBudget: false },
+  { id: "loan", name: "Loan", accountClass: "loan", offBudget: true },
+  { id: "liability", name: "Payable", accountClass: "other-liability", offBudget: true },
 ];
 const categories = new Map<string, CategoryInfo>([
   ["salary", { id: "salary", name: "Salary", groupName: "Income", hidden: false, isIncome: true, order: 1 }],
@@ -303,8 +303,8 @@ describe("recorded financial statements", () => {
     });
   });
 
-  it("counts uncategorized money in as income in an off-budget bank account set to count it, as Received does, and reconciles", () => {
-    const flagged = accounts.map((a) => (a.id === "saving" ? { ...a, closed: false, offBudgetIncome: true } : a));
+  it("counts uncategorized money in as income in an off-budget Savings account, as Received does, and reconciles", () => {
+    const flagged = accounts.map((a) => (a.id === "saving" ? { ...a, closed: false, accountClass: "savings" as const } : a));
     const entries = [entry("interest-in", "saving", 4_000), entry("fee-out", "saving", -500)];
     // The read returns one cell per account and month, holding both signs.
     const cell = { month: "2026-09", accountId: "saving", categoryId: null, transferAccountId: null, amountMinor: 3_500, count: 2 };

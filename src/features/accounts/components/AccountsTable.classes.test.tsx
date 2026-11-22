@@ -61,7 +61,7 @@ describe("accounts table and Groups dialog share account classes", () => {
     await screen.findByRole("combobox", { name: "Account class of Checking", hidden: true });
 
     fireEvent.click(await screen.findByRole("combobox", { name: "Account class of group Everyday" }));
-    const option = await screen.findByRole("option", { name: "Bank" });
+    const option = await screen.findByRole("option", { name: "Checking" });
     fireEvent.pointerDown(option, { pointerType: "mouse" });
     fireEvent.pointerUp(option, { pointerType: "mouse" });
     fireEvent.mouseUp(option);
@@ -392,7 +392,7 @@ describe("accounts table and Groups dialog share account classes", () => {
 
     expect(await screen.findByText("No accounts match the current filters.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
-    expect(await screen.findByText("Checking")).toBeInTheDocument();
+    expect((await screen.findAllByText("Checking")).length).toBeGreaterThan(1);
   });
 
   it("keeps the grouping when filters are cleared", async () => {
@@ -407,6 +407,6 @@ describe("accounts table and Groups dialog share account classes", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Clear filters" }));
 
-    expect(await screen.findByRole("button", { name: /Collapse Bank/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /Collapse Checking/ })).toBeInTheDocument();
   });
 });

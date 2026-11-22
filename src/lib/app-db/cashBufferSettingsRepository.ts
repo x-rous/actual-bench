@@ -4,16 +4,16 @@ import type { SqliteDatabase } from "./types";
 
 /**
  * Persistence for the cash buffer settings of one budget: the months of cover the user aims for and how a typical month is worked
- * out. One row per budget; a budget with none uses the defaults.
+ * out, and what Financial Insights counts as cash. One row per budget; a budget with none uses the defaults.
  */
 
-type SettingsRow = { budget_sync_id: string; goal_months: number | null; average_months: number; method: string };
+type SettingsRow = { budget_sync_id: string; goal_months: number | null; average_months: number; method: string; cash_basis: string | null };
 
 /** The budget's settings, or the defaults when it has none (or a row this build cannot read, which a newer version may have written). */
 export function readCashBufferSettings(db: SqliteDatabase, budgetSyncId: string): BufferSettings {
   const row = db.prepare("SELECT * FROM cash_buffer_settings WHERE budget_sync_id = ?").get(budgetSyncId) as SettingsRow | undefined;
   if (!row) return DEFAULT_BUFFER_SETTINGS;
-  return parseBufferSettings({ goalMonths: row.goal_months, averageMonths: row.average_months, method: row.method }) ?? DEFAULT_BUFFER_SETTINGS;
+  return parseBufferSettings({ goalMonths: row.goal_months, averageMonths: row.average_months, method: row.method, cashBasis: row.cash_basis }) ?? DEFAULT_BUFFER_SETTINGS;
 }
 
 /** Saves the budget's settings and returns them. */
@@ -25,13 +25,14 @@ export function saveCashBufferSettings(db: SqliteDatabase, input: unknown): Buff
   const settings = parseBufferSettings(body.settings);
   if (!settings) throw new AppDbValidationError("The cash buffer settings are not valid");
   db.prepare(
-    `INSERT INTO cash_buffer_settings (budget_sync_id, goal_months, average_months, method, updated_at)
-     VALUES (?, ?, ?, ?, ?)
+    `INSERT INTO cash_buffer_settings (budget_sync_id, goal_months, average_months, method, cash_basis, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT(budget_sync_id) DO UPDATE SET
        goal_months = excluded.goal_months,
        average_months = excluded.average_months,
        method = excluded.method,
+       cash_basis = excluded.cash_basis,
        updated_at = excluded.updated_at`
-  ).run(budgetSyncId, settings.goalMonths, settings.averageMonths, settings.method, new Date().toISOString());
+  ).run(budgetSyncId, settings.goalMonths, settings.averageMonths, settings.method, settings.cashBasis, new Date().toISOString());
   return readCashBufferSettings(db, budgetSyncId);
 }

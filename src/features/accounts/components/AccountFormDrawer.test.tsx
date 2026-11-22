@@ -17,7 +17,7 @@ describe("new account class selection", () => {
     fireEvent.click(screen.getByRole("combobox", { name: "Account Class" }));
     expect(await screen.findByText("Off-budget accounts only")).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "Retirement" })).toHaveAttribute("aria-disabled", "true");
-    const bank = screen.getByRole("option", { name: "Bank" });
+    const bank = screen.getByRole("option", { name: "Checking" });
     fireEvent.pointerDown(bank, { pointerType: "mouse" });
     fireEvent.pointerUp(bank, { pointerType: "mouse" });
     fireEvent.click(bank);
@@ -39,7 +39,7 @@ describe("new account class selection", () => {
   it("resets the draft class when the drawer is reopened", async () => {
     const props = { onOpenChange: jest.fn(), onSubmit: jest.fn() };
     const { rerender } = render(<AccountFormDrawer open {...props} />);
-    await chooseClass("Bank");
+    await chooseClass("Checking");
     rerender(<AccountFormDrawer open={false} {...props} />);
     rerender(<AccountFormDrawer open {...props} />);
     await waitFor(() => expect(screen.getByRole("combobox", { name: "Account Class" })).toHaveTextContent("Unclassified"));
@@ -64,7 +64,7 @@ describe("new account group selection", () => {
     fireEvent.change(screen.getByLabelText("Account Name"), { target: { value: "Daily account" } });
     await chooseGroup("Checking");
     expect(screen.getByRole("combobox", { name: "Account Class" })).toBeDisabled();
-    expect(screen.getByRole("combobox", { name: "Account Class" })).toHaveTextContent("Bank");
+    expect(screen.getByRole("combobox", { name: "Account Class" })).toHaveTextContent("Checking");
     fireEvent.click(screen.getByRole("button", { name: "Add Account" }));
     await waitFor(() => expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ groupId: "checking", accountClass: null })));
   });

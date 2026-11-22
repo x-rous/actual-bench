@@ -278,7 +278,7 @@ describe("FlowChart kept labels", () => {
 });
 
 describe("CompositionChart net worth labels", () => {
-  const month = (property: number, loans: number) => ({ cash: 0, fixed: 0, invest: 0, property, vehicle: 0, other: 0, loans, cards: 0, otherLiability: 0 });
+  const month = (property: number, loans: number) => ({ cash: 0, savings: 0, fixed: 0, invest: 0, property, vehicle: 0, other: 0, loans, cards: 0, otherLiability: 0 });
   const months = [month(320_000_000, -15_000_000), month(330_000_000, -15_000_000), month(340_000_000, -16_000_000)];
   const netWorth = [300_000_000, 320_000_000, 340_000_000];
   const base = { labels: ["Jan", "Feb", "Mar"], partialIndex: null, months, netWorth, hidden: new Set<never>(), showNetWorth: true };

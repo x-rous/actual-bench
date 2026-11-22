@@ -13,7 +13,7 @@ function renderCell(effective: EffectiveAccountClass, over: Partial<React.Compon
 describe("AccountClassCell", () => {
   it("shows the account's own class as an editable control", () => {
     renderCell({ accountClass: "bank", source: "account" });
-    expect(screen.getByRole("combobox", { name: "Account class of Checking" })).toHaveTextContent("Bank");
+    expect(screen.getByRole("combobox", { name: "Account class of Checking" })).toHaveTextContent("Checking");
   });
 
   it("shows Unclassified when there is no class", () => {
@@ -68,7 +68,7 @@ describe("AccountClassCell", () => {
       expect(option).toHaveAttribute("aria-disabled", "true");
       fireEvent.click(option);
     }
-    for (const name of ["Cash", "Bank", "Other Asset", "Credit Card", "Other Liability"]) {
+    for (const name of ["Cash", "Checking", "Savings", "Other Asset", "Credit Card", "Other Liability"]) {
       expect(screen.getByRole("option", { name })).not.toHaveAttribute("aria-disabled", "true");
     }
     fireEvent.keyDown(trigger, { key: "l" });

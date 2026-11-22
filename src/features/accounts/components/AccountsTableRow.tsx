@@ -19,9 +19,7 @@ import { cn } from "@/lib/utils";
 import type { Account, AccountGroup } from "@/types/entities";
 import { AccountGroupCell } from "./AccountGroupCell";
 import { AccountClassCell } from "./AccountClassCell";
-import { AccountReportingCell, type AccountFlagState } from "./AccountReportingCell";
-import type { AccountFlag } from "@/lib/account-class/flags";
-import type { ReportingTreatment } from "@/lib/account-class/reporting";
+import { AccountAccessCell, AccountReportsCell, type AccountFlagEdit, type AccountFlagState } from "./AccountAccessCell";
 import { isAccountClassAllowed, type AccountClass, type EffectiveAccountClass } from "@/lib/account-class";
 import type { StagedEntity } from "@/types/staged";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -53,16 +51,13 @@ type AccountsTableRowProps = {
   /** False until the saved classes have loaded, and for accounts not yet saved to Actual. */
   canSetClass: boolean;
   onSetClass: (accountId: string, accountClass: AccountClass | null) => void;
-  /** The saved Financial Reporting choice, if any. */
-  savedReporting?: ReportingTreatment;
-  /** False until the saved choices have loaded. */
-  canSetReporting: boolean;
-  /** The saved yes/no settings of this account (left out, accessible money, income in an off-budget account). */
+  /** False until the saved flags have loaded. */
+  canSetFlags: boolean;
+  /** The saved yes/no settings of this account (left out, available now, locked). */
   flagState: AccountFlagState;
-  /** The account's group is left out of Financial Insights. */
+  /** The account's group is left out of reports. */
   excludedByGroup?: boolean;
-  onSetReporting: (accountId: string, treatment: ReportingTreatment | null) => void;
-  onSetFlag: (accountId: string, flag: AccountFlag, on: boolean) => void;
+  onSetFlags: (accountId: string, edits: AccountFlagEdit[]) => void;
   onToggleSelect: (id: string, checked: boolean) => void;
   onSelectNameCell: (id: string) => void;
   onStartEditingName: (id: string) => void;
@@ -145,12 +140,10 @@ function AccountsTableRowComponent({
   classGroupName,
   canSetClass,
   onSetClass,
-  savedReporting,
-  canSetReporting,
+  canSetFlags,
   flagState,
   excludedByGroup = false,
-  onSetReporting,
-  onSetFlag,
+  onSetFlags,
   onToggleSelect,
   onSelectNameCell,
   onStartEditingName,
@@ -296,21 +289,33 @@ function AccountsTableRowComponent({
       )}
 
       {effective && (
-        <td className="w-56 px-2 py-0.5">
-          <AccountReportingCell
+        <td className="w-40 px-2 py-0.5">
+          <AccountAccessCell
             accountId={entity.id}
             accountName={entity.name}
             accountClass={effective.accountClass}
             offBudget={entity.offBudget}
-            saved={savedReporting}
             flags={flagState}
+            unsaved={isNew}
+            disabled={isDeleted || !canSetFlags}
+            onChange={onSetFlags}
+          />
+        </td>
+      )}
+
+      {effective && (
+        <td className="w-48 px-2 py-0.5">
+          <AccountReportsCell
+            accountId={entity.id}
+            accountName={entity.name}
+            offBudget={entity.offBudget}
+            excluded={flagState.excluded}
             excludedByGroup={excludedByGroup}
-            classFromGroup={effective?.source === "group"}
+            classFromGroup={effective.source === "group"}
             groupName={classGroupName}
             unsaved={isNew}
-            disabled={isDeleted || !canSetReporting}
-            onChangeTreatment={onSetReporting}
-            onChangeFlag={onSetFlag}
+            disabled={isDeleted || !canSetFlags}
+            onChange={onSetFlags}
           />
         </td>
       )}
@@ -481,14 +486,12 @@ function areEqual(prev: AccountsTableRowProps, next: AccountsTableRowProps) {
     prev.classGroupName === next.classGroupName &&
     prev.canSetClass === next.canSetClass &&
     prev.onSetClass === next.onSetClass &&
-    prev.savedReporting === next.savedReporting &&
-    prev.canSetReporting === next.canSetReporting &&
+    prev.canSetFlags === next.canSetFlags &&
     prev.flagState.excluded === next.flagState.excluded &&
     prev.flagState.accessible === next.flagState.accessible &&
-    prev.flagState.offbudgetIncome === next.flagState.offbudgetIncome &&
+    prev.flagState.locked === next.flagState.locked &&
     prev.excludedByGroup === next.excludedByGroup &&
-    prev.onSetReporting === next.onSetReporting &&
-    prev.onSetFlag === next.onSetFlag &&
+    prev.onSetFlags === next.onSetFlags &&
     prev.isAnotherCellEditing === next.isAnotherCellEditing
   );
 }

@@ -1,7 +1,7 @@
 import type { PickedTransaction, PickerConstraints, PickerFilterState } from "@/components/transactions/transactionPickerQuery";
 import type { InsightsOptions } from "@/components/transactions/PickerInsights";
 import type { PickerFilterKey } from "@/components/transactions/TransactionFilterBar";
-import { computeFlows, isLoanCostInSpent, type AccountFact, type Ledger } from "./measures";
+import { computeFlows, isLoanCostInSpent, offBudgetIncomeOf, type AccountFact, type Ledger } from "./measures";
 import { resolvePeriod, type ResolvedPeriod } from "./period";
 import { portfolioBridge } from "./wealth";
 
@@ -106,11 +106,11 @@ const TITLES: Record<DrillKind, string> = {
   loanFees: "Loan fees",
   loanCharged: "Charged by lenders",
   loanAccountOther: "Other entries in loan accounts",
-  offBudgetIncome: "Interest & income in off-budget accounts",
+  offBudgetIncome: "Interest & income in off-budget savings",
   cashIncome: "Income in cash accounts",
   cashSpending: "Spending in cash accounts",
   cardPaid: "Paid to credit cards",
-  fixedMoved: "Fixed / restricted deposits",
+  fixedMoved: "Moved to and from savings & deposits",
   assetsMoved: "Moved to and from other assets",
   liabilitiesMoved: "Moved to and from other liabilities",
 };
@@ -133,12 +133,12 @@ const DESCRIPTIONS: Record<DrillKind, string> = {
   loanInterest: "The interest lines the Loans tracking recorded for loans tracked in Loans, whether split from a repayment or charged by the lender. They are spending, counted in Spent.",
   loanFees: "The fee lines the Loans tracking recorded for loans tracked in Loans, whether split from a repayment or charged by the lender. They are spending, counted in Spent.",
   loanCharged: "Interest and fees the lender charged as their own rows in the accounts of loans tracked in Loans. They are spending, counted in Spent.",
-  offBudgetIncome: "Money in with no category in off-budget Cash and Bank accounts set to count it as income, such as interest. It is counted in Received.",
+  offBudgetIncome: "Money in with no category in off-budget Savings and Fixed Deposit accounts: interest, in practice. It is counted in Received.",
   loanAccountOther: "Entries with no category in loan accounts that are not transfers and not charges tracked in Loans: often interest or fees the lender charged to a loan that is not tracked. They change your net worth but are not income or spending.",
   cashIncome: "Entries with an income category, and uncategorized money in on-budget accounts, in your cash accounts: income, refunds of it included. Transfers and entries the Asset Registry classifies are not in it.",
   cashSpending: "Entries with an expense category, and uncategorized money out of on-budget accounts, in your cash accounts: spending, refunds included. Transfers and entries the Asset Registry classifies are not in it.",
   cardPaid: "Money moved between cash accounts and credit cards: payments to cards, and refunds or transfers back.",
-  fixedMoved: "Money moved between cash accounts and fixed / restricted deposits.",
+  fixedMoved: "Money moved between cash accounts and the savings and deposits the cash figures leave out: locked ones, and savings when Financial Insights counts cash only.",
   assetsMoved: "Money moved between cash accounts and your other assets, such as property, vehicles or other assets.",
   liabilitiesMoved: "Money moved between cash accounts and your other liabilities.",
 };
@@ -156,8 +156,8 @@ export function drillScope(target: Exclude<DrillTarget, { kind: "inTransit" }>, 
   // Loan accounts have their own figure ("Other entries in loan accounts"), so they are not part of the unidentified movements.
   const offBudget = ids((a) => a.offBudget && role.get(a.id) !== "investment" && role.get(a.id) !== "loan");
   const investmentAccounts = ids((a) => a.offBudget && role.get(a.id) === "investment");
-  // Off-budget Cash and Bank accounts set to count uncategorized money in as income.
-  const offBudgetIncomeAccounts = ids((a) => a.offBudget && !!a.offBudgetIncome);
+  // Off-budget Savings and Fixed Deposit accounts: uncategorized money in is income.
+  const offBudgetIncomeAccounts = ids(offBudgetIncomeOf);
   const cash = ids((a) => role.get(a.id) === "cash");
   const withRole = (r: string) => ids((a) => role.get(a.id) === r);
   const notIncome = incomeIds.map((id) => ({ category: { $ne: id } }));

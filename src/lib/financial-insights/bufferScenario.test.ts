@@ -80,7 +80,9 @@ describe("cash buffer scenarios", () => {
   });
 
   it("reads buffer settings only in the expected shape", () => {
-    expect(parseBufferSettings({ goalMonths: 6, averageMonths: 3, method: "median" })).toEqual({ goalMonths: 6, averageMonths: 3, method: "median" });
+    expect(parseBufferSettings({ goalMonths: 6, averageMonths: 3, method: "median" })).toEqual({ goalMonths: 6, averageMonths: 3, method: "median", cashBasis: "cash-savings" });
+    expect(parseBufferSettings({ goalMonths: 6, averageMonths: 3, method: "median", cashBasis: "cash" })).toMatchObject({ cashBasis: "cash" });
+    expect(parseBufferSettings({ goalMonths: 6, averageMonths: 3, method: "median", cashBasis: "bank" })).toBeNull();
     expect(parseBufferSettings({ goalMonths: null, averageMonths: 12, method: "average" })).toEqual(DEFAULT_BUFFER_SETTINGS);
     const ok = { goalMonths: null, averageMonths: 12, method: "average" };
     for (const bad of [{ goalMonths: 0 }, { goalMonths: 121 }, { goalMonths: 1.5 }, { averageMonths: 5 }, { method: "mode" }]) {

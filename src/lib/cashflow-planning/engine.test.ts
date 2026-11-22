@@ -5,7 +5,7 @@ import { createPlanDocument, createRow, exportPlanJson, importPlanJson, parseAmo
 import { computePlan } from "./engine";
 import { linkNotes } from "./linkNotes";
 
-const account = (id: string, accountClass: SnapAccount["accountClass"], offBudget = false): SnapAccount => ({ id, name: id, offBudget, closed: false, accountClass, treatment: null, excluded: false, groupName: null });
+const account = (id: string, accountClass: SnapAccount["accountClass"], offBudget = false): SnapAccount => ({ id, name: id, offBudget, closed: false, accountClass, access: null, excluded: false, groupName: null });
 
 /**
  * A small household, today 15 Mar 2026. Bank and card are cash; the broker is savings; the mortgage is outside.

@@ -8,8 +8,9 @@ import { getTransport } from "@/lib/actual";
 import { isAccountGroupsUnsupported } from "@/lib/api/accountGroups";
 import { selectActiveInstance, useConnectionStore } from "@/store/connection";
 import { resolveAccountClass, type AccountClass } from "@/lib/account-class";
-import { hasFlag, isExcluded } from "@/lib/account-class/flags";
-import { evaluateAccountReadiness, validSavedTreatment, type AccountReadinessStatus } from "@/lib/account-class/reporting";
+import { accessOf } from "@/lib/account-class/access";
+import { accessOverrides, isExcluded } from "@/lib/account-class/flags";
+import { evaluateAccountReadiness, type AccountReadinessStatus } from "@/lib/account-class/reporting";
 import type { AssetDebtLink } from "@/lib/asset-registry/financing";
 import { CASHFLOW_TYPES, type Asset, type BookMetadata } from "@/lib/asset-registry/models";
 import { useBudgetAvailability } from "./useBudgetPlan";
@@ -18,7 +19,6 @@ import { readLoanSchedules, type LoanSchedules } from "../lib/loanSchedules";
 import type { AccountGroup } from "@/types/entities";
 import { useAccountClasses } from "@/features/accounts/hooks/useAccountClasses";
 import { useAccountFlags } from "@/features/accounts/hooks/useAccountFlags";
-import { useAccountReporting } from "@/features/accounts/hooks/useAccountReporting";
 import { useClosedAccountActivity } from "@/features/accounts/hooks/useClosedAccountActivity";
 import { registryRequest } from "@/features/asset-registry/api";
 import { useLocalToday } from "@/features/assets-debt/lib/useLocalToday";
@@ -55,7 +55,6 @@ export type Gate =
 export function useFinancialInsightsGate(): Gate {
   const connection = useConnectionStore(selectActiveInstance);
   const classes = useAccountClasses();
-  const reporting = useAccountReporting();
   const flags = useAccountFlags();
 
   const accountsQuery = useQuery({
@@ -87,9 +86,8 @@ export function useFinancialInsightsGate(): Gate {
   const accounts = accountsQuery.data;
   const closedIds = useMemo(() => (accounts ?? []).filter((a) => a.closed).map((a) => a.id), [accounts]);
   const activity = useClosedAccountActivity(closedIds);
-  // `classes` and `reporting` are new objects on every render; the gate depends on the parts it reads, so it is rebuilt only when they change.
+  // `classes` and `flags` are new objects on every render; the gate depends on the parts it reads, so it is rebuilt only when they change.
   const { enabled: classesEnabled, available: classesAvailable, failed: classesFailed, refetch: refetchClasses, maps: classMaps } = classes;
-  const { available: reportingAvailable, failed: reportingFailed, refetch: refetchReporting, byAccount: reportingByAccount } = reporting;
   const { available: flagsAvailable, failed: flagsFailed, refetch: refetchFlags, maps: flagMaps } = flags;
   const { isError: accountsFailed, refetch: refetchAccounts, isFetchedAfterMount: accountsFetchedAfterMount } = accountsQuery;
   const { isError: groupsFailed, refetch: refetchGroups, data: groupsData } = groupsQuery;
@@ -97,7 +95,7 @@ export function useFinancialInsightsGate(): Gate {
 
   return useMemo((): Gate => {
     if (!connection || !classesEnabled) return { state: "none" };
-    if (accountsFailed || groupsFailed || activityFailed || classesFailed || reportingFailed || flagsFailed) {
+    if (accountsFailed || groupsFailed || activityFailed || classesFailed || flagsFailed) {
       return {
         state: "error",
         retry: () => {
@@ -105,13 +103,12 @@ export function useFinancialInsightsGate(): Gate {
           void refetchGroups();
           void refetchActivity();
           void refetchClasses();
-          void refetchReporting();
           void refetchFlags();
         },
       };
     }
     // The accounts are checked again every time the page opens: until that check is back, what was cached is not shown as the truth.
-    if (!accounts || !accountsFetchedAfterMount || groupsData === undefined || !activityData || !classesAvailable || !reportingAvailable || !flagsAvailable) return { state: "loading" };
+    if (!accounts || !accountsFetchedAfterMount || groupsData === undefined || !activityData || !classesAvailable || !flagsAvailable) return { state: "loading" };
 
     const groupNames = new Map((groupsData ?? []).map((g) => [g.id, g.name]));
     const liveGroups = new Set(groupNames.keys());
@@ -129,6 +126,8 @@ export function useFinancialInsightsGate(): Gate {
           const detail = a.status !== "incompatible-placement" || !account ? undefined
             : excludedIds.has(a.accountId) ? "It is left out of Financial Insights, but only off-budget accounts can be left out. Include it again in the Accounts table."
             : classOf.get(a.accountId) === "credit-card" ? "Credit cards must be on budget so their purchases count as spending. Choose another class, or leave the account out of Financial Insights."
+            : classOf.get(a.accountId) === "fixed-deposit" ? "A Fixed Deposit is locked money, so it must be off budget: on budget, Actual lets you assign it. Move it off budget in Actual, or choose Savings if you can use it now."
+            : classOf.get(a.accountId) === "fixed-asset" ? "The Assets module values fixed assets in off-budget accounts only. Move it off budget in Actual, or choose Other Asset."
             : "Its class needs an off-budget account. Choose a class that works on budget.";
           return { id: a.accountId, name: account?.name ?? a.accountId, status: a.status, detail };
         });
@@ -138,16 +137,14 @@ export function useFinancialInsightsGate(): Gate {
     const facts: AccountFact[] = accounts.flatMap((a) => {
       const accountClass = classOf.get(a.id);
       if (!accountClass || excludedIds.has(a.id)) return [];
-      const treatment = validSavedTreatment(accountClass, reportingByAccount.get(a.id));
       return [{
-        id: a.id, name: a.name, groupId: a.groupId ?? null, groupName: a.groupId ? groupNames.get(a.groupId) ?? null : null, accountClass, treatment, offBudget: a.offBudget, closed: a.closed,
-        accessible: hasFlag("accessible", a.id, accountClass, a.offBudget, treatment, flagMaps),
-        offBudgetIncome: hasFlag("offbudget-income", a.id, accountClass, a.offBudget, treatment, flagMaps),
+        id: a.id, name: a.name, groupId: a.groupId ?? null, groupName: a.groupId ? groupNames.get(a.groupId) ?? null : null, accountClass, offBudget: a.offBudget, closed: a.closed,
+        access: accessOf(accountClass, a.offBudget, accessOverrides(a.id, accountClass, a.offBudget, flagMaps)),
       }];
     });
     const excluded = accounts.filter((a) => excludedIds.has(a.id)).map((a) => ({ id: a.id, name: a.name }));
     return { state: "ready", accounts: facts, excluded };
-  }, [connection, classesEnabled, classesAvailable, classesFailed, refetchClasses, classMaps, reportingAvailable, reportingFailed, refetchReporting, reportingByAccount, flagsAvailable, flagsFailed, refetchFlags, flagMaps, accounts, accountsFetchedAfterMount, accountsFailed, refetchAccounts, groupsFailed, refetchGroups, groupsData, activityFailed, refetchActivity, activityData]);
+  }, [connection, classesEnabled, classesAvailable, classesFailed, refetchClasses, classMaps, flagsAvailable, flagsFailed, refetchFlags, flagMaps, accounts, accountsFetchedAfterMount, accountsFailed, refetchAccounts, groupsFailed, refetchGroups, groupsData, activityFailed, refetchActivity, activityData]);
 }
 
 // ─── Data ────────────────────────────────────────────────────────────────────
@@ -240,7 +237,7 @@ export const TABS = [
 ] as const;
 
 /** The tabs that have something to show: My budget once its mode is known and a month was read, Investments once an investment or retirement account exists, Property & assets once a fixed asset account exists (property, vehicle or a fixed other asset), Loans & cards once a loan, credit card or other liability account exists. */
-export function offeredTabs(accounts: readonly Pick<AccountFact, "accountClass" | "treatment">[] | null, budgetAvailable: boolean): readonly (typeof TABS)[number][] {
+export function offeredTabs(accounts: readonly Pick<AccountFact, "accountClass">[] | null, budgetAvailable: boolean): readonly (typeof TABS)[number][] {
   const wealth = (accounts ?? []).some((a) => a.accountClass === "investment" || a.accountClass === "retirement");
   const property = (accounts ?? []).some((a) => isFixedAssetAccount(a));
   const debt = (accounts ?? []).some((a) => a.accountClass === "loan" || a.accountClass === "credit-card" || a.accountClass === "other-liability");
@@ -352,8 +349,9 @@ export function useFinancialInsights(): FinancialInsightsView {
       uncategorizedIn: raw.uncategorizedIn, transfersIn: raw.transfersIn, loanCosts: raw.loanCosts,
       reclassified: [...raw.linkedSales, ...(raw.assetEntries ? valueChangeRows(raw.assetEntries, raw.savedClassifications) : [])],
     };
-    return buildLedger(facts);
-  }, [accounts, excluded, raw]);
+    // The ledger's roles follow the saved cash basis: every cash figure on the page (Summary, Money in & out, the cash buffer) uses it.
+    return buildLedger(facts, bufferSettings.cashBasis);
+  }, [accounts, excluded, raw, bufferSettings.cashBasis]);
 
   const period = filters.period;
   const budget = useBudgetAvailability(gate.state === "ready", today);
@@ -416,7 +414,6 @@ export function useFinancialInsights(): FinancialInsightsView {
         queryClient.invalidateQueries({ queryKey: ["accountActivity"] }),
         // Saved in another tab since: the setup screen must not keep an answer that has changed.
         queryClient.invalidateQueries({ queryKey: ["accountClasses", connection?.budgetSyncId] }),
-        queryClient.invalidateQueries({ queryKey: ["accountReporting", connection?.budgetSyncId] }),
       ]),
       onSyncFailed: () => toast.warning("Could not reach the server. Showing the data already loaded."),
     }),

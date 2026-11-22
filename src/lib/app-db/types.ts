@@ -878,10 +878,3 @@ export type AccountFlagRecord = {
   updatedAt: string;
 };
 
-/** A Bench-owned Financial Reporting choice for one Actual account (scoped to one budget). */
-export type AccountReportingRecord = {
-  budgetSyncId: string;
-  accountId: string;
-  treatment: import("@/lib/account-class/reporting").ReportingTreatment;
-  updatedAt: string;
-};

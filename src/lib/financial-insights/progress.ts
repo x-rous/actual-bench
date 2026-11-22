@@ -440,7 +440,7 @@ function consistencyCard(input: ProgressInput, when: ReturnType<typeof whenOf>):
 // ─── Asset composition ───────────────────────────────────────────────────────
 
 const COMPOSITION: { name: string; keys: ClassKey[] }[] = [
-  { name: "Cash & deposits", keys: ["cash", "fixed"] },
+  { name: "Cash & deposits", keys: ["cash", "savings", "fixed"] },
   { name: "Investments", keys: ["invest"] },
   { name: "Property", keys: ["property"] },
   { name: "Other", keys: ["vehicle", "other"] },
@@ -474,7 +474,7 @@ function compositionCard(input: ProgressInput): CompositionCard | null {
   return {
     kind: "composition", id: "asset-composition", title: "Asset composition", note: "Share of what you own", classes: names,
     startName: "Start", endName: period.partial ? "Today" : "End of period", start: start.map(asShape), end: end.map(asShape), labels,
-    info: "How what you own is split between cash and deposits (including fixed or restricted deposits), investments, property and other assets, at the start and at the end of the period. Each bar is 100% of your assets at that point: only shares are shown, never amounts. The classes are the ones on Summary.",
+    info: "How what you own is split between cash and deposits (checking, savings and fixed deposits), investments, property and other assets, at the start and at the end of the period. Each bar is 100% of your assets at that point: only shares are shown, never amounts. The classes are the ones on Summary.",
   };
 }
 

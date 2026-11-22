@@ -120,7 +120,7 @@ describe("AccountGroupsDialog", () => {
 
     it("sets the group class at once when no member has its own class", async () => {
       render(<AccountGroupsDialog open onOpenChange={() => undefined} />);
-      await chooseClass("Everyday", "Bank");
+      await chooseClass("Everyday", "Checking");
       await waitFor(() =>
         expect(classesState.apply).toHaveBeenCalledWith([{ scope: "group", id: "g1", accountClass: "bank" }])
       );
@@ -129,7 +129,7 @@ describe("AccountGroupsDialog", () => {
     it("previews the members it overrides and applies only after confirming", async () => {
       classesState.maps.accounts.set("a1", "cash");
       render(<AccountGroupsDialog open onOpenChange={() => undefined} />);
-      await chooseClass("Everyday", "Bank");
+      await chooseClass("Everyday", "Checking");
 
       expect(await screen.findByText(/will inherit it instead/)).toHaveTextContent("Checking (Cash)");
       expect(classesState.apply).not.toHaveBeenCalled();
@@ -144,7 +144,7 @@ describe("AccountGroupsDialog", () => {
     it("applies nothing when the preview is cancelled", async () => {
       classesState.maps.accounts.set("a1", "cash");
       render(<AccountGroupsDialog open onOpenChange={() => undefined} />);
-      await chooseClass("Everyday", "Bank");
+      await chooseClass("Everyday", "Checking");
       fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
       expect(classesState.apply).not.toHaveBeenCalled();
       expect(screen.queryByText(/will inherit it instead/)).not.toBeInTheDocument();

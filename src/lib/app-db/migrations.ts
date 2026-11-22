@@ -79,7 +79,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 67;
+export const LATEST_SCHEMA_VERSION = 68;
 
 type Migration = {
   version: number;
@@ -721,7 +721,34 @@ const MIGRATIONS: readonly Migration[] = [
   // Cashflow Planning: one JSON document per plan and budget. Additive; no existing table is touched.
   { version: 66, statements: [CASHFLOW_PLANS_TABLE_SQL] },
   { version: 67, statements: [RECONCILIATION_TRANSFORMS_TABLE_SQL] },
+  // Account classes say what an account is, and access says whether its money can be used now. The Financial Reporting treatments
+  // become classes (a Bank marked Fixed / restricted deposit is a Fixed Deposit, an Other Asset marked Fixed asset is an Other Fixed
+  // Asset), an account that counted uncategorized money in as income is a Savings account (which now does so by itself), and the
+  // Financial Insights cash basis is saved per budget. `account_reporting` and the old flag rows stay in place, unread.
+  { version: 68, apply: applyAccountClassAccess },
 ];
+
+function applyAccountClassAccess(db: SqliteDatabase): void {
+  const now = new Date().toISOString();
+  // An account takes the new class when its own class is the one the old choice belonged to, or when it has no own class (its class
+  // came from a group, which still decides; the Accounts page points out an own class that differs from the group's).
+  const reclass = (treatment: string, from: string, to: string) => db.prepare(`
+    INSERT INTO account_classes (budget_sync_id, scope, account_id, account_class, updated_at)
+    SELECT r.budget_sync_id, 'account', r.account_id, ?, ? FROM account_reporting r
+    WHERE r.treatment = ? AND NOT EXISTS (SELECT 1 FROM account_classes c WHERE c.budget_sync_id = r.budget_sync_id AND c.scope = 'account' AND c.account_id = r.account_id AND c.account_class <> ?)
+    ON CONFLICT(budget_sync_id, scope, account_id) DO UPDATE SET account_class = excluded.account_class, updated_at = excluded.updated_at`).run(to, now, treatment, from);
+  if (tableExists(db, "account_reporting")) {
+    reclass("fixed-deposit", "bank", "fixed-deposit");
+    reclass("fixed-asset", "other-asset", "fixed-asset");
+  }
+  if (tableExists(db, "account_flags")) db.prepare(`
+    INSERT INTO account_classes (budget_sync_id, scope, account_id, account_class, updated_at)
+    SELECT f.budget_sync_id, 'account', f.target_id, 'savings', ? FROM account_flags f
+    WHERE f.scope = 'account' AND f.flag = 'offbudget-income'
+      AND NOT EXISTS (SELECT 1 FROM account_classes c WHERE c.budget_sync_id = f.budget_sync_id AND c.scope = 'account' AND c.account_id = f.target_id AND c.account_class NOT IN ('bank', 'cash'))
+    ON CONFLICT(budget_sync_id, scope, account_id) DO UPDATE SET account_class = excluded.account_class, updated_at = excluded.updated_at`).run(now);
+  if (tableExists(db, "cash_buffer_settings") && !columnExists(db, "cash_buffer_settings", "cash_basis")) db.exec("ALTER TABLE cash_buffer_settings ADD COLUMN cash_basis text");
+}
 
 function applyAccountFlags(db: SqliteDatabase): void {
   db.exec(ACCOUNT_FLAGS_TABLE_SQL);

@@ -55,7 +55,7 @@ import { listSyncFlowRuns } from "./syncRunRepository";
 import { insertDebt } from "./debtRepository";
 import { listDebtOffsetLinks } from "./debtOffsetLinkRepository";
 import { listDebtAssumptions, replaceDebtAssumptions } from "./debtAssumptionRepository";
-import { ACCOUNT_CLASS_TABLE_SQL, ACCOUNT_REPORTING_TABLE_SQL, ASSETS_DEBT_V38_INDEX_SQL, ASSETS_DEBT_V42_INDEX_SQL, ASSETS_DEBT_V43_INDEX_SQL, ASSETS_DEBT_V44_INDEX_SQL, ASSETS_DEBT_V44_TRIGGER_SQL, DEBT_FUTURE_ASSUMPTION_TABLE_SQL, DEBT_MATCH_RULE_TABLE_SQL, DEBT_TRANSACTION_LINK_TABLE_SQL, FINANCIAL_POSTING_TABLE_SQL } from "./schema";
+import { ACCOUNT_CLASS_TABLE_SQL, ACCOUNT_FLAGS_TABLE_SQL, ACCOUNT_REPORTING_TABLE_SQL, CASH_BUFFER_SETTINGS_TABLE_SQL, ASSETS_DEBT_V38_INDEX_SQL, ASSETS_DEBT_V42_INDEX_SQL, ASSETS_DEBT_V43_INDEX_SQL, ASSETS_DEBT_V44_INDEX_SQL, ASSETS_DEBT_V44_TRIGGER_SQL, DEBT_FUTURE_ASSUMPTION_TABLE_SQL, DEBT_MATCH_RULE_TABLE_SQL, DEBT_TRANSACTION_LINK_TABLE_SQL, FINANCIAL_POSTING_TABLE_SQL } from "./schema";
 import { OLD_POSTING_TABLES } from "./migrations";
 
 /**
@@ -1392,7 +1392,7 @@ describe("v38 Assets & Debt configuration through v43 observations", () => {
     const root = mkdtempSync(join(tmpdir(), "actual-bench-fresh-v42-"));
     try {
       const db = getAppDb(join(root, "metadata.sqlite"));
-      expect(LATEST_SCHEMA_VERSION).toBe(67);
+      expect(LATEST_SCHEMA_VERSION).toBe(68);
       expect(runMigrations(db).schemaVersion).toBe(LATEST_SCHEMA_VERSION);
       const tables = objectNames(db, "table");
       for (const t of V43_TABLES) expect(tables).toContain(t);
@@ -1967,11 +1967,59 @@ describe("v60 loan tracking", () => {
         { b: "b1", scope: "group", id: "grp-excluded", flag: "excluded", at: "2026-11-03T00:00:00.000Z" },
         { b: "b2", scope: "account", id: "acc-other-budget", flag: "excluded", at: "2026-11-04T00:00:00.000Z" },
       ]);
-      // The Excluded class is gone; every other class stays.
-      expect(first.classes).toEqual([{ b: "b1", scope: "account", id: "acc-bank", cls: "bank" }, { b: "b1", scope: "group", id: "grp-loans", cls: "loan" }]);
+      // The Excluded class is gone; every other class stays (v68 then turns the two remaining treatments into classes).
+      expect(first.classes).toEqual([
+        { b: "b1", scope: "account", id: "acc-bank", cls: "bank" }, { b: "b1", scope: "account", id: "deposit", cls: "fixed-deposit" },
+        { b: "b1", scope: "account", id: "gold", cls: "fixed-asset" }, { b: "b1", scope: "group", id: "grp-loans", cls: "loan" },
+      ]);
       // Current / non-current choices are gone; Fixed asset and Fixed / restricted deposit stay.
       expect(first.treatments).toEqual([{ id: "deposit", treatment: "fixed-deposit" }, { id: "gold", treatment: "fixed-asset" }]);
 
+      expect(runMigrations(db).schemaVersion).toBe(LATEST_SCHEMA_VERSION);
+      expect(read()).toEqual(first);
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("turns treatments into classes and the off-budget income flag into Savings, and adds the cash basis (v68); a second run changes nothing", () => {
+    const root = mkdtempSync(join(tmpdir(), "actual-bench-upgrade-v68-"));
+    const path = join(root, "metadata.sqlite");
+    const seed = new Database(path);
+    seed.exec(`CREATE TABLE app_meta (key text PRIMARY KEY, value text NOT NULL, updated_at text NOT NULL);${ACCOUNT_CLASS_TABLE_SQL}${ACCOUNT_REPORTING_TABLE_SQL}${ACCOUNT_FLAGS_TABLE_SQL}${CASH_BUFFER_SETTINGS_TABLE_SQL}`);
+    seed.prepare("INSERT INTO app_meta (key, value, updated_at) VALUES ('schema_version', '67', ?)").run("2026-11-01T00:00:00.000Z");
+    const cls = seed.prepare("INSERT INTO account_classes (budget_sync_id, scope, account_id, account_class, updated_at) VALUES (?,?,?,?,?)");
+    for (const [id, c] of [["deposit", "bank"], ["gold", "other-asset"], ["saver", "bank"], ["wallet", "cash"], ["inv", "investment"], ["dormant", "cash"]]) cls.run("b1", "account", id, c, "2026-11-02T00:00:00.000Z");
+    cls.run("b1", "group", "grp", "bank", "2026-11-02T00:00:00.000Z");
+    const reporting = seed.prepare("INSERT INTO account_reporting (budget_sync_id, account_id, treatment, updated_at) VALUES (?,?,?,?)");
+    // "dormant" is a Cash account with a Bank treatment that never applied; "member" has no own class (its group's applied).
+    for (const [id, t] of [["deposit", "fixed-deposit"], ["gold", "fixed-asset"], ["dormant", "fixed-deposit"], ["member", "fixed-deposit"]]) reporting.run("b1", id, t, "2026-11-02T00:00:00.000Z");
+    const flag = seed.prepare("INSERT INTO account_flags (budget_sync_id, scope, target_id, flag, updated_at) VALUES (?,?,?,?,?)");
+    for (const id of ["saver", "wallet", "inv", "deposit"]) flag.run("b1", "account", id, "offbudget-income", "2026-11-02T00:00:00.000Z");
+    seed.prepare("INSERT INTO cash_buffer_settings (budget_sync_id, goal_months, average_months, method, updated_at) VALUES ('b1', 6, 12, 'average', 'x')").run();
+    seed.close();
+
+    try {
+      const db = getAppDb(path);
+      expect(runMigrations(db).schemaVersion).toBe(LATEST_SCHEMA_VERSION);
+      const read = () => ({
+        classes: db.prepare("SELECT scope, account_id AS id, account_class AS cls FROM account_classes ORDER BY scope, id").all(),
+        basis: db.prepare("SELECT cash_basis AS basis FROM cash_buffer_settings").all(),
+      });
+      const first = read();
+      expect(first.classes).toEqual([
+        { scope: "account", id: "deposit", cls: "fixed-deposit" },
+        { scope: "account", id: "dormant", cls: "cash" },
+        { scope: "account", id: "gold", cls: "fixed-asset" },
+        { scope: "account", id: "inv", cls: "investment" },
+        { scope: "account", id: "member", cls: "fixed-deposit" },
+        { scope: "account", id: "saver", cls: "savings" },
+        { scope: "account", id: "wallet", cls: "savings" },
+        { scope: "group", id: "grp", cls: "bank" },
+      ]);
+      // An existing row reads as the default basis.
+      expect(first.basis).toEqual([{ basis: null }]);
       expect(runMigrations(db).schemaVersion).toBe(LATEST_SCHEMA_VERSION);
       expect(read()).toEqual(first);
     } finally {

@@ -21,10 +21,8 @@ import { useAccountGroups } from "../hooks/useAccountGroups";
 import { useAccountGroupActions } from "../hooks/useAccountGroupActions";
 import { useAccountClasses } from "../hooks/useAccountClasses";
 import { useAccountFlags } from "../hooks/useAccountFlags";
-import { useAccountReporting } from "../hooks/useAccountReporting";
-import type { ReportingTreatment } from "@/lib/account-class/reporting";
-import { isExcluded, type AccountFlag } from "@/lib/account-class/flags";
-import type { AccountFlagState } from "./AccountReportingCell";
+import { isExcluded } from "@/lib/account-class/flags";
+import type { AccountFlagEdit, AccountFlagState } from "./AccountAccessCell";
 import { toast } from "sonner";
 import { ACCOUNT_CLASS_INFO, isAccountClass, isAccountClassAllowed, isAccountClassAllowedForSet, type AccountClass } from "@/lib/account-class";
 import { effectiveAccountClasses } from "../lib/accountClasses";
@@ -173,26 +171,19 @@ export function AccountsTable({
     if (!classFilterKnown) setFilters((f) => ({ ...f, classFilter: ALL_CLASSES }));
   }, [classFilterKnown, setFilters]);
 
-  // ── Financial Reporting and account settings ─────────────────────────────────
-  // Also Bench-owned and immediate. Nothing here is required: a Bank or Other Asset can be marked, and a few yes/no settings
-  // (left out of Financial Insights, accessible money, income in an off-budget account) can be turned on.
-  // Unsaved rows have no permanent id yet, so their choice waits for the save.
-  const accountReporting = useAccountReporting();
-  const applyAccountReporting = accountReporting.apply;
-  const handleSetReporting = useCallback(
-    (accountId: string, treatment: ReportingTreatment | null) => applyAccountReporting([{ accountId, treatment }]),
-    [applyAccountReporting]
-  );
+  // ── Access and reports ───────────────────────────────────────────────────────
+  // Also Bench-owned and immediate. Nothing here is required: an off-budget account can be marked available now or locked against its
+  // class default, and left out of reports. Unsaved rows have no permanent id yet, so their choice waits for the save.
   const applyAccountFlags = accountFlags.apply;
-  const handleSetFlag = useCallback(
-    (accountId: string, flag: AccountFlag, on: boolean) => applyAccountFlags([{ scope: "account", id: accountId, flag, on }]),
+  const handleSetFlags = useCallback(
+    (accountId: string, edits: AccountFlagEdit[]) => applyAccountFlags(edits.map((e) => ({ scope: "account" as const, id: accountId, flag: e.flag, on: e.on }))),
     [applyAccountFlags]
   );
   const flagStateOf = useCallback((accountId: string): AccountFlagState => ({
     // An account that takes its class from its group is left out, or not, by the group; its own saved flag is kept but does not apply.
     excluded: effectiveClasses.get(accountId)?.source !== "group" && !!accountFlags.maps.accounts.get("excluded")?.has(accountId),
     accessible: !!accountFlags.maps.accounts.get("accessible")?.has(accountId),
-    offbudgetIncome: !!accountFlags.maps.accounts.get("offbudget-income")?.has(accountId),
+    locked: !!accountFlags.maps.accounts.get("locked")?.has(accountId),
   }), [accountFlags.maps, effectiveClasses]);
   // Accounts left out of Financial Insights, by their own flag or their group's (a live group only).
   const excludedIds = useMemo(() => {
@@ -373,7 +364,7 @@ export function AccountsTable({
     const parts = clusters.map((c) => c.subtotalCents).filter((c): c is number => c !== null);
     return parts.length > 0 ? parts.reduce((a, b) => a + b, 0) : null;
   }, [clusters]);
-  const leadingColSpan = 4 + (groups ? 1 : 0) + (classesEnabled ? 2 : 0);
+  const leadingColSpan = 4 + (groups ? 1 : 0) + (classesEnabled ? 3 : 0);
 
   const hasActiveFilters = Boolean(
     search || statusFilter !== "all" || budgetFilter !== "all" || rulesFilter !== "all" || activeGroupFilter !== ALL_GROUPS || activeClassFilter !== ALL_CLASSES || activeReportingFilter !== "all"
@@ -705,12 +696,10 @@ export function AccountsTable({
         classGroupName={entity.groupId ? groupNames.get(entity.groupId) : undefined}
         canSetClass={row.isNew || row.pendingAccountClass !== undefined || accountClasses.available}
         onSetClass={handleSetClass}
-        savedReporting={accountReporting.byAccount.get(entity.id)}
-        canSetReporting={accountReporting.available && accountFlags.available}
+        canSetFlags={accountFlags.available}
         flagState={flagStateOf(entity.id)}
         excludedByGroup={excludedByGroupIds.has(entity.id)}
-        onSetReporting={handleSetReporting}
-        onSetFlag={handleSetFlag}
+        onSetFlags={handleSetFlags}
         onToggleSelect={toggleSelectRow}
         onSelectNameCell={handleSelectNameCell}
         onStartEditingName={handleStartEditingName}
@@ -762,10 +751,10 @@ export function AccountsTable({
           onDeselect={() => clearSelection()}
         />
 
-        {classesEnabled && (accountReporting.failed || accountFlags.failed) && (
+        {classesEnabled && accountFlags.failed && (
           <div role="alert" className="flex items-center justify-between gap-3 border-b border-amber-500/40 bg-amber-50 px-4 py-1.5 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
-            <span>Financial Reporting choices and account settings could not be loaded, so they cannot be changed or checked here.</span>
-            <button type="button" className="rounded border border-amber-600/50 px-2 py-0.5 hover:bg-amber-100 dark:hover:bg-amber-900/40" onClick={() => { void accountReporting.refetch(); void accountFlags.refetch(); }}>Retry</button>
+            <span>Access and report settings could not be loaded, so they cannot be changed or checked here.</span>
+            <button type="button" className="rounded border border-amber-600/50 px-2 py-0.5 hover:bg-amber-100 dark:hover:bg-amber-900/40" onClick={() => { void accountFlags.refetch(); }}>Retry</button>
           </div>
         )}
         <div className="min-h-0 flex-1 overflow-auto">
@@ -846,8 +835,14 @@ export function AccountsTable({
                   )}
 
                   {classesEnabled && (
-                    <th className="w-56 px-2 py-1.5 text-left">
-                      <span className="text-xs font-medium text-muted-foreground">Financial Reporting</span>
+                    <th className="w-40 px-2 py-1.5 text-left">
+                      <span className="text-xs font-medium text-muted-foreground" title="Whether you can use the account's money now. On budget it always counts as available; off budget it follows the class unless you choose.">Accessible</span>
+                    </th>
+                  )}
+
+                  {classesEnabled && (
+                    <th className="w-48 px-2 py-1.5 text-left">
+                      <span className="text-xs font-medium text-muted-foreground">Reports</span>
                     </th>
                   )}
 

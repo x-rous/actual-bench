@@ -2,7 +2,7 @@ import { buildLedger, type AccountFact, type FinancialFacts, type MovementRow } 
 import { comparePeriods, percentChange } from "./compare";
 import { resolvePeriod } from "./period";
 
-const chk: AccountFact = { id: "chk", name: "Checking", accountClass: "bank", treatment: null, offBudget: false };
+const chk: AccountFact = { id: "chk", name: "Checking", accountClass: "bank", offBudget: false };
 const row = (month: string, amountMinor: number, categoryId: string): MovementRow => ({ month, accountId: "chk", categoryId, transferAccountId: null, amountMinor, count: 1 });
 const today = "2026-11-18";
 const months = (from: string, count: number) => { const [y, m] = from.split("-").map(Number); return Array.from({ length: count }, (_, i) => { const t = y * 12 + (m - 1) + i; return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, "0")}`; }); };

@@ -5,13 +5,13 @@ import { resolvePeriod, type PeriodChoice } from "./period";
 import { assetSeries, assetValues, holdings, homeEquity, isFixedAssetAccount, otherOf, portfolioBridge, portfolioMonthly, portfolioSeries, type AssetBook, type BookRow, type LoanRef } from "./wealth";
 
 const accounts: AccountFact[] = [
-  { id: "chk", name: "Checking", accountClass: "bank", treatment: null, offBudget: false },
-  { id: "visa", name: "Visa", accountClass: "credit-card", treatment: null, offBudget: false },
-  { id: "inv", name: "Brokerage", accountClass: "investment", treatment: null, offBudget: true },
-  { id: "ira", name: "Retirement", accountClass: "retirement", treatment: null, offBudget: true },
-  { id: "house", name: "House", accountClass: "property", treatment: null, offBudget: true },
-  { id: "car", name: "Car", accountClass: "vehicle", treatment: null, offBudget: true },
-  { id: "mortgage", name: "Mortgage", accountClass: "loan", treatment: null, offBudget: true },
+  { id: "chk", name: "Checking", accountClass: "bank", offBudget: false },
+  { id: "visa", name: "Visa", accountClass: "credit-card", offBudget: false },
+  { id: "inv", name: "Brokerage", accountClass: "investment", offBudget: true },
+  { id: "ira", name: "Retirement", accountClass: "retirement", offBudget: true },
+  { id: "house", name: "House", accountClass: "property", offBudget: true },
+  { id: "car", name: "Car", accountClass: "vehicle", offBudget: true },
+  { id: "mortgage", name: "Mortgage", accountClass: "loan", offBudget: true },
 ];
 const row = (month: string, accountId: string, amountMinor: number, extra: Partial<MovementRow> = {}): MovementRow => ({ month, accountId, categoryId: null, transferAccountId: null, amountMinor, count: 1, ...extra });
 /** Both sides of a transfer; `toMonth` lets the second side fall in another month. */
@@ -74,7 +74,7 @@ describe("portfolio bridge", () => {
   });
 
   it("reads an uncategorized row of an on-budget investment account as income or spending, not investment activity", () => {
-    const f = facts([row("2026-09", "inv2", 12_000), row("2026-09", "inv2", 3_000, { categoryId: "salary" })], { accounts: [...accounts, { id: "inv2", name: "Savings plan", accountClass: "investment", treatment: null, offBudget: false }] });
+    const f = facts([row("2026-09", "inv2", 12_000), row("2026-09", "inv2", 3_000, { categoryId: "salary" })], { accounts: [...accounts, { id: "inv2", name: "Savings plan", accountClass: "investment", offBudget: false }] });
     const { accounts: rows } = portfolioBridge(setup(f).ledger, setup(f).period);
     expect(rows.find((a) => a.accountId === "inv2")).toMatchObject({ activity: 0, unexplained: 15_000 });
   });
@@ -100,18 +100,17 @@ describe("a registry-classified row in a portfolio account", () => {
 });
 
 describe("fixed asset accounts", () => {
-  it("are Property, Vehicle, and an Other Asset marked Fixed asset; a current or non-current Other Asset is not an asset here", () => {
-    const other = (treatment: AccountFact["treatment"]) => ({ accountClass: "other-asset" as const, treatment });
-    expect(isFixedAssetAccount({ accountClass: "property", treatment: null })).toBe(true);
-    expect(isFixedAssetAccount({ accountClass: "vehicle", treatment: null })).toBe(true);
-    expect(isFixedAssetAccount(other("fixed-asset"))).toBe(true);
-    expect(isFixedAssetAccount(other(null))).toBe(false);
-    expect(isFixedAssetAccount({ accountClass: "investment", treatment: null })).toBe(false);
+  it("are Property, Vehicle and Other Fixed Asset; an Other Asset (a holding) is not an asset here", () => {
+    expect(isFixedAssetAccount({ accountClass: "property" })).toBe(true);
+    expect(isFixedAssetAccount({ accountClass: "vehicle" })).toBe(true);
+    expect(isFixedAssetAccount({ accountClass: "fixed-asset" })).toBe(true);
+    expect(isFixedAssetAccount({ accountClass: "other-asset" })).toBe(false);
+    expect(isFixedAssetAccount({ accountClass: "investment" })).toBe(false);
   });
 
   it("leave a current Other Asset out of the unregistered asset rows", () => {
-    const owed: AccountFact = { id: "owed", name: "Owed to me", accountClass: "other-asset", treatment: null, offBudget: true };
-    const gold: AccountFact = { id: "gold", name: "Gold", accountClass: "other-asset", treatment: "fixed-asset", offBudget: true };
+    const owed: AccountFact = { id: "owed", name: "Owed to me", accountClass: "other-asset", offBudget: true };
+    const gold: AccountFact = { id: "gold", name: "Gold", accountClass: "fixed-asset", offBudget: true };
     const { ledger, period } = setup(facts([row("2026-09", "owed", 5_000), row("2026-09", "gold", 9_000)], { accounts: [...accounts, owed, gold] }));
     const rows = assetValues({ ledger, period, assets: [], books: new Map(), links: [], loans: [] });
     expect(rows.filter((r) => r.kind === "unregistered").map((r) => r.name).sort()).toEqual(["Car", "Gold", "House"]);
@@ -228,10 +227,10 @@ describe("asset values, equity and loan-to-value", () => {
   });
 });
 
-describe("assets held in an Other Asset account whose treatment is no longer fixed", () => {
+describe("assets held in an account whose class is no longer a fixed asset", () => {
   it("is listed as unavailable, not dropped, because it is not a fixed asset any more", () => {
-    const other = { id: "gold", name: "Gold", accountClass: "other-asset" as const, treatment: null, offBudget: true };
-    const fixed = { ...other, treatment: "fixed-asset" as const };
+    const other = { id: "gold", name: "Gold", accountClass: "other-asset" as const, offBudget: true };
+    const fixed = { ...other, accountClass: "fixed-asset" as const };
     const regAsset = [{ id: "g1", name: "Gold bar", actualAccountId: "gold", status: "active" }];
     const { ledger: l1, period: p1 } = setup(facts([row("2026-09", "gold", 100_000)], { accounts: [accounts[0], other] }));
     const dropped = assetValues({ ledger: l1, period: p1, assets: regAsset, books: new Map([["gold", { available: true, rows: [] }]]), links: [{ assetId: "g1", debtId: "d1", allocationBps: 10000, effectiveFrom: "2026-01-01", effectiveTo: null, note: null }], loans: [] }).filter((r) => r.kind === "registered");

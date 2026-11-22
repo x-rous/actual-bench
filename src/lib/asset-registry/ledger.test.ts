@@ -45,12 +45,11 @@ it("honors the asset classes, group inheritance, budget placement and effective 
   for (const [key, type] of Object.entries(ASSET_TYPES)) {
     const maps = { accounts: new Map([["a", "bank" as const]]), groups: new Map([["g", type.accountClass]]) };
     const account = { id: "a", name: "A", offBudget: true, closed: false, groupId: "g" };
-    const fixed = new Map([["a", "fixed-asset"]]);
-    expect(eligibility(account, key, maps, fixed)).toBeNull();
-    expect(eligibility({ ...account, offBudget: false }, key, maps, fixed)).toMatch(/off-budget/);
-    expect(eligibility({ ...account, closed: true }, key, maps, fixed)).toMatch(/closed/);
-    // An Other Asset account must be marked Fixed asset; Property and Vehicle need nothing more than their class.
-    expect(eligibility(account, key, maps, new Map([["a", "current-asset"]]))).toBe(type.accountClass === "other-asset" ? "Mark this account as a Fixed asset in Accounts (Financial Reporting) first" : null);
+    expect(eligibility(account, key, maps)).toBeNull();
+    expect(eligibility({ ...account, offBudget: false }, key, maps)).toMatch(/off-budget/);
+    expect(eligibility({ ...account, closed: true }, key, maps)).toMatch(/closed/);
+    // The class alone decides: an Other Asset (a holding) cannot hold an asset of any type.
+    expect(eligibility(account, key, { accounts: new Map(), groups: new Map([["g", "other-asset" as const]]) })).toMatch(/account class/);
   }
   expect(ownershipAt(assets[0], "2024-01-01")).toBeNull(); expect(ownershipAt(assets[0], "2026-01-01")).toBe(10000);
 });

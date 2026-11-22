@@ -2,15 +2,15 @@ import { buildLedger, cashBuffer, summarize, type AccountFact, type AssetReview,
 import { resolvePeriod, type PeriodChoice } from "./period";
 
 const accounts: AccountFact[] = [
-  { id: "chk", name: "Checking", accountClass: "bank", treatment: null, offBudget: false },
-  { id: "sav", name: "Savings", accountClass: "bank", treatment: null, offBudget: true },
-  { id: "fd", name: "Term deposit", accountClass: "bank", treatment: "fixed-deposit", offBudget: true },
-  { id: "visa", name: "Visa", accountClass: "credit-card", treatment: null, offBudget: false },
-  { id: "inv", name: "Brokerage", accountClass: "investment", treatment: null, offBudget: true },
-  { id: "house", name: "House", accountClass: "property", treatment: null, offBudget: true },
-  { id: "pass", name: "Pass-through", accountClass: "other-asset", treatment: null, offBudget: false },
-  { id: "owed", name: "Owed to me", accountClass: "other-asset", treatment: null, offBudget: true },
-  { id: "loan", name: "Mortgage", accountClass: "loan", treatment: null, offBudget: true },
+  { id: "chk", name: "Checking", accountClass: "bank", offBudget: false },
+  { id: "sav", name: "Savings", accountClass: "bank", offBudget: true },
+  { id: "fd", name: "Term deposit", accountClass: "fixed-deposit", offBudget: true },
+  { id: "visa", name: "Visa", accountClass: "credit-card", offBudget: false },
+  { id: "inv", name: "Brokerage", accountClass: "investment", offBudget: true },
+  { id: "house", name: "House", accountClass: "property", offBudget: true },
+  { id: "pass", name: "Pass-through", accountClass: "other-asset", offBudget: false },
+  { id: "owed", name: "Owed to me", accountClass: "other-asset", offBudget: true },
+  { id: "loan", name: "Mortgage", accountClass: "loan", offBudget: true },
 ];
 const incomeCategories = new Set(["salary"]);
 const none: AssetReview = { unavailableReason: null, rowCount: 0, amountMinor: 0 };
@@ -409,11 +409,14 @@ describe("financial insights: the cash buffer", () => {
     expect(over(2)).toEqual({ state: "unavailable", reason: "Insufficient history: at least three complete months are needed" });
   });
 
-  it("adds a second figure for accounts set to Accessible money, and leaves the main one cash-based", () => {
-    const inv: AccountFact = { id: "inv", name: "Brokerage", accountClass: "investment", treatment: null, offBudget: true, accessible: true };
-    const idle: AccountFact = { id: "idle", name: "Pension", accountClass: "retirement", treatment: null, offBudget: true };
+  // An on-budget Other Asset is always available (Actual lets you assign it), so the fixture's pass-through account is set aside here.
+  const offBudgetOnly = accounts.filter((a) => a.id !== "pass");
+
+  it("adds a second figure for other money you can use now, and leaves the main one cash-based", () => {
+    const inv: AccountFact = { id: "inv", name: "Brokerage", accountClass: "investment", offBudget: true, access: "available" };
+    const idle: AccountFact = { id: "idle", name: "Pension", accountClass: "retirement", offBudget: true };
     const f = facts(steady, {
-      accounts: [...accounts, inv, idle],
+      accounts: [...offBudgetOnly, inv, idle],
       startingBalances: [{ month: "2026-04", accountId: "chk", amountMinor: 1_200_000 }, { month: "2026-04", accountId: "inv", amountMinor: 900_000 }, { month: "2026-04", accountId: "idle", amountMinor: 5_000_000 }],
     });
     const b = buffer(f);
@@ -423,10 +426,10 @@ describe("financial insights: the cash buffer", () => {
     expect(b.state === "ready" && b.value.monthsWithAccessible).toBeCloseTo(7, 5);
   });
 
-  it("has no accessible figure when no account is set, and ignores a negative balance", () => {
-    const none = buffer(facts(steady, { startingBalances: [{ month: "2026-04", accountId: "chk", amountMinor: 1_200_000 }] }));
+  it("has no second figure when nothing else can be used now, and ignores a negative balance", () => {
+    const none = buffer(facts(steady, { accounts: offBudgetOnly, startingBalances: [{ month: "2026-04", accountId: "chk", amountMinor: 1_200_000 }] }));
     expect(none.state === "ready" && "monthsWithAccessible" in none.value).toBe(false);
-    const inv: AccountFact = { id: "inv", name: "Brokerage", accountClass: "investment", treatment: null, offBudget: true, accessible: true };
+    const inv: AccountFact = { id: "inv", name: "Brokerage", accountClass: "investment", offBudget: true, access: "available" };
     const negative = buffer(facts(steady, { accounts: [...accounts, inv], startingBalances: [{ month: "2026-04", accountId: "chk", amountMinor: 1_200_000 }, { month: "2026-04", accountId: "inv", amountMinor: -50_000 }] }));
     expect(negative).toMatchObject({ state: "ready", value: { accessibleMinor: 0 } });
   });

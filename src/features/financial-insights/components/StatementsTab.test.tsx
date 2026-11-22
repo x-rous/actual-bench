@@ -14,7 +14,7 @@ const period = resolvePeriod({ kind: "preset", id: "this-month" }, "2026-11-06",
 const categories = new Map<string, CategoryInfo>([["salary", { id: "salary", name: "Salary", groupName: "Income sources", hidden: false, isIncome: true }]]);
 const entries: StatementEntry[] = [{ id: "salary-row", date: "2026-11-02", accountId: "bank", categoryId: "salary", amountMinor: 12345, transferAccountId: null, transferId: null, parentId: null, startingBalance: false }];
 const facts: FinancialFacts = {
-  accounts: [{ id: "bank", name: "Checking", accountClass: "bank", treatment: null, offBudget: false }], excluded: new Set(), incomeCategories: new Set(["salary"]),
+  accounts: [{ id: "bank", name: "Checking", accountClass: "bank", offBudget: false }], excluded: new Set(), incomeCategories: new Set(["salary"]),
   movement: [{ month: "2026-11", accountId: "bank", categoryId: "salary", transferAccountId: null, amountMinor: 12345, count: 1 }],
   startingBalances: [], transfersIn: [], uncategorizedIn: [], loanCosts: [], reclassified: [],
 };
@@ -99,14 +99,14 @@ it("shows the balance sheet as a period-end snapshot and exports its account bal
   render(<StatementsTab data={data} onDrill={jest.fn()} />);
   const sheet = screen.getByRole("region", { name: "Balance Sheet" });
   // A class with one account group (here only No Group) lists its accounts directly.
-  const group = within(sheet).getByRole("button", { name: /Cash & bank/ });
+  const group = within(sheet).getByRole("button", { name: /Cash & checking/ });
   expect(within(sheet).queryByRole("button", { name: /No Group/ })).not.toBeInTheDocument();
   expect(group).toHaveAttribute("aria-expanded", "false");
   expect(within(sheet).queryByRole("rowheader", { name: "Checking" })).not.toBeInTheDocument();
   fireEvent.click(within(sheet).getByRole("button", { name: "Expand all" }));
   expect(group).toHaveAttribute("aria-expanded", "true");
   expect(within(sheet).getByRole("rowheader", { name: "Checking" })).toHaveClass("pl-8");
-  expect(within(sheet).getByText("Cash & cash equivalents")).toBeVisible();
+  expect(within(sheet).getByText("Checking · Available now")).toBeVisible();
   fireEvent.click(within(sheet).getByRole("button", { name: "Collapse all" }));
   expect(group).toHaveAttribute("aria-expanded", "false");
   fireEvent.click(group);
@@ -116,15 +116,15 @@ it("shows the balance sheet as a period-end snapshot and exports its account bal
   // Grouped by class, as What you own and owe is: nothing says current or non-current.
   expect(sheet.textContent ?? "").not.toMatch(/non-current|Current assets|Current liabilities/i);
   fireEvent.click(within(sheet).getByRole("button", { name: "Export Balance Sheet as CSV" }));
-  expect(downloadCsv).toHaveBeenCalledWith("financial-insights-balance-sheet.csv", expect.arrayContaining([["Cash & bank", "No Group", "Checking", "Cash & cash equivalents", "123.45"], ["Totals", "", "Net worth", "", "123.45"]]));
+  expect(downloadCsv).toHaveBeenCalledWith("financial-insights-balance-sheet.csv", expect.arrayContaining([["Cash & checking", "No Group", "Checking", "Checking · Available now", "123.45"], ["Totals", "", "Net worth", "", "123.45"]]));
 });
 
 it("keeps account group rows on the balance sheet when a class has more than one group", () => {
-  const groupedFacts: FinancialFacts = { ...facts, accounts: [{ ...facts.accounts[0], groupId: "daily", groupName: "Daily" }, { id: "savings", name: "Savings", accountClass: "bank", treatment: null, offBudget: false }] };
+  const groupedFacts: FinancialFacts = { ...facts, accounts: [{ ...facts.accounts[0], groupId: "daily", groupName: "Daily" }, { id: "savings", name: "Savings", accountClass: "bank", offBudget: false }] };
   const groupedLedger = buildLedger(groupedFacts);
   render(<StatementsTab data={{ ...data, ledger: groupedLedger } as ReadyData} onDrill={jest.fn()} />);
   const sheet = screen.getByRole("region", { name: "Balance Sheet" });
-  expect(within(sheet).getByRole("button", { name: /Cash & bank/ })).toHaveAttribute("aria-expanded", "true");
+  expect(within(sheet).getByRole("button", { name: /Cash & checking/ })).toHaveAttribute("aria-expanded", "true");
   const daily = within(sheet).getByRole("button", { name: /Daily/ });
   expect(within(sheet).getByRole("button", { name: /No Group/ })).toHaveAttribute("aria-expanded", "false");
   fireEvent.click(daily);

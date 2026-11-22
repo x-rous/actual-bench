@@ -6,13 +6,13 @@ import { resolvePeriod, type PeriodChoice } from "./period";
 
 const today = "2026-11-18";
 const accounts: AccountFact[] = [
-  { id: "chk", name: "Checking", accountClass: "bank", treatment: null, offBudget: false },
-  { id: "visa", name: "Visa", accountClass: "credit-card", treatment: null, offBudget: false },
-  { id: "mortgage", name: "Mortgage", accountClass: "loan", treatment: null, offBudget: true },
-  { id: "car", name: "Car loan", accountClass: "loan", treatment: null, offBudget: true },
-  { id: "van", name: "Van loan", accountClass: "loan", treatment: null, offBudget: true },
-  { id: "old", name: "Old loan", accountClass: "loan", treatment: null, offBudget: true },
-  { id: "tax", name: "Tax bill", accountClass: "other-liability", treatment: null, offBudget: true },
+  { id: "chk", name: "Checking", accountClass: "bank", offBudget: false },
+  { id: "visa", name: "Visa", accountClass: "credit-card", offBudget: false },
+  { id: "mortgage", name: "Mortgage", accountClass: "loan", offBudget: true },
+  { id: "car", name: "Car loan", accountClass: "loan", offBudget: true },
+  { id: "van", name: "Van loan", accountClass: "loan", offBudget: true },
+  { id: "old", name: "Old loan", accountClass: "loan", offBudget: true },
+  { id: "tax", name: "Tax bill", accountClass: "other-liability", offBudget: true },
 ];
 const row = (month: string, accountId: string, amountMinor: number, extra: Partial<MovementRow> = {}): MovementRow => ({ month, accountId, categoryId: null, transferAccountId: null, amountMinor, count: 1, ...extra });
 const both = (month: string, from: string, to: string, amount: number): MovementRow[] => [row(month, from, -amount, { transferAccountId: to }), row(month, to, amount, { transferAccountId: from })];
@@ -156,7 +156,7 @@ describe("financial insights: credit card interest and fees", () => {
   const cardsFacts = () => {
     const f = facts();
     return facts({
-      accounts: [...f.accounts, { id: "amex", name: "Amex", accountClass: "credit-card", treatment: null, offBudget: false }],
+      accounts: [...f.accounts, { id: "amex", name: "Amex", accountClass: "credit-card", offBudget: false }],
       movement: [...f.movement,
         row("2026-09", "visa", -1_000, { categoryId: "int" }), row("2026-10", "visa", -1_200, { categoryId: "int" }), row("2026-10", "visa", -300, { categoryId: "fee" }), row("2026-10", "visa", 100, { categoryId: "fee" }),
         // The same category in another account, a transfer carrying it, and a card with nothing mapped: none of them is a card cost.

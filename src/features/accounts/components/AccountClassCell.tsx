@@ -2,7 +2,7 @@
 
 import React, { useMemo } from "react";
 import { Select } from "@/components/ui/select";
-import { ACCOUNT_CLASS_INFO, accountClassLabel, accountClassRequiresOffBudget, accountClassRequiresOnBudget, isAccountClassAllowed, isAccountClassAllowedForSet, type AccountClass, type EffectiveAccountClass } from "@/lib/account-class";
+import { ACCOUNT_CLASS_HEADINGS, ACCOUNT_CLASS_INFO, accountClassLabel, accountClassRequiresOffBudget, accountClassRequiresOnBudget, isAccountClassAllowed, isAccountClassAllowedForSet, type AccountClass, type EffectiveAccountClass } from "@/lib/account-class";
 import { ACCOUNT_CLASS_ICONS, UNCLASSIFIED_ICON } from "../lib/accountClassIcons";
 
 export const UNCLASSIFIED = "__unclassified__";
@@ -19,7 +19,7 @@ export function AccountClassLabel({ accountClass }: { accountClass: AccountClass
 }
 
 /**
- * Available assets/liabilities first, then one section for each kind of placement-only choice. `hasOnBudgetAccounts` and
+ * The available classes under their headings first, then one section for each kind of placement-only choice. `hasOnBudgetAccounts` and
  * `hasOffBudgetAccounts` say which placements the accounts the class is for are in (a mixed set suits only the classes that take both).
  */
 export function buildAccountClassGroups(hasOnBudgetAccounts = false, hasOffBudgetAccounts = !hasOnBudgetAccounts) {
@@ -32,8 +32,7 @@ export function buildAccountClassGroups(hasOnBudgetAccounts = false, hasOffBudge
   const available = ACCOUNT_CLASS_INFO.filter((info) => isAccountClassAllowedForSet(info.value, set));
   const unavailable = ACCOUNT_CLASS_INFO.filter((info) => !isAccountClassAllowedForSet(info.value, set));
   return [
-    { label: "Assets", options: available.filter((i) => i.side === "asset").map(toOption) },
-    { label: "Liabilities", options: available.filter((i) => i.side === "liability").map(toOption) },
+    ...ACCOUNT_CLASS_HEADINGS.map((heading) => ({ label: heading, options: available.filter((i) => i.heading === heading).map(toOption) })),
     { label: "Off-budget accounts only", options: unavailable.filter((i) => accountClassRequiresOffBudget(i.value)).map(toOption) },
     { label: "On-budget accounts only", options: unavailable.filter((i) => accountClassRequiresOnBudget(i.value)).map(toOption) },
   ].filter((group) => group.options.length > 0);
@@ -42,10 +41,7 @@ export function buildAccountClassGroups(hasOnBudgetAccounts = false, hasOffBudge
 /** Every class, none disabled: for filtering a table, where no placement is being chosen. */
 export function buildAccountClassFilterGroups() {
   const toOption = (info: (typeof ACCOUNT_CLASS_INFO)[number]) => ({ value: info.value, label: <AccountClassLabel accountClass={info.value} /> });
-  return [
-    { label: "Assets", options: ACCOUNT_CLASS_INFO.filter((i) => i.side === "asset").map(toOption) },
-    { label: "Liabilities", options: ACCOUNT_CLASS_INFO.filter((i) => i.side === "liability").map(toOption) },
-  ];
+  return ACCOUNT_CLASS_HEADINGS.map((heading) => ({ label: heading, options: ACCOUNT_CLASS_INFO.filter((i) => i.heading === heading).map(toOption) }));
 }
 
 export const UNCLASSIFIED_OPTIONS = [{ value: UNCLASSIFIED, label: <AccountClassLabel accountClass={null} /> }];

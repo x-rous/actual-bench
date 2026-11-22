@@ -9,10 +9,10 @@ import { LoansTab } from "./LoansTab";
 import { TipProvider } from "./charts/Tip";
 
 
-const chk: AccountFact = { id: "chk", name: "Checking", accountClass: "bank", treatment: null, offBudget: false };
-const visa: AccountFact = { id: "visa", name: "Visa", accountClass: "credit-card", treatment: null, offBudget: false };
-const mortgage: AccountFact = { id: "mortgage", name: "Mortgage", accountClass: "loan", treatment: null, offBudget: true };
-const car: AccountFact = { id: "car", name: "Car loan", accountClass: "loan", treatment: null, offBudget: true };
+const chk: AccountFact = { id: "chk", name: "Checking", accountClass: "bank", offBudget: false };
+const visa: AccountFact = { id: "visa", name: "Visa", accountClass: "credit-card", offBudget: false };
+const mortgage: AccountFact = { id: "mortgage", name: "Mortgage", accountClass: "loan", offBudget: true };
+const car: AccountFact = { id: "car", name: "Car loan", accountClass: "loan", offBudget: true };
 const row = (month: string, accountId: string, amountMinor: number, extra: Partial<MovementRow> = {}): MovementRow => ({ month, accountId, categoryId: null, transferAccountId: null, amountMinor, count: 1, ...extra });
 const pay = (month: string, to: string, amount: number): MovementRow[] => [row(month, "chk", -amount, { transferAccountId: to }), row(month, to, amount, { transferAccountId: "chk" })];
 jest.mock("../hooks/useCardCosts", () => ({ useCardCosts: jest.fn() }));
@@ -85,7 +85,7 @@ describe("Loans & cards tab states", () => {
   it("draws the interest and fees of cards that have the categories set, names the cards that do not, and drills by category", () => {
     useCardCosts.mockReturnValue({ state: "ready", cards: [{ accountId: "visa", interestCategoryId: "int", feeCategoryId: "fee" }] } satisfies CardCostSettings);
     const onDrill = jest.fn();
-    show(data([chk, visa, { id: "amex", name: "Amex", accountClass: "credit-card", treatment: null, offBudget: false }], [row("2026-10", "visa", -1_000, { categoryId: "int" }), row("2026-10", "visa", -250, { categoryId: "fee" })]), onDrill);
+    show(data([chk, visa, { id: "amex", name: "Amex", accountClass: "credit-card", offBudget: false }], [row("2026-10", "visa", -1_000, { categoryId: "int" }), row("2026-10", "visa", -250, { categoryId: "fee" })]), onDrill);
     const card = screen.getByRole("region", { name: "Interest & fees on credit cards" });
     expect(within(card).getByRole("group", { name: "Interest and fees charged to credit cards in each month" })).toBeInTheDocument();
     expect(card).toHaveTextContent("Not identified, because no interest or fee category is set in Credit Cards: Amex.");
@@ -151,7 +151,7 @@ describe("offered tabs for debt", () => {
     expect(names([chk])).not.toContain("loans");
     expect(names([chk, visa])).toContain("loans");
     expect(names([chk, mortgage])).toContain("loans");
-    expect(names([chk, { id: "tax", name: "Tax", accountClass: "other-liability", treatment: null, offBudget: true }])).toContain("loans");
+    expect(names([chk, { id: "tax", name: "Tax", accountClass: "other-liability", offBudget: true }])).toContain("loans");
     expect(names([chk, visa]).slice(-3)).toEqual(["loans", "statements", "progress"]);
   });
 });

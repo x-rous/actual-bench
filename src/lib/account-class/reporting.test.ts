@@ -1,5 +1,5 @@
-import { evaluateAccountReadiness, isCashEquivalent, reportingRequirement, REPORTING_TREATMENTS, validSavedTreatment, isReportingTreatment } from "./reporting";
-import { ACCOUNT_CLASSES, type AccountClass } from "./index";
+import { evaluateAccountReadiness } from "./reporting";
+import type { AccountClass } from "./index";
 
 function ready(
   accounts: { id: string; offBudget?: boolean; closed?: boolean }[],
@@ -16,46 +16,6 @@ function ready(
   return Object.fromEntries(result.accounts.map((a) => [a.accountId, a.status]));
 }
 
-describe("Financial Reporting treatments", () => {
-  it("are only Fixed asset and Fixed / restricted deposit; current and non-current are retired", () => {
-    expect([...REPORTING_TREATMENTS]).toEqual(["fixed-asset", "fixed-deposit"]);
-    for (const retired of ["current-investment", "non-current-investment", "current-asset", "non-current-asset", "current-liability", "non-current-liability"]) {
-      expect(isReportingTreatment(retired)).toBe(false);
-    }
-  });
-
-  it("is automatic for Property and Vehicle, and an optional choice for Other Asset", () => {
-    expect(reportingRequirement("property")).toEqual({ kind: "automatic", label: "Fixed asset" });
-    expect(reportingRequirement("vehicle")).toEqual({ kind: "automatic", label: "Fixed asset" });
-    expect(reportingRequirement("other-asset")).toEqual({ kind: "optional", label: "Holding", options: ["fixed-asset"] });
-    expect(validSavedTreatment("other-asset", "fixed-asset")).toBe("fixed-asset");
-    expect(validSavedTreatment("investment", "fixed-asset")).toBeNull();
-  });
-
-  it("asks nothing of anyone: every class has a label, and only Bank and Other Asset have a choice", () => {
-    for (const c of ACCOUNT_CLASSES) expect(reportingRequirement(c)).toBeDefined();
-    expect(ACCOUNT_CLASSES.filter((c) => reportingRequirement(c).kind !== "automatic")).toEqual(["bank", "other-asset"]);
-    expect(reportingRequirement("investment")).toEqual({ kind: "automatic", label: "Investment" });
-    expect(reportingRequirement("retirement")).toEqual({ kind: "automatic", label: "Retirement holding" });
-    expect(reportingRequirement("other-liability")).toEqual({ kind: "automatic", label: "Liability" });
-  });
-
-  it("treats Cash and Bank as cash equivalents unless a Bank account is a fixed / restricted deposit", () => {
-    expect(isCashEquivalent("cash", undefined)).toBe(true);
-    expect(isCashEquivalent("bank", undefined)).toBe(true);
-    expect(isCashEquivalent("bank", "fixed-deposit")).toBe(false);
-    expect(isCashEquivalent("investment", undefined)).toBe(false);
-    expect(isCashEquivalent("other-asset", undefined)).toBe(false);
-  });
-
-  it("accepts a saved choice only while the class still takes it", () => {
-    expect(validSavedTreatment("bank", "fixed-deposit")).toBe("fixed-deposit");
-    expect(validSavedTreatment("cash", "fixed-deposit")).toBeNull();
-    expect(validSavedTreatment("bank", "fixed-asset")).toBeNull();
-    expect(validSavedTreatment("property", "fixed-asset")).toBeNull();
-  });
-});
-
 describe("account readiness", () => {
   it("is ready when every account has a class, with no choice needed (Investment included)", () => {
     expect(ready([{ id: "bank", offBudget: false }, { id: "inv" }, { id: "loan" }, { id: "oa" }, { id: "ol" }], { bank: "bank", inv: "investment", loan: "loan", oa: "other-asset", ol: "other-liability" }))
@@ -68,6 +28,11 @@ describe("account readiness", () => {
 
   it("flags a class that does not fit the account's budget placement", () => {
     expect(ready([{ id: "a", offBudget: false }], { a: "property" })).toEqual({ a: "incompatible-placement" });
+  });
+
+  it("flags an on-budget Fixed Deposit or Other Fixed Asset: locked money and fixed assets belong off budget", () => {
+    expect(ready([{ id: "fd", offBudget: false }, { id: "gold", offBudget: false }, { id: "sav", offBudget: false }], { fd: "fixed-deposit", gold: "fixed-asset", sav: "savings" }))
+      .toEqual({ fd: "incompatible-placement", gold: "incompatible-placement", sav: "ready" });
   });
 
   it("flags an off-budget credit card, and accepts an on-budget one", () => {

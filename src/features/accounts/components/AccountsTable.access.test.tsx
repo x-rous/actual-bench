@@ -2,7 +2,8 @@ import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useStagedStore } from "../../../store/staged";
-import type { AccountFlagRecord, AccountReportingRecord } from "@/lib/app-db/types";
+import type { AccountFlagRecord } from "@/lib/app-db/types";
+import { chooseSelectOption } from "@/components/ui/select.testing";
 import type { AccountFlagChange } from "@/lib/account-class/flags";
 import { AccountsTable } from "./AccountsTable";
 
@@ -21,8 +22,9 @@ jest.mock("../hooks/useAccountGroups", () => ({ useAccountGroups: () => ({ suppo
 jest.mock("../hooks/useClosedAccountActivity", () => ({ useClosedAccountActivity: () => ({ data: new Map() }) }));
 jest.mock("@/hooks/useAllNotes", () => ({ useAllNotes: () => ({ data: undefined }) }));
 
+let flags = new Map<string, AccountFlagRecord>();
 function fakeServer(options: { failFlags?: boolean } = {}) {
-  const flags = new Map<string, AccountFlagRecord>();
+  flags = new Map<string, AccountFlagRecord>();
   global.fetch = jest.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
     const path = String(url);
     if (path.startsWith("/api/account-classes")) {
@@ -42,7 +44,7 @@ function fakeServer(options: { failFlags?: boolean } = {}) {
       }
       return { ok: true, json: async () => ({ accountFlags: [...flags.values()] }) };
     }
-    return { ok: true, json: async () => ({ accountReporting: [] as AccountReportingRecord[] }) };
+    return { ok: false, json: async () => ({}) };
   }) as unknown as typeof fetch;
 }
 
@@ -55,7 +57,7 @@ function renderTable() {
   );
 }
 
-describe("accounts table Financial Reporting and account settings", () => {
+describe("accounts table access and reports", () => {
   beforeEach(() => {
     sessionStorage.removeItem("filters:accounts");
     useStagedStore.getState().discardAll();
@@ -66,21 +68,25 @@ describe("accounts table Financial Reporting and account settings", () => {
     fakeServer();
   });
 
-  it("asks for no choice: the fixed labels show as text and nothing is flagged as needing one", async () => {
+  it("shows each class's access: a choice off budget, text where the class has none", async () => {
     renderTable();
-    expect(await screen.findByText("Fixed asset")).toBeInTheDocument();
-    expect(screen.getAllByText("Investment").length).toBeGreaterThan(0);
-    expect(screen.queryByText(/needs? a reporting choice/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/Choose…/)).not.toBeInTheDocument();
+    expect(await screen.findByText("Sell to use")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Accessible: Brokerage" })).toHaveTextContent("Locked");
   });
 
-  it("leaves an account out of Financial Insights at once, filters to the left-out accounts, and forgets the filter when none are left", async () => {
+  it("marks an investment available now with one saved flag", async () => {
     renderTable();
-    await screen.findByText("Fixed asset");
-    fireEvent.click(screen.getByRole("button", { name: "Settings of Brokerage" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: /Include in Financial Insights/ }));
-    const leftOut = await screen.findByRole("button", { name: "1 left out of Financial Insights" });
-    expect(screen.getByText("Left out")).toBeInTheDocument();
+    await chooseSelectOption(await screen.findByRole("combobox", { name: "Accessible: Brokerage" }), "Available now");
+    await waitFor(() => expect([...flags.keys()]).toEqual(["account:inv:accessible"]));
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Accessible: Brokerage" })).toHaveTextContent("Available now"));
+  });
+
+  it("leaves an account out of reports at once, filters to the left-out accounts, and forgets the filter when none are left", async () => {
+    renderTable();
+    await screen.findByText("Sell to use");
+    fireEvent.click(screen.getByRole("button", { name: "Leave out Brokerage of reports" }));
+    const leftOut = await screen.findByRole("button", { name: "1 left out of reports" });
+    expect(screen.getByText("Left out of reports")).toBeInTheDocument();
 
     fireEvent.click(leftOut);
     expect(screen.queryByText("Flat")).not.toBeInTheDocument();
@@ -88,9 +94,8 @@ describe("accounts table Financial Reporting and account settings", () => {
     await waitFor(() => expect(sessionStorage.getItem("filters:accounts") ?? "").toContain("excluded"));
 
     // Put it back: the list ends on its own and the stored filter ends with it.
-    fireEvent.click(screen.getByRole("button", { name: "Settings of Brokerage" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: /Include in Financial Insights/ }));
-    await waitFor(() => expect(screen.queryByText(/left out of Financial Insights/)).not.toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Include Brokerage in reports" }));
+    await waitFor(() => expect(screen.queryByText(/left out of reports ·/)).not.toBeInTheDocument());
     expect(screen.getByText("Flat")).toBeInTheDocument();
     await waitFor(() => expect(sessionStorage.getItem("filters:accounts") ?? "").not.toContain("excluded"));
   });
@@ -98,7 +103,7 @@ describe("accounts table Financial Reporting and account settings", () => {
   it("says when the settings could not be loaded, and retries", async () => {
     fakeServer({ failFlags: true });
     renderTable();
-    expect(await screen.findByRole("alert")).toHaveTextContent("account settings could not be loaded");
+    expect(await screen.findByRole("alert")).toHaveTextContent("report settings could not be loaded");
     fakeServer();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());

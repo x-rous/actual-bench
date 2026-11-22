@@ -13,11 +13,11 @@ export const NAMES = ["Zephyr Checking", "Orchid Visa", "Basil Mortgage", "Quart
 export const AMOUNTS_MINOR = [98_765_432, 12_345_789, 4_567_891, 5_432_109, 54_321_098, 63_321_098];
 export const AMOUNTS_TEXT = ["987654.32", "987,654.32", "123457.89", "123,457.89", "45678.91", "45,678.91", "543210.98", "543,210.98", "633210.98", "633,210.98", "98765", "987654", "12345", "123457"];
 
-export const chk: AccountFact = { id: "chk", name: NAMES[0], accountClass: "bank", treatment: null, offBudget: false };
-export const visa: AccountFact = { id: "visa", name: NAMES[1], accountClass: "credit-card", treatment: null, offBudget: false };
-export const mortgage: AccountFact = { id: "mortgage", name: NAMES[2], accountClass: "loan", treatment: null, offBudget: true };
-export const inv: AccountFact = { id: "inv", name: NAMES[5], accountClass: "investment", treatment: null, offBudget: true };
-export const car: AccountFact = { id: "car", name: NAMES[3], accountClass: "loan", treatment: null, offBudget: true };
+export const chk: AccountFact = { id: "chk", name: NAMES[0], accountClass: "bank", offBudget: false };
+export const visa: AccountFact = { id: "visa", name: NAMES[1], accountClass: "credit-card", offBudget: false };
+export const mortgage: AccountFact = { id: "mortgage", name: NAMES[2], accountClass: "loan", offBudget: true };
+export const inv: AccountFact = { id: "inv", name: NAMES[5], accountClass: "investment", offBudget: true };
+export const car: AccountFact = { id: "car", name: NAMES[3], accountClass: "loan", offBudget: true };
 
 export const row = (month: string, accountId: string, amountMinor: number, extra: Partial<MovementRow> = {}): MovementRow => ({ month, accountId, categoryId: null, transferAccountId: null, amountMinor, count: 1, ...extra });
 export const pay = (month: string, from: string, to: string, amount: number): MovementRow[] => [row(month, from, -amount, { transferAccountId: to }), row(month, to, amount, { transferAccountId: from })];

@@ -19,7 +19,7 @@ function setup(listed: ReturnType<typeof row>[]) {
   const doc = { ...createPlanDocument({ name: "T", startMonth: "2026-01", years: 1 }), rows: [food] };
   const snapshot = {
     today: "2026-03-15",
-    accounts: [{ id: "bank", name: "Bank", offBudget: false, closed: false, accountClass: "bank", treatment: null, excluded: false, groupName: null }],
+    accounts: [{ id: "bank", name: "Bank", offBudget: false, closed: false, accountClass: "bank", access: "available", excluded: false, groupName: null }],
     categories: [{ id: "groceries", name: "Groceries", groupId: "g", groupName: "Living", isIncome: false, hidden: false }],
     movement: [{ month: "2026-03", accountId: "bank", categoryId: "groceries", transferAccountId: null, amountMinor: -5_000, count: 2 }],
     startingBalances: [], uncategorizedIn: [], transfersIn: [], schedules: [], loans: {}, loanCosts: [], shifts: [], budget: null,
