@@ -47,7 +47,7 @@ export function AccountsGuide({ section, onSection, onClose, docsUrl }: { sectio
         <Para><b>Savings</b> is money set aside in a savings, high-yield, money market or notice account. <b>Fixed Deposit</b> is a term deposit, a CD, or a restricted or pledged deposit. <b>Other Fixed Asset</b> is a thing you own and value in Assets, such as gold, a collectible or equipment. <b>Other Asset</b> is anything else you hold that is not money in a bank, such as money owed to you or a rental bond.</Para>
         <Heading>Classes on a group</Heading>
         <InheritanceSketch />
-        <Para>Set a class on an <b>account group</b> (Manage Groups) and every account in it inherits it. An inherited class is shown read-only with an <i>Inherited</i> tag; change it on the group. A group’s class wins over an account’s own, which stays stored but unused while the account is in that group.</Para>
+        <Para>Set a class on an <b>account group</b> (Manage Groups) and every account in it inherits it. An inherited class is shown read-only with an <i>Inherited</i> tag; change it on the group. A group’s class wins over an account’s own, which stays stored but unused while the account is in that group, unless the own class is a narrower kind of the group’s (Savings or Fixed Deposit in a Checking group, Savings in a Cash group, Other Fixed Asset in an Other Asset group), which still applies.</Para>
       </>}
 
       {section === "access" && <>

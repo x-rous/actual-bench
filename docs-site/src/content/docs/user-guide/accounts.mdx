@@ -88,7 +88,9 @@ error stay on the real account; **Save** retries the class without creating the 
 
 **Set a class on a group.** In the **Manage Groups** dialog, choose a class for the group. Its accounts then show
 that class as **Inherited** and cannot change it; change the group instead. If some of those accounts already
-have their own class, Bench lists them and asks you to confirm, because the group class replaces theirs.
+have their own class, Bench lists them and asks you to confirm, because the group class replaces theirs. An own
+class that is a narrower kind of the group's (Savings or Fixed Deposit in a Checking group, Savings in a Cash group,
+Other Fixed Asset in an Other Asset group) is kept and still applies.
 Moving an account out of the group does not bring a cleared class back.
 
 A group containing any live on-budget account cannot be given an off-budget-only class, and a group containing any live off-budget account cannot be given Credit Card.
@@ -134,7 +136,7 @@ The **Reports** column says whether the account counts in reports. For an off-bu
 
 **Several at once.** Select accounts and use **Set access…** in the selection bar: **Available now**, **Locked**, **Leave out of reports** or **Include in reports**. Accounts the choice cannot apply to (on budget, a class without access, or a group that decides) are left unchanged, and Bench says how many. A new account’s choices are staged with it and saved once it exists.
 
-**An own class the group overrides.** When an account has its own class but sits in a group with a different class, the group’s class applies. A notice at the top of the table names such accounts (this can happen after the upgrade below, or when an account is moved into a group): **Keep the group’s class** clears their own class, and **Dismiss** hides the notice in this browser until the list changes.
+**An own class the group overrides.** When an account has its own class but sits in a group with a different class, the group’s class applies, unless the account’s own class is a narrower kind of the group’s: Savings or Fixed Deposit in a Checking group, Savings in a Cash group, Other Fixed Asset in an Other Asset group. A notice at the top of the table names accounts whose own class is overridden (for example after moving an account into a group): **Keep the group’s class** clears their own class, and **Dismiss** hides the notice in this browser until the list changes.
 
 A saved choice counts only while it can apply. If you change an account's class or placement so a choice no longer fits, Bench keeps it but ignores it until it fits again. A new account’s choices are staged with it and saved once it exists. A closed account with no transactions and a zero balance needs nothing.
 
@@ -142,7 +144,7 @@ Choices are saved in Bench, per budget, and apply at once. They are never writte
 
 ## Upgrading from earlier versions
 
-The app database upgrade (schema 68) carries every earlier choice over: a Bank account marked **Fixed / restricted deposit** becomes a **Fixed Deposit**, an Other Asset marked **Fixed asset** becomes an **Other Fixed Asset**, and an off-budget Cash or Bank account set to count uncategorized money in as income becomes **Savings**. "Accessible money" carries over as **Available now**. A choice saved on an account whose class came from its group gives the account its own class, which the group still overrides; the notice above points these out.
+The app database upgrade (schema 68) carries every earlier choice over: a Bank account marked **Fixed / restricted deposit** becomes a **Fixed Deposit**, an Other Asset marked **Fixed asset** becomes an **Other Fixed Asset**, and an off-budget Cash or Bank account set to count uncategorized money in as income becomes **Savings**. "Accessible money" carries over as **Available now**. A choice saved on an account whose class came from its group gives the account its own class. It keeps applying inside a group of the broader class (a Fixed Deposit in a Checking group, an Other Fixed Asset in an Other Asset group), as the old choice did.
 
 ## Grouped view
 

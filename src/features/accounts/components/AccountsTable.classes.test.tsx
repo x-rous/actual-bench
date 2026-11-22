@@ -52,11 +52,11 @@ describe("accounts table and Groups dialog share account classes", () => {
   it("says when an account's own class differs from its group's, and can keep the group's class or be dismissed", async () => {
     localStorage.clear();
     await fetch("/api/account-classes", { method: "PUT", body: JSON.stringify({ budgetSyncId: "budget-1", changes: [
-      { scope: "group", id: "g1", accountClass: "bank" }, { scope: "account", id: "a1", accountClass: "fixed-deposit" },
+      { scope: "group", id: "g1", accountClass: "bank" }, { scope: "account", id: "a1", accountClass: "investment" },
     ] }) });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity, gcTime: Infinity } } });
     const { unmount } = render(<QueryClientProvider client={client}><AccountsTable onCreateRule={jest.fn()} onDeleteIntentChange={jest.fn()} onInspectIdChange={jest.fn()} /></QueryClientProvider>);
-    expect(await screen.findByText(/has its own class, Fixed Deposit, but its group “Everyday” is Checking/)).toBeInTheDocument();
+    expect(await screen.findByText(/has its own class, Investment, but its group “Everyday” is Checking/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
     await waitFor(() => expect(screen.queryByText(/has its own class/)).not.toBeInTheDocument());
     unmount();

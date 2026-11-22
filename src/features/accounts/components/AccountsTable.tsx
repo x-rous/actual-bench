@@ -25,7 +25,7 @@ import { isExcluded, type AccountFlagChange } from "@/lib/account-class/flags";
 import { accessChoosable, accessFlagChanges } from "@/lib/account-class/access";
 import { NO_FLAGS, type AccountFlagEdit, type AccountFlagState } from "./AccountAccessCell";
 import { toast } from "sonner";
-import { ACCOUNT_CLASS_INFO, accountClassLabel, isAccountClass, isAccountClassAllowed, isAccountClassAllowedForSet, type AccountClass } from "@/lib/account-class";
+import { ACCOUNT_CLASS_INFO, accountClassLabel, isAccountClass, refinesClass, isAccountClassAllowed, isAccountClassAllowedForSet, type AccountClass } from "@/lib/account-class";
 import { selectActiveInstance, useConnectionStore } from "@/store/connection";
 import { effectiveAccountClasses } from "../lib/accountClasses";
 import { buildClusters, type GroupBy } from "../lib/accountClusters";
@@ -152,8 +152,8 @@ export function AccountsTable({
   const applyAccountClasses = accountClasses.apply;
 
   // ── An own class the group overrides ──────────────────────────────────────────
-  // A group's class wins, and an account's own class is kept but unused while it is in that group. When they differ (after an
-  // upgrade that turned a saved choice into a class, or an account moved into a group), say so once, so it is not a surprise.
+  // A group's class wins, and an account's own class is kept but unused while it is in that group (unless it is a narrower kind of
+  // the group's, which applies). When an unused own class differs from the group's, say so once, so it is not a surprise.
   const connectionForNotice = useConnectionStore(selectActiveInstance);
   const noticeKey = `accounts:own-class-notice:${connectionForNotice?.budgetSyncId ?? ""}`;
   const overridden = useMemo(() => {
@@ -163,7 +163,7 @@ export function AccountsTable({
       const groupId = r.entity.groupId;
       const own = accountClasses.maps.accounts.get(r.entity.id);
       const group = groupId && live.has(groupId) ? accountClasses.maps.groups.get(groupId) : undefined;
-      return !r.isNew && !r.isDeleted && own && group && own !== group ? [{ id: r.entity.id, name: r.entity.name, own, group, groupName: groupNames.get(groupId!) ?? "" }] : [];
+      return !r.isNew && !r.isDeleted && own && group && own !== group && !refinesClass(own, group) ? [{ id: r.entity.id, name: r.entity.name, own, group, groupName: groupNames.get(groupId!) ?? "" }] : [];
     });
   }, [groups, accountClasses.available, accountClasses.maps, staged, groupNames]);
   const overriddenSignature = overridden.map((o) => `${o.id}:${o.own}:${o.group}`).sort().join("|");
