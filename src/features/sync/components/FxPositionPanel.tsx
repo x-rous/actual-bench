@@ -62,7 +62,7 @@ export function FxPositionPanel({ flow, sourceConnection, targetConnection, onBa
   const revalue = useMutation({
     mutationFn: async () => {
       if (!position || !data || !targetConnection) throw new Error("The position is not loaded.");
-      await postFxRevaluation({
+      return postFxRevaluation({
         flow,
         targetConnection,
         amount: position.difference,
@@ -71,10 +71,12 @@ export function FxPositionPanel({ flow, sourceConnection, targetConnection, onBa
         date: data.rateDate,
       });
     },
-    onSuccess: async () => {
+    onSuccess: async ({ recovered }) => {
       setConfirming(false);
       setActionError(null);
-      setNotice("Revaluation posted to the target budget.");
+      setNotice(recovered
+        ? "Today's revaluation was already on the target budget. It is now recorded, and nothing new was posted."
+        : "Revaluation posted to the target budget.");
       await query.refetch();
     },
     onError: (err) => {
@@ -86,7 +88,7 @@ export function FxPositionPanel({ flow, sourceConnection, targetConnection, onBa
   const link = useMutation({
     mutationFn: async (pair: FxTransferPair) => {
       if (!targetConnection) throw new Error("Connect the target budget first.");
-      await linkSyncedTransfer({ flow, targetConnection, syncedId: pair.syncedId, counterpart: pair.counterpart });
+      await linkSyncedTransfer({ flow, targetConnection, syncedId: pair.syncedId, syncedAmount: pair.synced.amount, counterpart: pair.counterpart });
     },
     onSuccess: async () => {
       setActionError(null);
@@ -97,7 +99,7 @@ export function FxPositionPanel({ flow, sourceConnection, targetConnection, onBa
   });
 
   const needsCategory = !!data && !data.targetOffBudget && !categoryId;
-  const canPost = !!position && position.difference !== 0 && !needsCategory && !revalue.isPending;
+  const canPost = !!position && position.difference !== 0 && !needsCategory && !revalue.isPending && !link.isPending;
   const warnings = position && data ? [
     position.unsyncedRows > 0 && `${position.unsyncedRows} source transaction${position.unsyncedRows === 1 ? " is" : "s are"} not synced yet.`,
     position.missingOnTarget > 0 && `${position.missingOnTarget} synced transaction${position.missingOnTarget === 1 ? " was" : "s were"} deleted on the target.`,
@@ -205,7 +207,7 @@ export function FxPositionPanel({ flow, sourceConnection, targetConnection, onBa
                           <td className={cn("text-right tabular-nums", pair.differenceBps > 200 && "font-medium")}>{(pair.differenceBps / 100).toFixed(2)}%</td>
                           <td className="text-right tabular-nums">{pair.realisedRate ?? "-"}</td>
                           <td className="text-right">
-                            <Button size="xs" variant="outline" disabled={link.isPending} onClick={() => link.mutate(pair)} aria-label={`Link transfer of ${formatAmount(pair.synced.amount)} on ${pair.synced.date}`}>
+                            <Button size="xs" variant="outline" disabled={link.isPending || revalue.isPending} onClick={() => link.mutate(pair)} aria-label={`Link transfer of ${formatAmount(pair.synced.amount)} on ${pair.synced.date}`}>
                               {link.isPending && link.variables?.syncedId === pair.syncedId ? <Loader2 className="animate-spin" /> : <Link2 />} Link
                             </Button>
                           </td>

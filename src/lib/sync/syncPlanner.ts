@@ -3,7 +3,7 @@ import { createFxRateResolver } from "./fxPolicy";
 import { isRevaluationKey } from "./fxPosition";
 import { resolveCategory, resolvePayee } from "./entityResolution";
 import { generateSyncMarker } from "./marker";
-import { expandSourceTransactions, sourceTransactionItemKey, type SyncSourceItem } from "./sourceItems";
+import { allKeysOf, expandSourceTransactions, sourceTransactionItemKey, type SyncSourceItem } from "./sourceItems";
 import { buildPlannedTargetPayload } from "./transform";
 import { convertMinorUnits } from "@/lib/fx/fxMath";
 import type {
@@ -39,7 +39,7 @@ type PlanContext = {
 const dateAmountKey = (date: string, amount: number) => `${date}:${amount}`;
 
 function buildPlanContext(
-  input: Pick<SyncPlannerInput, "config" | "target" | "existingMappings" | "fxRateByDate">
+  input: Pick<SyncPlannerInput, "config" | "target" | "existingMappings" | "fxRateByDate" | "fxToday"> & { sourceItems: SyncSourceItem[] }
 ): PlanContext {
   const targetsByDateAmount = new Map<string, SyncTargetTransactionForDedupe[]>();
   const targetById = new Map<string, SyncTargetTransactionForDedupe>();
@@ -58,12 +58,26 @@ function buildPlanContext(
       explodedParentIds.add(mapping.sourceTransactionId);
     }
   }
+  // A target carrying one of this plan's markers belongs to that source item, even
+  // when the item comes later in the list than a row that looks like its duplicate.
+  for (const item of input.sourceItems) {
+    for (const sourceItemKey of allKeysOf(item)) {
+      const marker = generateSyncMarker({
+        sourceBudgetId: input.config.sourceBudgetId,
+        targetBudgetId: input.config.targetBudgetId,
+        targetAccountId: input.config.targetAccountId,
+        sourceItemKey,
+      });
+      const targetId = marker ? input.target.importedIdIndex.get(marker) : undefined;
+      if (targetId) claimedTargetIds.add(targetId);
+    }
+  }
   return {
     targetsByDateAmount,
     targetById,
     claimedTargetIds,
     explodedParentIds,
-    rateFor: createFxRateResolver(input.config, input.fxRateByDate),
+    rateFor: createFxRateResolver(input.config, input.fxRateByDate, input.fxToday),
   };
 }
 
@@ -114,7 +128,7 @@ export function planExpandedItems(
 
   const context = buildPlanContext(input);
   const items = input.sourceItems.map((sourceItem) =>
-    planSourceItem(sourceItem, input, mappingByKey, canWriteMarker, context)
+    planSourceItem(withExistingKey(sourceItem, input, mappingByKey), input, mappingByKey, canWriteMarker, context)
   );
 
   // RD-057 §5: an active mapping whose source item no longer exists means the
@@ -140,6 +154,32 @@ export function planExpandedItems(
   }
 
   return { flowId: config.flowId, items, counts };
+}
+
+/**
+ * A split line with no stable id may already be synced under another of its
+ * positional keys (its cleared state has changed). Keep that key and its marker,
+ * so the line is recognised instead of being created again.
+ */
+function withExistingKey(
+  item: SyncSourceItem,
+  input: Pick<SyncPlannerInput, "config" | "target">,
+  mappingByKey: Map<string, SyncMapping>
+): SyncSourceItem {
+  if (!item.keyAliases || mappingByKey.has(item.itemKey)) return item;
+  const mapped = item.keyAliases.find((key) => mappingByKey.has(key));
+  if (mapped) return { ...item, itemKey: mapped };
+  const { config, target } = input;
+  const marked = item.keyAliases.find((sourceItemKey) => {
+    const marker = generateSyncMarker({
+      sourceBudgetId: config.sourceBudgetId,
+      targetBudgetId: config.targetBudgetId,
+      targetAccountId: config.targetAccountId,
+      sourceItemKey,
+    });
+    return !!marker && target.importedIdIndex.has(marker);
+  });
+  return marked ? { ...item, itemKey: marked } : item;
 }
 
 /** A review-first delete candidate for a mapping whose source was deleted. */

@@ -1,6 +1,7 @@
 import {
   buildEphemeralSyncFlowRunItem,
   createSyncFlowRun,
+  ABANDONED_APPLY_MS,
   createSyncFlowRunItem,
   failAbandonedSyncRuns,
 } from "@/lib/app-db/syncRunRepository";
@@ -48,9 +49,6 @@ export type PersistDraftPreviewOptions = {
  * every 15 minutes, forever.
  */
 const EPHEMERAL_CLASSIFICATIONS: ReadonlySet<SyncPlannedItem["classification"]> = new Set(["already_synced"]);
-
-/** Longer than the longest unattended run (20 minutes). */
-const ABANDONED_APPLY_MS = 30 * 60_000;
 
 function shouldPersist(item: SyncPlannedItem): boolean {
   return !EPHEMERAL_CLASSIFICATIONS.has(item.classification);

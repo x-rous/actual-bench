@@ -378,30 +378,59 @@ export type UpdateSyncFlowRunPatch = {
   counts?: JsonEnvelope | null;
 };
 
+/** An apply renews its claim every minute; this long without one means its writer is gone. */
+export const ABANDONED_APPLY_MS = 30 * 60_000;
+
 /**
- * Atomically move a run to `applying`, only from one of `from`. Exactly one
- * caller wins, so a double click or a second tab cannot apply the same run twice.
- * The start time lets an apply that died part-way be recognised later.
+ * Atomically move a run to `applying`, only from one of `from` and only while no
+ * other run of the same flow is applying. Exactly one caller wins, so a double
+ * click, a second tab or a second preview cannot write the same rows twice.
+ * Returns the token that identifies this apply, or null when it lost.
  */
-export function claimSyncFlowRun(db: SqliteDatabase, runId: string, from: readonly SyncRunStatus[]): boolean {
-  if (from.length === 0) return false;
+export function claimSyncFlowRun(db: SqliteDatabase, runId: string, from: readonly SyncRunStatus[]): string | null {
+  if (from.length === 0) return null;
+  const run = getSyncFlowRun(db, runId);
+  if (!run) return null;
+  const token = generateId();
+  const now = new Date();
   const placeholders = from.map(() => "?").join(", ");
-  const result = db
-    .prepare(
-      `UPDATE sync_flow_runs
-       SET status = 'applying',
-           finished_at = NULL,
-           summary_json = json_set(summary_json, '$.data.applyStartedAt', ?)
-       WHERE id = ? AND status IN (${placeholders})`
-    )
-    .run(new Date().toISOString(), runId, ...from);
-  return result.changes === 1;
+  const claim = db.transaction(() => {
+    if (run.flowId) failAbandonedSyncRuns(db, run.flowId, new Date(now.getTime() - ABANDONED_APPLY_MS).toISOString());
+    return db
+      .prepare(
+        `UPDATE sync_flow_runs
+         SET status = 'applying',
+             finished_at = NULL,
+             summary_json = json_set(summary_json, '$.data.applyStartedAt', ?, '$.data.applyHeartbeatAt', ?, '$.data.applyToken', ?)
+         WHERE id = ? AND status IN (${placeholders})
+           AND NOT EXISTS (
+             SELECT 1 FROM sync_flow_runs other
+             WHERE other.flow_id = sync_flow_runs.flow_id AND other.status = 'applying' AND other.id <> sync_flow_runs.id
+           )`
+      )
+      .run(now.toISOString(), now.toISOString(), token, runId, ...from).changes;
+  });
+  return claim() === 1 ? token : null;
+}
+
+/** Renew an apply's claim. False means the run no longer belongs to this apply. */
+export function heartbeatSyncFlowRun(db: SqliteDatabase, runId: string, token: string): boolean {
+  return (
+    db
+      .prepare(
+        `UPDATE sync_flow_runs
+         SET summary_json = json_set(summary_json, '$.data.applyHeartbeatAt', ?)
+         WHERE id = ? AND status = 'applying' AND json_extract(summary_json, '$.data.applyToken') = ?`
+      )
+      .run(new Date().toISOString(), runId, token).changes === 1
+  );
 }
 
 /**
- * Close applies that never finished (a closed tab, a killed worker), which would
- * otherwise read as "applying" forever. Mappings and target markers keep the next
- * preview correct, so it is enough to end the run and say what happened.
+ * Close applies whose writer stopped renewing its claim (a closed tab, a killed
+ * worker), which would otherwise read as "applying" forever. Mappings and target
+ * markers keep the next preview correct, so it is enough to end the run and say
+ * what happened.
  */
 export function failAbandonedSyncRuns(db: SqliteDatabase, flowId: string, olderThanIso: string): number {
   const now = new Date().toISOString();
@@ -414,7 +443,7 @@ export function failAbandonedSyncRuns(db: SqliteDatabase, flowId: string, olderT
       `UPDATE sync_flow_runs
        SET status = 'failed', finished_at = ?, error_json = ?
        WHERE flow_id = ? AND status = 'applying'
-         AND COALESCE(json_extract(summary_json, '$.data.applyStartedAt'), started_at) < ?`
+         AND COALESCE(json_extract(summary_json, '$.data.applyHeartbeatAt'), json_extract(summary_json, '$.data.applyStartedAt'), started_at) < ?`
     )
     .run(now, error, flowId, olderThanIso).changes;
 }
@@ -458,6 +487,8 @@ export type UpdateSyncFlowRunItemPatch = {
   warnings?: JsonEnvelope | null;
   errors?: JsonEnvelope | null;
   targetItemRef?: JsonEnvelope | null;
+  /** The payload apply will write, when the user changed it (a charged amount). */
+  plannedTargetPayload?: JsonEnvelope | null;
   selectedForApply?: boolean;
   createdTargetTransactionId?: string | null;
   createdTargetMarker?: string | null;
@@ -475,6 +506,10 @@ export function updateSyncFlowRunItem(
   const errors = patch.errors === undefined ? existing.errors : normalizeOptionalEnvelope(patch.errors, "errors");
   const targetItemRef =
     patch.targetItemRef === undefined ? existing.targetItemRef : normalizeOptionalEnvelope(patch.targetItemRef, "targetItemRef");
+  const plannedTargetPayload =
+    patch.plannedTargetPayload === undefined
+      ? existing.plannedTargetPayload
+      : normalizeOptionalEnvelope(patch.plannedTargetPayload, "plannedTargetPayload");
 
   db.prepare(
     `UPDATE sync_flow_run_items
@@ -484,6 +519,7 @@ export function updateSyncFlowRunItem(
          warnings_json = ?,
          errors_json = ?,
          target_item_ref_json = ?,
+         planned_target_payload_json = ?,
          selected_for_apply = ?,
          created_target_transaction_id = ?,
          created_target_marker = ?,
@@ -496,6 +532,7 @@ export function updateSyncFlowRunItem(
     stringifyEnvelope(warnings),
     stringifyEnvelope(errors),
     stringifyEnvelope(targetItemRef),
+    stringifyEnvelope(plannedTargetPayload),
     (patch.selectedForApply === undefined ? existing.selectedForApply : patch.selectedForApply) ? 1 : 0,
     patch.createdTargetTransactionId === undefined
       ? existing.createdTargetTransactionId

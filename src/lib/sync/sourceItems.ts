@@ -33,6 +33,11 @@ export type SyncSourceItem = {
    * fingerprint is unchanged if it matches any of them.
    */
   legacyFingerprints?: string[];
+  /**
+   * For a split line with no stable id, whose key embeds a fingerprint: the keys
+   * it could have been mapped under, for each cleared/reconciled state.
+   */
+  keyAliases?: string[];
   // Denormalized fields the engine transforms/classifies against.
   date: string;
   amount: number;
@@ -237,9 +242,13 @@ export function expandSourceTransaction(
     return txn.splitLines.map((line, lineIndex) => {
       const fingerprint = splitLineFingerprint(txn, line, lineIndex);
       const hasStableId = typeof line.id === "string" && line.id.length > 0;
+      // A positional key is part of the line's identity and of its target marker,
+      // so it stays on the original fingerprint format.
+      const positionalKey = (flags: LegacyFlags) =>
+        sourceSplitFallbackItemKey(txn.id, lineIndex, fnv1aHex(splitLineCanonical(txn, line, lineIndex, flags)));
       const itemKey = hasStableId
         ? sourceSplitItemKey(txn.id, line.id as string)
-        : sourceSplitFallbackItemKey(txn.id, lineIndex, fingerprint);
+        : positionalKey({ cleared: txn.cleared, reconciled: txn.reconciled });
 
       return {
         kind: "split_line",
@@ -249,6 +258,7 @@ export function expandSourceTransaction(
         usedFallbackKey: !hasStableId,
         fingerprint,
         legacyFingerprints: legacyFingerprints((flags) => splitLineCanonical(txn, line, lineIndex, flags)),
+        ...(hasStableId ? {} : { keyAliases: LEGACY_FLAG_STATES.map(positionalKey) }),
         date: txn.date,
         amount: line.amount,
         // Split children inherit the parent payee when they lack their own.
@@ -288,6 +298,11 @@ export function expandSourceTransaction(
       isTransfer: !!txn.transferId,
     } satisfies SyncSourceItem,
   ];
+}
+
+/** Every key this item may be mapped under. */
+export function allKeysOf(item: Pick<SyncSourceItem, "itemKey" | "keyAliases">): string[] {
+  return item.keyAliases ? [item.itemKey, ...item.keyAliases] : [item.itemKey];
 }
 
 /** Expand many source transactions, preserving order. */

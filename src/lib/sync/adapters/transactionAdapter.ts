@@ -8,7 +8,7 @@ import {
   filterSourceTransactions,
   type SyncSourceFilter,
 } from "../sourceFilter";
-import { expandSourceTransactions, type SyncSourceItem } from "../sourceItems";
+import { allKeysOf, expandSourceTransactions, type SyncSourceItem } from "../sourceItems";
 import { planExpandedItems } from "../syncPlanner";
 import {
   describeSyncError,
@@ -48,6 +48,8 @@ type MaterializedSource = {
   config: SyncFlowPlanConfig;
   /** Every item key in the source account before filters; set when deletions are detected. */
   presentSourceKeys?: string[];
+  /** The day rates were asked for, so planning judges a month against the same days. */
+  fxToday: string;
 };
 
 /** Keys in both split shapes, so changing the split setting never reads as a deletion. */
@@ -55,7 +57,7 @@ function allItemKeys(transactions: SyncSourceTransaction[]): string[] {
   return [
     ...expandSourceTransactions(transactions, { groupSplits: false }),
     ...expandSourceTransactions(transactions, { groupSplits: true }),
-  ].map((item) => item.itemKey);
+  ].flatMap(allKeysOf);
 }
 
 /** The persisted fields of every target row, from one account read. */
@@ -186,7 +188,7 @@ export const transactionAdapter: SyncKindAdapter = {
         throw new SyncKindError("source_load_failed", describeSyncError(err, "Failed to read the source account."));
       }
     }
-    const materialized: MaterializedSource = { items, filter, config, presentSourceKeys };
+    const materialized: MaterializedSource = { items, filter, config, presentSourceKeys, fxToday: new Date().toISOString().slice(0, 10) };
     return { materialized, stats: { scanned, generatedExcluded, expandedCount, keptCount: items.length } };
   },
 
@@ -205,8 +207,7 @@ export const transactionAdapter: SyncKindAdapter = {
     const source = materialized as MaterializedSource;
     const { config } = source;
     if (!config.fxEnabled || config.fxSourceCurrency === config.fxTargetCurrency) return [];
-    const today = new Date().toISOString().slice(0, 10);
-    return fxNeedDates(config, source.items.map((item) => item.date), today)
+    return fxNeedDates(config, source.items.map((item) => item.date), source.fxToday)
       .map((date) => ({ baseCurrency: config.fxSourceCurrency, quoteCurrency: config.fxTargetCurrency, date }));
   },
 
@@ -223,6 +224,7 @@ export const transactionAdapter: SyncKindAdapter = {
       presentSourceKeys: source.presentSourceKeys ? new Set(source.presentSourceKeys) : undefined,
       fxRateByDate,
       fxPendingByDate,
+      fxToday: source.fxToday,
       manualFxRates,
     });
   },
@@ -343,37 +345,35 @@ export const transactionAdapter: SyncKindAdapter = {
         }
         const keepPayee = payload.keepTargetPayee === true;
         const plannedCategory = (payload.categoryId as string | null) ?? null;
+        const date = String(payload.date ?? live.date);
+        const amount = Number(payload.amount ?? live.amount);
+        const notes = (payload.notes as string | null) ?? null;
+        // Resolved first so the baseline below can state exactly what was written.
+        const payeeName = (payload.payeeName as string | null) ?? null;
+        let payeeId = keepPayee ? live.payeeId : (payload.payeeId as string | null) ?? null;
+        if (!keepPayee && !payeeId && payeeName) payeeId = (await transport.createOrResolvePayee({ name: payeeName })).id;
         await transport.updateTransactionForSync({
           transactionId: input.targetId,
           accountId: config.targetAccountId,
-          date: String(payload.date ?? live.date),
-          amount: Number(payload.amount ?? live.amount),
-          payeeId: keepPayee ? undefined : (payload.payeeId as string | null) ?? null,
-          payeeName: keepPayee ? undefined : (payload.payeeName as string | null) ?? null,
+          date,
+          amount,
+          payeeId: keepPayee ? undefined : payeeId,
           // Category and cleared state belong to the target budget. A category is
           // only filled in when the target row has none.
           categoryId: live.categoryId == null && plannedCategory ? plannedCategory : undefined,
-          notes: (payload.notes as string | null) ?? null,
+          notes,
           returnApplied: false,
         });
-        results.push({ itemId: input.itemId, outcome: "updated", targetId: input.targetId });
+        // The baseline is what this sync wrote. A later read could include someone
+        // else's edit and would then let the next update overwrite it.
+        results.push({
+          itemId: input.itemId,
+          outcome: "updated",
+          targetId: input.targetId,
+          targetFingerprint: hashTargetFields({ ...live, date, amount, payeeId, notes }),
+        });
       } catch (err) {
         results.push({ itemId: input.itemId, outcome: "failed", targetId: input.targetId, message: describeSyncError(err, "Update failed.") });
-      }
-    }
-    // One read for the new baselines. If it fails the writes still stand, so the
-    // affected rows simply have no baseline until they are next repaired.
-    if (results.some((r) => r.outcome === "updated")) {
-      let written: Map<string, SyncAppliedSnapshot> | null = null;
-      try {
-        written = await readTargetRows(transport, config.targetAccountId);
-      } catch {
-        written = null;
-      }
-      for (const result of results) {
-        if (result.outcome !== "updated" || !result.targetId) continue;
-        const row = written?.get(result.targetId);
-        result.targetFingerprint = row ? hashTargetFields(row) : null;
       }
     }
     return results;

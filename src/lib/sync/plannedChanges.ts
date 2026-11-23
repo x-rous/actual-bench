@@ -211,6 +211,8 @@ export type SyncPlannerInput = {
   fxRateByDate?: Map<string, FxRateInfo>;
   /** Why a date has no rate, shown on its pending rows (provider down, bad code, future date). */
   fxPendingByDate?: Map<string, string>;
+  /** The day rates were requested through; a monthly average needs every day up to it. */
+  fxToday?: string;
   /** Rates the user set for individual target rows, by target transaction id. */
   manualFxRates?: Map<string, ManualFxRate>;
   /**

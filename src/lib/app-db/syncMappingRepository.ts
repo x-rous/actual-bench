@@ -1,5 +1,5 @@
 import { generateId } from "@/lib/uuid";
-import { AppDbValidationError } from "./errors";
+import { AppDbConflictError, AppDbValidationError } from "./errors";
 import { clampLimit } from "./pagination";
 import type {
   SqliteDatabase,
@@ -165,11 +165,17 @@ export function createSyncMapping(db: SqliteDatabase, input: SyncMappingInput): 
 }
 
 /**
- * Record a mapping unless the flow already has one for this source item. An apply
- * that overlaps or resumes must not lose its whole batch to one existing row.
+ * Record a mapping unless the flow already has the same one. A repeat of an
+ * identical mapping is harmless; the same source item pointing at a different
+ * target means a second target row exists, and the caller must hear about it.
  */
 export function createSyncMappingIfAbsent(db: SqliteDatabase, input: SyncMappingInput): SyncMapping {
-  return getSyncMappingBySource(db, input.flowId, input.sourceItemKey) ?? createSyncMapping(db, input);
+  const existing = getSyncMappingBySource(db, input.flowId, input.sourceItemKey);
+  if (!existing) return createSyncMapping(db, input);
+  if ((existing.targetTransactionId ?? null) !== (input.targetTransactionId?.trim() || null)) {
+    throw new AppDbConflictError(`Source item ${input.sourceItemKey} is already mapped to a different target.`);
+  }
+  return existing;
 }
 
 export function getSyncMapping(db: SqliteDatabase, mappingId: string): SyncMapping | null {

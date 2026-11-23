@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import {
   filterCount,
+  amountEditText,
   formatAmount,
   isAlreadySyncedCountOnly,
   parseAmountToMinor,
@@ -415,7 +416,7 @@ function AmountOverride({ row, value, onChange }: { row: PreviewRow; value?: num
           invalid ? "border-destructive" : value !== undefined ? "border-primary/60" : "border-transparent hover:border-border"
         )}
         value={draft ?? shown}
-        onFocus={() => setDraft(shown)}
+        onFocus={() => setDraft(amountEditText(value ?? planned))}
         onChange={(event) => setDraft(event.target.value)}
         onBlur={commit}
         onKeyDown={(event) => {
@@ -547,6 +548,7 @@ function ApplyResultBanner({ result, kind }: { result: ApplyRunResult; kind: Syn
         <p><strong className="font-semibold">{headline}</strong> {result.counts.applied} {created} · {result.counts.repaired} {linked} · {result.counts.failed} failed.</p>
         {result.counts.appliedWithWarnings > 0 && <p className="text-xs opacity-90">{result.counts.appliedWithWarnings} were adjusted by target-budget rules. They show as “Already synced” next time.</p>}
         {unresolved > 0 && <p className="text-xs opacity-90">{unresolved} couldn&apos;t be confirmed on the target.</p>}
+        {result.error && <p className="text-xs opacity-90">{result.error.message}</p>}
       </div>
     </div>
   );

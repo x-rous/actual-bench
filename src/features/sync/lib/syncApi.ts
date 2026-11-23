@@ -88,7 +88,7 @@ export function createMapping(input: SyncMappingInput): Promise<{ mapping: SyncM
 }
 
 /** Bulk-create mappings in one request/transaction (apply-run flush). */
-export function createMappings(inputs: SyncMappingInput[]): Promise<{ mappings: SyncMapping[] }> {
+export function createMappings(inputs: SyncMappingInput[]): Promise<{ mappings: SyncMapping[]; conflicts?: string[] }> {
   return jsonFetch("/api/sync-mappings", { method: "POST", body: JSON.stringify(inputs) });
 }
 
@@ -140,9 +140,14 @@ export function updateRun(runId: string, patch: UpdateSyncFlowRunPatch): Promise
   return jsonFetch(`/api/sync-flow-runs/${runId}`, { method: "PATCH", body: JSON.stringify(patch) });
 }
 
-/** Claim a run for apply; false means another apply already holds it. */
-export function claimRun(runId: string, retry: boolean): Promise<{ claimed: boolean }> {
+/** Claim a run for apply; a null token means another apply holds this flow. */
+export function claimRun(runId: string, retry: boolean): Promise<{ token: string | null }> {
   return jsonFetch(`/api/sync-flow-runs/${runId}`, { method: "POST", body: JSON.stringify({ retry }) });
+}
+
+/** Keep an apply's claim alive; false means it no longer owns the run. */
+export function heartbeatRun(runId: string, token: string): Promise<{ alive: boolean }> {
+  return jsonFetch(`/api/sync-flow-runs/${runId}`, { method: "POST", body: JSON.stringify({ heartbeat: token }) });
 }
 
 export function updateRunItem(itemId: string, patch: UpdateSyncFlowRunItemPatch): Promise<{ item: SyncFlowRunItem }> {

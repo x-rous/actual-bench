@@ -122,7 +122,9 @@ describe("expandSourceTransaction", () => {
     const [item] = expandSourceTransaction(parent);
     expect(item.usedFallbackKey).toBe(true);
     expect(item.sourceSplitId).toBeNull();
-    expect(item.itemKey).toBe(sourceSplitFallbackItemKey("p", 0, item.fingerprint));
+    // The key stays on the original fingerprint format, so synced lines keep their identity.
+    expect(item.legacyFingerprints!.map((fp) => sourceSplitFallbackItemKey("p", 0, fp))).toContain(item.itemKey);
+    expect(item.keyAliases).toContain(item.itemKey);
   });
 
   it("treats a parent with no split lines as a normal transaction", () => {

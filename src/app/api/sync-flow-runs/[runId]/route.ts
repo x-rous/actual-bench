@@ -5,6 +5,7 @@ import {
   getAllSyncFlowRunItems,
   claimSyncFlowRun,
   getSyncFlowRun,
+  heartbeatSyncFlowRun,
   updateSyncFlowRun,
   type UpdateSyncFlowRunPatch,
 } from "@/lib/app-db/syncRunRepository";
@@ -27,13 +28,16 @@ export async function GET(_request: Request, context: RouteContext) {
   }
 }
 
-/** Claim a run for apply. Only one caller can win it. */
+/** Claim a run for apply (one caller wins), or renew a claim already held. */
 export async function POST(request: Request, context: RouteContext) {
   try {
     const { runId } = await context.params;
-    const body = (await readJsonBody(request)) as { retry?: unknown };
+    const body = (await readJsonBody(request)) as { retry?: unknown; heartbeat?: unknown };
+    if (typeof body?.heartbeat === "string") {
+      return NextResponse.json({ alive: heartbeatSyncFlowRun(getAppDb(), runId, body.heartbeat) });
+    }
     const from = body?.retry === true ? (["draft_preview", "partial", "failed"] as const) : (["draft_preview"] as const);
-    return NextResponse.json({ claimed: claimSyncFlowRun(getAppDb(), runId, from) });
+    return NextResponse.json({ token: claimSyncFlowRun(getAppDb(), runId, from) });
   } catch (error) {
     return appDbErrorResponse(error);
   }

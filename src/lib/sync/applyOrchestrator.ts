@@ -48,10 +48,14 @@ export type ApplyTransportProvider = {
 
 export type ApplyStore = {
   /**
-   * Atomically take the run for this apply; false when another apply holds it.
-   * Stores without it fall back to a plain status write.
+   * Atomically take the run for this apply and return its token; null when
+   * another apply holds the flow. Stores without it use a plain status write.
    */
-  claimRun?(runId: string, retry: boolean): Promise<boolean>;
+  claimRun?(runId: string, retry: boolean): Promise<string | null>;
+  /** Renew the claim. False means this apply no longer owns the run and must stop. */
+  heartbeatRun?(runId: string, token: string): Promise<boolean>;
+  /** Save a payload the user changed, so a retry writes the same amount. */
+  saveRunItemPayload?(itemId: string, payload: JsonEnvelope): Promise<void>;
   loadRun(runId: string): Promise<SyncFlowRun | null>;
   loadRunItems(runId: string): Promise<SyncFlowRunItem[]>;
   loadFlow(flowId: string): Promise<SyncFlow | null>;
@@ -236,77 +240,123 @@ export async function applySyncRun(
   }
 
   const { config, adapter, flow } = prepared;
-  const eligible = applyAmountOverrides(prepared.eligible, input.amountOverrides);
+  const { eligible } = prepared;
   const counts: ApplyCounts = { ...EMPTY_COUNTS, selected: eligible.length };
   const items: ApplyItemResult[] = [];
 
   const isRetry = input.selection != null && "selection" in input.selection && input.selection.selection === "retry_failed";
+  let token: string | null = null;
   if (deps.store.claimRun) {
-    if (!(await deps.store.claimRun(runId, isRetry))) {
-      const error: ApplyError = { code: "run_not_applyable", message: "This run is already being applied." };
+    token = await deps.store.claimRun(runId, isRetry);
+    if (!token) {
+      const error: ApplyError = { code: "run_not_applyable", message: "Another apply of this flow is still running." };
       return { status: "failed", runId, error, counts: { ...EMPTY_COUNTS }, items: [] };
     }
   } else {
     await deps.store.updateRunStatus(runId, { status: "applying" });
   }
 
-  let transport: ActualBenchTransport;
-  let markerIndex: Map<string, string>;
+  // Keep the claim alive so cleanup never takes a run from a writer that is still
+  // working. A failed renewal is not a lost claim; only a definite "no" stops it.
+  let claimLost = false;
+  const heartbeat = token && deps.store.heartbeatRun
+    ? setInterval(() => {
+        void deps.store.heartbeatRun!(runId, token as string)
+          .then((alive) => { if (!alive) claimLost = true; })
+          .catch(() => undefined);
+      }, APPLY_HEARTBEAT_MS)
+    : null;
+  (heartbeat as { unref?: () => void } | null)?.unref?.();
+  const lostClaim = (): ApplyRunResult => ({
+    status: counts.applied + counts.repaired + counts.updated + counts.deleted > 0 ? "partial" : "failed",
+    runId,
+    error: { code: "run_not_applyable", message: "This apply lost its claim on the run and stopped. Run a new preview." },
+    counts,
+    items,
+  });
+
   try {
-    transport = await deps.transport.openTransport(input.targetConnection);
-    // Adapter-specific apply prep (e.g. the target marker index for transactions).
-    ({ markerIndex } = await adapter.prepareApply(transport, flow));
-  } catch (err) {
-    const error: ApplyError = {
-      code: "target_open_failed",
-      message: describe(err, "Failed to open the target budget for apply."),
-    };
-    await deps.store.updateRunStatus(runId, { status: "failed", finishedAt: nowIso() });
-    await safePersistFailure(deps.store, runId, error);
-    return { status: "failed", runId, error, counts, items };
-  }
+    // Saved before any write, so a retry after a failure uses the same amount.
+    try {
+      for (const entry of eligible) {
+        if (entry.overridden && entry.payloadJson) {
+          await deps.store.saveRunItemPayload?.(entry.item.id, { version: 1, data: entry.payloadJson });
+        }
+      }
+    } catch (err) {
+      const error: ApplyError = { code: "finalize_failed", message: describe(err, "The charged amounts could not be saved; nothing was written.") };
+      await deps.store.updateRunStatus(runId, { status: "failed", finishedAt: nowIso() });
+      await safePersistFailure(deps.store, runId, error);
+      return { status: "failed", runId, error, counts, items };
+    }
 
-  const ctx: ItemContext = { config, adapter, flow, transport, markerIndex };
+    let transport: ActualBenchTransport;
+    let markerIndex: Map<string, string>;
+    try {
+      transport = await deps.transport.openTransport(input.targetConnection);
+      // Adapter-specific apply prep (e.g. the target marker index for transactions).
+      ({ markerIndex } = await adapter.prepareApply(transport, flow));
+    } catch (err) {
+      const error: ApplyError = {
+        code: "target_open_failed",
+        message: describe(err, "Failed to open the target budget for apply."),
+      };
+      await deps.store.updateRunStatus(runId, { status: "failed", finishedAt: nowIso() });
+      await safePersistFailure(deps.store, runId, error);
+      return { status: "failed", runId, error, counts, items };
+    }
 
-  // Repair/map items write nothing, so they stay per-item (cheap). Creates are
-  // batched into ONE insert + ONE id-recovery read instead of one round-trip per
-  // transaction - the dominant cost on large runs.
-  for (const eligibleItem of eligible.filter((e) => e.mode === "repair" || e.mode === "map")) {
-    const result = await applyOneItem(eligibleItem, ctx, deps.store);
-    items.push(result);
-    tally(counts, result.outcome);
-  }
-  for (const result of await applyCreateBatch(eligible.filter((e) => e.mode === "create" || e.mode === "recreate"), ctx, deps.store)) {
-    items.push(result);
-    tally(counts, result.outcome);
-  }
-  for (const result of await applyMutateBatch("update", eligible.filter((e) => e.mode === "update"), ctx, deps.store)) {
-    items.push(result);
-    tally(counts, result.outcome);
-  }
-  for (const result of await applyMutateBatch("delete", eligible.filter((e) => e.mode === "delete"), ctx, deps.store)) {
-    items.push(result);
-    tally(counts, result.outcome);
-  }
+    const ctx: ItemContext = { config, adapter, flow, transport, markerIndex };
 
-  const status = deriveRunStatus(counts);
-  // Per-item mappings/statuses are already persisted; a failure to write the
-  // final run summary must not throw away the completed work or leave the run
-  // stuck "applying" without explanation. Record the finalize error best-effort.
-  try {
-    await deps.store.updateRunStatus(runId, {
-      status,
-      finishedAt: nowIso(),
-      counts: { version: 1, data: applyCountsToJson(counts) },
-    });
-  } catch (err) {
-    await safePersistFailure(deps.store, runId, {
-      code: "finalize_failed",
-      message: describe(err, "Apply completed but the run status could not be finalized."),
-    });
-  }
+    // Repair/map items write nothing, so they stay per-item (cheap). Creates are
+    // batched into ONE insert + ONE id-recovery read instead of one round-trip per
+    // transaction - the dominant cost on large runs.
+    for (const eligibleItem of eligible.filter((e) => e.mode === "repair" || e.mode === "map")) {
+      if (claimLost) return lostClaim();
+      const result = await applyOneItem(eligibleItem, ctx, deps.store);
+      items.push(result);
+      tally(counts, result.outcome);
+    }
+    if (claimLost) return lostClaim();
+    for (const result of await applyCreateBatch(eligible.filter((e) => e.mode === "create" || e.mode === "recreate"), ctx, deps.store)) {
+      items.push(result);
+      tally(counts, result.outcome);
+    }
+    if (claimLost) return lostClaim();
+    for (const result of await applyMutateBatch("update", eligible.filter((e) => e.mode === "update"), ctx, deps.store)) {
+      items.push(result);
+      tally(counts, result.outcome);
+    }
+    if (claimLost) return lostClaim();
+    for (const result of await applyMutateBatch("delete", eligible.filter((e) => e.mode === "delete"), ctx, deps.store)) {
+      items.push(result);
+      tally(counts, result.outcome);
+    }
+    if (claimLost) return lostClaim();
 
-  return { status, runId, counts, items };
+    const status = deriveRunStatus(counts);
+    // Per-item mappings/statuses are already persisted; a failure to write the
+    // final run summary must not throw away the completed work or leave the run
+    // stuck "applying" without explanation. Record the finalize error best-effort.
+    try {
+      await deps.store.updateRunStatus(runId, {
+        status,
+        finishedAt: nowIso(),
+        counts: { version: 1, data: applyCountsToJson(counts) },
+      });
+    } catch (err) {
+      const error: ApplyError = {
+        code: "finalize_failed",
+        message: describe(err, "Apply completed but the run status could not be finalized."),
+      };
+      await safePersistFailure(deps.store, runId, error);
+      return { status: status === "applied" ? "partial" : status, runId, error, counts, items };
+    }
+
+    return { status, runId, counts, items };
+  } finally {
+    if (heartbeat) clearInterval(heartbeat);
+  }
 }
 
 // --- Validation / preparation ----------------------------------------------
@@ -320,6 +370,8 @@ type EligibleItem = {
   payloadJson: JsonObject | null;
   /** Existing target transaction/entity id for repair/map items; null for create. */
   targetTransactionId: string | null;
+  /** The user set this row's amount; its payload is saved before any write. */
+  overridden?: boolean;
 };
 
 type PreparedApply = {
@@ -569,7 +621,7 @@ async function validateAndPrepare(
     }
   }
 
-  return { flow, config, adapter, eligible };
+  return { flow, config, adapter, eligible: applyAmountOverrides(eligible, input.amountOverrides) };
 }
 
 /** Replace a converted create's amount with the one the bank charged, deriving its rate. */
@@ -577,20 +629,26 @@ function applyAmountOverrides(eligible: EligibleItem[], overrides: Record<string
   if (!overrides) return eligible;
   return eligible.map((entry) => {
     const magnitude = overrides[entry.item.id];
+    if (magnitude === undefined) return entry;
     const payload = entry.payloadJson as (JsonObject & { amount?: number; notes?: string | null; fx?: PlannedFx | null; subtransactions?: unknown }) | null;
-    if (magnitude === undefined || !payload?.fx || payload.subtransactions) return entry;
-    if ((entry.mode !== "create" && entry.mode !== "recreate") || !Number.isInteger(magnitude) || magnitude <= 0) return entry;
-    const fx = payload.fx;
+    const fx = payload?.fx;
+    // Refused rather than ignored: the user asked for this amount to be written.
+    if (!payload || !fx || payload.subtransactions || fx.sourceAmount === 0 || (entry.mode !== "create" && entry.mode !== "recreate") || !Number.isInteger(magnitude) || magnitude <= 0) {
+      throw new ApplyPreflightError("ineligible_selection", `A charged amount cannot be applied to item ${entry.item.id}.`);
+    }
     const rate = impliedRate(fx.sourceAmount, magnitude);
     const notes = typeof payload.notes === "string" ? payload.notes.replace(`@ ${fx.rate}]`, `@ ${rate}]`) : payload.notes ?? null;
     const amount = (payload.amount ?? 0) < 0 ? -magnitude : magnitude;
     const nextFx: PlannedFx = { ...fx, rate, source: "manual", provider: null, fxRateId: null, isManual: true };
-    return { ...entry, payloadJson: { ...payload, amount, notes, fx: nextFx } as unknown as JsonObject };
+    return { ...entry, overridden: true, payloadJson: { ...payload, amount, notes, fx: nextFx } as unknown as JsonObject };
   });
 }
 
 /** A preview older than this may no longer describe the source. */
 const MAX_PREVIEW_AGE_MS = 24 * 60 * 60_000;
+
+/** How often an apply renews its claim on the run. */
+const APPLY_HEARTBEAT_MS = 60_000;
 
 /** Refuse a run planned for settings the flow no longer has, or a very old draft. */
 function assertPreviewFresh(run: SyncFlowRun, flow: SyncFlow, isRetry: boolean): void {
@@ -660,9 +718,19 @@ async function applyCreateBatch(
     const base = { itemId: item.id, sourceItemKey: item.sourceItemKey ?? "" };
     try {
       const existingMapping = await store.getMappingBySource(ctx.config.flowId, item.sourceItemKey ?? "");
-      // A recreate replaces its mapping's deleted target; any other mapped row is done.
-      const replaces = eligible.mode === "recreate" ? existingMapping : null;
+      // A recreate replaces the deleted target its preview saw. If the mapping has
+      // since been stopped or already points at a new row, there is nothing to do.
+      const replaces =
+        eligible.mode === "recreate" &&
+        existingMapping?.status === "active" &&
+        existingMapping.targetTransactionId === readTargetTxnId(item)
+          ? existingMapping
+          : null;
       if (existingMapping && !replaces) {
+        // A retry after the row was written but its charged rate was not saved.
+        if (existingMapping.status === "active" && existingMapping.targetTransactionId && readFx(payloadJson)?.isManual) {
+          await saveFxSnapshot(store, payloadJson, existingMapping.targetTransactionId);
+        }
         await store.updateRunItemStatus(item.id, {
           status: "skipped",
           applyState: "skipped",
@@ -675,6 +743,7 @@ async function applyCreateBatch(
       if (marker && markerHit) {
         if (replaces) await repointMapping(store, replaces, item, markerHit, null);
         else await recordMapping(store, ctx.config, item, markerHit, marker, null);
+        if (readFx(payloadJson)?.isManual) await saveFxSnapshot(store, payloadJson, markerHit);
         await store.updateRunItemStatus(item.id, {
           status: "skipped",
           applyState: "skipped",
@@ -747,27 +816,14 @@ async function applyCreateBatch(
       // manual edit before overwriting (RD-057 §4).
       if (replaces) await repointMapping(store, replaces, item, targetId, res?.targetFingerprint ?? null);
       else await recordMapping(store, ctx.config, item, targetId, marker, res?.targetFingerprint ?? null);
-      // RD-056: record the immutable FX snapshot for a converted create. Audit
-      // only — never fail the create over it.
-      const fx = (payloadJson as { fx?: PlannedFx | null; amount?: number }).fx;
-      if (fx && store.persistFxSnapshot) {
-        try {
-          await store.persistFxSnapshot({
-            transactionId: targetId,
-            fxRateId: fx.fxRateId,
-            sourceCurrency: fx.sourceCurrency,
-            targetCurrency: fx.targetCurrency,
-            sourceAmount: fx.sourceAmount,
-            convertedAmount: (payloadJson as { amount: number }).amount,
-            appliedRate: fx.rate,
-            requestedDate: fx.requestedDate,
-            effectiveDate: fx.effectiveDate,
-            source: fx.source,
-            provider: fx.provider,
-            isManual: fx.isManual === true,
-          });
-        } catch {
-          // best-effort audit
+      // RD-056: record the FX snapshot for a converted create. An ordinary one is
+      // audit and never fails the create. A rate the user set exists nowhere else,
+      // so losing it fails the item, and Retry saves it without writing again.
+      try {
+        await saveFxSnapshot(store, payloadJson, targetId);
+      } catch (err) {
+        if (readFx(payloadJson)?.isManual) {
+          throw new Error(`The transaction was written, but its charged rate could not be saved: ${describe(err, "unknown error")}`);
         }
       }
     } catch (err) {
@@ -970,6 +1026,30 @@ async function recordMapping(
     targetMarker,
     createdRunId: item.runId,
     lastAppliedAt: nowIso(),
+  });
+}
+
+function readFx(payload: JsonObject): PlannedFx | null {
+  return (payload as { fx?: PlannedFx | null }).fx ?? null;
+}
+
+/** Record the FX snapshot for a target row, when the payload was converted. */
+async function saveFxSnapshot(store: ApplyStore, payload: JsonObject, targetId: string): Promise<void> {
+  const fx = readFx(payload);
+  if (!fx || !store.persistFxSnapshot) return;
+  await store.persistFxSnapshot({
+    transactionId: targetId,
+    fxRateId: fx.fxRateId,
+    sourceCurrency: fx.sourceCurrency,
+    targetCurrency: fx.targetCurrency,
+    sourceAmount: fx.sourceAmount,
+    convertedAmount: (payload as { amount: number }).amount,
+    appliedRate: fx.rate,
+    requestedDate: fx.requestedDate,
+    effectiveDate: fx.effectiveDate,
+    source: fx.source,
+    provider: fx.provider,
+    isManual: fx.isManual === true,
   });
 }
 

@@ -6,7 +6,7 @@ import type { SyncFlowPlanConfig } from "./flowConfig";
 import { generateSyncMarker } from "./marker";
 import type { ManualFxRate } from "./plannedChanges";
 import { filterSourceItems, filterSourceTransactions, type SyncSourceFilter } from "./sourceFilter";
-import { expandSourceTransactions } from "./sourceItems";
+import { allKeysOf, expandSourceTransactions } from "./sourceItems";
 
 /**
  * Where a converted account stands: what the foreign balance is worth today
@@ -75,7 +75,7 @@ export function computeFxPosition(input: {
   const amountByKey = new Map<string, number>();
   for (const groupSplits of [false, true]) {
     for (const item of expandSourceTransactions(input.sourceTransactions, { groupSplits })) {
-      amountByKey.set(item.itemKey, item.amount);
+      for (const key of allKeysOf(item)) amountByKey.set(key, item.amount);
     }
   }
   const targetAmount = new Map(input.targetTransactions.map((row) => [row.id, row.amount]));
@@ -124,7 +124,7 @@ export function computeFxPosition(input: {
     revaluedTotal,
     rate,
     syncedRows,
-    unsyncedRows: eligible.filter((item) => !mappedKeys.has(item.itemKey)).length,
+    unsyncedRows: eligible.filter((item) => !allKeysOf(item).some((key) => mappedKeys.has(key))).length,
     missingOnTarget,
     missingOnSource,
   };

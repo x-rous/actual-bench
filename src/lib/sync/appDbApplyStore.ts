@@ -3,6 +3,7 @@ import { createSyncMappingIfAbsent, getSyncMappingBySource, updateSyncMapping } 
 import {
   claimSyncFlowRun,
   getAllSyncFlowRunItems,
+  heartbeatSyncFlowRun,
   getSyncFlowRun,
   updateSyncFlowRun,
   updateSyncFlowRunItem,
@@ -31,6 +32,10 @@ export function createAppDbApplyStore(db: SqliteDatabase): ApplyStore {
     },
     claimRun: async (runId, retry) =>
       claimSyncFlowRun(db, runId, retry ? ["draft_preview", "partial", "failed"] : ["draft_preview"]),
+    heartbeatRun: async (runId, token) => heartbeatSyncFlowRun(db, runId, token),
+    saveRunItemPayload: async (itemId, payload) => {
+      updateSyncFlowRunItem(db, itemId, { plannedTargetPayload: payload });
+    },
     updateRunStatus: async (runId, patch) => {
       updateSyncFlowRun(db, runId, {
         status: patch.status,

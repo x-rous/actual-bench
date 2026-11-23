@@ -13,7 +13,7 @@ import {
   type TransferRow,
 } from "@/lib/sync/fxPosition";
 import { decodeSourceFilter } from "@/lib/sync/sourceFilter";
-import { expandSourceTransactions } from "@/lib/sync/sourceItems";
+import { allKeysOf, expandSourceTransactions } from "@/lib/sync/sourceItems";
 import { hashTargetFields } from "@/lib/sync/targetFingerprint";
 import type { ActualBenchTransport, SyncSourceTransaction } from "@/lib/actual/transport";
 import type { TransactionPreflight } from "@/lib/actual/transactionStructure";
@@ -108,7 +108,7 @@ export async function loadFxPosition(input: {
   const transferKeys = new Set(
     [false, true].flatMap((groupSplits) => expandSourceTransactions(sourceTransactions, { groupSplits }))
       .filter((item) => item.isTransfer)
-      .map((item) => item.itemKey)
+      .flatMap(allKeysOf)
   );
   const targetById = new Map(targetTransactions.map((row) => [row.id, row]));
   const synced = mappings
@@ -130,7 +130,7 @@ export async function loadFxPosition(input: {
     const sourceByTarget = new Map(mappings.map((m) => [m.targetTransactionId, m.sourceItemKey]));
     const sourceAmounts = new Map(
       [false, true].flatMap((groupSplits) => expandSourceTransactions(sourceTransactions, { groupSplits }))
-        .map((item) => [item.itemKey, item.amount])
+        .flatMap((item) => allKeysOf(item).map((key) => [key, item.amount] as const))
     );
     transfers = findTransferCandidates(synced, others).map((pair) => {
       const row = targetById.get(pair.syncedId) as SyncSourceTransaction;
@@ -155,7 +155,11 @@ export async function loadFxPosition(input: {
   };
 }
 
-/** Post one revaluation entry. A second one for the same account and day is refused. */
+/**
+ * Post one revaluation entry. A second one for the same account and day is
+ * refused. If an earlier post wrote the row but lost its mapping, this records
+ * the mapping for that row and writes nothing, and returns `recovered: true`.
+ */
 export async function postFxRevaluation(input: {
   flow: SyncFlow;
   targetConnection: ConnectionInstance;
@@ -163,19 +167,13 @@ export async function postFxRevaluation(input: {
   rate: string;
   categoryId: string | null;
   date: string;
-}): Promise<void> {
+}): Promise<{ recovered: boolean }> {
   const config = decodeFlowPlanConfig(input.flow);
   if (!Number.isInteger(input.amount) || input.amount === 0) throw new Error("There is no difference to post.");
   const { itemKey, transaction } = buildRevaluationInput({ config, date: input.date, amount: input.amount, rate: input.rate, categoryId: input.categoryId });
   const transport = await open(input.targetConnection);
   const lookup = await transport.getTargetLookupForSync({ accountId: config.targetAccountId });
-  if (transaction.importedId && lookup.importedIdIndex.has(transaction.importedId)) {
-    throw new Error("A revaluation for this account was already posted today.");
-  }
-  const { created } = await transport.createTransactionsForSync([transaction]);
-  const row = created[0];
-  if (!row?.transactionId) throw new Error("The revaluation could not be confirmed on the target budget. Check the account before trying again.");
-  await api.createMapping({
+  const mapRevaluation = (targetId: string, fingerprint: string | null) => api.createMapping({
     flowId: input.flow.id,
     sourceConnectionFingerprint: config.sourceConnectionFingerprint,
     sourceBudgetId: config.sourceBudgetId,
@@ -189,13 +187,28 @@ export async function postFxRevaluation(input: {
     targetBudgetId: config.targetBudgetId,
     targetAccountId: config.targetAccountId,
     targetEntityType: "transaction",
-    targetTransactionId: row.transactionId,
-    targetItemKey: `txn:${row.transactionId}`,
-    targetFingerprint: row.applied ? hashTargetFields(row.applied) : null,
+    targetTransactionId: targetId,
+    targetItemKey: `txn:${targetId}`,
+    targetFingerprint: fingerprint,
     targetMarker: transaction.importedId ?? null,
     createdRunId: null,
     lastAppliedAt: new Date().toISOString(),
   });
+
+  const existingId = transaction.importedId ? lookup.importedIdIndex.get(transaction.importedId) : undefined;
+  if (existingId) {
+    const { mappings } = await api.listMappings(input.flow.id);
+    if (mappings.some((mapping) => mapping.sourceItemKey === itemKey)) {
+      throw new Error("A revaluation for this account was already posted today.");
+    }
+    await mapRevaluation(existingId, null);
+    return { recovered: true };
+  }
+  const { created } = await transport.createTransactionsForSync([transaction]);
+  const row = created[0];
+  if (!row?.transactionId) throw new Error("The revaluation could not be confirmed on the target budget. Check the account before trying again.");
+  await mapRevaluation(row.transactionId, row.applied ? hashTargetFields(row.applied) : null);
+  return { recovered: false };
 }
 
 function preflight(row: SyncSourceTransaction): TransactionPreflight {
@@ -225,7 +238,10 @@ export async function linkSyncedTransfer(input: {
   flow: SyncFlow;
   targetConnection: ConnectionInstance;
   syncedId: string;
-  counterpart: Pick<TransferRow, "id" | "accountId" | "date">;
+  /** The synced row's amount as the user reviewed it. */
+  syncedAmount: number;
+  /** The other side as the user reviewed it; `amount` is what the synced row will take. */
+  counterpart: Pick<TransferRow, "id" | "accountId" | "date" | "amount">;
 }): Promise<void> {
   const config = decodeFlowPlanConfig(input.flow);
   const transport = await open(input.targetConnection);
@@ -240,6 +256,9 @@ export async function linkSyncedTransfer(input: {
   const synced = targetRows.find((row) => row.id === input.syncedId);
   const counterpart = otherRows.find((row) => row.id === input.counterpart.id);
   if (!synced || !counterpart) throw new Error("One of these transactions no longer exists. Refresh and try again.");
+  if (synced.amount !== input.syncedAmount || counterpart.amount !== input.counterpart.amount) {
+    throw new Error("One of these amounts changed after this list was loaded. Refresh and review it again.");
+  }
   if (synced.reconciled || synced.transferId || synced.isParent || synced.isChild) {
     throw new Error("The synced transaction is reconciled, split or already a transfer, so it cannot be linked.");
   }

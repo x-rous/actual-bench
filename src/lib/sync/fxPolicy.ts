@@ -17,6 +17,16 @@ function daysInMonth(month: string): number {
   return new Date(Date.UTC(year, m, 0)).getUTCDate();
 }
 
+/** Every day of a month up to and including `today`. */
+function monthDatesThrough(month: string, today: string): string[] {
+  const out: string[] = [];
+  for (let day = 1; day <= daysInMonth(month); day++) {
+    const date = `${month}-${String(day).padStart(2, "0")}`;
+    if (date <= today) out.push(date);
+  }
+  return out;
+}
+
 /**
  * The dates whose market rates this policy needs. A monthly average needs every
  * day of each month, up to `today`. A fixed rate needs none.
@@ -27,25 +37,31 @@ export function fxNeedDates(config: FxPolicyConfig, itemDates: Iterable<string>,
   if (config.fxRatePolicy !== "monthly_average") return [...dates];
   const out = new Set<string>();
   for (const month of new Set([...dates].map(monthOf))) {
-    for (let day = 1; day <= daysInMonth(month); day++) {
-      const date = `${month}-${String(day).padStart(2, "0")}`;
-      if (date <= today) out.add(date);
-    }
+    for (const date of monthDatesThrough(month, today)) out.add(date);
   }
   // A future-dated row keeps its own need, so it reports as waiting for a rate.
   for (const date of dates) if (date > today) out.add(date);
   return [...out];
 }
 
-/** Resolves the rate for one row. `null` means the row must wait for a rate. */
+/**
+ * Resolves the rate for one row. `null` means the row must wait for a rate.
+ * With `today`, a monthly average needs every day of the month up to it: an
+ * average of whichever days happened to resolve is not the month's rate.
+ */
 export function createFxRateResolver(
   config: FxPolicyConfig,
-  byDate: ReadonlyMap<string, FxRateInfo> | undefined
+  byDate: ReadonlyMap<string, FxRateInfo> | undefined,
+  today?: string
 ): (date: string, sourceAmount: number) => FxRateInfo | null {
   const monthly = new Map<string, FxRateInfo | null>();
 
   function monthAverage(month: string): FxRateInfo | null {
     if (monthly.has(month)) return monthly.get(month) ?? null;
+    if (today && !monthDatesThrough(month, today).every((date) => byDate?.has(date))) {
+      monthly.set(month, null);
+      return null;
+    }
     const rows = [...(byDate ?? new Map<string, FxRateInfo>()).entries()]
       .filter(([date]) => monthOf(date) === month)
       .sort(([a], [b]) => (a < b ? -1 : 1));

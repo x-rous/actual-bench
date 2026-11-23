@@ -170,8 +170,11 @@ export function SyncView() {
     livePreview.runId === activeRunId &&
     PRE_APPLY_RUN_STATUSES.has(runQuery.data?.run.status);
   const rows = useMemo(
-    () => (preferLiveItems ? livePreview!.items : (runQuery.data?.items ?? [])).filter((item) => !stoppedRowIds.has(item.id)).map(toPreviewRow),
-    [preferLiveItems, livePreview, runQuery.data, stoppedRowIds]
+    () => (preferLiveItems ? livePreview!.items : (runQuery.data?.items ?? []))
+      // Only the live preview hides stopped rows: history and its export show the run as stored.
+      .filter((item) => view !== "flow" || !stoppedRowIds.has(item.id))
+      .map(toPreviewRow),
+    [preferLiveItems, livePreview, runQuery.data, stoppedRowIds, view]
   );
 
   // Only a fresh, still-draft preview is appliable; runs opened from history are read-only.

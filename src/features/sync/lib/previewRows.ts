@@ -171,17 +171,49 @@ export function toPreviewRow(item: SyncFlowRunItem): PreviewRow {
       notes: str(payload.notes),
     },
     fx: fxInfo(payload.fx),
-    canOverrideAmount: (isSafeNew || isRecreate) && !!fxInfo(payload.fx) && !payload.subtransactions,
+    canOverrideAmount: (isSafeNew || isRecreate) && !!fxInfo(payload.fx) && !payload.subtransactions && numOrNull(source.amount) !== 0,
   };
 }
 
-/** A typed amount as positive minor units, or null when it is not a valid amount. */
-export function parseAmountToMinor(text: string): number | null {
-  const cleaned = text.trim().replace(/,/g, "").replace(/^-/, "");
-  if (!/^\d+(\.\d{1,2})?$/.test(cleaned)) return null;
-  const [whole, fraction = ""] = cleaned.split(".");
-  const minor = Number(whole) * 100 + Number(fraction.padEnd(2, "0"));
+/** The separator the user's locale writes before decimals. */
+function localeDecimalSeparator(): string {
+  return new Intl.NumberFormat().formatToParts(1.5).find((part) => part.type === "decimal")?.value ?? ".";
+}
+
+/**
+ * A typed amount as positive minor units, or null when it is not a valid amount.
+ * Reads both `1,234.56` and `1.234,56`: the last separator is the decimal one when
+ * one or two digits follow it. Three digits after a lone separator are a thousands
+ * group, unless that separator is the locale's decimal one, which would mean three
+ * decimal places and is refused instead of being misread by a factor of 1,000.
+ */
+export function parseAmountToMinor(text: string, decimalSeparator = localeDecimalSeparator()): number | null {
+  const cleaned = text.trim().replace(/^-/, "").replace(/[\s\u00a0\u202f']/g, "");
+  if (!/^\d[\d.,]*$/.test(cleaned) || /[.,]$/.test(cleaned)) return null;
+  const lastIndex = Math.max(cleaned.lastIndexOf(","), cleaned.lastIndexOf("."));
+  let whole = cleaned;
+  let fraction = "";
+  if (lastIndex >= 0) {
+    const tail = cleaned.slice(lastIndex + 1);
+    const separator = cleaned[lastIndex];
+    const lone = cleaned.indexOf(separator) === lastIndex && !cleaned.slice(0, lastIndex).match(/[.,]/);
+    if (tail.length <= 2) {
+      whole = cleaned.slice(0, lastIndex);
+      fraction = tail;
+    } else if (tail.length !== 3 || (lone && separator === decimalSeparator)) {
+      return null;
+    }
+    const groups = whole.split(/[.,]/);
+    if (groups.length > 1 && (groups[0].length > 3 || groups.slice(1).some((group) => group.length !== 3))) return null;
+    whole = groups.join("");
+  }
+  const minor = Number(whole) * 100 + Number(fraction.padEnd(2, "0") || "0");
   return Number.isSafeInteger(minor) && minor > 0 ? minor : null;
+}
+
+/** An amount as plain digits for editing: no grouping, always a `.` before the cents. */
+export function amountEditText(minor: number): string {
+  return (Math.abs(minor) / 100).toFixed(2);
 }
 
 function fxInfo(value: unknown): PreviewRow["fx"] {

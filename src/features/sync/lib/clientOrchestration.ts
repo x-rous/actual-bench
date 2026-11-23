@@ -73,11 +73,13 @@ function applyStore(): ApplyStore {
   const pendingMappings: SyncMappingInput[] = [];
   const pendingItemPatches: { itemId: string; patch: RunItemStatusPatch }[] = [];
   const pendingFxSnapshots: FxSnapshotInput[] = [];
+  let mappingConflicts = 0;
 
   async function flush(): Promise<void> {
     if (pendingMappings.length > 0) {
-      await api.createMappings(pendingMappings);
+      const { conflicts } = await api.createMappings(pendingMappings);
       pendingMappings.length = 0;
+      if (conflicts?.length) mappingConflicts += conflicts.length;
     }
     if (pendingItemPatches.length > 0) {
       await api.updateRunItems(pendingItemPatches);
@@ -88,10 +90,19 @@ function applyStore(): ApplyStore {
       const snapshots = pendingFxSnapshots.splice(0);
       await api.persistFxSnapshots(snapshots).catch(() => undefined);
     }
+    if (mappingConflicts > 0) {
+      const count = mappingConflicts;
+      mappingConflicts = 0;
+      throw new Error(`${count} item(s) were already linked to a different target transaction. Check the target account for duplicates.`);
+    }
   }
 
   return {
-    claimRun: async (runId, retry) => (await api.claimRun(runId, retry)).claimed,
+    claimRun: async (runId, retry) => (await api.claimRun(runId, retry)).token,
+    heartbeatRun: async (runId, token) => (await api.heartbeatRun(runId, token)).alive,
+    saveRunItemPayload: async (itemId, payload) => {
+      await api.updateRunItem(itemId, { plannedTargetPayload: payload });
+    },
     loadRun: async (runId) => (await api.getRun(runId)).run,
     loadRunItems: async (runId) => (await api.getRun(runId)).items,
     loadFlow: async (flowId) => (await api.getFlow(flowId)).flow,
@@ -127,7 +138,17 @@ function applyStore(): ApplyStore {
       });
     },
     persistFxSnapshot: async (input) => {
-      pendingFxSnapshots.push(input);
+      // A rate the user set exists nowhere else, so it is written now, and a
+      // failure reaches the item. An ordinary snapshot is audit and can wait.
+      if (!input.isManual) {
+        pendingFxSnapshots.push(input);
+        return;
+      }
+      try {
+        await api.persistFxSnapshot(input);
+      } catch {
+        await api.persistFxSnapshot(input);
+      }
     },
     updateFxSnapshot: async (input) => {
       await api.updateFxSnapshot(input);
