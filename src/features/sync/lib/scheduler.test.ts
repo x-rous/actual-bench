@@ -21,9 +21,9 @@ describe("isFlowDue", () => {
     expect(isFlowDue(flow(), noneInFlight, NOW)).toBe(true);
   });
 
-  it("never runs manual or auto-apply-on-preview policies on the interval", () => {
+  it("never runs manual or server-scheduled policies on the interval", () => {
     expect(isFlowDue(flow({ reviewPolicy: "manual_preview_required" }), noneInFlight, NOW)).toBe(false);
-    expect(isFlowDue(flow({ reviewPolicy: "auto_apply_safe_only" }), noneInFlight, NOW)).toBe(false);
+    expect(isFlowDue(flow({ reviewPolicy: "auto_sync_unattended" }), noneInFlight, NOW)).toBe(false);
   });
 
   it("never runs a disabled/paused flow", () => {
@@ -64,7 +64,7 @@ describe("selectFlowsToAutoRun", () => {
   it("returns nothing when no flow has opted into interval auto-sync", () => {
     const flows = [
       flow({ flowId: "a", reviewPolicy: "manual_preview_required" }),
-      flow({ flowId: "b", reviewPolicy: "auto_apply_safe_only" }),
+      flow({ flowId: "b", reviewPolicy: "auto_sync_unattended" }),
     ];
     expect(selectFlowsToAutoRun({ flows, inFlight: noneInFlight, nowMs: NOW })).toEqual([]);
   });

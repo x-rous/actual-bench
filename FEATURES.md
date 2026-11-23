@@ -237,7 +237,7 @@ A workspace for syncing data between budget files as saved one-way flows. One un
 - Idempotent reruns: app-owned mappings are the source of truth (with the target marker as a secondary recovery aid), so re-previewing after apply shows already-synced items instead of creating duplicates
 - Marker-match repair: if a target already carries a flow's marker but the mapping was lost, the row can be selected to repair the mapping without creating a duplicate
 - **Update mapped targets** (opt-in): when a source transaction changes after it was synced, push the change to its mapped target — but never overwrite a target that was edited outside sync (a stored field fingerprint guards manual edits)
-- **Delete when the source is removed** (opt-in, review-first): when a synced source transaction is deleted, the mapped target surfaces under *Source deleted* for you to delete; never automatic, never in bulk, and only for whole-account flows
+- **Delete when the source is removed** (opt-in, review-first): when a synced source transaction is deleted, the mapped target surfaces under *Source deleted* for you to delete; never automatic and never in bulk. The whole source account is checked, so this works on flows with a date range, and a transaction that only left a filter is not treated as deleted
 - Reverse-flow helper: one click mirrors a flow (source/target swapped, created disabled for review) so two one-way flows form a two-way sync
 - **Export a run's audit** to CSV, and **export/import a flow definition** as JSON (no secrets or connections — re-select connections on import)
 - Run history per flow with counts and item-level detail, including how many items were auto-applied vs. left in the review queue vs. failed
@@ -248,7 +248,6 @@ A workspace for syncing data between budget files as saved one-way flows. One un
 The same engine can run without hand-picking every change — but only for provably safe work. Each flow has a **review policy**:
 
 - **Manual** (default): preview and apply yourself, exactly as above — no behavior change
-- **Auto-apply safe items on preview**: a run auto-applies only safe items (new creates and marker-match repairs); everything uncertain is left for you
 - **Auto-sync on a schedule**: a client-side timer re-runs a safe-only sync at a chosen interval (minimum 15 minutes) **while Actual Bench is open and the connection is unlocked**
 - **Auto-sync on a server schedule (unattended)**: for **HTTP API mode** flows, a server-side scheduler runs the same safe-only sync **with the app closed** — opt-in and off by default. It requires enrolling the connection's API key in the **encrypted, server-side vault** (AES-256-GCM; the vault key is generated on first start and kept beside the database, or supplied as `ACTUAL_BENCH_VAULT_KEY`; never in the database, never returned to the browser). A locked vault or an auth failure **pauses the flow and surfaces it on App Health** rather than guessing. Direct-mode flows can't run unattended (Actual runs in the browser) and keep the client-side interval. See `docs/UNATTENDED_SYNC.md`.
 - **Run safe sync now**: a one-click safe-only run for any automated flow
@@ -278,7 +277,11 @@ Consolidate budgets kept in **different currencies**: a transaction flow can con
 
 - **Rate choice per flow**: daily, monthly average or a fixed rate, with an optional bank fee added to spending and taken off money received. A new preview row can take the amount the bank really charged; it keeps the implied rate through later rate changes
 - **Currency position**: for a converting flow, shows the synced foreign balance, what the main budget holds, today's value and the unrealised difference, with warnings for unsynced rows, rows deleted on either side and rows converted at an earlier date's rate. **Revalue** posts one confirmed adjustment per account per day to a chosen category. **Transfers to link** pairs a synced transfer with its likely other side and makes them a true Actual transfer at the real amount
-- **Add currency**: creates the payee, category and per-account converting flows for a foreign-currency budget, matching accounts by name; every flow starts manual
+- **Add currency**: creates the payee, category and per-account converting flows for a foreign-currency budget, matching accounts by name and grouping them under the currency; every flow starts manual
+- **Flow groups**: give flows a group name to list them together. **Run all** runs a group in order, payees and categories before transactions. Automated flows apply safe items only and manual flows are previewed, so a group run never widens what a flow may do
+- **Needs attention**: one list of every flow whose latest run has failed, blocked, rate-pending or review rows, with an in-app notice when a new one appears while the page is open
+- **Conversions**: every synced row's original amount, rate, rate date, rate source and converted amount, with search, date and source filters and CSV export
+- **Send categories back**: fills empty categories in the foreign budget from the ones set in the main budget, matched by name, after a confirmation
 - The target budget owns **category and cleared state**: categorising a synced row no longer blocks later corrections, and updates never overwrite either. A row deleted on the target is reported, to recreate or stop syncing. Source transfers are written without a transfer payee so they cannot create a second leg
 - Not in scope: automatic transfer linking, automatic (non-review) target deletes, category auto-create, fuzzy duplicate auto-mapping, full FX gain/loss accounting, multi-currency within a single budget file, and silent recalculation of past conversions
 

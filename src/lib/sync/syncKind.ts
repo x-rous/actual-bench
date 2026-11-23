@@ -1,4 +1,4 @@
-import type { ActualBenchTransport } from "@/lib/actual/transport";
+import type { ActualBenchTransport, SyncAppliedSnapshot } from "@/lib/actual/transport";
 import type { ConnectionInstance } from "@/store/connection";
 import type { JsonObject, SyncCapabilitySet, SyncDomain, SyncFlow, SyncMapping } from "@/lib/app-db/types";
 import type { SyncPlanResult } from "./plannedChanges";
@@ -75,7 +75,23 @@ export type AdapterSummary = {
 export type AdapterApplyContext = {
   /** Transaction adapter fills this with the target imported_id index; empty otherwise. */
   markerIndex: Map<string, string>;
+  /** The target account's rows as read for this apply, by id (transactions only). */
+  liveTargets?: Map<string, AdapterLiveTarget>;
 };
+
+/** A target row as apply needs it: its fields, plus split lines when it is a split. */
+export type AdapterLiveTarget = SyncAppliedSnapshot & {
+  transferId: string | null;
+  reconciled?: boolean;
+  isParent?: boolean;
+  splitLines?: { id: string | null; amount: number; notes: string | null; payeeId: string | null; categoryId: string | null; reconciled?: boolean }[];
+};
+
+/** Optional limits on a read: a recent window instead of the whole account. */
+export type AdapterScanOptions = { sinceDate?: string };
+
+/** Lets a long write loop stop as soon as the apply no longer owns its run. */
+export type AdapterWriteOptions = { shouldStop?: () => boolean };
 
 /** One create request the orchestrator asks the adapter to perform on the target. */
 export type AdapterCreateInput = {
@@ -136,10 +152,10 @@ export interface SyncKindAdapter {
   validate(input: AdapterValidateInput): void;
 
   /** Read + materialize the source (runs on the source transport). */
-  loadSource(transport: ActualBenchTransport, flow: SyncFlow): Promise<AdapterSourceResult>;
+  loadSource(transport: ActualBenchTransport, flow: SyncFlow, options?: AdapterScanOptions): Promise<AdapterSourceResult>;
 
   /** Read the target snapshot (runs on the target transport). */
-  loadTarget(transport: ActualBenchTransport, flow: SyncFlow): Promise<unknown>;
+  loadTarget(transport: ActualBenchTransport, flow: SyncFlow, options?: AdapterScanOptions): Promise<unknown>;
 
   /**
    * The distinct FX conversions this materialized source needs (RD-056), so the
@@ -159,7 +175,7 @@ export interface SyncKindAdapter {
     fxRateByDate?: Map<string, import("./plannedChanges").FxRateInfo>;
     /** Why a date has no rate, for its pending rows. */
     fxPendingByDate?: Map<string, string>;
-    /** Rates the user set for individual target rows, by target transaction id. */
+    /** The rate recorded for each synced row, by target transaction id. */
     manualFxRates?: Map<string, import("./plannedChanges").ManualFxRate>;
   }): SyncPlanResult;
 
@@ -191,7 +207,8 @@ export interface SyncKindAdapter {
   updateBatch?(
     transport: ActualBenchTransport,
     flow: SyncFlow,
-    inputs: AdapterMutateInput[]
+    inputs: AdapterMutateInput[],
+    options?: AdapterWriteOptions
   ): Promise<AdapterMutateResult[]>;
 
   /**
@@ -201,7 +218,8 @@ export interface SyncKindAdapter {
   deleteBatch?(
     transport: ActualBenchTransport,
     flow: SyncFlow,
-    inputs: AdapterMutateInput[]
+    inputs: AdapterMutateInput[],
+    options?: AdapterWriteOptions
   ): Promise<AdapterMutateResult[]>;
 }
 

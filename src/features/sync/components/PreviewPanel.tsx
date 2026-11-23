@@ -399,7 +399,8 @@ function AmountOverride({ row, value, onChange }: { row: PreviewRow; value?: num
     const minor = parseAmountToMinor(draft);
     if (draft.trim() === "" || minor === planned) onChange(null);
     else if (minor !== null) onChange(minor);
-    if (!invalid) setDraft(null);
+    // An invalid entry is dropped, so what is shown is always what would be written.
+    setDraft(null);
   };
   return (
     <span className="inline-flex items-center justify-end gap-1 tabular-nums">

@@ -74,12 +74,18 @@ rate.
   transfer, so reports stop counting it as spending and income. The linked pair shares the other row's
   notes; the original amount and rate stay in the FX snapshot.
 
+The **Conversions** tab lists every synced row's original amount, rate, rate date, rate source and
+converted amount. Filter it by payee, rate, date or source, and export it to CSV.
+
+**Send categories back** copies categories you set in the main budget to the matching rows in the foreign
+budget, matched by category name. It only fills empty categories, and you confirm it first.
+
 ## Add a currency
 
 **Add currency** on the Cross Budget Sync page sets up a foreign-currency budget in one step. Choose the
 main and foreign budgets and their currencies, then confirm the account pairs, which are matched by name.
-It creates the payee and category flows plus one converting transaction flow per account. Every flow
-starts manual, and flows that already exist are left as they are.
+It creates the payee and category flows plus one converting transaction flow per account, in a group
+named after the currency. Every flow starts manual, and flows that already exist are left as they are.
 
 ## Open the Exchange Rates page
 

@@ -196,11 +196,16 @@ export function parseAmountToMinor(text: string, decimalSeparator = localeDecima
   if (lastIndex >= 0) {
     const tail = cleaned.slice(lastIndex + 1);
     const separator = cleaned[lastIndex];
-    const lone = cleaned.indexOf(separator) === lastIndex && !cleaned.slice(0, lastIndex).match(/[.,]/);
-    if (tail.length <= 2) {
+    const other = separator === "," ? "." : ",";
+    const mixed = cleaned.includes(other);
+    const repeated = cleaned.indexOf(separator) !== lastIndex;
+    if (mixed && repeated) return null;
+    if (mixed || tail.length <= 2) {
+      // With both marks present the last one is the decimal point.
+      if (tail.length > 2) return null;
       whole = cleaned.slice(0, lastIndex);
       fraction = tail;
-    } else if (tail.length !== 3 || (lone && separator === decimalSeparator)) {
+    } else if (tail.length !== 3 || (!repeated && separator === decimalSeparator)) {
       return null;
     }
     const groups = whole.split(/[.,]/);

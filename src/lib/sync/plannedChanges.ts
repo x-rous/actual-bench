@@ -45,7 +45,9 @@ export type SyncPlanFlag =
   /** The flow's split setting changed after this split was synced; creating it would duplicate it. */
   | "split_mode_changed"
   /** A transfer in the source budget, created without a transfer payee so it cannot create a second leg. */
-  | "source_transfer";
+  | "source_transfer"
+  /** A split line's earlier keys point at different target rows; held for review. */
+  | "ambiguous_split_identity";
 
 /** The transaction the engine would create on the target (create-only, no splits). */
 export type PlannedTargetPayload = {
@@ -99,10 +101,22 @@ export type FxRateInfo = {
   source: string;
   provider: string | null;
   fxRateId: string | null;
+  /** The user set this row's rate; it stays marked as theirs through updates. */
+  isManual?: boolean;
 };
 
-/** A rate fixed by the user for one synced row. Later rate changes do not touch it. */
-export type ManualFxRate = { rate: string; effectiveDate: string };
+/** The rate recorded when a row was synced, which later conversions of it keep. */
+export type ManualFxRate = {
+  rate: string;
+  effectiveDate: string;
+  /** The transaction date the rate was recorded for. */
+  requestedDate?: string;
+  /** Set by the user for this row: later rate changes never replace it. */
+  isManual?: boolean;
+  source?: string;
+  provider?: string | null;
+  fxRateId?: string | null;
+};
 
 /** A resolved split child line to create under a grouped target split. */
 export type PlannedSplitChild = {
@@ -213,7 +227,7 @@ export type SyncPlannerInput = {
   fxPendingByDate?: Map<string, string>;
   /** The day rates were requested through; a monthly average needs every day up to it. */
   fxToday?: string;
-  /** Rates the user set for individual target rows, by target transaction id. */
+  /** The rate recorded for each synced row, by target transaction id. */
   manualFxRates?: Map<string, ManualFxRate>;
   /**
    * When true, active mappings with no matching source item are emitted as

@@ -159,27 +159,36 @@ export function planExpandedItems(
 /**
  * A split line with no stable id may already be synced under another of its
  * positional keys (its cleared state has changed). Keep that key and its marker,
- * so the line is recognised instead of being created again.
+ * so the line is recognised instead of being created again. If the keys point at
+ * different target rows, nothing can say which is right, and the line is held.
  */
 function withExistingKey(
   item: SyncSourceItem,
   input: Pick<SyncPlannerInput, "config" | "target">,
   mappingByKey: Map<string, SyncMapping>
 ): SyncSourceItem {
-  if (!item.keyAliases || mappingByKey.has(item.itemKey)) return item;
-  const mapped = item.keyAliases.find((key) => mappingByKey.has(key));
-  if (mapped) return { ...item, itemKey: mapped };
+  if (!item.keyAliases) return item;
   const { config, target } = input;
-  const marked = item.keyAliases.find((sourceItemKey) => {
+  const matches: { key: string; targetId: string | null }[] = [];
+  for (const key of new Set([item.itemKey, ...item.keyAliases])) {
+    const mapped = mappingByKey.get(key);
+    if (mapped) {
+      matches.push({ key, targetId: mapped.targetTransactionId });
+      continue;
+    }
     const marker = generateSyncMarker({
       sourceBudgetId: config.sourceBudgetId,
       targetBudgetId: config.targetBudgetId,
       targetAccountId: config.targetAccountId,
-      sourceItemKey,
+      sourceItemKey: key,
     });
-    return !!marker && target.importedIdIndex.has(marker);
-  });
-  return marked ? { ...item, itemKey: marked } : item;
+    const markedId = marker ? target.importedIdIndex.get(marker) : undefined;
+    if (markedId) matches.push({ key, targetId: markedId });
+  }
+  if (matches.length === 0) return item;
+  if (new Set(matches.map((match) => match.targetId)).size > 1) return { ...item, identityConflict: true };
+  const current = matches.find((match) => match.key === item.itemKey);
+  return { ...item, itemKey: (current ?? matches[0]).key };
 }
 
 /** A review-first delete candidate for a mapping whose source was deleted. */
@@ -264,25 +273,16 @@ function fxRateChangeUpdate(
   fxRate: string | null,
   context: PlanContext
 ): SyncPlannedItem | null {
-  const { config, target } = input;
+  const { config } = input;
   if (!config.fxUpdateOnRateChange || !fxRate || !fxInfo || !mapping.targetTransactionId) return null;
-  if (item.splitLines && item.splitLines.length > 0) return null;
 
   const directedParent = config.amountDirection === "same" ? item.amount : -item.amount;
   const currentConverted = convertMinorUnits(directedParent, fxRate);
   const targetTxn = context.targetById.get(mapping.targetTransactionId);
   if (!targetTxn || targetTxn.amount === currentConverted) return null;
 
-  const planned = withoutTransferPayee(item);
-  const payee = resolvePayee(planned, config, target.payees);
-  const category = resolveCategory(planned, target.categories);
-  const importedId = generateSyncMarker({
-    sourceBudgetId: config.sourceBudgetId,
-    targetBudgetId: config.targetBudgetId,
-    targetAccountId: config.targetAccountId,
-    sourceItemKey: item.itemKey,
-  });
-  const payload = { ...buildPlannedTargetPayload({ item: planned, config, payee, category, importedId, fx: fxInfo }), keepTargetPayee: !!item.isTransfer };
+  const { payload: built } = buildCreatePayload(item, input, fxInfo);
+  const payload = { ...built, keepTargetPayee: !!item.isTransfer };
   return baseItem(item, {
     classification: "source_changed_since_sync",
     action: "update",
@@ -382,16 +382,37 @@ function planSourceItem(
 ): SyncPlannedItem {
   const { config, target } = input;
 
+  if (item.identityConflict) {
+    return baseItem(item, {
+      classification: "blocked",
+      action: "blocked",
+      flags: ["ambiguous_split_identity"],
+      message: "This split line matches more than one transaction on the target. Check them before syncing it.",
+    });
+  }
+
   // FX conversion (RD-056): resolve this item's rate. A cross-currency item with
   // no rate for its date is "pending" and routed to review before it could be
   // matched/created with an unconverted amount.
   const needsFx = config.fxEnabled && config.fxSourceCurrency !== config.fxTargetCurrency;
-  // A row whose amount the user set keeps that rate through later changes.
-  const manualRate = needsFx ? input.manualFxRates?.get(mappingByKey.get(item.itemKey)?.targetTransactionId ?? "") : undefined;
+  // A synced row keeps the rate it was recorded with. One the user set keeps it
+  // always; any other keeps it while its date stands, unless the flow opted into
+  // following rate changes. A note edit must not re-convert the amount.
+  const recorded = needsFx ? input.manualFxRates?.get(mappingByKey.get(item.itemKey)?.targetTransactionId ?? "") : undefined;
+  const manualRate = recorded?.isManual !== false ? recorded : undefined;
+  const lockedRate = recorded && !manualRate && recorded.requestedDate === item.date && !config.fxUpdateOnRateChange ? recorded : undefined;
+  const keptRate = manualRate ?? lockedRate;
   const fxInfo: FxRateInfo | null = !needsFx
     ? null
-    : manualRate
-      ? { rate: manualRate.rate, effectiveDate: manualRate.effectiveDate, source: "manual", provider: null, fxRateId: null }
+    : keptRate
+      ? {
+          rate: keptRate.rate,
+          effectiveDate: keptRate.effectiveDate,
+          source: keptRate.source ?? "manual",
+          provider: keptRate.provider ?? null,
+          fxRateId: keptRate.fxRateId ?? null,
+          ...(manualRate ? { isManual: true } : {}),
+        }
       : context.rateFor(item.date, item.amount);
   const fxRate = fxInfo?.rate ?? null;
   const fxPending = needsFx && fxInfo == null;
@@ -439,34 +460,12 @@ function planSourceItem(
     // Source content changed after sync. When the flow opts into updating mapped
     // targets (RD-057 §4), build an update candidate that overwrites the target;
     // otherwise warn only and leave the target unchanged. Apply re-checks that
-    // the target was not edited outside sync before overwriting.
-    //
-    // Grouped split parents are excluded: the update path patches only the parent
-    // fields and cannot rewrite child lines, so updating one would leave the split
-    // totals inconsistent. Warn instead until updates can carry subtransactions.
-    const isGroupedSplit = !!item.splitLines && item.splitLines.length > 0;
-    if (config.updateMappedTargets && mapping.targetTransactionId && !isGroupedSplit) {
+    // the target was not edited outside sync before overwriting. A grouped split
+    // carries its lines, so the update can rewrite them too.
+    if (config.updateMappedTargets && mapping.targetTransactionId) {
       if (fxPending) return fxPendingItem(item, fxPendingReason);
-      const planned = withoutTransferPayee(item);
-      const upPayee = resolvePayee(planned, config, input.target.payees);
-      const upCategory = resolveCategory(planned, input.target.categories);
-      const upImportedId = generateSyncMarker({
-        sourceBudgetId: config.sourceBudgetId,
-        targetBudgetId: config.targetBudgetId,
-        targetAccountId: config.targetAccountId,
-        sourceItemKey: item.itemKey,
-      });
-      const upPayload = {
-        ...buildPlannedTargetPayload({
-          item: planned,
-          config,
-          payee: upPayee,
-          category: upCategory,
-          importedId: upImportedId,
-          fx: fxInfo,
-        }),
-        keepTargetPayee: !!item.isTransfer,
-      };
+      const { payload: builtUpdate } = buildCreatePayload(item, input, fxInfo);
+      const upPayload = { ...builtUpdate, keepTargetPayee: !!item.isTransfer };
       return baseItem(item, {
         classification: "source_changed_since_sync",
         action: "update",
@@ -507,6 +506,8 @@ function planSourceItem(
       classification: "target_marker_match",
       action: "skip",
       flags: ["target_marker_match_repair"],
+      // Carried so the repair can restore the FX record; a repair writes no row.
+      plannedTargetPayload: payload,
       targetTransactionId: target.importedIdIndex.get(importedId) ?? null,
       message: "Target already has a matching sync marker; mapping can be repaired.",
     });

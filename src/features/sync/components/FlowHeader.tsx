@@ -70,8 +70,8 @@ function Endpoint({
 
 function automationChip(form: SyncFlowFormState): string {
   switch (form.automation.reviewPolicy) {
-    case "auto_apply_safe_only":
-      return "Auto-apply safe";
+    case "auto_sync_unattended":
+      return `Server schedule ${form.automation.intervalMinutes}m`;
     case "auto_sync_on_interval":
       return `Auto-sync ${form.automation.intervalMinutes}m`;
     default:
@@ -85,6 +85,7 @@ function typeLabel(form: SyncFlowFormState): string {
 
 function summaryChips(form: SyncFlowFormState): string[] {
   const chips = [typeLabel(form), automationChip(form)]; // data type + automation policy
+  if (form.group.trim()) chips.unshift(`Group: ${form.group.trim()}`);
   if (form.flowType !== "transaction_sync") return chips;
   chips.push(form.transform.amountDirection === "reverse" ? "Reverse sign" : "Same sign");
   chips.push(form.transform.missingPayee === "create" ? "Create missing payees" : "Leave payee empty");

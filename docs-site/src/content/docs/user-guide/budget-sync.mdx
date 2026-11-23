@@ -81,8 +81,8 @@ blocked.
 
 ### Filters
 
-- Date range, cleared/reconciled status, amount sign, payee/category include-exclude, and
-  notes-contains.
+- Date range, cleared and reconciled status, amount sign, minimum and maximum amount, payee and
+  category include and exclude, and notes-contains. **Clear filters** clears all of them.
 - Sync-generated transactions are always excluded to prevent loops.
 
 ### Transforms
@@ -159,6 +159,12 @@ repair the mapping without creating a duplicate.
 
 Clearing or reconciling the source account is not a change and does not put rows in review.
 
+A grouped split is updated line by line while it still has the same number of lines; each line keeps
+its target category. If the number of lines changed, the split is left as it is and reported.
+
+A synced row keeps the exchange rate it was recorded with. Editing only its notes does not re-convert
+it. A new rate is used when its date changes, or when the flow follows rate changes.
+
 If you turn **Keep split transactions grouped** on or off after a split was synced, that split shows as
 **Split setting changed** and is held back, because creating it in the new shape would duplicate it.
 
@@ -195,15 +201,14 @@ retry, and act on changes.
 Each flow has a **review policy**:
 
 1. **Manual** (default) - preview and apply yourself.
-2. **Auto-apply safe items on preview** - a run auto-applies only safe items (new creates and
-   marker-match repairs); everything uncertain is left for you.
-3. **Auto-sync on a server schedule (unattended)** - the server runs the same safe-only sync on a
-   schedule, **with the app closed**, for HTTP API and Direct budgets alike. It is opt-in and off by
-   default and requires operator setup (see the note below).
-4. **Auto-sync on a schedule (while the app is open)** - turned off. A flow that still has this
+2. **Auto-sync on a server schedule (unattended)** - the server runs a safe-only sync on a schedule,
+   **with the app closed**, for HTTP API and Direct budgets alike. It is opt-in and off by default and
+   requires operator setup (see the note below). Routine runs read the last two months, and one run a
+   day reads the whole account and checks for deletions.
+3. **Auto-sync on a schedule (while the app is open)** - turned off. A flow that still has this
    policy no longer runs automatically and says so in the flow list; edit it and choose the server
    schedule instead.
-5. **Run safe sync now** - a one-click safe-only run for any automated flow.
+4. **Run safe sync now** - a one-click safe-only run for any automated flow.
 
 Additional controls:
 
@@ -217,6 +222,16 @@ enrolled: their API key or Actual server password is saved encrypted on the serv
 budgets, the Bench server must be able to reach your Actual server. See
 [Configuration](../../administration/configuration/) and [Deployment](../../administration/deployment/).
 :::
+
+## Groups and the attention list
+
+Give flows the same **Group** name in the editor to list them together. **Run all** on a group runs its
+flows in order, payees and categories before transactions. Automated flows apply safe items only.
+Manual flows are previewed and write nothing, so you open them to apply.
+
+The bell beside **Sync flows** counts flows whose latest run needs you: failed rows, rows waiting for a
+rate, blocked rows, or rows to review. Open it to go straight to that run. While the page is open, a new
+problem also raises a notice.
 
 ## Flow health and auto-pause
 

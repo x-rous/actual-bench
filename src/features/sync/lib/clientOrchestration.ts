@@ -73,13 +73,27 @@ function applyStore(): ApplyStore {
   const pendingMappings: SyncMappingInput[] = [];
   const pendingItemPatches: { itemId: string; patch: RunItemStatusPatch }[] = [];
   const pendingFxSnapshots: FxSnapshotInput[] = [];
-  let mappingConflicts = 0;
+  // A mapping is buffered with the run item it belongs to, so a conflict the
+  // server reports later can fail that item and leave the others applied.
+  const itemByMappingKey = new Map<string, string>();
+  const conflictedItems = new Set<string>();
+  const conflictPatch: RunItemStatusPatch = {
+    status: "failed",
+    applyState: "failed",
+    message: "This item is already linked to a different target transaction. Check the target account for a duplicate.",
+    errors: { version: 1, data: { code: "mapping_conflict" } },
+  };
 
   async function flush(): Promise<void> {
     if (pendingMappings.length > 0) {
       const { conflicts } = await api.createMappings(pendingMappings);
       pendingMappings.length = 0;
-      if (conflicts?.length) mappingConflicts += conflicts.length;
+      for (const key of conflicts ?? []) {
+        const itemId = itemByMappingKey.get(key);
+        if (!itemId) continue;
+        conflictedItems.add(itemId);
+        pendingItemPatches.push({ itemId, patch: conflictPatch });
+      }
     }
     if (pendingItemPatches.length > 0) {
       await api.updateRunItems(pendingItemPatches);
@@ -90,26 +104,27 @@ function applyStore(): ApplyStore {
       const snapshots = pendingFxSnapshots.splice(0);
       await api.persistFxSnapshots(snapshots).catch(() => undefined);
     }
-    if (mappingConflicts > 0) {
-      const count = mappingConflicts;
-      mappingConflicts = 0;
-      throw new Error(`${count} item(s) were already linked to a different target transaction. Check the target account for duplicates.`);
-    }
   }
 
   return {
     claimRun: async (runId, retry) => (await api.claimRun(runId, retry)).token,
     heartbeatRun: async (runId, token) => (await api.heartbeatRun(runId, token)).alive,
-    saveRunItemPayload: async (itemId, payload) => {
-      await api.updateRunItem(itemId, { plannedTargetPayload: payload });
+    saveRunItemPayloads: async (payloads) => {
+      // One request and one transaction: all of them are saved, or none.
+      await api.updateRunItems(payloads.map(({ itemId, payload }) => ({ itemId, patch: { plannedTargetPayload: payload } })));
+    },
+    flushWrites: async () => {
+      await flush();
+      return [...conflictedItems];
     },
     loadRun: async (runId) => (await api.getRun(runId)).run,
     loadRunItems: async (runId) => (await api.getRun(runId)).items,
     loadFlow: async (flowId) => (await api.getFlow(flowId)).flow,
     getMappingBySource: async (flowId, sourceItemKey) =>
       (await ensureMappingCache(flowId)).get(sourceItemKey) ?? null,
-    createMapping: async (input) => {
+    createMapping: async (input, itemId) => {
       pendingMappings.push(input);
+      if (itemId) itemByMappingKey.set(input.sourceItemKey, itemId);
       // Keep the in-memory cache coherent immediately (the DB write is deferred).
       if (mappingCache) mappingCache.set(input.sourceItemKey, input as unknown as SyncMapping);
     },
@@ -126,7 +141,7 @@ function applyStore(): ApplyStore {
       await api.updateRun(runId, { status: patch.status, finishedAt: patch.finishedAt, counts: patch.counts });
     },
     updateRunItemStatus: async (itemId, patch) => {
-      pendingItemPatches.push({ itemId, patch });
+      pendingItemPatches.push({ itemId, patch: conflictedItems.has(itemId) ? conflictPatch : patch });
     },
     persistApplyFailure: async (runId, error) => {
       // Persist whatever succeeded before the failure, then record the error.

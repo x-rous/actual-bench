@@ -15,6 +15,7 @@ import { startAndWaitForRun } from "@/features/automations/lib/runPolling";
 import type { TransactionFxRecord } from "@/lib/fx/types";
 import type { SyncPlanResult } from "@/lib/sync/plannedChanges";
 import type {
+  SyncFlowAttention,
   UpdateSyncFlowRunItemPatch,
   UpdateSyncFlowRunPatch,
 } from "@/lib/app-db/syncRunRepository";
@@ -143,6 +144,11 @@ export function updateRun(runId: string, patch: UpdateSyncFlowRunPatch): Promise
 /** Claim a run for apply; a null token means another apply holds this flow. */
 export function claimRun(runId: string, retry: boolean): Promise<{ token: string | null }> {
   return jsonFetch(`/api/sync-flow-runs/${runId}`, { method: "POST", body: JSON.stringify({ retry }) });
+}
+
+/** What each flow's latest run left for a person to deal with. */
+export function getSyncAttention(): Promise<{ entries: SyncFlowAttention[] }> {
+  return jsonFetch("/api/sync-flow-runs/attention");
 }
 
 /** Keep an apply's claim alive; false means it no longer owns the run. */

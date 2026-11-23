@@ -212,7 +212,7 @@ describe("flowToFormState", () => {
 
   it("round-trips a non-default policy and falls back to manual for an unknown value", () => {
     const auto = filledForm();
-    auto.automation.reviewPolicy = "auto_apply_safe_only";
+    auto.automation.reviewPolicy = "auto_sync_unattended";
     const payload = buildFlowPayload(auto, instances) as JsonObject & { legs: JsonObject[] };
     const legIn = payload.legs[0] as Record<string, { version: number; data: JsonObject }>;
     const baseFlow = (options: JsonObject): SyncFlow => ({
@@ -222,7 +222,9 @@ describe("flowToFormState", () => {
       filter: legIn.filter, transform: legIn.transform, options: { version: 1, data: options },
     });
 
-    expect(flowToFormState(baseFlow({ reviewPolicy: "auto_apply_safe_only" }), instances).automation.reviewPolicy).toBe("auto_apply_safe_only");
+    expect(flowToFormState(baseFlow({ reviewPolicy: "auto_sync_unattended" }), instances).automation.reviewPolicy).toBe("auto_sync_unattended");
+    // The removed auto-apply-on-preview policy reads as manual.
+    expect(flowToFormState(baseFlow({ reviewPolicy: "auto_apply_safe_only" }), instances).automation.reviewPolicy).toBe("manual_preview_required");
     // Garbage policy value decodes to the safe manual default.
     expect(flowToFormState(baseFlow({ reviewPolicy: "nonsense" }), instances).automation.reviewPolicy).toBe("manual_preview_required");
   });

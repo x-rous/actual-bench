@@ -1,17 +1,20 @@
-import { ensureTransportReady, getTransport } from "@/lib/actual";
+import { ensureTransportReady, getTransport, syncTransportAfterChanges } from "@/lib/actual";
 import { impliedRate } from "@/lib/fx/fxMath";
 import { decodeFlowPlanConfig } from "@/lib/sync/flowConfig";
 import {
+  buildConversionRows,
   buildRevaluationInput,
   computeFxPosition,
   countEarlierDateRates,
   findTransferCandidates,
   isRevaluationKey,
   revaluationFingerprint,
+  type FxConversionRow,
   type FxPosition,
   type TransferCandidate,
   type TransferRow,
 } from "@/lib/sync/fxPosition";
+import { planCategoryReturn, type CategoryReturnPlan, type CategoryReturnRow } from "@/lib/sync/categoryReturn";
 import { decodeSourceFilter } from "@/lib/sync/sourceFilter";
 import { allKeysOf, expandSourceTransactions } from "@/lib/sync/sourceItems";
 import { hashTargetFields } from "@/lib/sync/targetFingerprint";
@@ -43,6 +46,9 @@ export type FxPositionData = {
   categories: FxPositionCategory[];
   categoryGroups: { id: string; name: string }[];
   transfers: FxTransferPair[];
+  conversions: FxConversionRow[];
+  /** Categories set on the target that the source rows could take. */
+  categoryReturn: CategoryReturnPlan;
 };
 
 /** Today in the user's own time zone, as `YYYY-MM-DD`. */
@@ -91,6 +97,7 @@ export async function loadFxPosition(input: {
   // One budget at a time: a Direct runtime holds only one.
   const sourceTransport = await open(input.sourceConnection);
   const sourceTransactions = await sourceTransport.listTransactionsForSync({ accountId: config.sourceAccountId });
+  const { categories: sourceCategories } = await sourceTransport.getCategoryGroups();
 
   const targetTransport = await open(input.targetConnection);
   const targetTransactions = await targetTransport.listTransactionsForSync({ accountId: config.targetAccountId });
@@ -152,6 +159,15 @@ export async function loadFxPosition(input: {
     categories: categories.map((c) => ({ id: c.id, name: c.name, groupId: c.groupId, isIncome: c.isIncome })),
     categoryGroups: groups.map((g) => ({ id: g.id, name: g.name })),
     transfers,
+    conversions: buildConversionRows(snapshots, targetTransactions),
+    categoryReturn: planCategoryReturn({
+      sourceTransactions,
+      targetTransactions,
+      mappings,
+      sourceCategories,
+      targetCategories: categories,
+      groupSplits: config.createTargetSplits,
+    }),
   };
 }
 
@@ -208,6 +224,7 @@ export async function postFxRevaluation(input: {
   const row = created[0];
   if (!row?.transactionId) throw new Error("The revaluation could not be confirmed on the target budget. Check the account before trying again.");
   await mapRevaluation(row.transactionId, row.applied ? hashTargetFields(row.applied) : null);
+  await syncTransportAfterChanges(transport, true).catch(() => undefined);
   return { recovered: false };
 }
 
@@ -298,6 +315,7 @@ export async function linkSyncedTransfer(input: {
   }
 
   // The link is in place; the rest is bookkeeping and must not report it as failed.
+  await syncTransportAfterChanges(transport, true).catch(() => undefined);
   try {
     const after = (await transport.listTransactionsForSync({ accountId: synced.accountId, startDate: synced.date, endDate: synced.date, resolveNames: false }))
       .find((row) => row.id === synced.id);
@@ -324,4 +342,64 @@ export async function linkSyncedTransfer(input: {
   } catch {
     // The next preview still sees a linked transfer and leaves it alone.
   }
+}
+
+/**
+ * Fill empty source categories from the target budget. Each row is re-read first
+ * and left alone if it gained a category. Its mapping then takes the new source
+ * fingerprint, so the next preview does not report the write as a source change.
+ */
+export async function sendCategoriesBack(input: {
+  flow: SyncFlow;
+  sourceConnection: ConnectionInstance;
+  rows: CategoryReturnRow[];
+}): Promise<{ written: number; skipped: number; failed: number }> {
+  const config = decodeFlowPlanConfig(input.flow);
+  const transport = await open(input.sourceConnection);
+  const before = await transport.listTransactionsForSync({ accountId: config.sourceAccountId, resolveNames: false });
+  const current = new Map(
+    before.flatMap((row) => [
+      [row.id, { categoryId: row.categoryId, reconciled: row.reconciled }] as const,
+      ...row.splitLines.filter((line) => line.id).map((line) => [line.id as string, { categoryId: line.categoryId, reconciled: row.reconciled || line.reconciled === true }] as const),
+    ])
+  );
+
+  const written: CategoryReturnRow[] = [];
+  let skipped = 0;
+  let failed = 0;
+  for (const row of input.rows) {
+    const live = current.get(row.sourceId);
+    if (!live || live.categoryId || live.reconciled) {
+      skipped += 1;
+      continue;
+    }
+    try {
+      // Names the payee too: Actual gives a split line its parent's payee otherwise.
+      await transport.updateTransactionForSync({
+        transactionId: row.sourceId,
+        accountId: config.sourceAccountId,
+        date: row.date,
+        amount: row.amount,
+        payeeId: row.payeeId,
+        categoryId: row.categoryId,
+        returnApplied: false,
+      });
+      written.push(row);
+    } catch {
+      failed += 1;
+    }
+  }
+  if (written.length === 0) return { written: 0, skipped, failed };
+  await syncTransportAfterChanges(transport, true).catch(() => undefined);
+
+  const after = await transport.listTransactionsForSync({ accountId: config.sourceAccountId });
+  const items = new Map(
+    expandSourceTransactions(after, { groupSplits: config.createTargetSplits })
+      .flatMap((item) => allKeysOf(item).map((key) => [key, item] as const))
+  );
+  for (const row of written) {
+    const item = items.get(row.sourceItemKey);
+    if (item) await api.updateMapping(row.mappingId, { sourceFingerprint: item.fingerprint }).catch(() => undefined);
+  }
+  return { written: written.length, skipped, failed };
 }

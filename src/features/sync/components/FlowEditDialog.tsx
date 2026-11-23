@@ -25,6 +25,7 @@ import {
   type SyncEndpointForm,
   type SyncFlowFormState,
 } from "../lib/flowForm";
+import { amountEditText, parseAmountToMinor } from "../lib/previewRows";
 import { exportFlowDefinition, importFlowDefinition, FlowImportError } from "../lib/flowPortability";
 import { UnattendedEnrollment } from "./UnattendedEnrollment";
 import { SchedulePicker } from "@/features/automations/components/SchedulePicker";
@@ -61,6 +62,44 @@ function InfoDot({ text }: { text: string }) {
   );
 }
 
+
+/** An amount filter: shown in whole units, stored in minor units as the filter expects. */
+function AmountBound({ label, value, active, activeRing, onChange }: {
+  label: string;
+  /** Minor units as text; blank for no limit. */
+  value: string;
+  active: boolean;
+  activeRing: string;
+  onChange: (minor: string) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const shown = value.trim() && Number.isFinite(Number(value)) ? amountEditText(Number(value)) : "";
+  const commit = () => {
+    if (draft === null) return;
+    if (!draft.trim()) onChange("");
+    else {
+      // An entry that is not an amount is dropped, so the box shows the real limit.
+      const minor = parseAmountToMinor(draft);
+      if (minor !== null) onChange(String(minor));
+    }
+    setDraft(null);
+  };
+  return (
+    <label className={cn("flex min-w-0 flex-col gap-1 text-xs", active ? "text-foreground" : "text-muted-foreground")}>{label}
+      <Input
+        aria-label={label}
+        size="sm"
+        inputMode="decimal"
+        className={cn("tabular-nums", active && activeRing)}
+        value={draft ?? shown}
+        placeholder="Any"
+        onFocus={() => setDraft(shown)}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+      />
+    </label>
+  );
+}
 
 function InlineEndpoint({
   label,
@@ -251,7 +290,6 @@ export function FlowEditDialog({
 
   const automationHelp: Record<SyncFlowFormState["automation"]["reviewPolicy"], string> = {
     manual_preview_required: "You review and apply every change.",
-    auto_apply_safe_only: "Safe items apply on preview; uncertain ones wait in the review queue.",
     auto_sync_on_interval: "This no longer runs automatically while Bench is open. Choose a server schedule to keep it running.",
     auto_sync_unattended: "Runs on a server schedule when Bench is closed. Safe items only. Needs both budgets' credentials saved on the server.",
   };
@@ -270,13 +308,18 @@ export function FlowEditDialog({
     endDate: !!form.filter.endDate,
     amountSign: form.filter.amountSign !== "any",
     cleared: form.filter.cleared !== "any",
+    reconciled: form.filter.reconciled !== "any",
+    minAbsAmount: !!form.filter.minAbsAmount.trim(),
+    maxAbsAmount: !!form.filter.maxAbsAmount.trim(),
     payeeInclude: !!form.filter.payeeInclude.trim(),
+    payeeExclude: !!form.filter.payeeExclude.trim(),
     categoryInclude: !!form.filter.categoryInclude.trim(),
+    categoryExclude: !!form.filter.categoryExclude.trim(),
     notesContains: !!form.filter.notesContains.trim(),
   };
   const activeFilterCount = Object.values(filterActive).filter(Boolean).length;
   const clearFilters = () =>
-    setFilter({ startDate: "", endDate: "", amountSign: "any", cleared: "any", payeeInclude: "", categoryInclude: "", notesContains: "" });
+    setFilter({ startDate: "", endDate: "", amountSign: "any", cleared: "any", reconciled: "any", minAbsAmount: "", maxAbsAmount: "", payeeInclude: "", payeeExclude: "", categoryInclude: "", categoryExclude: "", notesContains: "" });
   const activeRing = "border-primary/60 ring-1 ring-primary/40";
 
   // The advanced "what a sync may do" toggles, each with a plain-language detail
@@ -322,6 +365,10 @@ export function FlowEditDialog({
               <span className="text-[11px] font-semibold uppercase text-muted-foreground">Name</span>
               <Input size="sm" aria-label="Flow name" value={form.name} onChange={(e) => set({ name: e.target.value })} placeholder={entityMode ? "e.g. Shared payees" : "e.g. Joint card → Personal"} />
             </div>
+            <div className="flex w-44 flex-col gap-1.5">
+              <span className="flex items-center gap-1 text-[11px] font-semibold uppercase text-muted-foreground">Group <InfoDot text="Flows with the same group are listed together and can be run together: payees and categories first, then transactions." /></span>
+              <Input size="sm" aria-label="Flow group" value={form.group} onChange={(e) => set({ group: e.target.value })} placeholder="e.g. AUD" maxLength={60} />
+            </div>
           </div>
 
           {/* Route */}
@@ -356,7 +403,6 @@ export function FlowEditDialog({
                     onValueChange={(value) => setAutomation({ reviewPolicy: value as SyncFlowFormState["automation"]["reviewPolicy"] })}
                     options={[
                       { value: "manual_preview_required", label: "Manual - preview & apply yourself (default)" },
-                      { value: "auto_apply_safe_only", label: "Auto-apply safe items on preview" },
                       // Turned off (RD-095 D4): kept only so a flow that already has it shows it.
                       ...(form.automation.reviewPolicy === "auto_sync_on_interval"
                         ? [{ value: "auto_sync_on_interval", label: "Auto-sync on a schedule (while app is open) - turned off" }]
@@ -614,8 +660,28 @@ export function FlowEditDialog({
                     ]}
                   />
                 </label>
+                <label className={cn("flex flex-col gap-1 text-xs", filterActive.reconciled ? "text-foreground" : "text-muted-foreground")}>Reconciled
+                  <Select
+                    aria-label="Reconciled filter"
+                    size="sm"
+                    className={cn(filterActive.reconciled && activeRing)}
+                    value={form.filter.reconciled}
+                    onValueChange={(value) => setFilter({ reconciled: value as "any" | "reconciled" | "unreconciled" })}
+                    options={[
+                      { value: "any", label: "Any" },
+                      { value: "reconciled", label: "Reconciled" },
+                      { value: "unreconciled", label: "Not reconciled" },
+                    ]}
+                  />
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <AmountBound label="Min amount" value={form.filter.minAbsAmount} active={filterActive.minAbsAmount} activeRing={activeRing} onChange={(minAbsAmount) => setFilter({ minAbsAmount })} />
+                  <AmountBound label="Max amount" value={form.filter.maxAbsAmount} active={filterActive.maxAbsAmount} activeRing={activeRing} onChange={(maxAbsAmount) => setFilter({ maxAbsAmount })} />
+                </div>
                 <label className={cn("flex flex-col gap-1 text-xs", filterActive.payeeInclude ? "text-foreground" : "text-muted-foreground")}>Payee include<Input aria-label="Payee include" size="sm" className={cn(filterActive.payeeInclude && activeRing)} value={form.filter.payeeInclude} onChange={(e) => setFilter({ payeeInclude: e.target.value })} placeholder="comma-separated" /></label>
+                <label className={cn("flex flex-col gap-1 text-xs", filterActive.payeeExclude ? "text-foreground" : "text-muted-foreground")}>Payee exclude<Input aria-label="Payee exclude" size="sm" className={cn(filterActive.payeeExclude && activeRing)} value={form.filter.payeeExclude} onChange={(e) => setFilter({ payeeExclude: e.target.value })} placeholder="comma-separated" /></label>
                 <label className={cn("flex flex-col gap-1 text-xs", filterActive.categoryInclude ? "text-foreground" : "text-muted-foreground")}>Category include<Input aria-label="Category include" size="sm" className={cn(filterActive.categoryInclude && activeRing)} value={form.filter.categoryInclude} onChange={(e) => setFilter({ categoryInclude: e.target.value })} placeholder="comma-separated" /></label>
+                <label className={cn("flex flex-col gap-1 text-xs", filterActive.categoryExclude ? "text-foreground" : "text-muted-foreground")}>Category exclude<Input aria-label="Category exclude" size="sm" className={cn(filterActive.categoryExclude && activeRing)} value={form.filter.categoryExclude} onChange={(e) => setFilter({ categoryExclude: e.target.value })} placeholder="comma-separated" /></label>
                 <label className={cn("flex flex-col gap-1 text-xs sm:col-span-2", filterActive.notesContains ? "text-foreground" : "text-muted-foreground")}>Notes contains<Input aria-label="Notes contains" size="sm" className={cn(filterActive.notesContains && activeRing)} value={form.filter.notesContains} onChange={(e) => setFilter({ notesContains: e.target.value })} /></label>
               </div>
               <p className="text-xs text-muted-foreground">Sync-generated transactions are always excluded to prevent loops.</p>

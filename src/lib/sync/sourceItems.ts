@@ -38,6 +38,8 @@ export type SyncSourceItem = {
    * it could have been mapped under, for each cleared/reconciled state.
    */
   keyAliases?: string[];
+  /** Those keys point at different target rows, so a person has to decide. */
+  identityConflict?: boolean;
   // Denormalized fields the engine transforms/classifies against.
   date: string;
   amount: number;

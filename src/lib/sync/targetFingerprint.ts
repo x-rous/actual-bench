@@ -19,8 +19,24 @@ const VERSION_PREFIX = "v2:";
 export function hashTargetFields(fields: SyncAppliedSnapshot): string {
   return (
     VERSION_PREFIX +
-    fnv1aHex([fields.amount, fields.date, fields.payeeId ?? "", fields.notes ?? ""].join(FIELD_SEPARATOR))
+    // Blank notes read back as empty on some transports, so they hash as empty.
+    fnv1aHex([fields.amount, fields.date, fields.payeeId ?? "", fields.notes?.trim() ? fields.notes : ""].join(FIELD_SEPARATOR))
   );
+}
+
+const SPLIT_PART_SEPARATOR = "~";
+
+/** The lines of a split as a baseline covers them. Category stays with the target. */
+export type TargetSplitLine = { amount: number; notes: string | null };
+
+function splitHash(lines: readonly TargetSplitLine[]): string {
+  return fnv1aHex(lines.map((line) => `${line.amount}${FIELD_SEPARATOR}${line.notes?.trim() ? line.notes : ""}`).join("\u0002"));
+}
+
+/** A row's baseline: its own fields and, for a split, the amount and notes of each line. */
+export function targetBaseline(fields: SyncAppliedSnapshot & { splitLines?: readonly TargetSplitLine[] }): string {
+  const own = hashTargetFields(fields);
+  return fields.splitLines?.length ? `${own}${SPLIT_PART_SEPARATOR}${splitHash(fields.splitLines)}` : own;
 }
 
 /** The hash mappings stored before category and cleared left it. */
@@ -38,7 +54,13 @@ function legacyHash(fields: SyncAppliedSnapshot, categoryId: string | null, clea
  * without a category, so the live row is compared with those values as well as
  * its own. A row whose baseline had some other category stays protected.
  */
-export function targetMatchesBaseline(live: SyncAppliedSnapshot, baseline: string): boolean {
+export function targetMatchesBaseline(
+  live: SyncAppliedSnapshot & { splitLines?: readonly TargetSplitLine[] },
+  stored: string
+): boolean {
+  // A baseline from before split lines were covered says nothing about them.
+  const [baseline, linesPart] = stored.split(SPLIT_PART_SEPARATOR);
+  if (linesPart !== undefined && splitHash(live.splitLines ?? []) !== linesPart) return false;
   if (baseline.startsWith(VERSION_PREFIX)) return hashTargetFields(live) === baseline;
   for (const categoryId of new Set([live.categoryId ?? null, null])) {
     for (const cleared of new Set([live.cleared, false])) {

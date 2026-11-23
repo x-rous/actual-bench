@@ -27,12 +27,21 @@ export function revaluationItemKey(sourceAccountId: string, date: string): strin
   return `${REVALUATION_KEY_PREFIX}${sourceAccountId}:${date}`;
 }
 
-/** Rows whose rate the user set, by target transaction id. */
+/** The rate recorded for each synced row, by target transaction id. */
 export function manualFxRates(snapshots: readonly TransactionFxRecord[]): Map<string, ManualFxRate> {
   return new Map(
-    snapshots
-      .filter((snapshot) => snapshot.isManual)
-      .map((snapshot) => [snapshot.transactionId, { rate: snapshot.appliedRate, effectiveDate: snapshot.effectiveDate }])
+    snapshots.map((snapshot) => [
+      snapshot.transactionId,
+      {
+        rate: snapshot.appliedRate,
+        effectiveDate: snapshot.effectiveDate,
+        requestedDate: snapshot.requestedDate,
+        isManual: snapshot.isManual,
+        source: snapshot.source,
+        provider: snapshot.provider,
+        fxRateId: snapshot.fxRateId,
+      },
+    ])
   );
 }
 
@@ -164,6 +173,59 @@ export function buildRevaluationInput(input: {
 }
 
 export const revaluationFingerprint = REVALUATION_FINGERPRINT;
+
+// --- Conversion history ------------------------------------------------------
+
+/** One synced row's original and converted amounts. Amounts are minor units. */
+export type FxConversionRow = {
+  transactionId: string;
+  date: string;
+  payeeName: string | null;
+  sourceCurrency: string;
+  sourceAmount: number;
+  rate: string;
+  rateDate: string;
+  targetCurrency: string;
+  convertedAmount: number;
+  /** Where the rate came from, in the user's words. */
+  rateSource: string;
+  /** False when the row was deleted from the target. */
+  onTarget: boolean;
+};
+
+const RATE_SOURCE_LABEL: Record<string, string> = {
+  frankfurter: "Frankfurter",
+  "user-upload": "Uploaded",
+  derived: "Derived",
+  manual: "Manual",
+};
+
+export function rateSourceLabel(snapshot: Pick<TransactionFxRecord, "source" | "isManual">): string {
+  return snapshot.isManual ? "Charged amount" : RATE_SOURCE_LABEL[snapshot.source] ?? snapshot.source;
+}
+
+/** The FX records of a flow, newest first, with the target row's payee. */
+export function buildConversionRows(
+  snapshots: readonly TransactionFxRecord[],
+  targetTransactions: readonly Pick<SyncSourceTransaction, "id" | "payeeName">[]
+): FxConversionRow[] {
+  const payee = new Map(targetTransactions.map((row) => [row.id, row.payeeName]));
+  return snapshots
+    .map((snapshot) => ({
+      transactionId: snapshot.transactionId,
+      date: snapshot.requestedDate,
+      payeeName: payee.get(snapshot.transactionId) ?? null,
+      sourceCurrency: snapshot.sourceCurrency,
+      sourceAmount: snapshot.sourceAmount,
+      rate: snapshot.appliedRate,
+      rateDate: snapshot.effectiveDate,
+      targetCurrency: snapshot.targetCurrency,
+      convertedAmount: snapshot.convertedAmount,
+      rateSource: rateSourceLabel(snapshot),
+      onTarget: payee.has(snapshot.transactionId),
+    }))
+    .sort((a, b) => (a.date === b.date ? a.transactionId.localeCompare(b.transactionId) : a.date < b.date ? 1 : -1));
+}
 
 // --- Cross-currency transfers ------------------------------------------------
 

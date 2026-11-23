@@ -15,7 +15,10 @@ import { insertFxRate } from "@/lib/fx/repositories/fxRateRepository";
 import { resolveFxBatch } from "@/lib/fx/services/resolveFxBatch";
 import { transactionAdapter as adapter } from "./adapters/transactionAdapter";
 import { applySyncRun, type ApplyStore } from "./applyOrchestrator";
+import { planCategoryReturn } from "./categoryReturn";
 import { buildPlanConfig, flowPlanHash } from "./flowConfig";
+import { routineScanSince } from "./serverSafeSync";
+import { runFlowGroup } from "@/features/sync/lib/flowGroups";
 import { createFxRateResolver, fxNeedDates } from "./fxPolicy";
 import { buildRevaluationInput, computeFxPosition, findTransferCandidates, revaluationItemKey, type TransferRow } from "./fxPosition";
 import { runSafeSync } from "./safeSyncOrchestrator";
@@ -262,6 +265,34 @@ describe("planning", () => {
     expect(plan.items[0].flags).toContain("split_mode_changed");
   });
 
+  it("holds a split line whose earlier keys point at different targets", () => {
+    const line = { id: null, amount: -400, payeeId: null, payeeName: null, categoryId: null, categoryName: null, notes: null };
+    const parent = txn("sp", { isParent: true, splitLines: [line] as never });
+    const [plain] = expandSourceTransactions([parent]);
+    const [cleared] = expandSourceTransactions([{ ...parent, cleared: true }]);
+    const plan = planExpandedItems({
+      config: config(), capabilities, sourceItems: [plain], target: target(),
+      existingMappings: [
+        mapping(plain.itemKey, plain.legacyFingerprints![0], "T1", { sourceEntityType: "split_line", sourceTransactionId: "sp" }),
+        mapping(cleared.itemKey, cleared.legacyFingerprints![1], "T2", { sourceEntityType: "split_line", sourceTransactionId: "sp" }),
+      ],
+    });
+    expect(plan.items[0].action).toBe("blocked");
+    expect(plan.items[0].flags).toContain("ambiguous_split_identity");
+  });
+
+  it("keeps the recorded rate when only a source note changed", () => {
+    const [item] = expandSourceTransactions([txn("a", { notes: "edited" })]);
+    const plan = planExpandedItems({
+      config: config({ fxEnabled: true, fxSourceCurrency: "AUD", fxTargetCurrency: "AED", updateMappedTargets: true }), capabilities,
+      sourceItems: [item], fxRateByDate: new Map([["2026-11-17", rate("9")]]),
+      manualFxRates: new Map([["T1", { rate: "2.5", effectiveDate: "2026-11-17", requestedDate: "2026-11-17", isManual: false }]]),
+      target: target({ transactions: [{ id: "T1", date: item.date, amount: -2500, payeeName: "Cafe", categoryId: null }] }),
+      existingMappings: [mapping(item.itemKey, "old", "T1")],
+    });
+    expect(plan.items[0]).toMatchObject({ action: "update", plannedTargetPayload: { amount: -2500 } });
+  });
+
   it("keeps a positional split line on the key it was synced under", () => {
     const line = { id: null, amount: -400, payeeId: null, payeeName: null, categoryId: null, categoryName: null, notes: null };
     const before = txn("sp", { isParent: true, splitLines: [line] as never });
@@ -330,7 +361,7 @@ describe("apply safety", () => {
       updateRunItemStatus: async () => {}, persistApplyFailure: async () => {}, persistFxSnapshot,
     } as unknown as ApplyStore;
     const createTransactionsForSync = jest.fn(async (rows: { importedId: string }[]) => ({ created: rows.map((row, requestIndex) => ({ requestIndex, transactionId: "new", importedId: row.importedId, resolvedPayeeId: null, applied: null })) }));
-    const transport = { getTargetLookupForSync: async () => ({ payees: [], importedIdIndex: new Map(), transactions: [] }), createTransactionsForSync } as unknown as ActualBenchTransport;
+    const transport = { listTransactionsForSync: async () => [], createTransactionsForSync } as unknown as ActualBenchTransport;
     return { store, transport, createTransactionsForSync, persistFxSnapshot };
   }
 
@@ -346,9 +377,9 @@ describe("apply safety", () => {
   it("saves the charged amount before writing, so a retry uses it", async () => {
     const saved = flow();
     const { store, transport } = harness(saved, { flowPlanHash: flowPlanHash(saved) });
-    const saveRunItemPayload = jest.fn(async () => {});
-    await applySyncRun({ runId: "r", targetConnection: connection("T"), amountOverrides: { i: 2600 } }, { transport: { openTransport: async () => transport }, store: { ...store, saveRunItemPayload } });
-    expect(saveRunItemPayload).toHaveBeenCalledWith("i", expect.objectContaining({ data: expect.objectContaining({ amount: -2600 }) }));
+    const saveRunItemPayloads = jest.fn(async () => {});
+    await applySyncRun({ runId: "r", targetConnection: connection("T"), amountOverrides: { i: 2600 } }, { transport: { openTransport: async () => transport }, store: { ...store, saveRunItemPayloads } });
+    expect(saveRunItemPayloads).toHaveBeenCalledWith([{ itemId: "i", payload: expect.objectContaining({ data: expect.objectContaining({ amount: -2600 }) }) }]);
   });
 
   it("refuses a charged amount on a zero-amount row instead of throwing", async () => {
@@ -381,11 +412,61 @@ describe("apply safety", () => {
     const data = manual.plannedTargetPayload!.data as { fx: Record<string, unknown> };
     data.fx = { ...data.fx, rate: "2.6", source: "manual", isManual: true };
     const failedItem: SyncFlowRunItem = { ...manual, applyState: "failed" };
+    (transport as unknown as { listTransactionsForSync: () => Promise<unknown[]> }).listTransactionsForSync = async () => [txn("new", { amount: -2600 })];
     const retryStore = { ...store, loadRun: async () => ({ ...(await store.loadRun("r"))!, status: "partial" as const }), loadRunItems: async () => [failedItem], getMappingBySource: async () => mapping("txn:x", "fp", "new") };
     createTransactionsForSync.mockClear();
     await applySyncRun({ runId: "r", targetConnection: connection("T"), selection: { selection: "retry_failed" } }, { transport: { openTransport: async () => transport }, store: retryStore });
     expect(createTransactionsForSync).not.toHaveBeenCalled();
     expect(persistFxSnapshot).toHaveBeenLastCalledWith(expect.objectContaining({ transactionId: "new", isManual: true, convertedAmount: -2600 }));
+  });
+
+  it("keeps the run appliable when charged amounts cannot be saved", async () => {
+    const saved = flow();
+    const { store, transport, createTransactionsForSync } = harness(saved, { flowPlanHash: flowPlanHash(saved) });
+    const updateRunStatus = jest.fn(async () => {});
+    const result = await applySyncRun({ runId: "r", targetConnection: connection("T"), amountOverrides: { i: 2600 } }, {
+      transport: { openTransport: async () => transport },
+      store: { ...store, updateRunStatus, saveRunItemPayloads: async () => { throw new Error("db down"); } },
+    });
+    expect(result.status).toBe("failed");
+    expect(updateRunStatus).toHaveBeenCalledWith("r", expect.objectContaining({ status: "draft_preview" }));
+    expect(createTransactionsForSync).not.toHaveBeenCalled();
+  });
+
+  it("refuses a charged amount when the planned amount rounded to zero", async () => {
+    const saved = flow();
+    const { store, transport, createTransactionsForSync } = harness(saved, { flowPlanHash: flowPlanHash(saved) });
+    const result = await applySyncRun({ runId: "r", targetConnection: connection("T"), amountOverrides: { i: 1 } }, {
+      transport: { openTransport: async () => transport },
+      store: { ...store, loadRunItems: async () => [item(-0)] },
+    });
+    expect(result.error?.code).toBe("ineligible_selection");
+    expect(createTransactionsForSync).not.toHaveBeenCalled();
+  });
+
+  it("does not delete a target whose mapping was stopped after the preview", async () => {
+    const saved = flow();
+    const { store, transport } = harness(saved, { flowPlanHash: flowPlanHash(saved) });
+    const deleteBatch = jest.spyOn(adapter, "deleteBatch");
+    const row: SyncFlowRunItem = { ...item(), classification: "source_missing", plannedAction: "delete", plannedTargetPayload: null, targetItemRef: envelope({ targetTransactionId: "T1" }) };
+    const result = await applySyncRun({ runId: "r", targetConnection: connection("T"), selection: { selectedItemIds: ["i", "i"] } }, {
+      transport: { openTransport: async () => transport },
+      store: { ...store, loadRunItems: async () => [row], getMappingBySource: async () => mapping("txn:x", "fp", "T1", { status: "disabled" }) },
+    });
+    expect(result.counts).toMatchObject({ selected: 1, skipped: 1, deleted: 0 });
+    expect(deleteBatch).not.toHaveBeenCalled();
+    deleteBatch.mockRestore();
+  });
+
+  it("marks only the conflicting item failed when the store reports a mapping conflict", async () => {
+    const saved = flow();
+    const { store, transport } = harness(saved, { flowPlanHash: flowPlanHash(saved) });
+    const result = await applySyncRun({ runId: "r", targetConnection: connection("T") }, {
+      transport: { openTransport: async () => transport },
+      store: { ...store, flushWrites: async () => ["i"] },
+    });
+    expect(result.status).toBe("failed");
+    expect(result.counts).toMatchObject({ applied: 0, failed: 1 });
   });
 
   it("writes the amount the bank charged and records its real rate", async () => {
@@ -394,6 +475,63 @@ describe("apply safety", () => {
     await applySyncRun({ runId: "r", targetConnection: connection("T"), amountOverrides: { i: 2600 } }, { transport: { openTransport: async () => transport }, store });
     expect(createTransactionsForSync.mock.calls[0][0][0]).toMatchObject({ amount: -2600, notes: "[AUD -10.00 @ 2.6]" });
     expect(persistFxSnapshot).toHaveBeenCalledWith(expect.objectContaining({ appliedRate: "2.6", convertedAmount: -2600, isManual: true }));
+  });
+});
+
+describe("sending categories back", () => {
+  const categories = { sourceCategories: [{ id: "s-food", name: "Food" }], targetCategories: [{ id: "t-food", name: "food" }, { id: "t-other", name: "Only here" }] };
+
+  it("fills an empty source category and leaves the rest alone", () => {
+    const rows = [txn("empty"), txn("set", { categoryId: "s-x", categoryName: "X" }), txn("nomatch"), txn("recon", { reconciled: true }), txn("xfer", { transferId: "z" })];
+    const items = expandSourceTransactions(rows);
+    const plan = planCategoryReturn({
+      ...categories, groupSplits: false, sourceTransactions: rows,
+      targetTransactions: [{ id: "T0", categoryId: "t-food" }, { id: "T1", categoryId: "t-food" }, { id: "T2", categoryId: "t-other" }, { id: "T3", categoryId: "t-food" }, { id: "T4", categoryId: "t-food" }],
+      mappings: items.map((item, index) => mapping(item.itemKey, item.fingerprint, `T${index}`)),
+    });
+    expect(plan.rows.map((row) => [row.sourceId, row.categoryId])).toEqual([["empty", "s-food"]]);
+    expect(plan.noMatchingCategory).toBe(1);
+  });
+
+  it("waits when the source changed since it was synced", () => {
+    const rows = [txn("a")];
+    const plan = planCategoryReturn({ ...categories, groupSplits: false, sourceTransactions: rows, targetTransactions: [{ id: "T0", categoryId: "t-food" }], mappings: [mapping("txn:a", "stale", "T0")] });
+    expect(plan).toMatchObject({ rows: [], sourceChanged: 1 });
+  });
+});
+
+describe("flow groups", () => {
+  const named = (id: string, flowType: SyncFlow["flowType"], enabled = true): SyncFlow => ({ ...flow({ groupName: "AUD", reviewPolicy: "manual_preview_required" }), id, name: id, flowType, enabled });
+
+  it("runs payees and categories before transactions, and only previews manual flows", async () => {
+    const calls: string[] = [];
+    const runPreview = jest.fn(async ({ flowId }: { flowId: string }) => { calls.push(flowId); return { status: "draft_preview", summary: { createCandidates: 2 } }; });
+    const runSafe = jest.fn();
+    const conns = [connection("S"), connection("T")];
+    const out = await runFlowGroup([named("tx", "transaction_sync"), named("off", "transaction_sync", false), named("cat", "category_sync"), named("pay", "payee_sync")], conns, {
+      runPreview: runPreview as never, runSafe: runSafe as never, runOnServer: jest.fn() as never, runsOnServer: () => false,
+    }, () => {});
+    expect(calls).toEqual(["pay", "cat", "tx"]);
+    expect(runSafe).not.toHaveBeenCalled();
+    expect(out.find((entry) => entry.flowId === "off")?.state).toBe("skipped");
+    expect(out.find((entry) => entry.flowId === "tx")?.state).toBe("previewed");
+  });
+
+  it("keeps going after one flow fails", async () => {
+    const runPreview = jest.fn().mockRejectedValueOnce(new Error("boom")).mockResolvedValue({ status: "draft_preview", summary: { createCandidates: 0 } });
+    const out = await runFlowGroup([named("pay", "payee_sync"), named("tx", "transaction_sync")], [connection("S"), connection("T")], {
+      runPreview: runPreview as never, runSafe: jest.fn() as never, runOnServer: jest.fn() as never, runsOnServer: () => false,
+    }, () => {});
+    expect(out.map((entry) => entry.state)).toEqual(["failed", "previewed"]);
+  });
+});
+
+describe("routine scheduled scans", () => {
+  const now = Date.parse("2026-11-23T12:00:00Z");
+  it("reads a recent window until a daily full scan is due", () => {
+    expect(routineScanSince("2026-11-23T01:00:00Z", now)).toBe("2026-09-22");
+    expect(routineScanSince("2026-11-22T11:00:00Z", now)).toBeNull();
+    expect(routineScanSince(null, now)).toBeNull();
   });
 });
 
@@ -418,6 +556,12 @@ describe("rate policies", () => {
     expect(createFxRateResolver(policy, partial, "2026-11-03")("2026-11-03", -1)).toBeNull();
     const full = new Map([...partial, ["2026-11-02", rate("4")]]);
     expect(createFxRateResolver(policy, full, "2026-11-03")("2026-11-03", -1)?.rate).toBe("3");
+  });
+
+  it("refuses more than two decimals in a mixed-separator amount", () => {
+    expect(parseAmountToMinor("1,234.567", ".")).toBeNull();
+    expect(parseAmountToMinor("1.234,567", ",")).toBeNull();
+    expect(parseAmountToMinor("1,234,567", ".")).toBe(123456700);
   });
 
   it("reads charged amounts in either number format", () => {

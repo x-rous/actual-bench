@@ -76,5 +76,8 @@ export function buildCurrencySetupForms(input: {
     return form;
   });
 
-  return [payees, categories, ...transactions];
+  // Grouped by currency, so the whole set can be run together in the right order.
+  const forms = [payees, categories, ...transactions];
+  for (const form of forms) form.group = foreignCurrency;
+  return forms;
 }

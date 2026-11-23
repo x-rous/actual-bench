@@ -138,10 +138,12 @@ export function clampSyncInterval(value: unknown): number {
   return Math.max(MIN_SYNC_INTERVAL_MINUTES, Math.round(n));
 }
 
-/** Recognised review-policy values; anything else decodes to the safe default. */
+/**
+ * Recognised review-policy values; anything else decodes to the safe default. That
+ * includes the removed `auto_apply_safe_only`, so such a flow reads as manual.
+ */
 const REVIEW_POLICIES: readonly SyncReviewPolicy[] = [
   "manual_preview_required",
-  "auto_apply_safe_only",
   "auto_sync_on_interval",
   "auto_sync_unattended",
 ];

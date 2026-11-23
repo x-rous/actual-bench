@@ -46,6 +46,8 @@ export type SafeSyncInput = {
   allowDisabled?: boolean;
   /** Trigger stamped on the run; both "Run now" and the interval use the default. */
   trigger?: SyncRunTrigger;
+  /** Read only rows from this date; see `LiveDryRunInput.scanSince`. */
+  scanSince?: string;
 };
 
 export type SafeSyncDeps = {
@@ -122,6 +124,7 @@ export async function runSafeSync(
       context: input.context,
       allowDisabled: input.allowDisabled,
       trigger: input.trigger ?? "interval_safe_only",
+      scanSince: input.scanSince,
     },
     { transport: deps.transport, store: deps.previewStore, resolveFx: deps.resolveFx }
   );

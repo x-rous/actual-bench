@@ -32,9 +32,15 @@ export async function GET(_request: Request, context: RouteContext) {
 export async function POST(request: Request, context: RouteContext) {
   try {
     const { runId } = await context.params;
-    const body = (await readJsonBody(request)) as { retry?: unknown; heartbeat?: unknown };
-    if (typeof body?.heartbeat === "string") {
+    const body = (await readJsonBody(request)) as { retry?: unknown; heartbeat?: unknown } | null;
+    if (body?.heartbeat !== undefined) {
+      if (typeof body.heartbeat !== "string") {
+        return NextResponse.json({ error: "heartbeat must be a string" }, { status: 400 });
+      }
       return NextResponse.json({ alive: heartbeatSyncFlowRun(getAppDb(), runId, body.heartbeat) });
+    }
+    if (body?.retry !== undefined && typeof body.retry !== "boolean") {
+      return NextResponse.json({ error: "retry must be a boolean" }, { status: 400 });
     }
     const from = body?.retry === true ? (["draft_preview", "partial", "failed"] as const) : (["draft_preview"] as const);
     return NextResponse.json({ token: claimSyncFlowRun(getAppDb(), runId, from) });

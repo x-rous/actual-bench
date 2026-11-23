@@ -103,6 +103,8 @@ export type SyncEntityForm = {
 
 export type SyncFlowFormState = {
   name: string;
+  /** Flows with the same group name are listed and run together; blank for none. */
+  group: string;
   enabled: boolean;
   flowType: SyncFlowType;
   source: SyncEndpointForm;
@@ -129,6 +131,7 @@ export const EMPTY_ENDPOINT: SyncEndpointForm = {
 export function emptyFlowForm(): SyncFlowFormState {
   return {
     name: "",
+    group: "",
     enabled: true,
     flowType: "transaction_sync",
     source: { ...EMPTY_ENDPOINT },
@@ -310,6 +313,7 @@ export function buildFlowPayload(
     // Master-data (entity) options - ignored by transaction flows.
     defaultGroupName: form.entity.defaultGroupName.trim() || null,
     createMissingGroup: form.entity.createMissingGroup,
+    groupName: form.group.trim() || null,
   };
 
   // Each leg ref/filter/transform must be a versioned JSON envelope, matching
@@ -353,6 +357,7 @@ export function flowToFormState(
   form.enabled = flow.enabled;
   form.flowType = flow.flowType === "payee_sync" || flow.flowType === "category_sync" ? flow.flowType : "transaction_sync";
   const options = (flow.options.data ?? {}) as Record<string, unknown>;
+  form.group = typeof options.groupName === "string" ? options.groupName : "";
   form.entity = {
     defaultGroupName: typeof options.defaultGroupName === "string" ? options.defaultGroupName : "",
     createMissingGroup: options.createMissingGroup === true,

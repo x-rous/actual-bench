@@ -1,3 +1,4 @@
+import { ABANDONED_APPLY_MS } from "@/lib/sync/applyClaim";
 import { generateId } from "@/lib/uuid";
 import { AppDbValidationError } from "./errors";
 import {
@@ -378,8 +379,7 @@ export type UpdateSyncFlowRunPatch = {
   counts?: JsonEnvelope | null;
 };
 
-/** An apply renews its claim every minute; this long without one means its writer is gone. */
-export const ABANDONED_APPLY_MS = 30 * 60_000;
+export { ABANDONED_APPLY_MS };
 
 /**
  * Atomically move a run to `applying`, only from one of `from` and only while no
@@ -390,12 +390,14 @@ export const ABANDONED_APPLY_MS = 30 * 60_000;
 export function claimSyncFlowRun(db: SqliteDatabase, runId: string, from: readonly SyncRunStatus[]): string | null {
   if (from.length === 0) return null;
   const run = getSyncFlowRun(db, runId);
-  if (!run) return null;
+  // A run whose flow was deleted has nothing to apply to and could never be cleaned up.
+  if (!run?.flowId) return null;
+  const flowId = run.flowId;
   const token = generateId();
   const now = new Date();
   const placeholders = from.map(() => "?").join(", ");
   const claim = db.transaction(() => {
-    if (run.flowId) failAbandonedSyncRuns(db, run.flowId, new Date(now.getTime() - ABANDONED_APPLY_MS).toISOString());
+    failAbandonedSyncRuns(db, flowId, new Date(now.getTime() - ABANDONED_APPLY_MS).toISOString());
     return db
       .prepare(
         `UPDATE sync_flow_runs
@@ -478,6 +480,74 @@ export function updateSyncFlowRun(
   );
 
   return getSyncFlowRun(db, runId);
+}
+
+/**
+ * When this flow's settings last had a complete account scan, or null. A scan of
+ * different settings does not count: the new settings have never seen the rest
+ * of the account.
+ */
+export function lastFullScanAt(db: SqliteDatabase, flowId: string, planHash: string): string | null {
+  const row = db
+    .prepare(
+      `SELECT MAX(json_extract(summary_json, '$.data.fullScanAt')) AS at
+       FROM sync_flow_runs
+       WHERE flow_id = ? AND json_extract(summary_json, '$.data.flowPlanHash') = ?`
+    )
+    .get<{ at: string | null }>(flowId, planHash);
+  return row?.at ?? null;
+}
+
+/** What each flow's latest run left for a person to deal with. */
+export type SyncFlowAttention = {
+  flowId: string;
+  runId: string;
+  status: string;
+  at: string;
+  failed: number;
+  waitingForRate: number;
+  blocked: number;
+  review: number;
+  error: string | null;
+};
+
+export function listSyncFlowAttention(db: SqliteDatabase): SyncFlowAttention[] {
+  const runs = db
+    .prepare(
+      `SELECT r.id, r.flow_id, r.status, COALESCE(r.finished_at, r.started_at) AS at, r.error_json
+       FROM sync_flow_runs r
+       WHERE r.flow_id IS NOT NULL
+         AND r.id = (SELECT o.id FROM sync_flow_runs o WHERE o.flow_id = r.flow_id ORDER BY o.started_at DESC, o.id DESC LIMIT 1)`
+    )
+    .all<{ id: string; flow_id: string; status: string; at: string; error_json: string | null }>();
+  const counts = db.prepare(
+    `SELECT
+       SUM(CASE WHEN apply_state = 'failed' THEN 1 ELSE 0 END) AS failed,
+       SUM(CASE WHEN apply_state = 'pending' AND classification = 'blocked' AND warnings_json LIKE '%fx_rate_pending%' THEN 1 ELSE 0 END) AS waiting,
+       SUM(CASE WHEN apply_state = 'pending' AND classification = 'blocked' AND warnings_json NOT LIKE '%fx_rate_pending%' THEN 1 ELSE 0 END) AS blocked,
+       SUM(CASE WHEN apply_state = 'pending' AND classification IN ('exact_duplicate', 'strong_duplicate', 'weak_duplicate', 'source_changed_since_sync', 'source_missing', 'target_missing', 'warning')
+                 AND COALESCE(warnings_json, '') NOT LIKE '%exact_duplicate_auto_map%' THEN 1 ELSE 0 END) AS review
+     FROM sync_flow_run_items WHERE run_id = ?`
+  );
+  const out: SyncFlowAttention[] = [];
+  for (const run of runs) {
+    const row = counts.get<{ failed: number | null; waiting: number | null; blocked: number | null; review: number | null }>(run.id);
+    const error = parseOptionalEnvelope(run.error_json, "error");
+    const message = typeof error?.data?.message === "string" ? error.data.message : null;
+    const entry: SyncFlowAttention = {
+      flowId: run.flow_id,
+      runId: run.id,
+      status: run.status,
+      at: run.at,
+      failed: row?.failed ?? 0,
+      waitingForRate: row?.waiting ?? 0,
+      blocked: row?.blocked ?? 0,
+      review: row?.review ?? 0,
+      error: run.status === "failed" ? message : null,
+    };
+    if (entry.failed + entry.waitingForRate + entry.blocked + entry.review > 0 || entry.status === "failed") out.push(entry);
+  }
+  return out.sort((a, b) => (a.at < b.at ? 1 : -1));
 }
 
 export type UpdateSyncFlowRunItemPatch = {

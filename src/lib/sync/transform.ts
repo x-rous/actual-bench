@@ -90,6 +90,7 @@ export function buildPlannedTargetPayload(input: {
           source: fx.source,
           provider: fx.provider,
           fxRateId: fx.fxRateId,
+          ...(fx.isManual ? { isManual: true } : {}),
         }
       : null,
   };

@@ -93,7 +93,7 @@ describe("runSafeSync - policy gate", () => {
     expect(runPreview).not.toHaveBeenCalled();
   });
 
-  it.each(["auto_apply_safe_only", "auto_sync_on_interval"] as const)(
+  it.each(["auto_sync_unattended", "auto_sync_on_interval"] as const)(
     "proceeds to preview + safe apply for %s",
     async (policy) => {
       const runApply = jest.fn(async () => applyOk());
@@ -116,7 +116,7 @@ describe("runSafeSync - composition", () => {
       error: { code: "target_load_failed", message: "boom" }, warnings: [],
     }));
     const runApply = jest.fn();
-    const deps = makeDeps(flowWithPolicy("auto_apply_safe_only"), { runPreview, runApply });
+    const deps = makeDeps(flowWithPolicy("auto_sync_unattended"), { runPreview, runApply });
 
     const result = await runSafeSync({ flowId: "flow-1", context }, deps);
     expect(result).toMatchObject({ status: "preview_failed", error: { code: "target_load_failed" } });
@@ -126,7 +126,7 @@ describe("runSafeSync - composition", () => {
   it("no-ops without reopening the target when preview has no safe items", async () => {
     const runPreview = jest.fn(async () => previewOk({ createCandidates: 0, targetMarkerMatches: 0, duplicatesSkipped: 3 }));
     const runApply = jest.fn();
-    const deps = makeDeps(flowWithPolicy("auto_apply_safe_only"), { runPreview, runApply });
+    const deps = makeDeps(flowWithPolicy("auto_sync_unattended"), { runPreview, runApply });
 
     const result = await runSafeSync({ flowId: "flow-1", context }, deps);
     expect(result.status).toBe("no_safe_items");
@@ -150,7 +150,7 @@ describe("runSafeSync - composition", () => {
 
   it("maps a benign no_eligible_items apply failure to a no-op", async () => {
     const runApply = jest.fn(async () => applyOk({ status: "failed", error: { code: "no_eligible_items", message: "none" }, counts: { selected: 0, applied: 0, appliedWithWarnings: 0, repaired: 0, updated: 0, deleted: 0, skipped: 0, failed: 0 } }));
-    const deps = makeDeps(flowWithPolicy("auto_apply_safe_only"), { runApply });
+    const deps = makeDeps(flowWithPolicy("auto_sync_unattended"), { runApply });
 
     const result = await runSafeSync({ flowId: "flow-1", context }, deps);
     expect(result.status).toBe("no_safe_items");
@@ -158,7 +158,7 @@ describe("runSafeSync - composition", () => {
 
   it("surfaces a partial apply with its detail", async () => {
     const runApply = jest.fn(async () => applyOk({ status: "partial", counts: { selected: 2, applied: 1, appliedWithWarnings: 0, repaired: 0, updated: 0, deleted: 0, skipped: 0, failed: 1 } }));
-    const deps = makeDeps(flowWithPolicy("auto_apply_safe_only"), { runApply });
+    const deps = makeDeps(flowWithPolicy("auto_sync_unattended"), { runApply });
 
     const result = await runSafeSync({ flowId: "flow-1", context }, deps);
     expect(result).toMatchObject({ status: "partial", apply: { status: "partial", counts: { failed: 1 } } });

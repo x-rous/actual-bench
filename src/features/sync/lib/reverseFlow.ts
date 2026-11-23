@@ -27,6 +27,7 @@ export function buildReverseFlowForm(
   reverse.enabled = false;
   // Preserve the data type + entity options; only the direction is mirrored.
   reverse.flowType = form.flowType;
+  reverse.group = form.group;
   reverse.entity = { ...form.entity };
 
   // New source = old target. Backfill the budget display name from the live

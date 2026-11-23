@@ -6,7 +6,8 @@ import { vaultLockedError } from "@/lib/credentials/vaultSummary";
 import { createFrankfurterProvider } from "@/lib/fx/providers/frankfurter";
 import { resolveFxBatch } from "@/lib/fx/services/resolveFxBatch";
 import { logger } from "@/lib/logger";
-import { decodeFlowPlanConfig } from "./flowConfig";
+import { lastFullScanAt } from "@/lib/app-db/syncRunRepository";
+import { decodeFlowPlanConfig, flowPlanHash } from "./flowConfig";
 import { createAppDbApplyStore } from "./appDbApplyStore";
 import { createAppDbPreviewStore } from "./appDbPreviewStore";
 import { runSafeSync, type SafeSyncResult } from "./safeSyncOrchestrator";
@@ -42,6 +43,20 @@ export function isServerSafeSyncBlocked(r: ServerSafeSyncResult): r is ServerSaf
     r.status === "not_enrolled" ||
     r.status === "flow_not_found"
   );
+}
+
+/** How often a scheduled flow reads its whole account, and how far back it reads otherwise. */
+const FULL_SCAN_EVERY_MS = 24 * 60 * 60_000;
+const ROUTINE_SCAN_DAYS = 62;
+
+/**
+ * The start date for a routine scheduled run, or null when a full scan is due. A
+ * full scan a day catches back-dated rows, deletions and rows removed on the target.
+ */
+export function routineScanSince(lastFullScan: string | null, nowMs: number): string | null {
+  const last = lastFullScan ? Date.parse(lastFullScan) : NaN;
+  if (!Number.isFinite(last) || nowMs - last >= FULL_SCAN_EVERY_MS) return null;
+  return new Date(nowMs - ROUTINE_SCAN_DAYS * 24 * 60 * 60_000).toISOString().slice(0, 10);
 }
 
 export async function runServerSafeSync(
@@ -96,6 +111,7 @@ export async function runServerSafeSync(
       flowId,
       context: { sourceConnection, targetConnection },
       trigger: "scheduled_unattended",
+      scanSince: routineScanSince(lastFullScanAt(db, flowId, flowPlanHash(flow)), Date.now()) ?? undefined,
     },
     {
       transport,

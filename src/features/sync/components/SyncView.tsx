@@ -9,13 +9,15 @@ import { NeedsConnectionsNotice } from "./NeedsConnectionsNotice";
 import { FlowEditDialog } from "./FlowEditDialog";
 import { FlowHeader } from "./FlowHeader";
 import { CurrencySetupDialog } from "./CurrencySetupDialog";
+import { FlowGroupRunDialog } from "./FlowGroupRunDialog";
 import { FlowList } from "./FlowList";
 import { FxPositionPanel } from "./FxPositionPanel";
 import { PreviewPanel } from "./PreviewPanel";
 import { RunHistory } from "./RunHistory";
+import { SyncAttentionDialog } from "./SyncAttentionDialog";
 import { useSyncFlows, useSyncFlowMutations } from "../hooks/useSyncFlows";
 import { useFlowAutomations } from "../hooks/useFlowAutomations";
-import { useSyncConnections, useFlowRuns, useLatestRunByFlow, useSyncRun, useVaultStatus } from "../hooks/useSyncData";
+import { useSyncAttention, useSyncConnections, useFlowRuns, useLatestRunByFlow, useSyncRun, useVaultStatus } from "../hooks/useSyncData";
 import { useApplyMutation, usePreviewMutation, useSafeSyncMutation } from "../hooks/useSyncOrchestration";
 import { useSyncScheduler } from "../hooks/useSyncScheduler";
 import {
@@ -32,9 +34,11 @@ import { decodeFlowPlanConfig } from "@/lib/sync/flowConfig";
 import { enrolledIndex, isEnrolled } from "../lib/unattendedStatus";
 import { getMappingBySource, runFlowNow, updateMapping } from "../lib/syncApi";
 import { selectableRowIds, syncKindOf, toPreviewRow, type PreviewRow } from "../lib/previewRows";
+import { flowGroupName } from "../lib/flowGroups";
 import { buildReverseFlowForm } from "../lib/reverseFlow";
 import { formatRunTimestamp, relativeTime, runErrorMessage, toRunRow } from "../lib/runsView";
-import type { SyncFlowRun, SyncFlowRunItem } from "@/lib/app-db/types";
+import type { SyncFlowAttention } from "@/lib/app-db/syncRunRepository";
+import type { SyncFlow, SyncFlowRun, SyncFlowRunItem } from "@/lib/app-db/types";
 import type { DryRunError, DryRunSummary } from "@/lib/sync/previewOrchestrator";
 import type { ApplyRunResult } from "@/lib/sync/applyOrchestrator";
 import type { SafeSyncResult } from "@/lib/sync/safeSyncOrchestrator";
@@ -67,6 +71,8 @@ const PRE_APPLY_RUN_STATUSES = new Set<string | undefined>([undefined, "draft_pr
 /** The tab-only scheduler (RD-054). Off since server scheduling covers Direct budgets (RD-095). */
 const TAB_SCHEDULER_ENABLED = false;
 
+const NO_ATTENTION: SyncFlowAttention[] = [];
+
 export function SyncView() {
   const connections = useSyncConnections();
   const flowsQuery = useSyncFlows();
@@ -80,6 +86,22 @@ export function SyncView() {
   const previewMutation = usePreviewMutation();
   const applyMutation = useApplyMutation();
   const safeSyncMutation = useSafeSyncMutation();
+  const attentionQuery = useSyncAttention();
+  const attention = attentionQuery?.data ?? NO_ATTENTION;
+  const [attentionOpen, setAttentionOpen] = useState(false);
+  const [runningGroup, setRunningGroup] = useState<string | null>(null);
+  // Say so when something new needs attention, such as an unattended run finishing
+  // with blocked rows while this page is open. Not on the first read.
+  const seenAttentionRef = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    if (!attentionQuery?.data) return;
+    const current = new Set(attentionQuery.data.map((entry) => entry.runId));
+    const seen = seenAttentionRef.current;
+    seenAttentionRef.current = current;
+    if (!seen) return;
+    const fresh = [...current].filter((runId) => !seen.has(runId)).length;
+    if (fresh > 0) toast.warning(`${fresh} sync flow${fresh === 1 ? "" : "s"} need${fresh === 1 ? "s" : ""} attention.`);
+  }, [attentionQuery?.data]);
 
   // Client-side interval auto-sync (RD-054) is turned off (RD-095 D4): flows
   // run on the server's schedule instead, for Direct budgets too. The hook
@@ -136,6 +158,12 @@ export function SyncView() {
     selectedConfig.reviewPolicy === "auto_sync_unattended" &&
     isEnrolled(enrolled, selectedConfig.sourceConnectionFingerprint, selectedConfig.sourceBudgetId) &&
     isEnrolled(enrolled, selectedConfig.targetConnectionFingerprint, selectedConfig.targetBudgetId);
+  const flowRunsOnServer = (flow: SyncFlow) => {
+    const config = decodeFlowPlanConfig(flow);
+    return config.reviewPolicy === "auto_sync_unattended" &&
+      isEnrolled(enrolled, config.sourceConnectionFingerprint, config.sourceBudgetId) &&
+      isEnrolled(enrolled, config.targetConnectionFingerprint, config.targetBudgetId);
+  };
   const [serverRunning, setServerRunning] = useState(false);
   const kind = syncKindOf(selectedFlow?.flowType ?? "transaction_sync");
   // The form shows the selected flow as it was last read: it is loaded as a different flow is selected, and again whenever the flows
@@ -429,7 +457,7 @@ export function SyncView() {
     applyMutation.mutate(
       { runId, targetConnection: targetConn, selection: { selectedItemIds: [...selectedIds] }, amountOverrides },
       {
-        onSuccess: (result) => { setApplyResult(result); runQuery.refetch(); runsQuery.refetch(); flowsQuery.refetch(); latestRunsQuery.refetch(); },
+        onSuccess: (result) => { setApplyResult(result); runQuery.refetch(); runsQuery.refetch(); flowsQuery.refetch(); latestRunsQuery.refetch(); void attentionQuery?.refetch(); },
         onError: (err) => setActionError(err instanceof Error ? err.message : "Sync could not be completed."),
       }
     );
@@ -477,6 +505,9 @@ export function SyncView() {
           onSelect={handleSelect}
           onCreate={handleCreate}
           onAddCurrency={() => setCurrencySetupOpen(true)}
+          attentionCount={attention.length}
+          onShowAttention={() => { void attentionQuery?.refetch(); setAttentionOpen(true); }}
+          onRunGroup={setRunningGroup}
         />
       </aside>
 
@@ -684,6 +715,32 @@ export function SyncView() {
           latestRunsQuery.refetch();
         }}
       />
+
+      {attentionOpen && (
+        <SyncAttentionDialog
+          entries={attention}
+          flows={flows}
+          onClose={() => setAttentionOpen(false)}
+          onOpenRun={(flowId, openRunId) => {
+            setAttentionOpen(false);
+            setSelectedFlowId(flowId);
+            resetPreview();
+            setView("history");
+            setHistoryRunId(openRunId);
+          }}
+        />
+      )}
+
+      {runningGroup && (
+        <FlowGroupRunDialog
+          name={runningGroup}
+          flows={flows.filter((flow) => flowGroupName(flow) === runningGroup)}
+          connections={connections}
+          runsOnServer={flowRunsOnServer}
+          onClose={() => setRunningGroup(null)}
+          onFinished={() => { flowsQuery.refetch(); latestRunsQuery.refetch(); runsQuery.refetch(); void attentionQuery?.refetch(); }}
+        />
+      )}
 
       {/* Mounted only while open: it reads two budgets' accounts as soon as both are picked. */}
       {currencySetupOpen && (

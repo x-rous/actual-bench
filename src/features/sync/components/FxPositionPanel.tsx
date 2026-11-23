@@ -12,8 +12,10 @@ import {
   linkSyncedTransfer,
   loadFxPosition,
   postFxRevaluation,
+  sendCategoriesBack,
   type FxTransferPair,
 } from "../lib/fxPositionClient";
+import { FxConversionsTable } from "./FxConversionsTable";
 import type { SyncFlow } from "@/lib/app-db/types";
 import type { ConnectionInstance } from "@/store/connection";
 
@@ -44,6 +46,8 @@ export function FxPositionPanel({ flow, sourceConnection, targetConnection, onBa
   const [confirming, setConfirming] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [tab, setTab] = useState<"position" | "conversions">("position");
+  const [confirmingCategories, setConfirmingCategories] = useState(false);
 
   const ready = !!sourceConnection && !!targetConnection;
   const query = useQuery({
@@ -98,8 +102,26 @@ export function FxPositionPanel({ flow, sourceConnection, targetConnection, onBa
     onError: (err) => setActionError(err instanceof Error ? err.message : "The transfer could not be linked."),
   });
 
+  const sendBack = useMutation({
+    mutationFn: async () => {
+      if (!data || !sourceConnection) throw new Error("Connect the source budget first.");
+      return sendCategoriesBack({ flow, sourceConnection, rows: data.categoryReturn.rows });
+    },
+    onSuccess: async ({ written, skipped, failed }) => {
+      setConfirmingCategories(false);
+      setActionError(failed > 0 ? `${failed} categor${failed === 1 ? "y" : "ies"} could not be written.` : null);
+      setNotice(`${written} categor${written === 1 ? "y" : "ies"} sent to ${config.sourceBudgetName}${skipped ? `; ${skipped} left alone because the row changed` : ""}.`);
+      await query.refetch();
+    },
+    onError: (err) => {
+      setConfirmingCategories(false);
+      setActionError(err instanceof Error ? err.message : "The categories could not be sent.");
+    },
+  });
+  const writing = revalue.isPending || link.isPending || sendBack.isPending;
+
   const needsCategory = !!data && !data.targetOffBudget && !categoryId;
-  const canPost = !!position && position.difference !== 0 && !needsCategory && !revalue.isPending && !link.isPending;
+  const canPost = !!position && position.difference !== 0 && !needsCategory && !writing;
   const warnings = position && data ? [
     position.unsyncedRows > 0 && `${position.unsyncedRows} source transaction${position.unsyncedRows === 1 ? " is" : "s are"} not synced yet.`,
     position.missingOnTarget > 0 && `${position.missingOnTarget} synced transaction${position.missingOnTarget === 1 ? " was" : "s were"} deleted on the target.`,
@@ -139,6 +161,24 @@ export function FxPositionPanel({ flow, sourceConnection, targetConnection, onBa
         {notice && <p role="status" className="rounded-md border border-border bg-muted/40 px-3.5 py-2 text-sm">{notice}</p>}
 
         {position && data && (
+          <div className="inline-flex w-fit shrink-0 rounded-md border border-border p-0.5">
+            {([["position", "Position"], ["conversions", `Conversions · ${data.conversions.length}`]] as const).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={tab === value}
+                onClick={() => setTab(value)}
+                className={cn("rounded px-3 py-1 text-xs font-medium transition-colors", tab === value ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground")}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {data && tab === "conversions" && <FxConversionsTable rows={data.conversions} flowName={flow.name} />}
+
+        {position && data && tab === "position" && (
           <>
             <section aria-label="Position" className="grid grid-cols-2 gap-4 rounded-md border border-border px-4 py-3 lg:grid-cols-4">
               <Figure label="Foreign balance (synced)" value={position.sourceTotal} currency={config.fxSourceCurrency} detail={`${position.syncedRows} transactions`} />
@@ -179,6 +219,27 @@ export function FxPositionPanel({ flow, sourceConnection, targetConnection, onBa
               </div>
             </section>
 
+            <section className="flex flex-col gap-2 border-t border-border pt-3">
+              <div>
+                <h4 className="text-sm font-semibold">Send categories back</h4>
+                <p className="text-xs text-muted-foreground">Copies the categories you set in {config.targetBudgetName} to the matching rows in {config.sourceBudgetName}, matched by name. Only empty categories are filled.</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <span className="tabular-nums"><strong>{data.categoryReturn.rows.length}</strong> ready</span>
+                {data.categoryReturn.noMatchingCategory > 0 && <span className="text-muted-foreground">{data.categoryReturn.noMatchingCategory} with no category of that name</span>}
+                {data.categoryReturn.sourceChanged > 0 && <span className="text-muted-foreground">{data.categoryReturn.sourceChanged} waiting for a preview of their source change</span>}
+                {confirmingCategories ? (
+                  <>
+                    <span>Write {data.categoryReturn.rows.length} to {config.sourceBudgetName}?</span>
+                    <Button size="sm" onClick={() => sendBack.mutate()} disabled={writing}>{sendBack.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Confirm</Button>
+                    <Button size="sm" variant="ghost" onClick={() => setConfirmingCategories(false)} disabled={sendBack.isPending}>Cancel</Button>
+                  </>
+                ) : (
+                  <Button size="sm" variant="outline" onClick={() => setConfirmingCategories(true)} disabled={data.categoryReturn.rows.length === 0 || writing}>Send categories</Button>
+                )}
+              </div>
+            </section>
+
             <section className="flex min-h-0 flex-col gap-2 border-t border-border pt-3">
               <div>
                 <h4 className="text-sm font-semibold">Transfers to link</h4>
@@ -207,7 +268,7 @@ export function FxPositionPanel({ flow, sourceConnection, targetConnection, onBa
                           <td className={cn("text-right tabular-nums", pair.differenceBps > 200 && "font-medium")}>{(pair.differenceBps / 100).toFixed(2)}%</td>
                           <td className="text-right tabular-nums">{pair.realisedRate ?? "-"}</td>
                           <td className="text-right">
-                            <Button size="xs" variant="outline" disabled={link.isPending || revalue.isPending} onClick={() => link.mutate(pair)} aria-label={`Link transfer of ${formatAmount(pair.synced.amount)} on ${pair.synced.date}`}>
+                            <Button size="xs" variant="outline" disabled={writing} onClick={() => link.mutate(pair)} aria-label={`Link transfer of ${formatAmount(pair.synced.amount)} on ${pair.synced.date}`}>
                               {link.isPending && link.variables?.syncedId === pair.syncedId ? <Loader2 className="animate-spin" /> : <Link2 />} Link
                             </Button>
                           </td>

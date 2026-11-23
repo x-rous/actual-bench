@@ -40,7 +40,7 @@ export type PreviewPersistMeta = {
 export type PreviewStore = {
   loadFlow(flowId: string): Promise<SyncFlow | null>;
   loadMappings(flowId: string): Promise<SyncMapping[]>;
-  /** Rates the user set for individual synced rows, by target transaction id. */
+  /** The rate recorded for each synced row, by target transaction id. */
   loadManualFxRates?(flowId: string): Promise<Map<string, import("./plannedChanges").ManualFxRate>>;
   /**
    * `items` is the FULL planned list, including classifications the store
@@ -69,6 +69,12 @@ export type LiveDryRunInput = {
   allowDisabled?: boolean;
   /** What created this run; stamped on the persisted run (RD-054). */
   trigger?: SyncRunTrigger;
+  /**
+   * Read only rows from this date, for a routine scheduled run. Deletions and
+   * rows deleted on the target are not checked on such a run; the next full scan
+   * does that.
+   */
+  scanSince?: string;
 };
 
 // --- Result / error shapes --------------------------------------------------
@@ -190,7 +196,8 @@ export async function runLiveDryRunPreview(
     } catch (err) {
       throw new SyncKindError("source_load_failed", describeSyncError(err, "Failed to open the source budget."));
     }
-    const source = await adapter.loadSource(sourceTransport, flow);
+    const scan = input.scanSince ? { sinceDate: input.scanSince } : undefined;
+    const source = await adapter.loadSource(sourceTransport, flow, scan);
 
     // 4. Target phase: open target (may close source), load its snapshot + mappings.
     // Opening the target must surface as a target failure, not the source fallback.
@@ -200,7 +207,7 @@ export async function runLiveDryRunPreview(
     } catch (err) {
       throw new SyncKindError("target_load_failed", describeSyncError(err, "Failed to open the target budget."));
     }
-    const target = await adapter.loadTarget(targetTransport, flow);
+    const target = await adapter.loadTarget(targetTransport, flow, scan);
     let mappings: SyncMapping[];
     try {
       mappings = await deps.store.loadMappings(flowId);
@@ -241,7 +248,11 @@ export async function runLiveDryRunPreview(
     let items: SyncFlowRunItem[];
     try {
       ({ runId, items } = await deps.store.persistPlan(plan, {
-        summary: { ...summary, flowPlanHash: flowPlanHash(flow) },
+        summary: {
+          ...summary,
+          flowPlanHash: flowPlanHash(flow),
+          ...(input.scanSince ? { scannedSince: input.scanSince } : { fullScanAt: new Date().toISOString() }),
+        },
         sourceSnapshotSummary: adapter.sourceSummary(flow),
         trigger: input.trigger,
       }));
