@@ -682,16 +682,19 @@ export function SyncView() {
         }}
       />
 
-      <CurrencySetupDialog
-        open={currencySetupOpen}
-        onOpenChange={setCurrencySetupOpen}
-        connections={connections}
-        existingFlows={flows}
-        onCreated={(flowId) => {
-          flowsQuery.refetch();
-          if (flowId) { setSelectedFlowId(flowId); resetPreview(); }
-        }}
-      />
+      {/* Mounted only while open: it reads two budgets' accounts as soon as both are picked. */}
+      {currencySetupOpen && (
+        <CurrencySetupDialog
+          open
+          onOpenChange={setCurrencySetupOpen}
+          connections={connections}
+          existingFlows={flows}
+          onCreated={(flowId) => {
+            flowsQuery.refetch();
+            if (flowId) { setSelectedFlowId(flowId); resetPreview(); }
+          }}
+        />
+      )}
     </div>
   );
 }

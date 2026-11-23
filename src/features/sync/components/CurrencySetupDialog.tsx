@@ -7,9 +7,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AccountPicker } from "@/components/ui/entity-picker";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import { BudgetSelect, useBudgetChoices } from "@/features/connect/BudgetSelect";
 import { decodeFlowPlanConfig } from "@/lib/sync/flowConfig";
-import { useFlowAccounts } from "../hooks/useSyncData";
+import { useTwoBudgetAccounts } from "../hooks/useSyncData";
 import { useSyncFlowMutations } from "../hooks/useSyncFlows";
 import { buildCurrencySetupForms, matchAccountsByName, type SetupAccountPair, type SetupBudget } from "../lib/currencySetup";
 import { buildFlowPayload, type SyncFlowFormState } from "../lib/flowForm";
@@ -54,13 +54,20 @@ export function CurrencySetupDialog({ open, onOpenChange, connections, existingF
   const [error, setError] = useState<string | null>(null);
   const { create } = useSyncFlowMutations();
 
-  const foreignAccounts = useFlowAccounts(foreignId);
-  const mainAccounts = useFlowAccounts(mainId);
-  const sourceAccounts = useMemo(() => (foreignAccounts.data ?? []).filter((a) => !a.closed), [foreignAccounts.data]);
-  const targetAccounts = useMemo(() => (mainAccounts.data ?? []).filter((a) => !a.closed), [mainAccounts.data]);
+  const accounts = useTwoBudgetAccounts(mainId, foreignId);
+  const sourceAccounts = useMemo(() => (accounts.data?.second ?? []).filter((a) => !a.closed), [accounts.data]);
+  const targetAccounts = useMemo(() => (accounts.data?.first ?? []).filter((a) => !a.closed), [accounts.data]);
   const matches = useMemo(() => matchAccountsByName(sourceAccounts, targetAccounts), [sourceAccounts, targetAccounts]);
 
-  const budgetOptions = connections.map((c) => ({ value: c.id, label: c.label }));
+  // Saved budgets can be picked too; picking one connects it in the background
+  // without changing the active budget, as in the flow editor.
+  const budgetChoices = useBudgetChoices({ connections });
+  const connecting = budgetChoices.connector.connecting;
+  const pickBudget = async (value: string | null | undefined, apply: (connectionId: string) => void) => {
+    if (!value) { apply(""); return; }
+    const instance = await budgetChoices.resolve(value);
+    if (instance) apply(instance.id);
+  };
   const main = toBudget(connections.find((c) => c.id === mainId));
   const foreign = toBudget(connections.find((c) => c.id === foreignId));
   const targetFor = (accountId: string) => pairOverrides[accountId] ?? matches.get(accountId) ?? "";
@@ -121,13 +128,13 @@ export function CurrencySetupDialog({ open, onOpenChange, connections, existingF
 
           <div className="grid gap-3 sm:grid-cols-[1fr_6rem_1fr_6rem]">
             <label className="flex flex-col gap-1 text-xs text-muted-foreground">Main budget
-              <Select aria-label="Main budget" size="sm" value={mainId} onValueChange={(value) => { setMainId(value); setPairOverrides({}); }} options={budgetOptions} placeholder="Select budget…" />
+              <BudgetSelect aria-label="Main budget" size="sm" value={mainId} disabled={connecting} options={budgetChoices.options} placeholder={connecting ? "Connecting..." : "Select budget…"} onValueChange={(value) => pickBudget(value, (id) => { setMainId(id); setPairOverrides({}); })} />
             </label>
             <label className="flex flex-col gap-1 text-xs text-muted-foreground">Currency
               <Input aria-label="Main currency" size="sm" className="uppercase" maxLength={3} placeholder="AED" value={mainCurrency} onChange={(e) => setMainCurrency(e.target.value.toUpperCase())} />
             </label>
             <label className="flex flex-col gap-1 text-xs text-muted-foreground">Foreign-currency budget
-              <Select aria-label="Foreign-currency budget" size="sm" value={foreignId} onValueChange={(value) => { setForeignId(value); setPairOverrides({}); setExcluded(new Set()); }} options={budgetOptions} placeholder="Select budget…" />
+              <BudgetSelect aria-label="Foreign-currency budget" size="sm" value={foreignId} disabled={connecting} options={budgetChoices.options} placeholder={connecting ? "Connecting..." : "Select budget…"} onValueChange={(value) => pickBudget(value, (id) => { setForeignId(id); setPairOverrides({}); setExcluded(new Set()); })} />
             </label>
             <label className="flex flex-col gap-1 text-xs text-muted-foreground">Currency
               <Input aria-label="Foreign currency" size="sm" className="uppercase" maxLength={3} placeholder="AUD" value={foreignCurrency} onChange={(e) => setForeignCurrency(e.target.value.toUpperCase())} />
@@ -139,8 +146,13 @@ export function CurrencySetupDialog({ open, onOpenChange, connections, existingF
           {main && foreign && !sameBudget && (
             <section className="flex flex-col gap-2 border-t border-border pt-3">
               <h4 className="text-sm font-semibold">Accounts</h4>
-              {foreignAccounts.isLoading || mainAccounts.isLoading ? (
+              {accounts.isLoading ? (
                 <p className="flex items-center gap-2 py-3 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Reading accounts…</p>
+              ) : accounts.isError ? (
+                <p role="alert" className="flex items-center gap-2 py-2 text-xs text-destructive">
+                  Could not read the accounts.
+                  <Button size="xs" variant="outline" onClick={() => void accounts.refetch()}>Try again</Button>
+                </p>
               ) : sourceAccounts.length === 0 ? (
                 <p className="py-3 text-xs text-muted-foreground">The foreign-currency budget has no open accounts.</p>
               ) : (
@@ -176,6 +188,7 @@ export function CurrencySetupDialog({ open, onOpenChange, connections, existingF
           {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
         </div>
 
+        {budgetChoices.connector.dialog}
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
           <Button onClick={() => void handleCreate()} disabled={!canCreate}>

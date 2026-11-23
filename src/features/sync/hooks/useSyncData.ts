@@ -42,6 +42,28 @@ export function useFlowAccounts(connectionId: string) {
   });
 }
 
+/**
+ * The accounts of two budgets, read one after the other. A Direct runtime holds
+ * one budget at a time, so two parallel reads would switch it under each other.
+ */
+export function useTwoBudgetAccounts(firstConnectionId: string, secondConnectionId: string) {
+  const connections = useSyncConnections();
+  const first = connections.find((c) => c.id === firstConnectionId);
+  const second = connections.find((c) => c.id === secondConnectionId);
+  return useQuery({
+    queryKey: ["sync-two-budget-accounts", firstConnectionId, secondConnectionId],
+    queryFn: async () => {
+      await ensureTransportReady(first!);
+      const firstAccounts = await getTransport(first!).getAccounts();
+      await ensureTransportReady(second!);
+      const secondAccounts = await getTransport(second!).getAccounts();
+      return { first: firstAccounts, second: secondAccounts };
+    },
+    enabled: !!first && !!second && firstConnectionId !== secondConnectionId,
+    retry: false,
+  });
+}
+
 /** Persisted items + summary for a preview/apply run. */
 export function useSyncRun(runId: string | null) {
   return useQuery({
