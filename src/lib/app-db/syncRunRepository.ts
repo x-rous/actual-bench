@@ -386,15 +386,19 @@ export type UpdateSyncFlowRunPatch = {
  * it over, or it was closed as abandoned. Writes without a token are not from an
  * apply and are not checked.
  */
-function assertApplyOwner(db: SqliteDatabase, runId: string, applyToken: string | null | undefined): void {
-  if (applyToken == null) return;
-  const owned = db
-    .prepare(
-      `SELECT 1 AS owned FROM sync_flow_runs
-       WHERE id = ? AND status = 'applying' AND json_extract(summary_json, '$.data.applyToken') = ?`
-    )
-    .get<{ owned: number }>(runId, applyToken);
-  if (!owned) throw new AppDbConflictError("This apply no longer owns the run; its write was refused.");
+/**
+ * The WHERE condition that limits a write to the apply that owns the run. A write
+ * with no token (not from an apply) is not limited. It sits in the UPDATE itself,
+ * so no other writer can take the run between the check and the write.
+ */
+const RUN_OWNED_BY = `(? IS NULL OR (status = 'applying' AND json_extract(summary_json, '$.data.applyToken') = ?))`;
+const ITEM_RUN_OWNED_BY = `(? IS NULL OR EXISTS (
+  SELECT 1 FROM sync_flow_runs owner
+  WHERE owner.id = sync_flow_run_items.run_id AND owner.status = 'applying' AND json_extract(owner.summary_json, '$.data.applyToken') = ?
+))`;
+
+function refuseStaleApply(changes: number, applyToken: string | null | undefined): void {
+  if (changes === 0 && applyToken != null) throw new AppDbConflictError("This apply no longer owns the run; its write was refused.");
 }
 
 export { ABANDONED_APPLY_MS };
@@ -475,28 +479,30 @@ export function updateSyncFlowRun(
 ): SyncFlowRun | null {
   const existing = getSyncFlowRun(db, runId);
   if (!existing) return null;
-  assertApplyOwner(db, runId, patch.applyToken);
 
   const summary = patch.summary === undefined ? existing.summary : normalizeEnvelope(patch.summary, "summary");
   const error = patch.error === undefined ? existing.error : normalizeOptionalEnvelope(patch.error, "error");
   const counts = patch.counts === undefined ? existing.counts : normalizeOptionalEnvelope(patch.counts, "counts");
 
-  db.prepare(
+  const changes = db.prepare(
     `UPDATE sync_flow_runs
      SET status = ?,
          finished_at = ?,
          summary_json = ?,
          error_json = ?,
          counts_json = ?
-     WHERE id = ?`
+     WHERE id = ? AND ${RUN_OWNED_BY}`
   ).run(
     patch.status ?? existing.status,
     patch.finishedAt === undefined ? existing.finishedAt : patch.finishedAt,
     stringifyEnvelope(summary),
     stringifyEnvelope(error),
     stringifyEnvelope(counts),
-    runId
-  );
+    runId,
+    patch.applyToken ?? null,
+    patch.applyToken ?? null
+  ).changes;
+  refuseStaleApply(changes, patch.applyToken);
 
   return getSyncFlowRun(db, runId);
 }
@@ -592,7 +598,6 @@ export function updateSyncFlowRunItem(
 ): SyncFlowRunItem | null {
   const existing = getSyncFlowRunItem(db, itemId);
   if (!existing) return null;
-  assertApplyOwner(db, existing.runId, patch.applyToken);
 
   const warnings = patch.warnings === undefined ? existing.warnings : normalizeOptionalEnvelope(patch.warnings, "warnings");
   const errors = patch.errors === undefined ? existing.errors : normalizeOptionalEnvelope(patch.errors, "errors");
@@ -603,7 +608,7 @@ export function updateSyncFlowRunItem(
       ? existing.plannedTargetPayload
       : normalizeOptionalEnvelope(patch.plannedTargetPayload, "plannedTargetPayload");
 
-  db.prepare(
+  const changes = db.prepare(
     `UPDATE sync_flow_run_items
      SET status = ?,
          message = ?,
@@ -616,7 +621,7 @@ export function updateSyncFlowRunItem(
          created_target_transaction_id = ?,
          created_target_marker = ?,
          updated_at = ?
-     WHERE id = ?`
+     WHERE id = ? AND ${ITEM_RUN_OWNED_BY}`
   ).run(
     patch.status ?? existing.status,
     patch.message === undefined ? existing.message : normalizeOptionalText(patch.message, "message"),
@@ -633,8 +638,11 @@ export function updateSyncFlowRunItem(
       ? existing.createdTargetMarker
       : normalizeOptionalText(patch.createdTargetMarker, "createdTargetMarker"),
     new Date().toISOString(),
-    itemId
-  );
+    itemId,
+    patch.applyToken ?? null,
+    patch.applyToken ?? null
+  ).changes;
+  refuseStaleApply(changes, patch.applyToken);
 
   return getSyncFlowRunItem(db, itemId);
 }

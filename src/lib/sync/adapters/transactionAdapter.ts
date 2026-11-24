@@ -153,7 +153,12 @@ async function updateSplit(
       let current = line;
       if (changed.length > 0) {
         const fresh = (await readLines()).get(line.id as string);
-        if (!fresh || fresh.amount !== line.amount || (fresh.notes ?? null) !== (line.notes ?? null)) {
+        if (
+          !fresh ||
+          fresh.amount !== line.amount ||
+          (fresh.notes ?? null) !== (line.notes ?? null) ||
+          (fresh.payeeId ?? null) !== (line.payeeId ?? null)
+        ) {
           throw new Error("A split line was edited outside sync during the update.");
         }
         if (shouldStop?.()) return false;
@@ -171,7 +176,9 @@ async function updateSplit(
       // If that read fails, the restore still runs with the categories read at the start.
       const now = changed.length > 0 ? await readLines().catch(() => new Map<string, SplitLine>()) : new Map<string, SplitLine>();
       for (const line of [...changed].reverse()) {
-        const categoryId = now.get(line.id as string)?.categoryId ?? line.categoryId;
+        // A category cleared meanwhile stays cleared; the start's applies only to a line not read back.
+        const current = now.get(line.id as string);
+        const categoryId = current ? current.categoryId : line.categoryId;
         await writeLine(transport, accountId, live.date, { ...line, categoryId }, { amount: line.amount, notes: line.notes });
       }
     } catch {
@@ -673,6 +680,9 @@ export const transactionAdapter: SyncKindAdapter = {
         // An unsupported surface: fall through to deleting one at a time.
       }
     }
+    // Set once a delete has been sent: from then on each row is read again (its
+    // day of the account) and checked just before its own delete.
+    let readIsOld = false;
     for (const input of toDelete) {
       if (!batched && options?.shouldStop?.()) {
         results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "Apply stopped before this row; not deleted." });
@@ -680,7 +690,27 @@ export const transactionAdapter: SyncKindAdapter = {
       }
       // Per-item try/catch so one failed delete doesn't discard earlier successes.
       try {
-        if (!batched) await transport.deleteTransactionForSync({ transactionId: input.targetId });
+        if (!batched) {
+          if (readIsOld) {
+            const date = (liveRows.get(input.targetId) as AdapterLiveTarget).date;
+            const current = (await readTargetRows(transport, config.targetAccountId, date)).get(input.targetId);
+            const problem = !current
+              ? "Target is gone or was moved to another date; not deleted."
+              : !targetMatchesBaseline(current, input.expectedTargetFingerprint as string)
+                ? "Target was edited outside sync; not deleted."
+                : current.transferId
+                  ? "Target is a linked transfer; not deleted."
+                  : options?.shouldStop?.()
+                    ? "Apply stopped before this row; not deleted."
+                    : null;
+            if (problem) {
+              results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: problem });
+              continue;
+            }
+          }
+          readIsOld = true;
+          await transport.deleteTransactionForSync({ transactionId: input.targetId });
+        }
         results.push({ itemId: input.itemId, outcome: "deleted", targetId: input.targetId });
       } catch (err) {
         results.push({ itemId: input.itemId, outcome: "failed", targetId: input.targetId, message: describeSyncError(err, "Delete failed.") });

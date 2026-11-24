@@ -159,6 +159,8 @@ describe("rate resolution", () => {
     const owner = claimSyncFlowRun(db, run.id, ["failed"])!;
     expect(() => updateSyncFlowRun(db, run.id, { status: "applied", applyToken: stale })).toThrow(AppDbConflictError);
     expect(() => updateSyncFlowRunItem(db, item.id, { status: "failed", applyToken: stale })).toThrow(AppDbConflictError);
+    // A refused write changes nothing.
+    expect(getSyncFlowRun(db, run.id)?.status).toBe("applying");
     expect(updateSyncFlowRunItem(db, item.id, { status: "applied", applyToken: owner })?.status).toBe("applied");
     expect(updateSyncFlowRun(db, run.id, { status: "applied", applyToken: owner })?.status).toBe("applied");
     // A finished run takes no more apply writes, even from its own claim.
@@ -279,6 +281,75 @@ describe("the target budget owns category and cleared state", () => {
     expect(result.outcome).toBe("updated");
     const l2 = (update.mock.calls as unknown as [{ transactionId: string; categoryId: string | null }][]).find(([input]) => input.transactionId === "l2")?.[0];
     expect(l2?.categoryId).toBe("mine");
+  });
+
+  it("stops a split update when a later line's payee is changed meanwhile", async () => {
+    const stored = [
+      { id: "l1", amount: -1000, notes: "a", payeeId: "p", categoryId: null as string | null },
+      { id: "l2", amount: -1500, notes: "b", payeeId: "p", categoryId: null as string | null },
+    ];
+    const row = () => ({ id: "T1", ...written, isParent: true, splitLines: stored.map((line) => ({ ...line })) });
+    const baseline = targetBaseline(row());
+    const update = jest.fn(async (input: { transactionId: string; amount?: number; notes?: string | null }) => {
+      const line = stored.find((l) => l.id === input.transactionId);
+      if (line) Object.assign(line, { amount: input.amount ?? line.amount, notes: input.notes ?? null });
+      // The owner gives l2 another payee while l1 is being written.
+      if (input.transactionId === "l1") stored[1].payeeId = "q";
+      return null;
+    });
+    const transport = { listTransactionsForSync: async () => [row()], updateTransactionForSync: update } as unknown as ActualBenchTransport;
+    const [result] = await adapter.updateBatch!(transport, flow(), [{
+      itemId: "i", targetId: "T1", expectedTargetFingerprint: baseline,
+      payload: { ...payload, subtransactions: [{ amount: -1100, notes: "a" }, { amount: -1400, notes: "b" }] },
+    }]);
+    expect(result.outcome).toBe("failed");
+    const ids = (update.mock.calls as unknown as [{ transactionId: string }][]).map(([input]) => input.transactionId);
+    expect(ids).not.toContain("l2");
+    expect(stored[0].amount).toBe(-1000);
+    expect(stored[1].payeeId).toBe("q");
+  });
+
+  it("keeps a category cleared meanwhile when it puts split lines back", async () => {
+    const stored = [
+      { id: "l1", amount: -1000, notes: "a", payeeId: "p", categoryId: "c1" as string | null },
+      { id: "l2", amount: -1500, notes: "b", payeeId: "p", categoryId: "c2" as string | null },
+    ];
+    const row = () => ({ id: "T1", ...written, isParent: true, splitLines: stored.map((line) => ({ ...line })) });
+    const baseline = targetBaseline(row());
+    const update = jest.fn(async (input: { transactionId: string }) => {
+      if (input.transactionId === "l2") {
+        // The owner clears l1's category, then the l2 write fails.
+        stored[0].categoryId = null;
+        throw new Error("boom");
+      }
+      return null;
+    });
+    const transport = { listTransactionsForSync: async () => [row()], updateTransactionForSync: update } as unknown as ActualBenchTransport;
+    const [result] = await adapter.updateBatch!(transport, flow(), [{
+      itemId: "i", targetId: "T1", expectedTargetFingerprint: baseline,
+      payload: { ...payload, subtransactions: [{ amount: -1100, notes: "a" }, { amount: -1400, notes: "b" }] },
+    }]);
+    expect(result.outcome).toBe("failed");
+    const l1Writes = (update.mock.calls as unknown as [{ transactionId: string; categoryId: string | null }][]).filter(([input]) => input.transactionId === "l1");
+    expect(l1Writes).toHaveLength(2);
+    expect(l1Writes[1][0].categoryId).toBeNull();
+  });
+
+  it("reads each target again before deleting it one at a time", async () => {
+    const list = jest.fn()
+      .mockResolvedValueOnce([{ id: "A", ...written }, { id: "B", ...written }])
+      .mockResolvedValue([{ id: "B", ...written, amount: -9999 }]);
+    const deleteTransactionForSync = jest.fn(async () => {});
+    const transport = { listTransactionsForSync: list, deleteTransactionForSync } as unknown as ActualBenchTransport;
+    const baseline = hashTargetFields(written);
+    const results = await adapter.deleteBatch!(transport, flow(), [
+      { itemId: "a", targetId: "A", expectedTargetFingerprint: baseline },
+      { itemId: "b", targetId: "B", expectedTargetFingerprint: baseline },
+    ]);
+    expect(results.map((r) => r.outcome)).toEqual(["deleted", "skipped"]);
+    expect(results[1].message).toMatch(/edited outside sync/);
+    expect(deleteTransactionForSync).toHaveBeenCalledTimes(1);
+    expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ startDate: written.date, endDate: written.date }));
   });
 
   it("stops inside a split as soon as the claim is lost", async () => {
@@ -666,6 +737,53 @@ describe("apply safety", () => {
     const result = await applySyncRun({ runId: "r", targetConnection: connection("T") }, { transport: { openTransport: async () => transport }, store: { ...store, updateRunStatus } });
     expect(result.status).toBe("applied");
     expect(updateRunStatus).toHaveBeenLastCalledWith("r", expect.objectContaining({ status: "applied", error: null }));
+  });
+
+  it("keeps the run appliable, with its error, when the target cannot be opened", async () => {
+    const saved = flow();
+    const { store, createTransactionsForSync } = harness(saved, { flowPlanHash: flowPlanHash(saved) });
+    const updateRunStatus = jest.fn(async () => {});
+    const result = await applySyncRun({ runId: "r", targetConnection: connection("T") }, {
+      transport: { openTransport: async () => { throw new Error("offline"); } },
+      store: { ...store, updateRunStatus },
+    });
+    expect(result.error?.code).toBe("target_open_failed");
+    expect(updateRunStatus).toHaveBeenLastCalledWith("r", {
+      status: "draft_preview",
+      finishedAt: null,
+      error: { version: 1, data: expect.objectContaining({ code: "target_open_failed" }) },
+    });
+    expect(createTransactionsForSync).not.toHaveBeenCalled();
+  });
+
+  it("lets a Retry only upload when the writes landed but their upload failed", async () => {
+    const saved = flow();
+    const { store, transport, createTransactionsForSync } = harness(saved, { flowPlanHash: flowPlanHash(saved) });
+    const sync = jest.fn(async () => {});
+    const browser = { ...transport, mode: "browser-api", sync } as unknown as ActualBenchTransport;
+    const updateRunStatus = jest.fn(async () => {});
+    const run = { ...(await store.loadRun("r"))!, status: "partial" as const, error: envelope({ code: "upload_failed", message: "offline" }) };
+    const result = await applySyncRun({ runId: "r", targetConnection: connection("T"), selection: { selection: "retry_failed" } }, {
+      transport: { openTransport: async () => browser },
+      store: { ...store, updateRunStatus, loadRun: async () => run, loadRunItems: async () => [{ ...item(), applyState: "applied" }] },
+    });
+    expect(result.status).toBe("applied");
+    expect(sync).toHaveBeenCalled();
+    expect(createTransactionsForSync).not.toHaveBeenCalled();
+    const last = (updateRunStatus.mock.calls as unknown as [string, Record<string, unknown>][]).at(-1)![1];
+    expect(last).toMatchObject({ status: "applied", error: null });
+    expect(last).not.toHaveProperty("counts");
+  });
+
+  it("still refuses an empty Retry when no upload is pending", async () => {
+    const saved = flow();
+    const { store, transport } = harness(saved, { flowPlanHash: flowPlanHash(saved) });
+    const run = { ...(await store.loadRun("r"))!, status: "partial" as const };
+    const result = await applySyncRun({ runId: "r", targetConnection: connection("T"), selection: { selection: "retry_failed" } }, {
+      transport: { openTransport: async () => transport },
+      store: { ...store, loadRun: async () => run, loadRunItems: async () => [{ ...item(), applyState: "applied" }] },
+    });
+    expect(result.error?.code).toBe("no_eligible_items");
   });
 
   it("fails a re-linked row whose rate record cannot be saved, without writing it again", async () => {

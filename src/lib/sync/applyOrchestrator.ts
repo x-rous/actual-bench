@@ -342,8 +342,16 @@ export async function applySyncRun(
         code: "target_open_failed",
         message: describe(err, "Failed to open the target budget for apply."),
       };
-      await deps.store.updateRunStatus(runId, { status: "failed", finishedAt: nowIso() });
-      await safePersistFailure(deps.store, runId, error);
+      // Nothing was written, so the run goes back to where it was and the same
+      // selection can be applied again. The error is stored in the same write. A
+      // pending upload keeps its own error, so the next Retry still uploads.
+      await deps.store
+        .updateRunStatus(runId, {
+          status: prepared.runStatus,
+          finishedAt: null,
+          ...(prepared.uploadPending ? {} : { error: { version: 1 as const, data: { code: error.code, message: error.message } } }),
+        })
+        .catch(() => undefined);
       return { status: "failed", runId, error, counts, items };
     }
 
@@ -415,7 +423,8 @@ export async function applySyncRun(
       await deps.store.updateRunStatus(runId, {
         status,
         finishedAt: nowIso(),
-        counts: { version: 1, data: applyCountsToJson(counts) },
+        // An upload-only Retry writes no rows; the run keeps the counts of the attempt that did.
+        ...(eligible.length > 0 ? { counts: { version: 1 as const, data: applyCountsToJson(counts) } } : {}),
         // A successful Retry clears the error an earlier attempt left.
         error: uploadError ? { version: 1 as const, data: { code: uploadError.code, message: uploadError.message } } : null,
       });
@@ -666,7 +675,9 @@ async function validateAndPrepare(
     }
   }
 
-  if (eligible.length === 0) {
+  const uploadPending = (run.error?.data as { code?: string } | undefined)?.code === "upload_failed";
+  // A Retry with nothing failed may still have an earlier attempt's writes to upload.
+  if (eligible.length === 0 && !(isRetry && uploadPending)) {
     throw new ApplyPreflightError("no_eligible_items", "No eligible create or repair candidates were selected.");
   }
 
@@ -711,7 +722,7 @@ async function validateAndPrepare(
     adapter,
     eligible: applyAmountOverrides(eligible, input.amountOverrides),
     runStatus: run.status as PreparedApply["runStatus"],
-    uploadPending: (run.error?.data as { code?: string } | undefined)?.code === "upload_failed",
+    uploadPending,
   };
 }
 
