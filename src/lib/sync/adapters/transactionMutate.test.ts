@@ -33,6 +33,7 @@ function makeTransport(overrides: Partial<ActualBenchTransport> = {}) {
   const listTransactionsForSync = jest.fn(async () => [{ id: "tgt-1", ...current }]);
   const transport = {
     listTransactionsForSync,
+    readTargetTransactionForSync: jest.fn(async () => current),
     updateTransactionForSync,
     deleteTransactionForSync,
     ...overrides,

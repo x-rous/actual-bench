@@ -43,6 +43,7 @@ export function createAppDbApplyStore(db: SqliteDatabase): ApplyStore {
         status: patch.status,
         finishedAt: patch.finishedAt,
         counts: patch.counts,
+        ...(patch.error ? { error: patch.error } : {}),
       });
     },
     updateRunItemStatus: async (itemId, patch) => {

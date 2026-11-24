@@ -47,7 +47,9 @@ export type SyncPlanFlag =
   /** A transfer in the source budget, created without a transfer payee so it cannot create a second leg. */
   | "source_transfer"
   /** A split line's earlier keys point at different target rows; held for review. */
-  | "ambiguous_split_identity";
+  | "ambiguous_split_identity"
+  /** Sends a target-budget category back to this source row. */
+  | "category_return";
 
 /** The transaction the engine would create on the target (create-only, no splits). */
 export type PlannedTargetPayload = {
@@ -77,6 +79,8 @@ export type PlannedTargetPayload = {
   fx?: PlannedFx | null;
   /** An update leaves the target's payee alone: this row is a transfer in the source. */
   keepTargetPayee?: boolean;
+  /** For a category return: the target row the mapping must still point at. */
+  mappedTargetId?: string;
 };
 
 /** FX provenance carried on a planned payload; the source layer stays decimal-string decoupled. */
@@ -194,6 +198,8 @@ export type SyncTargetTransactionForDedupe = {
   amount: number;
   payeeName: string | null;
   categoryId: string | null;
+  /** A split's line amounts, in order. Absent for a row that is not a split. */
+  splitAmounts?: number[];
 };
 
 export type SyncPlannerTargetSnapshot = {

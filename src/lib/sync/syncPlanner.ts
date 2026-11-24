@@ -276,12 +276,15 @@ function fxRateChangeUpdate(
   const { config } = input;
   if (!config.fxUpdateOnRateChange || !fxRate || !fxInfo || !mapping.targetTransactionId) return null;
 
-  const directedParent = config.amountDirection === "same" ? item.amount : -item.amount;
-  const currentConverted = convertMinorUnits(directedParent, fxRate);
   const targetTxn = context.targetById.get(mapping.targetTransactionId);
-  if (!targetTxn || targetTxn.amount === currentConverted) return null;
-
+  if (!targetTxn) return null;
   const { payload: built } = buildCreatePayload(item, input, fxInfo);
+  // A split's total can round to the same amount while its lines move.
+  const lines = built.subtransactions?.map((line) => line.amount);
+  const linesDiffer = !!lines && !!targetTxn.splitAmounts &&
+    lines.length === targetTxn.splitAmounts.length &&
+    lines.some((amount, index) => amount !== targetTxn.splitAmounts?.[index]);
+  if (targetTxn.amount === built.amount && !linesDiffer) return null;
   const payload = { ...built, keepTargetPayee: !!item.isTransfer };
   return baseItem(item, {
     classification: "source_changed_since_sync",

@@ -15,6 +15,13 @@ export type CategoryReturnRow = {
   sourceItemKey: string;
   /** The source transaction or split line to write. */
   sourceId: string;
+  sourceTransactionId: string;
+  sourceSplitId: string | null;
+  /** The target row whose category this came from. */
+  mappedTargetId: string;
+  /** The source row's fingerprint when planned. */
+  fingerprint: string;
+  notes: string | null;
   date: string;
   amount: number;
   payeeId: string | null;
@@ -76,6 +83,11 @@ export function planCategoryReturn(input: {
       mappingId: mapping.id,
       sourceItemKey: mapping.sourceItemKey,
       sourceId: item.sourceSplitId ?? item.sourceTransactionId,
+      sourceTransactionId: item.sourceTransactionId,
+      sourceSplitId: item.sourceSplitId,
+      mappedTargetId: mapping.targetTransactionId,
+      fingerprint: item.fingerprint,
+      notes: item.notes,
       date: item.date,
       amount: item.amount,
       payeeId: item.payeeId,

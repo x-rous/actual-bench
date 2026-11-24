@@ -59,8 +59,13 @@ export type ApplyStore = {
   heartbeatRun?(runId: string, token: string): Promise<boolean>;
   /** Save payloads the user changed, all or none, so a retry writes the same amounts. */
   saveRunItemPayloads?(payloads: { itemId: string; payload: JsonEnvelope }[]): Promise<void>;
-  /** Write anything buffered and return the items whose mapping conflicted. */
+  /** Write anything buffered and return the items whose records could not be saved. */
   flushWrites?(): Promise<string[]>;
+  /**
+   * After a lost claim: save the mappings and FX records of rows already written,
+   * but no run-item state, which may now belong to the apply that holds the claim.
+   */
+  flushRecords?(): Promise<void>;
   loadRun(runId: string): Promise<SyncFlowRun | null>;
   loadRunItems(runId: string): Promise<SyncFlowRunItem[]>;
   loadFlow(flowId: string): Promise<SyncFlow | null>;
@@ -72,9 +77,10 @@ export type ApplyStore = {
   updateRunStatus(runId: string, patch: RunStatusPatch): Promise<void>;
   updateRunItemStatus(itemId: string, patch: RunItemStatusPatch): Promise<void>;
   persistApplyFailure(runId: string, error: ApplyError): Promise<void>;
-  /** Persist the immutable FX snapshot for a created transaction (RD-056). Best-
-   * effort audit; a failure here never fails the create. Absent when FX is off. */
-  persistFxSnapshot?(input: FxSnapshotInput): Promise<void>;
+  /** Persist the FX snapshot for a written transaction (RD-056). It holds the rate
+   * later conversions keep, so a failure fails the item and Retry saves it. Absent
+   * when FX is off. `itemId` is the run item it belongs to. */
+  persistFxSnapshot?(input: FxSnapshotInput, itemId?: string): Promise<void>;
   /** Update an FX snapshot's rate/amount after a confirmed rate-change re-sync (RD-056). */
   updateFxSnapshot?(input: FxSnapshotUpdate): Promise<void>;
 };
@@ -112,6 +118,7 @@ export type RunStatusPatch = {
   status: "draft_preview" | "applying" | "applied" | "partial" | "failed" | "no_changes";
   finishedAt?: string | null;
   counts?: JsonEnvelope;
+  error?: JsonEnvelope;
 };
 
 export type RunItemStatusPatch = {
@@ -166,7 +173,8 @@ export type ApplyErrorCode =
   | "ineligible_selection"
   | "no_eligible_items"
   | "target_open_failed"
-  | "finalize_failed";
+  | "finalize_failed"
+  | "upload_failed";
 
 export type ApplyError = { code: ApplyErrorCode; message: string };
 
@@ -271,9 +279,12 @@ export async function applySyncRun(
   const tracksClaim = !!token && !!deps.store.heartbeatRun;
   const heartbeat = tracksClaim
     ? setInterval(() => {
+        // Counted from the send: the server renewed no later than this, so a slow
+        // answer can never push this apply's deadline past the server's lease.
+        const sentAt = Date.now();
         void deps.store.heartbeatRun!(runId, token as string)
           .then((alive) => {
-            if (alive) lastRenewedAt = Date.now();
+            if (alive) lastRenewedAt = Math.max(lastRenewedAt, sentAt);
             else claimLost = true;
           })
           .catch(() => undefined);
@@ -281,13 +292,19 @@ export async function applySyncRun(
     : null;
   (heartbeat as { unref?: () => void } | null)?.unref?.();
   const isClaimLost = () => claimLost || (tracksClaim && Date.now() - lastRenewedAt > APPLY_STOP_AFTER_MS);
-  const lostClaim = (): ApplyRunResult => ({
-    status: counts.applied + counts.repaired + counts.updated + counts.deleted > 0 ? "partial" : "failed",
-    runId,
-    error: { code: "run_not_applyable", message: "This apply lost its claim on the run and stopped. Run a new preview." },
-    counts,
-    items,
-  });
+  let openTarget: ActualBenchTransport | null = null;
+  const lostClaim = async (): Promise<ApplyRunResult> => {
+    // What was written still needs its records, or it would exist with no mapping.
+    if (openTarget?.mode === "browser-api") await openTarget.sync().catch(() => undefined);
+    await deps.store.flushRecords?.().catch(() => undefined);
+    return {
+      status: counts.applied + counts.repaired + counts.updated + counts.deleted > 0 ? "partial" : "failed",
+      runId,
+      error: { code: "run_not_applyable", message: "This apply lost its claim on the run and stopped. Run a new preview." },
+      counts,
+      items,
+    };
+  };
 
   try {
     // Saved together before any write, so a retry after a failure uses the same
@@ -314,6 +331,7 @@ export async function applySyncRun(
     let liveTargets: AdapterApplyContext["liveTargets"];
     try {
       transport = await deps.transport.openTransport(input.targetConnection);
+      openTarget = transport;
       // Adapter-specific apply prep (e.g. the target marker index for transactions).
       ({ markerIndex, liveTargets } = await adapter.prepareApply(transport, flow));
     } catch (err) {
@@ -355,22 +373,36 @@ export async function applySyncRun(
     if (isClaimLost()) return lostClaim();
 
     // Upload now rather than whenever the budget is next closed: a tab closed
-    // after apply must not leave these writes only in its local copy.
+    // after apply must not leave these writes only in its local copy. One retry,
+    // then the run says so instead of reporting success.
+    let uploadError: ApplyError | null = null;
     if (counts.applied + counts.updated + counts.deleted > 0 && transport.mode === "browser-api") {
-      await transport.sync().catch(() => undefined);
+      try {
+        await transport.sync().catch(() => transport.sync());
+      } catch (err) {
+        uploadError = {
+          code: "upload_failed",
+          message: `The changes are saved in this browser but did not reach the Actual server: ${describe(err, "the upload failed")}. Keep this tab open and sync the budget before closing it.`,
+        };
+      }
     }
 
     // Per-item mappings/statuses are already persisted; a failure to write the
     // final run summary must not throw away the completed work or leave the run
     // stuck "applying" without explanation. Record the finalize error best-effort.
-    let status = deriveRunStatus(counts);
+    const finalStatus = () => {
+      const derived = deriveRunStatus(counts);
+      return uploadError && derived === "applied" ? "partial" : derived;
+    };
+    let status = finalStatus();
     try {
       for (const itemId of (await deps.store.flushWrites?.()) ?? []) failConflictedResult(items, counts, itemId);
-      status = deriveRunStatus(counts);
+      status = finalStatus();
       await deps.store.updateRunStatus(runId, {
         status,
         finishedAt: nowIso(),
         counts: { version: 1, data: applyCountsToJson(counts) },
+        ...(uploadError ? { error: { version: 1 as const, data: { code: uploadError.code, message: uploadError.message } } } : {}),
       });
     } catch (err) {
       const error: ApplyError = {
@@ -381,6 +413,7 @@ export async function applySyncRun(
       return { status: status === "applied" ? "partial" : status, runId, error, counts, items };
     }
 
+    if (uploadError) return { status, runId, error: uploadError, counts, items };
     return { status, runId, counts, items };
   } finally {
     if (heartbeat) clearInterval(heartbeat);
@@ -533,7 +566,8 @@ async function validateAndPrepare(
   const flow = await store.loadFlow(run.flowId);
   if (!flow) throw new ApplyPreflightError("flow_not_found", `Flow ${run.flowId} was not found.`);
 
-  const adapter = getSyncKindAdapter(flow.flowType);
+  // A run may be of another kind than its flow, such as sending categories back.
+  const adapter = getSyncKindAdapter(run.summary?.data?.adapterKind === "category_return" ? "category_return" : flow.flowType);
   if (!adapter) {
     throw new ApplyPreflightError("route_mismatch", `Unsupported sync type: ${flow.flowType}.`);
   }
@@ -549,7 +583,9 @@ async function validateAndPrepare(
 
   // Match the target on its budget id (stable across mode/URL), not the full
   // fingerprint, so a flow built in one mode also applies in the other.
-  if (config.targetBudgetId && !connectionMatchesBudget(input.targetConnection, config.targetBudgetId)) {
+  const writesToSource = adapter.writeSide === "source";
+  const writeBudgetId = writesToSource ? config.sourceBudgetId : config.targetBudgetId;
+  if (writeBudgetId && !connectionMatchesBudget(input.targetConnection, writeBudgetId)) {
     throw new ApplyPreflightError("route_mismatch", "Target connection is not the budget this flow was saved for.");
   }
 
@@ -622,7 +658,8 @@ async function validateAndPrepare(
   const willCreate = eligible.some((e) => e.mode === "create" || e.mode === "recreate");
 
   // A planned row must still point at the flow's target account.
-  if (config.targetAccountId && eligible.some((e) => typeof e.payloadJson?.accountId === "string" && e.payloadJson.accountId !== config.targetAccountId)) {
+  const writeAccountId = writesToSource ? config.sourceAccountId : config.targetAccountId;
+  if (writeAccountId && eligible.some((e) => typeof e.payloadJson?.accountId === "string" && e.payloadJson.accountId !== writeAccountId)) {
     throw new ApplyPreflightError("preview_stale", "This preview was planned for a different target account. Run a new preview.");
   }
   try {
@@ -769,10 +806,14 @@ async function applyCreateBatch(
           ? existingMapping
           : null;
       if (existingMapping && !replaces) {
-        // A retry after the row was written but its charged rate was not saved.
-        if (existingMapping.status === "active" && existingMapping.targetTransactionId && readFx(payloadJson)?.isManual) {
-          assertTargetHoldsAmount(ctx, payloadJson, existingMapping.targetTransactionId);
-          await saveFxSnapshot(store, payloadJson, existingMapping.targetTransactionId);
+        // A retry after the row was written but its rate record was not saved.
+        if (existingMapping.status === "active" && existingMapping.targetTransactionId && readFx(payloadJson)) {
+          if (readFx(payloadJson)?.isManual) {
+            assertTargetHoldsAmount(ctx, payloadJson, existingMapping.targetTransactionId);
+            await saveFxSnapshot(store, payloadJson, existingMapping.targetTransactionId, item.id);
+          } else {
+            await recordHeldFx(store, payloadJson, existingMapping.targetTransactionId, ctx.liveTargets?.get(existingMapping.targetTransactionId), item.id);
+          }
         }
         await store.updateRunItemStatus(item.id, {
           status: "skipped",
@@ -789,7 +830,7 @@ async function applyCreateBatch(
         const hitBaseline = liveHit ? targetBaseline(liveHit) : null;
         if (replaces) await repointMapping(store, replaces, item, markerHit, hitBaseline);
         else await recordMapping(store, ctx.config, item, markerHit, marker, hitBaseline);
-        if (readFx(payloadJson)?.isManual) await saveFxSnapshot(store, payloadJson, markerHit);
+        if (readFx(payloadJson)?.isManual) await saveFxSnapshot(store, payloadJson, markerHit, item.id);
         else await restoreFxRecord(store, payloadJson, markerHit, liveHit);
         await store.updateRunItemStatus(item.id, {
           status: "skipped",
@@ -866,15 +907,12 @@ async function applyCreateBatch(
       // manual edit before overwriting (RD-057 §4).
       if (replaces) await repointMapping(store, replaces, item, targetId, res?.targetFingerprint ?? null);
       else await recordMapping(store, ctx.config, item, targetId, marker, res?.targetFingerprint ?? null);
-      // RD-056: record the FX snapshot for a converted create. An ordinary one is
-      // audit and never fails the create. A rate the user set exists nowhere else,
+      // RD-056: record the FX snapshot. It holds the rate later conversions keep,
       // so losing it fails the item, and Retry saves it without writing again.
       try {
-        await saveFxSnapshot(store, payloadJson, targetId);
+        await saveFxSnapshot(store, payloadJson, targetId, item.id);
       } catch (err) {
-        if (readFx(payloadJson)?.isManual) {
-          throw new Error(`The transaction was written, but its charged rate could not be saved: ${describe(err, "unknown error")}`);
-        }
+        throw new Error(`The transaction was written, but its exchange rate could not be saved: ${describe(err, "unknown error")}`);
       }
     } catch (err) {
       await store.updateRunItemStatus(item.id, {
@@ -933,7 +971,10 @@ async function applyMutateBatch(
     const mapping = await store.getMappingBySource(ctx.config.flowId, item.sourceItemKey ?? "");
     // The user may have stopped syncing this row after the preview, or it may now
     // point at another target. Either way this preview no longer speaks for it.
-    if (mapping?.status !== "active" || mapping.targetTransactionId !== eligible.targetTransactionId) {
+    const previewedTarget = ctx.adapter.writeSide === "source"
+      ? (eligible.payloadJson?.mappedTargetId as string | undefined)
+      : eligible.targetTransactionId;
+    if (mapping?.status !== "active" || mapping.targetTransactionId !== previewedTarget) {
       const message = "No longer synced to the previewed target; left unchanged.";
       await store.updateRunItemStatus(item.id, { status: "skipped", applyState: "skipped", message });
       results.push({ itemId: item.id, sourceItemKey: item.sourceItemKey ?? "", outcome: "skipped", targetTransactionId: mapping?.targetTransactionId ?? null, message });
@@ -945,6 +986,7 @@ async function applyMutateBatch(
       targetId: eligible.targetTransactionId ?? "",
       expectedTargetFingerprint: mapping?.targetFingerprint ?? null,
       payload: eligible.payloadJson ?? undefined,
+      sourceItemKey: item.sourceItemKey ?? undefined,
     });
   }
 
@@ -995,8 +1037,10 @@ async function applyMutateBatch(
       if (mode === "update") {
         if (mapping) {
           await store.updateMapping(mapping.id, {
-            sourceFingerprint: item.sourceFingerprint ?? mapping.sourceFingerprint,
-            targetFingerprint: res.targetFingerprint ?? null,
+            ...(res.mappingPatch ?? {
+              sourceFingerprint: item.sourceFingerprint ?? mapping.sourceFingerprint,
+              targetFingerprint: res.targetFingerprint ?? null,
+            }),
             lastAppliedAt: nowIso(),
           });
         }
@@ -1004,27 +1048,25 @@ async function applyMutateBatch(
         // so the audit stays consistent with the rewritten target amount.
         const fx = (item.plannedTargetPayload?.data as { fx?: PlannedFx | null; amount?: number } | undefined)?.fx;
         if (fx && res.targetId && store.updateFxSnapshot) {
-          try {
-            await store.updateFxSnapshot({
-              transactionId: res.targetId,
-              fxRateId: fx.fxRateId,
-              sourceAmount: fx.sourceAmount,
-              isManual: fx.isManual === true,
-              appliedRate: fx.rate,
-              convertedAmount: (item.plannedTargetPayload?.data as { amount?: number }).amount ?? 0,
-              requestedDate: fx.requestedDate,
-              effectiveDate: fx.effectiveDate,
-              source: fx.source,
-              provider: fx.provider,
-            });
-          } catch {
-            // best-effort audit
-          }
+          // The rate later conversions keep. If this fails the item fails too, and a
+          // retry repeats the same write and saves it.
+          await store.updateFxSnapshot({
+            transactionId: res.targetId,
+            fxRateId: fx.fxRateId,
+            sourceAmount: fx.sourceAmount,
+            isManual: fx.isManual === true,
+            appliedRate: fx.rate,
+            convertedAmount: (item.plannedTargetPayload?.data as { amount?: number }).amount ?? 0,
+            requestedDate: fx.requestedDate,
+            effectiveDate: fx.effectiveDate,
+            source: fx.source,
+            provider: fx.provider,
+          });
         }
         await store.updateRunItemStatus(item.id, {
           status: "updated",
           applyState: "applied",
-          message: fx ? "Target amount updated for the corrected FX rate." : "Target updated to match the changed source.",
+          message: res.message ?? (fx ? "Target amount updated for the corrected FX rate." : "Target updated to match the changed source."),
           createdTargetTransactionId: res.targetId,
           targetItemRef: { version: 1, data: { targetTransactionId: res.targetId } },
         });
@@ -1109,17 +1151,24 @@ async function restoreFxRecord(
   targetId: string,
   live: { amount: number } | undefined
 ): Promise<void> {
+  await recordHeldFx(store, payload, targetId, live).catch(() => undefined);
+}
+
+/** Save the FX record for what the row holds now. Throws when the save fails. */
+async function recordHeldFx(
+  store: ApplyStore,
+  payload: JsonObject | null,
+  targetId: string,
+  live: { amount: number } | undefined,
+  itemId?: string
+): Promise<void> {
   const fx = payload ? readFx(payload) : null;
   if (!payload || !fx || !live || !store.persistFxSnapshot) return;
-  try {
-    if (live.amount === (payload as { amount?: number }).amount) {
-      await saveFxSnapshot(store, payload, targetId);
-    } else if (live.amount !== 0 && fx.sourceAmount !== 0) {
-      const held: PlannedFx = { ...fx, rate: impliedRate(fx.sourceAmount, live.amount), source: "manual", provider: null, fxRateId: null, isManual: true };
-      await saveFxSnapshot(store, { ...payload, amount: live.amount, fx: held } as unknown as JsonObject, targetId);
-    }
-  } catch {
-    // best-effort audit
+  if (live.amount === (payload as { amount?: number }).amount) {
+    await saveFxSnapshot(store, payload, targetId, itemId);
+  } else if (live.amount !== 0 && fx.sourceAmount !== 0) {
+    const held: PlannedFx = { ...fx, rate: impliedRate(fx.sourceAmount, live.amount), source: "manual", provider: null, fxRateId: null, isManual: true };
+    await saveFxSnapshot(store, { ...payload, amount: live.amount, fx: held } as unknown as JsonObject, targetId, itemId);
   }
 }
 
@@ -1128,7 +1177,7 @@ function readFx(payload: JsonObject): PlannedFx | null {
 }
 
 /** Record the FX snapshot for a target row, when the payload was converted. */
-async function saveFxSnapshot(store: ApplyStore, payload: JsonObject, targetId: string): Promise<void> {
+async function saveFxSnapshot(store: ApplyStore, payload: JsonObject, targetId: string, itemId?: string): Promise<void> {
   const fx = readFx(payload);
   if (!fx || !store.persistFxSnapshot) return;
   await store.persistFxSnapshot({
@@ -1144,7 +1193,7 @@ async function saveFxSnapshot(store: ApplyStore, payload: JsonObject, targetId: 
     source: fx.source,
     provider: fx.provider,
     isManual: fx.isManual === true,
-  });
+  }, itemId);
 }
 
 /** Point an existing mapping at the row that replaced its deleted target. */
@@ -1326,7 +1375,7 @@ function failConflictedResult(items: ApplyItemResult[], counts: ApplyCounts, ite
   else if (result.outcome === "skipped") counts.skipped -= 1;
   counts.failed += 1;
   result.outcome = "failed";
-  result.message = "Already linked to a different target transaction.";
+  result.message = "Written, but its link or exchange rate could not be recorded.";
 }
 
 function deriveRunStatus(counts: ApplyCounts): "applied" | "partial" | "failed" {

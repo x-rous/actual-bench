@@ -72,37 +72,43 @@ function applyStore(): ApplyStore {
   // deferred flush cannot cause duplicates even if the tab closes mid-run.
   const pendingMappings: SyncMappingInput[] = [];
   const pendingItemPatches: { itemId: string; patch: RunItemStatusPatch }[] = [];
-  const pendingFxSnapshots: FxSnapshotInput[] = [];
-  // A mapping is buffered with the run item it belongs to, so a conflict the
-  // server reports later can fail that item and leave the others applied.
+  const pendingFxSnapshots: { input: FxSnapshotInput; itemId?: string }[] = [];
+  // Records are buffered with the run item they belong to, so one the server could
+  // not save can fail that item and leave the others applied.
   const itemByMappingKey = new Map<string, string>();
-  const conflictedItems = new Set<string>();
-  const conflictPatch: RunItemStatusPatch = {
-    status: "failed",
-    applyState: "failed",
-    message: "This item is already linked to a different target transaction. Check the target account for a duplicate.",
-    errors: { version: 1, data: { code: "mapping_conflict" } },
+  const failedItems = new Map<string, RunItemStatusPatch>();
+  const failItem = (itemId: string | undefined, code: string, message: string) => {
+    if (!itemId) return;
+    const patch: RunItemStatusPatch = { status: "failed", applyState: "failed", message, errors: { version: 1, data: { code } } };
+    failedItems.set(itemId, patch);
+    pendingItemPatches.push({ itemId, patch });
   };
 
-  async function flush(): Promise<void> {
+  /** Mappings first, then FX records; run-item state unless the claim was lost. */
+  async function flush(options: { items: boolean } = { items: true }): Promise<void> {
     if (pendingMappings.length > 0) {
       const { conflicts } = await api.createMappings(pendingMappings);
       pendingMappings.length = 0;
       for (const key of conflicts ?? []) {
-        const itemId = itemByMappingKey.get(key);
-        if (!itemId) continue;
-        conflictedItems.add(itemId);
-        pendingItemPatches.push({ itemId, patch: conflictPatch });
+        failItem(itemByMappingKey.get(key), "mapping_conflict", "This item is already linked to a different target transaction. Check the target account for a duplicate.");
       }
+    }
+    if (pendingFxSnapshots.length > 0) {
+      const batch = pendingFxSnapshots.splice(0);
+      const snapshots = batch.map((entry) => entry.input);
+      // The record of the rate these rows keep. If it cannot be saved the item
+      // fails, and Retry saves it without writing the transaction again.
+      await api.persistFxSnapshots(snapshots).catch(() => api.persistFxSnapshots(snapshots)).catch(() => {
+        for (const { itemId } of batch) failItem(itemId, "fx_record_failed", "The transaction was written, but its exchange rate could not be saved. Retry to save it.");
+      });
+    }
+    if (!options.items) {
+      pendingItemPatches.length = 0;
+      return;
     }
     if (pendingItemPatches.length > 0) {
       await api.updateRunItems(pendingItemPatches);
       pendingItemPatches.length = 0;
-    }
-    // Audit only: a failure here must not fail the run or block the writes above.
-    if (pendingFxSnapshots.length > 0) {
-      const snapshots = pendingFxSnapshots.splice(0);
-      await api.persistFxSnapshots(snapshots).catch(() => undefined);
     }
   }
 
@@ -115,8 +121,9 @@ function applyStore(): ApplyStore {
     },
     flushWrites: async () => {
       await flush();
-      return [...conflictedItems];
+      return [...failedItems.keys()];
     },
+    flushRecords: () => flush({ items: false }),
     loadRun: async (runId) => (await api.getRun(runId)).run,
     loadRunItems: async (runId) => (await api.getRun(runId)).items,
     loadFlow: async (flowId) => (await api.getFlow(flowId)).flow,
@@ -138,10 +145,10 @@ function applyStore(): ApplyStore {
       // A terminal status marks the end of the run: flush buffered item writes
       // first so the finalized run reflects them, then update the run itself.
       if (patch.status !== "applying") await flush();
-      await api.updateRun(runId, { status: patch.status, finishedAt: patch.finishedAt, counts: patch.counts });
+      await api.updateRun(runId, { status: patch.status, finishedAt: patch.finishedAt, counts: patch.counts, ...(patch.error ? { error: patch.error } : {}) });
     },
     updateRunItemStatus: async (itemId, patch) => {
-      pendingItemPatches.push({ itemId, patch: conflictedItems.has(itemId) ? conflictPatch : patch });
+      pendingItemPatches.push({ itemId, patch: failedItems.get(itemId) ?? patch });
     },
     persistApplyFailure: async (runId, error) => {
       // Persist whatever succeeded before the failure, then record the error.
@@ -152,11 +159,10 @@ function applyStore(): ApplyStore {
         error: { version: 1, data: { code: error.code, message: error.message } },
       });
     },
-    persistFxSnapshot: async (input) => {
-      // A rate the user set exists nowhere else, so it is written now, and a
-      // failure reaches the item. An ordinary snapshot is audit and can wait.
+    persistFxSnapshot: async (input, itemId) => {
+      // A rate the user set is written now. Others go in one batch at the end.
       if (!input.isManual) {
-        pendingFxSnapshots.push(input);
+        pendingFxSnapshots.push({ input, itemId });
         return;
       }
       try {
@@ -195,6 +201,36 @@ export function runClientApply(input: {
 }): Promise<ApplyRunResult> {
   return applySyncRun(
     { runId: input.runId, targetConnection: input.targetConnection, selection: input.selection, amountOverrides: input.amountOverrides },
+    { transport: browserTransportProvider, store: applyStore() }
+  );
+}
+
+/**
+ * Send categories set in the target budget back to empty source rows, through the
+ * same preview and apply as any other sync. It writes to the flow's source budget.
+ */
+export async function runClientCategoryReturn(input: {
+  flowId: string;
+  sourceConnection: ConnectionInstance;
+  targetConnection: ConnectionInstance;
+}): Promise<ApplyRunResult | null> {
+  const preview = await runLiveDryRunPreview(
+    {
+      flowId: input.flowId,
+      context: { sourceConnection: input.sourceConnection, targetConnection: input.targetConnection },
+      allowDisabled: true,
+      adapterKind: "category_return",
+    },
+    { transport: browserTransportProvider, store: previewStore() }
+  );
+  if (preview.status !== "draft_preview") throw new Error(preview.error.message);
+  const selectedItemIds = preview.items.filter((item) => item.plannedAction === "update").map((item) => item.id);
+  if (selectedItemIds.length === 0) {
+    await api.updateRun(preview.runId, { status: "no_changes", finishedAt: new Date().toISOString() });
+    return null;
+  }
+  return applySyncRun(
+    { runId: preview.runId, targetConnection: input.sourceConnection, selection: { selectedItemIds } },
     { transport: browserTransportProvider, store: applyStore() }
   );
 }

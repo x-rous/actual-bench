@@ -101,31 +101,62 @@ async function readTargetRows(
 
 type PlannedLine = { amount: number; notes: string | null };
 
+const writeLine = (
+  transport: ActualBenchTransport,
+  accountId: string,
+  date: string,
+  line: NonNullable<AdapterLiveTarget["splitLines"]>[number],
+  next: PlannedLine
+) => transport.updateTransactionForSync({
+  transactionId: line.id as string,
+  accountId,
+  date,
+  amount: next.amount,
+  payeeId: line.payeeId,
+  categoryId: line.categoryId,
+  notes: next.notes ?? null,
+  returnApplied: false,
+});
+
 /**
- * Rewrite a grouped split's lines, each on the line itself. Actual gives a line
- * its parent's payee and category when an update leaves them out, so every write
- * names the line's own. The parent's amount follows last, once the lines add up.
+ * Rewrite a grouped split, each line on the line itself. Actual gives a line its
+ * parent's payee and category when an update leaves them out, so every write names
+ * the line's own. The parent follows last, once the lines add up.
+ *
+ * A failed write puts the lines already changed back, so a retry does not take
+ * this sync's own half-finished work for an outside edit. Returns false when the
+ * apply lost its claim part-way: another writer may own the row, so it stops there.
  */
-async function updateSplitLines(
+async function updateSplit(
   transport: ActualBenchTransport,
   accountId: string,
   date: string,
   live: AdapterLiveTarget,
-  planned: PlannedLine[]
-): Promise<void> {
-  for (const [index, line] of (live.splitLines ?? []).entries()) {
-    const next = planned[index];
-    if (line.amount === next.amount && (line.notes ?? null) === (next.notes ?? null)) continue;
-    await transport.updateTransactionForSync({
-      transactionId: line.id as string,
-      accountId,
-      date,
-      amount: next.amount,
-      payeeId: line.payeeId,
-      categoryId: line.categoryId,
-      notes: next.notes ?? null,
-      returnApplied: false,
-    });
+  planned: PlannedLine[],
+  writeParent: () => Promise<unknown>,
+  shouldStop?: () => boolean
+): Promise<boolean> {
+  const changed: NonNullable<AdapterLiveTarget["splitLines"]> = [];
+  try {
+    for (const [index, line] of (live.splitLines ?? []).entries()) {
+      const next = planned[index];
+      if (line.amount === next.amount && (line.notes ?? null) === (next.notes ?? null)) continue;
+      if (shouldStop?.()) return false;
+      await writeLine(transport, accountId, date, line, next);
+      changed.push(line);
+    }
+    if (shouldStop?.()) return false;
+    await writeParent();
+    return true;
+  } catch (err) {
+    try {
+      for (const line of [...changed].reverse()) {
+        await writeLine(transport, accountId, live.date, line, { amount: line.amount, notes: line.notes });
+      }
+    } catch {
+      throw new Error(`The split was only partly updated and could not be put back. Check it in Actual. ${describeSyncError(err, "")}`.trim());
+    }
+    throw err;
   }
 }
 
@@ -171,6 +202,7 @@ async function loadTargetSnapshot(
       amount: t.amount,
       payeeName: t.payeeName,
       categoryId: t.categoryId,
+      splitAmounts: t.splitAmounts,
     })),
     allTransactionIds: scan?.sinceDate ? undefined : new Set(lookup.transactions.map((t) => t.id)),
   };
@@ -389,7 +421,9 @@ export const transactionAdapter: SyncKindAdapter = {
     // Read by id from one account read: the row may still be on its old date when
     // the source date changed.
     const liveRows = await readTargetRows(transport, config.targetAccountId);
-    const plainWrites: { input: AdapterMutateInput; fields: BatchTransactionUpdate; baseline: string }[] = [];
+    const plainWrites: { input: AdapterMutateInput; fields: BatchTransactionUpdate; baseline: string; liveDate: string }[] = [];
+    // Set once anything has waited since `liveRows` was read.
+    let readIsOld = false;
 
     for (const input of inputs) {
       if (options?.shouldStop?.()) {
@@ -436,7 +470,10 @@ export const transactionAdapter: SyncKindAdapter = {
         // Resolved first so the baseline below can state exactly what was written.
         const payeeName = (payload.payeeName as string | null) ?? null;
         let payeeId = keepPayee ? live.payeeId : (payload.payeeId as string | null) ?? null;
-        if (!keepPayee && !payeeId && payeeName) payeeId = (await transport.createOrResolvePayee({ name: payeeName })).id;
+        if (!keepPayee && !payeeId && payeeName) {
+          readIsOld = true;
+          payeeId = (await transport.createOrResolvePayee({ name: payeeName })).id;
+        }
         // Category and cleared state belong to the target budget. A category is only
         // filled in when the target row has none. A split's category is on its lines.
         const categoryId = !plannedLines && live.categoryId == null && plannedCategory ? plannedCategory : undefined;
@@ -451,14 +488,25 @@ export const transactionAdapter: SyncKindAdapter = {
           splitLines: plannedLines ? plannedLines.map((line) => ({ amount: line.amount, notes: line.notes ?? null })) : undefined,
         });
         if (plannedLines) {
-          await updateSplitLines(transport, config.targetAccountId, date, live, plannedLines);
-          await transport.updateTransactionForSync({ transactionId: input.targetId, accountId: config.targetAccountId, date, amount, payeeId: keepPayee ? undefined : payeeId, notes, returnApplied: false });
-          results.push({ itemId: input.itemId, outcome: "updated", targetId: input.targetId, targetFingerprint: baseline });
+          readIsOld = true;
+          const finished = await updateSplit(
+            transport,
+            config.targetAccountId,
+            date,
+            live,
+            plannedLines,
+            () => transport.updateTransactionForSync({ transactionId: input.targetId, accountId: config.targetAccountId, date, amount, payeeId: keepPayee ? undefined : payeeId, notes, returnApplied: false }),
+            options?.shouldStop
+          );
+          results.push(finished
+            ? { itemId: input.itemId, outcome: "updated", targetId: input.targetId, targetFingerprint: baseline }
+            : { itemId: input.itemId, outcome: "failed", targetId: input.targetId, message: "Apply stopped part-way through this split. Check it in Actual." });
           continue;
         }
         plainWrites.push({
           input,
           baseline,
+          liveDate: live.date,
           fields: { id: input.targetId, date, amount, ...(keepPayee ? {} : { payeeId }), ...(categoryId ? { categoryId } : {}), notes },
         });
       } catch (err) {
@@ -466,23 +514,41 @@ export const transactionAdapter: SyncKindAdapter = {
       }
     }
 
+    // Anything that waited since the read may have let someone edit a queued row.
+    let queued = plainWrites;
+    if (readIsOld && queued.length > 0) {
+      const fresh = await readTargetRows(transport, config.targetAccountId);
+      queued = plainWrites.filter(({ input }) => {
+        const row = fresh.get(input.targetId);
+        if (row && !row.transferId && targetMatchesBaseline(row, input.expectedTargetFingerprint as string)) return true;
+        results.push({ itemId: input.itemId, outcome: "skipped", targetId: row ? input.targetId : null, message: row ? "Target was edited outside sync; left unchanged." : "Target no longer exists; not updated." });
+        return false;
+      });
+    }
+
     // One write for the whole set where the transport can do it; one at a time otherwise.
     let batched = false;
-    if (plainWrites.length > 1 && transport.batchWriteTransactionsForSync && !options?.shouldStop?.()) {
+    if (queued.length > 1 && transport.batchWriteTransactionsForSync && !options?.shouldStop?.()) {
       try {
-        await transport.batchWriteTransactionsForSync({ updated: plainWrites.map((write) => write.fields), deleted: [] });
+        await transport.batchWriteTransactionsForSync({ updated: queued.map((write) => write.fields), deleted: [] });
         batched = true;
       } catch {
         // An unsupported surface: fall through to writing one at a time.
       }
     }
-    for (const { input, fields, baseline } of plainWrites) {
+    for (const { input, fields, baseline, liveDate } of queued) {
       if (!batched && options?.shouldStop?.()) {
         results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "Apply stopped before this row; left unchanged." });
         continue;
       }
       try {
         if (!batched) {
+          // One at a time takes longer, so each row is checked just before its write.
+          const current = await transport.readTargetTransactionForSync({ accountId: config.targetAccountId, transactionId: input.targetId, date: liveDate });
+          if (!current || !targetMatchesBaseline(current, input.expectedTargetFingerprint as string)) {
+            results.push({ itemId: input.itemId, outcome: "skipped", targetId: current ? input.targetId : null, message: current ? "Target was edited outside sync; left unchanged." : "Target no longer exists; not updated." });
+            continue;
+          }
           await transport.updateTransactionForSync({
             transactionId: input.targetId,
             accountId: config.targetAccountId,

@@ -13,6 +13,7 @@ import { adjustRateByPercent, averageRates, impliedRate } from "@/lib/fx/fxMath"
 import { findTransactionFx, saveTransactionFx, updateTransactionFxSnapshot } from "@/lib/fx/repositories/transactionFxRepository";
 import { insertFxRate } from "@/lib/fx/repositories/fxRateRepository";
 import { resolveFxBatch } from "@/lib/fx/services/resolveFxBatch";
+import { categoryReturnAdapter } from "./adapters/categoryReturnAdapter";
 import { transactionAdapter as adapter } from "./adapters/transactionAdapter";
 import { applySyncRun, type ApplyStore } from "./applyOrchestrator";
 import { planCategoryReturn } from "./categoryReturn";
@@ -25,7 +26,7 @@ import { runSafeSync } from "./safeSyncOrchestrator";
 import { DEFAULT_SOURCE_FILTER } from "./sourceFilter";
 import { expandSourceTransactions, transactionFingerprint } from "./sourceItems";
 import { planExpandedItems } from "./syncPlanner";
-import { hashTargetFields, targetMatchesBaseline } from "./targetFingerprint";
+import { hashTargetFields, targetBaseline, targetMatchesBaseline } from "./targetFingerprint";
 import { fnv1aHex } from "./hash";
 import { generateSyncMarker } from "./marker";
 import type { ActualBenchTransport, SyncAppliedSnapshot, SyncSourceTransaction } from "@/lib/actual/transport";
@@ -168,7 +169,7 @@ describe("the target budget owns category and cleared state", () => {
 
   function transportWith(live: SyncAppliedSnapshot & { transferId?: string | null }) {
     const updateTransactionForSync = jest.fn(async () => null);
-    const transport = { listTransactionsForSync: async () => [{ id: "T1", ...live }], updateTransactionForSync, deleteTransactionForSync: jest.fn() } as unknown as ActualBenchTransport;
+    const transport = { listTransactionsForSync: async () => [{ id: "T1", ...live }], readTargetTransactionForSync: async () => live, updateTransactionForSync, deleteTransactionForSync: jest.fn() } as unknown as ActualBenchTransport;
     return { transport, updateTransactionForSync };
   }
 
@@ -206,9 +207,59 @@ describe("the target budget owns category and cleared state", () => {
     const list = jest.fn()
       .mockResolvedValueOnce([{ id: "T1", ...written }])
       .mockResolvedValue([{ id: "T1", ...written, amount: -7777 }]);
-    const transport = { listTransactionsForSync: list, updateTransactionForSync: jest.fn(async () => null) } as unknown as ActualBenchTransport;
+    const transport = { listTransactionsForSync: list, readTargetTransactionForSync: async () => written, updateTransactionForSync: jest.fn(async () => null) } as unknown as ActualBenchTransport;
     const [result] = await adapter.updateBatch!(transport, flow(), [{ itemId: "i", targetId: "T1", expectedTargetFingerprint: hashTargetFields(written), payload }]);
     expect(result.targetFingerprint).toBe(hashTargetFields({ ...written, amount: -2600 }));
+  });
+
+  it("puts split lines back when a later write fails, so a retry is not blocked", async () => {
+    const lines = [{ id: "l1", amount: -1000, notes: "a", payeeId: "p", categoryId: "c1" }, { id: "l2", amount: -1500, notes: "b", payeeId: "p", categoryId: "c2" }];
+    const row = { id: "T1", ...written, isParent: true, splitLines: lines };
+    const update = jest.fn(async (input: { transactionId: string }) => {
+      if (input.transactionId === "l2") throw new Error("boom");
+      return null;
+    });
+    const transport = { listTransactionsForSync: async () => [row], updateTransactionForSync: update } as unknown as ActualBenchTransport;
+    const [result] = await adapter.updateBatch!(transport, flow(), [{
+      itemId: "i", targetId: "T1", expectedTargetFingerprint: targetBaseline(row),
+      payload: { ...payload, subtransactions: [{ amount: -1100, notes: "a" }, { amount: -1500, notes: "c" }] },
+    }]);
+    expect(result.outcome).toBe("failed");
+    expect(update.mock.calls.map(([input]) => [input.transactionId, (input as unknown as { amount: number }).amount])).toEqual([["l1", -1100], ["l2", -1500], ["l1", -1000]]);
+  });
+
+  it("stops inside a split as soon as the claim is lost", async () => {
+    const lines = [{ id: "l1", amount: -1000, notes: "a", payeeId: "p", categoryId: null }, { id: "l2", amount: -1500, notes: "b", payeeId: "p", categoryId: null }];
+    const row = { id: "T1", ...written, isParent: true, splitLines: lines };
+    const update = jest.fn(async () => null);
+    const transport = { listTransactionsForSync: async () => [row], updateTransactionForSync: update } as unknown as ActualBenchTransport;
+    let checks = 0;
+    const [result] = await adapter.updateBatch!(transport, flow(), [{
+      itemId: "i", targetId: "T1", expectedTargetFingerprint: targetBaseline(row),
+      payload: { ...payload, subtransactions: [{ amount: -1100, notes: "a" }, { amount: -1400, notes: "b" }] },
+    }], { shouldStop: () => ++checks > 2 });
+    expect(result.outcome).toBe("failed");
+    expect(update).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not overwrite a queued row edited while a payee was being created", async () => {
+    const list = jest.fn()
+      .mockResolvedValueOnce([{ id: "A", ...written }, { id: "B", ...written, payeeId: "old" }])
+      .mockResolvedValue([{ id: "A", ...written, amount: -7777 }, { id: "B", ...written, payeeId: "old" }]);
+    const update = jest.fn(async () => null);
+    const transport = {
+      listTransactionsForSync: list,
+      updateTransactionForSync: update,
+      readTargetTransactionForSync: async () => ({ ...written, payeeId: "old" }),
+      createOrResolvePayee: async () => ({ id: "new", name: "New", created: true }),
+    } as unknown as ActualBenchTransport;
+    const results = await adapter.updateBatch!(transport, flow(), [
+      { itemId: "a", targetId: "A", expectedTargetFingerprint: hashTargetFields(written), payload },
+      { itemId: "b", targetId: "B", expectedTargetFingerprint: hashTargetFields({ ...written, payeeId: "old" }), payload: { ...payload, payeeId: null, payeeName: "New" } },
+    ]);
+    expect(results.find((r) => r.itemId === "a")?.outcome).toBe("skipped");
+    expect(results.find((r) => r.itemId === "b")?.outcome).toBe("updated");
+    expect(update).toHaveBeenCalledTimes(1);
   });
 
   it("leaves a linked transfer alone", async () => {
@@ -279,6 +330,19 @@ describe("planning", () => {
     });
     expect(plan.items[0].action).toBe("blocked");
     expect(plan.items[0].flags).toContain("ambiguous_split_identity");
+  });
+
+  it("updates a split whose lines moved while its total rounded the same", () => {
+    const parent = txn("sp", { amount: -100, isParent: true, splitLines: [{ id: "l1", amount: -1000000 }, { id: "l2", amount: 999900 }] as never });
+    const [item] = expandSourceTransactions([parent], { groupSplits: true });
+    const plan = planExpandedItems({
+      config: config({ fxEnabled: true, fxSourceCurrency: "AUD", fxTargetCurrency: "AED", fxUpdateOnRateChange: true, createTargetSplits: true }), capabilities,
+      sourceItems: [item], fxRateByDate: new Map([["2026-11-17", rate("1.001")]]),
+      target: target({ transactions: [{ id: "T1", date: item.date, amount: -100, payeeName: "Cafe", categoryId: null, splitAmounts: [-1000000, 999900] }] }),
+      existingMappings: [mapping(item.itemKey, item.fingerprint, "T1")],
+    });
+    expect(plan.items[0].action).toBe("update");
+    expect(plan.items[0].plannedTargetPayload?.subtransactions?.map((line) => line.amount)).toEqual([-1001000, 1000900]);
   });
 
   it("keeps the recorded rate when only a source note changed", () => {
@@ -354,7 +418,7 @@ describe("apply safety", () => {
 
   function harness(saved: SyncFlow, summary: JsonObject = {}) {
     const run: SyncFlowRun = { id: "r", flowId: "f", status: "draft_preview", startedAt: new Date().toISOString(), finishedAt: null, summary: envelope(summary), error: null, createdByTrigger: "manual_preview", sourceSnapshotSummary: null, targetSnapshotSummary: null, counts: null };
-    const persistFxSnapshot = jest.fn<Promise<void>, [unknown]>(async () => {});
+    const persistFxSnapshot = jest.fn<Promise<void>, [unknown, string?]>(async () => {});
     const store = {
       loadRun: async () => run, loadRunItems: async () => [item()], loadFlow: async () => saved, getMappingBySource: async () => null,
       createMapping: async () => {}, updateMapping: async () => {}, updateRunStatus: async (_: string, patch: { status: SyncFlowRun["status"] }) => { run.status = patch.status; },
@@ -417,7 +481,7 @@ describe("apply safety", () => {
     createTransactionsForSync.mockClear();
     await applySyncRun({ runId: "r", targetConnection: connection("T"), selection: { selection: "retry_failed" } }, { transport: { openTransport: async () => transport }, store: retryStore });
     expect(createTransactionsForSync).not.toHaveBeenCalled();
-    expect(persistFxSnapshot).toHaveBeenLastCalledWith(expect.objectContaining({ transactionId: "new", isManual: true, convertedAmount: -2600 }));
+    expect(persistFxSnapshot).toHaveBeenLastCalledWith(expect.objectContaining({ transactionId: "new", isManual: true, convertedAmount: -2600 }), "i");
   });
 
   it("keeps the run appliable when charged amounts cannot be saved", async () => {
@@ -458,6 +522,25 @@ describe("apply safety", () => {
     deleteBatch.mockRestore();
   });
 
+  it("reports a failed upload instead of a clean apply", async () => {
+    const saved = flow();
+    const { store, transport } = harness(saved, { flowPlanHash: flowPlanHash(saved) });
+    const browser = { ...transport, mode: "browser-api", sync: jest.fn(async () => { throw new Error("offline"); }) } as unknown as ActualBenchTransport;
+    const updateRunStatus = jest.fn(async () => {});
+    const result = await applySyncRun({ runId: "r", targetConnection: connection("T") }, { transport: { openTransport: async () => browser }, store: { ...store, updateRunStatus } });
+    expect(result.status).toBe("partial");
+    expect(result.error?.code).toBe("upload_failed");
+    expect(updateRunStatus).toHaveBeenLastCalledWith("r", expect.objectContaining({ status: "partial", error: expect.anything() }));
+  });
+
+  it("fails the item when an ordinary rate record cannot be saved", async () => {
+    const saved = flow();
+    const { store, transport, persistFxSnapshot } = harness(saved, { flowPlanHash: flowPlanHash(saved) });
+    persistFxSnapshot.mockRejectedValueOnce(new Error("db down"));
+    const result = await applySyncRun({ runId: "r", targetConnection: connection("T") }, { transport: { openTransport: async () => transport }, store });
+    expect(result.counts).toMatchObject({ applied: 0, failed: 1 });
+  });
+
   it("marks only the conflicting item failed when the store reports a mapping conflict", async () => {
     const saved = flow();
     const { store, transport } = harness(saved, { flowPlanHash: flowPlanHash(saved) });
@@ -474,7 +557,7 @@ describe("apply safety", () => {
     const { store, transport, createTransactionsForSync, persistFxSnapshot } = harness(saved, { flowPlanHash: flowPlanHash(saved) });
     await applySyncRun({ runId: "r", targetConnection: connection("T"), amountOverrides: { i: 2600 } }, { transport: { openTransport: async () => transport }, store });
     expect(createTransactionsForSync.mock.calls[0][0][0]).toMatchObject({ amount: -2600, notes: "[AUD -10.00 @ 2.6]" });
-    expect(persistFxSnapshot).toHaveBeenCalledWith(expect.objectContaining({ appliedRate: "2.6", convertedAmount: -2600, isManual: true }));
+    expect(persistFxSnapshot).toHaveBeenCalledWith(expect.objectContaining({ appliedRate: "2.6", convertedAmount: -2600, isManual: true }), "i");
   });
 });
 
@@ -491,6 +574,31 @@ describe("sending categories back", () => {
     });
     expect(plan.rows.map((row) => [row.sourceId, row.categoryId])).toEqual([["empty", "s-food"]]);
     expect(plan.noMatchingCategory).toBe(1);
+  });
+
+  it("writes through the shared adapter and acknowledges only the category", async () => {
+    const live = txn("a", { notes: "before" });
+    const edited = { ...live, categoryId: "s-food", categoryName: "Food", notes: "edited meanwhile" };
+    const update = jest.fn(async () => null);
+    const list = jest.fn().mockResolvedValueOnce([live]).mockResolvedValue([edited]);
+    const transport = { listTransactionsForSync: list, updateTransactionForSync: update } as unknown as ActualBenchTransport;
+    const [result] = await categoryReturnAdapter.updateBatch!(transport, flow(), [{
+      itemId: "i", targetId: "a", sourceItemKey: "txn:a", expectedTargetFingerprint: null,
+      payload: { date: live.date, amount: live.amount, payeeId: live.payeeId, notes: "before", categoryId: "s-food" },
+    }]);
+    expect(result).toMatchObject({ outcome: "updated", mappingPatch: {} });
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ transactionId: "a", categoryId: "s-food" }));
+  });
+
+  it("skips a source row that changed after the preview", async () => {
+    const update = jest.fn(async () => null);
+    const transport = { listTransactionsForSync: async () => [txn("a", { amount: -999 })], updateTransactionForSync: update } as unknown as ActualBenchTransport;
+    const [result] = await categoryReturnAdapter.updateBatch!(transport, flow(), [{
+      itemId: "i", targetId: "a", sourceItemKey: "txn:a", expectedTargetFingerprint: null,
+      payload: { date: "2026-11-17", amount: -1000, payeeId: "p", notes: null, categoryId: "s-food" },
+    }]);
+    expect(result.outcome).toBe("skipped");
+    expect(update).not.toHaveBeenCalled();
   });
 
   it("waits when the source changed since it was synced", () => {

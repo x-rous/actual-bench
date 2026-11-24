@@ -12,9 +12,9 @@ import {
   linkSyncedTransfer,
   loadFxPosition,
   postFxRevaluation,
-  sendCategoriesBack,
   type FxTransferPair,
 } from "../lib/fxPositionClient";
+import { runClientCategoryReturn } from "../lib/clientOrchestration";
 import { FxConversionsTable } from "./FxConversionsTable";
 import type { SyncFlow } from "@/lib/app-db/types";
 import type { ConnectionInstance } from "@/store/connection";
@@ -25,6 +25,8 @@ type FxPositionPanelProps = {
   targetConnection?: ConnectionInstance;
   onBack: () => void;
 };
+
+const NOT_UPLOADED = "Saved in this browser, but it did not reach the Actual server. Keep this tab open and sync the budget before closing it.";
 
 /** One labelled figure. Status is carried by the text, never by colour alone. */
 function Figure({ label, value, currency, detail }: { label: string; value: number; currency: string; detail?: string }) {
@@ -75,9 +77,9 @@ export function FxPositionPanel({ flow, sourceConnection, targetConnection, onBa
         date: data.rateDate,
       });
     },
-    onSuccess: async ({ recovered }) => {
+    onSuccess: async ({ recovered, uploaded }) => {
       setConfirming(false);
-      setActionError(null);
+      setActionError(uploaded ? null : NOT_UPLOADED);
       setNotice(recovered
         ? "Today's revaluation was already on the target budget. It is now recorded, and nothing new was posted."
         : "Revaluation posted to the target budget.");
@@ -92,10 +94,10 @@ export function FxPositionPanel({ flow, sourceConnection, targetConnection, onBa
   const link = useMutation({
     mutationFn: async (pair: FxTransferPair) => {
       if (!targetConnection) throw new Error("Connect the target budget first.");
-      await linkSyncedTransfer({ flow, targetConnection, syncedId: pair.syncedId, syncedAmount: pair.synced.amount, counterpart: pair.counterpart });
+      return linkSyncedTransfer({ flow, targetConnection, syncedId: pair.syncedId, syncedAmount: pair.synced.amount, counterpart: pair.counterpart });
     },
-    onSuccess: async () => {
-      setActionError(null);
+    onSuccess: async ({ uploaded }) => {
+      setActionError(uploaded ? null : NOT_UPLOADED);
       setNotice("Transfer linked at the amount the other account recorded.");
       await query.refetch();
     },
@@ -104,12 +106,15 @@ export function FxPositionPanel({ flow, sourceConnection, targetConnection, onBa
 
   const sendBack = useMutation({
     mutationFn: async () => {
-      if (!data || !sourceConnection) throw new Error("Connect the source budget first.");
-      return sendCategoriesBack({ flow, sourceConnection, rows: data.categoryReturn.rows });
+      if (!sourceConnection || !targetConnection) throw new Error("Connect both budgets first.");
+      return runClientCategoryReturn({ flowId: flow.id, sourceConnection, targetConnection });
     },
-    onSuccess: async ({ written, skipped, failed }) => {
+    onSuccess: async (result) => {
       setConfirmingCategories(false);
-      setActionError(failed > 0 ? `${failed} categor${failed === 1 ? "y" : "ies"} could not be written.` : null);
+      const written = result?.counts.updated ?? 0;
+      const skipped = result?.counts.skipped ?? 0;
+      const failed = result?.counts.failed ?? 0;
+      setActionError(result?.error?.message ?? (failed > 0 ? `${failed} categor${failed === 1 ? "y" : "ies"} could not be written.` : null));
       setNotice(`${written} categor${written === 1 ? "y" : "ies"} sent to ${config.sourceBudgetName}${skipped ? `; ${skipped} left alone because the row changed` : ""}.`);
       await query.refetch();
     },

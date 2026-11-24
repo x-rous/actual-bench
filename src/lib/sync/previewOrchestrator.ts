@@ -75,6 +75,8 @@ export type LiveDryRunInput = {
    * does that.
    */
   scanSince?: string;
+  /** Run a kind other than the flow's own on this flow's route. */
+  adapterKind?: "category_return";
 };
 
 // --- Result / error shapes --------------------------------------------------
@@ -176,7 +178,7 @@ export async function runLiveDryRunPreview(
   }
 
   // 2. Resolve the data-type adapter and validate the route/capabilities.
-  const adapter = getSyncKindAdapter(flow.flowType);
+  const adapter = getSyncKindAdapter(input.adapterKind ?? flow.flowType);
   if (!adapter) {
     return failedResult(flowId, { code: "unsupported_connection", message: `Unsupported sync type: ${flow.flowType}.` }, warnings);
   }
@@ -251,7 +253,8 @@ export async function runLiveDryRunPreview(
         summary: {
           ...summary,
           flowPlanHash: flowPlanHash(flow),
-          ...(input.scanSince ? { scannedSince: input.scanSince } : { fullScanAt: new Date().toISOString() }),
+          ...(input.adapterKind ? { adapterKind: input.adapterKind } : {}),
+          ...(input.scanSince ? { scannedSince: input.scanSince } : input.adapterKind ? {} : { fullScanAt: new Date().toISOString() }),
         },
         sourceSnapshotSummary: adapter.sourceSummary(flow),
         trigger: input.trigger,

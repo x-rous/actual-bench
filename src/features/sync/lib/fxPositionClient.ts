@@ -14,7 +14,7 @@ import {
   type TransferCandidate,
   type TransferRow,
 } from "@/lib/sync/fxPosition";
-import { planCategoryReturn, type CategoryReturnPlan, type CategoryReturnRow } from "@/lib/sync/categoryReturn";
+import { planCategoryReturn, type CategoryReturnPlan } from "@/lib/sync/categoryReturn";
 import { decodeSourceFilter } from "@/lib/sync/sourceFilter";
 import { allKeysOf, expandSourceTransactions } from "@/lib/sync/sourceItems";
 import { hashTargetFields } from "@/lib/sync/targetFingerprint";
@@ -56,6 +56,16 @@ export function localToday(now = new Date()): string {
   const month = String(now.getMonth() + 1).padStart(2, "0");
   const day = String(now.getDate()).padStart(2, "0");
   return `${now.getFullYear()}-${month}-${day}`;
+}
+
+/** Upload a write now; false when it is still only in this browser's copy. */
+async function uploaded(transport: ActualBenchTransport): Promise<boolean> {
+  try {
+    await syncTransportAfterChanges(transport, true);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function open(connection: ConnectionInstance): Promise<ActualBenchTransport> {
@@ -183,7 +193,7 @@ export async function postFxRevaluation(input: {
   rate: string;
   categoryId: string | null;
   date: string;
-}): Promise<{ recovered: boolean }> {
+}): Promise<{ recovered: boolean; uploaded: boolean }> {
   const config = decodeFlowPlanConfig(input.flow);
   if (!Number.isInteger(input.amount) || input.amount === 0) throw new Error("There is no difference to post.");
   const { itemKey, transaction } = buildRevaluationInput({ config, date: input.date, amount: input.amount, rate: input.rate, categoryId: input.categoryId });
@@ -218,14 +228,13 @@ export async function postFxRevaluation(input: {
       throw new Error("A revaluation for this account was already posted today.");
     }
     await mapRevaluation(existingId, null);
-    return { recovered: true };
+    return { recovered: true, uploaded: true };
   }
   const { created } = await transport.createTransactionsForSync([transaction]);
   const row = created[0];
   if (!row?.transactionId) throw new Error("The revaluation could not be confirmed on the target budget. Check the account before trying again.");
   await mapRevaluation(row.transactionId, row.applied ? hashTargetFields(row.applied) : null);
-  await syncTransportAfterChanges(transport, true).catch(() => undefined);
-  return { recovered: false };
+  return { recovered: false, uploaded: await uploaded(transport) };
 }
 
 function preflight(row: SyncSourceTransaction): TransactionPreflight {
@@ -259,7 +268,7 @@ export async function linkSyncedTransfer(input: {
   syncedAmount: number;
   /** The other side as the user reviewed it; `amount` is what the synced row will take. */
   counterpart: Pick<TransferRow, "id" | "accountId" | "date" | "amount">;
-}): Promise<void> {
+}): Promise<{ uploaded: boolean }> {
   const config = decodeFlowPlanConfig(input.flow);
   const transport = await open(input.targetConnection);
   if (!transport.linkTransferCounterpart) throw new Error("This connection cannot link transfers.");
@@ -315,7 +324,7 @@ export async function linkSyncedTransfer(input: {
   }
 
   // The link is in place; the rest is bookkeeping and must not report it as failed.
-  await syncTransportAfterChanges(transport, true).catch(() => undefined);
+  const didUpload = await uploaded(transport);
   try {
     const after = (await transport.listTransactionsForSync({ accountId: synced.accountId, startDate: synced.date, endDate: synced.date, resolveNames: false }))
       .find((row) => row.id === synced.id);
@@ -342,64 +351,5 @@ export async function linkSyncedTransfer(input: {
   } catch {
     // The next preview still sees a linked transfer and leaves it alone.
   }
-}
-
-/**
- * Fill empty source categories from the target budget. Each row is re-read first
- * and left alone if it gained a category. Its mapping then takes the new source
- * fingerprint, so the next preview does not report the write as a source change.
- */
-export async function sendCategoriesBack(input: {
-  flow: SyncFlow;
-  sourceConnection: ConnectionInstance;
-  rows: CategoryReturnRow[];
-}): Promise<{ written: number; skipped: number; failed: number }> {
-  const config = decodeFlowPlanConfig(input.flow);
-  const transport = await open(input.sourceConnection);
-  const before = await transport.listTransactionsForSync({ accountId: config.sourceAccountId, resolveNames: false });
-  const current = new Map(
-    before.flatMap((row) => [
-      [row.id, { categoryId: row.categoryId, reconciled: row.reconciled }] as const,
-      ...row.splitLines.filter((line) => line.id).map((line) => [line.id as string, { categoryId: line.categoryId, reconciled: row.reconciled || line.reconciled === true }] as const),
-    ])
-  );
-
-  const written: CategoryReturnRow[] = [];
-  let skipped = 0;
-  let failed = 0;
-  for (const row of input.rows) {
-    const live = current.get(row.sourceId);
-    if (!live || live.categoryId || live.reconciled) {
-      skipped += 1;
-      continue;
-    }
-    try {
-      // Names the payee too: Actual gives a split line its parent's payee otherwise.
-      await transport.updateTransactionForSync({
-        transactionId: row.sourceId,
-        accountId: config.sourceAccountId,
-        date: row.date,
-        amount: row.amount,
-        payeeId: row.payeeId,
-        categoryId: row.categoryId,
-        returnApplied: false,
-      });
-      written.push(row);
-    } catch {
-      failed += 1;
-    }
-  }
-  if (written.length === 0) return { written: 0, skipped, failed };
-  await syncTransportAfterChanges(transport, true).catch(() => undefined);
-
-  const after = await transport.listTransactionsForSync({ accountId: config.sourceAccountId });
-  const items = new Map(
-    expandSourceTransactions(after, { groupSplits: config.createTargetSplits })
-      .flatMap((item) => allKeysOf(item).map((key) => [key, item] as const))
-  );
-  for (const row of written) {
-    const item = items.get(row.sourceItemKey);
-    if (item) await api.updateMapping(row.mappingId, { sourceFingerprint: item.fingerprint }).catch(() => undefined);
-  }
-  return { written: written.length, skipped, failed };
+  return { uploaded: didUpload };
 }

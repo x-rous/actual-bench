@@ -5,4 +5,6 @@ import "./transactionAdapter";
 // Master-data (entity) adapters (RD-055).
 import "./payeeAdapter";
 import "./categoryAdapter";
+// Writes target-budget categories back to a transaction flow's source rows.
+import "./categoryReturnAdapter";
 

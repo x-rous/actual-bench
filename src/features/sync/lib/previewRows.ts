@@ -274,6 +274,8 @@ export function statusLabel(row: PreviewRow): string {
   if (row.flags.includes("fx_rate_pending")) return "FX pending";
   if (row.flags.includes("fx_rate_changed")) return "Rate changed";
   if (row.flags.includes("split_mode_changed")) return "Split setting changed";
+  if (row.flags.includes("ambiguous_split_identity")) return "Split needs review";
+  if (row.flags.includes("category_return")) return "Category sent back";
   if (row.classification === "target_name_match") return "Name match";
   return GROUP_LABELS[row.group];
 }

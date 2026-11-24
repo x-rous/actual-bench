@@ -231,7 +231,8 @@ describe("applySyncRun - validation", () => {
     const result = await applySyncRun({ runId: "run-1", targetConnection: targetConn }, { transport: provider(transport), store });
     expect(result.status).toBe("applied");
     expect(store.persistFxSnapshot).toHaveBeenCalledWith(
-      expect.objectContaining({ sourceCurrency: "AED", targetCurrency: "AUD", appliedRate: "0.4", convertedAmount: 500, sourceAmount: -1250, fxRateId: "fx-1" })
+      expect.objectContaining({ sourceCurrency: "AED", targetCurrency: "AUD", appliedRate: "0.4", convertedAmount: 500, sourceAmount: -1250, fxRateId: "fx-1" }),
+      "item-1"
     );
   });
 

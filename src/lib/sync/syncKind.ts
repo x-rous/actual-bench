@@ -1,6 +1,6 @@
 import type { ActualBenchTransport, SyncAppliedSnapshot } from "@/lib/actual/transport";
 import type { ConnectionInstance } from "@/store/connection";
-import type { JsonObject, SyncCapabilitySet, SyncDomain, SyncFlow, SyncMapping } from "@/lib/app-db/types";
+import type { JsonObject, SyncCapabilitySet, SyncDomain, SyncFlow, SyncMapping, SyncMappingPatch } from "@/lib/app-db/types";
 import type { SyncPlanResult } from "./plannedChanges";
 
 /**
@@ -72,6 +72,9 @@ export type AdapterSummary = {
   targetMissing?: number;
 };
 
+/** Every registered kind: a flow's type, or a run kind that works on a flow's route. */
+export type SyncAdapterKind = SyncDomain | "category_return";
+
 export type AdapterApplyContext = {
   /** Transaction adapter fills this with the target imported_id index; empty otherwise. */
   markerIndex: Map<string, string>;
@@ -119,6 +122,8 @@ export type AdapterMutateInput = {
   expectedTargetFingerprint: string | null;
   /** The planned payload (update only); absent for delete. */
   payload?: JsonObject;
+  /** The run item's source key. */
+  sourceItemKey?: string;
 };
 
 export type AdapterMutateResult = {
@@ -132,6 +137,8 @@ export type AdapterMutateResult = {
   targetId: string | null;
   targetFingerprint?: string | null;
   message?: string;
+  /** When set, replaces the default mapping refresh after an update. */
+  mappingPatch?: SyncMappingPatch;
 };
 
 export type AdapterValidateInput = {
@@ -146,7 +153,9 @@ export type AdapterValidateInput = {
  * pipeline is type-aware.
  */
 export interface SyncKindAdapter {
-  readonly flowType: SyncDomain;
+  readonly flowType: SyncAdapterKind;
+  /** Which of the flow's budgets this kind writes to. Defaults to the target. */
+  readonly writeSide?: "source" | "target";
 
   /** Route + capability validation; throws SyncKindError on failure. */
   validate(input: AdapterValidateInput): void;
@@ -223,7 +232,7 @@ export interface SyncKindAdapter {
   ): Promise<AdapterMutateResult[]>;
 }
 
-const registry = new Map<SyncDomain, SyncKindAdapter>();
+const registry = new Map<SyncAdapterKind, SyncKindAdapter>();
 
 /** Register a data-type adapter (called once per adapter module at import). */
 export function registerSyncKindAdapter(adapter: SyncKindAdapter): void {
@@ -231,6 +240,6 @@ export function registerSyncKindAdapter(adapter: SyncKindAdapter): void {
 }
 
 /** Resolve the adapter for a flow type, or null if the type is unsupported. */
-export function getSyncKindAdapter(flowType: SyncDomain): SyncKindAdapter | null {
+export function getSyncKindAdapter(flowType: SyncAdapterKind): SyncKindAdapter | null {
   return registry.get(flowType) ?? null;
 }
