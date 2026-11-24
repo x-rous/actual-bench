@@ -405,6 +405,13 @@ export async function applySyncRun(
           message: `The changes are saved in this browser but did not reach the Actual server: ${describe(err, "the upload failed")}. Keep this tab open and sync the budget before closing it.`,
         };
       }
+    } else if (prepared.uploadPending) {
+      // The earlier writes wait in the browser copy that made them; this connection
+      // cannot upload them, so the run keeps saying so.
+      uploadError = {
+        code: "upload_failed",
+        message: "Changes from an earlier attempt are still waiting to upload from the browser that made them. Retry with the Direct connection in that browser.",
+      };
     }
     // The upload can outlast the claim. Another apply may own the run by now.
     if (isClaimLost()) return lostClaim();

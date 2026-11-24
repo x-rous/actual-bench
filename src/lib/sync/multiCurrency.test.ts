@@ -349,7 +349,51 @@ describe("the target budget owns category and cleared state", () => {
     expect(results.map((r) => r.outcome)).toEqual(["deleted", "skipped"]);
     expect(results[1].message).toMatch(/edited outside sync/);
     expect(deleteTransactionForSync).toHaveBeenCalledTimes(1);
+    expect(deleteTransactionForSync).toHaveBeenCalledWith({ transactionId: "A" });
     expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ startDate: written.date, endDate: written.date }));
+  });
+
+  it("checks the first row again when a batch delete was refused", async () => {
+    const list = jest.fn()
+      .mockResolvedValueOnce([{ id: "A", ...written }, { id: "B", ...written }])
+      .mockResolvedValue([{ id: "A", ...written, amount: -9999 }, { id: "B", ...written }]);
+    const deleteTransactionForSync = jest.fn(async () => {});
+    const batchWriteTransactionsForSync = jest.fn(async () => { throw new Error("unsupported"); });
+    const transport = { listTransactionsForSync: list, deleteTransactionForSync, batchWriteTransactionsForSync } as unknown as ActualBenchTransport;
+    const baseline = hashTargetFields(written);
+    const results = await adapter.deleteBatch!(transport, flow(), [
+      { itemId: "a", targetId: "A", expectedTargetFingerprint: baseline },
+      { itemId: "b", targetId: "B", expectedTargetFingerprint: baseline },
+    ]);
+    expect(results.map((r) => r.outcome)).toEqual(["skipped", "deleted"]);
+    expect(deleteTransactionForSync).toHaveBeenCalledTimes(1);
+    expect(deleteTransactionForSync).toHaveBeenCalledWith({ transactionId: "B" });
+  });
+
+  it("keeps a payee changed meanwhile when it puts split lines back", async () => {
+    const stored = [
+      { id: "l1", amount: -1000, notes: "a", payeeId: "p", categoryId: null as string | null },
+      { id: "l2", amount: -1500, notes: "b", payeeId: "p", categoryId: null as string | null },
+    ];
+    const row = () => ({ id: "T1", ...written, isParent: true, splitLines: stored.map((line) => ({ ...line })) });
+    const baseline = targetBaseline(row());
+    const update = jest.fn(async (input: { transactionId: string }) => {
+      if (input.transactionId === "l2") {
+        // The owner gives l1 another payee, then the l2 write fails.
+        stored[0].payeeId = "q";
+        throw new Error("boom");
+      }
+      return null;
+    });
+    const transport = { listTransactionsForSync: async () => [row()], updateTransactionForSync: update } as unknown as ActualBenchTransport;
+    const [result] = await adapter.updateBatch!(transport, flow(), [{
+      itemId: "i", targetId: "T1", expectedTargetFingerprint: baseline,
+      payload: { ...payload, subtransactions: [{ amount: -1100, notes: "a" }, { amount: -1400, notes: "b" }] },
+    }]);
+    expect(result.outcome).toBe("failed");
+    const l1Writes = (update.mock.calls as unknown as [{ transactionId: string; payeeId: string | null; amount: number }][]).filter(([input]) => input.transactionId === "l1");
+    expect(l1Writes).toHaveLength(2);
+    expect(l1Writes[1][0]).toMatchObject({ payeeId: "q", amount: -1000 });
   });
 
   it("stops inside a split as soon as the claim is lost", async () => {
@@ -773,6 +817,21 @@ describe("apply safety", () => {
     const last = (updateRunStatus.mock.calls as unknown as [string, Record<string, unknown>][]).at(-1)![1];
     expect(last).toMatchObject({ status: "applied", error: null });
     expect(last).not.toHaveProperty("counts");
+  });
+
+  it("keeps a pending upload's error when the Retry cannot reach the browser copy", async () => {
+    const saved = flow();
+    const { store, transport } = harness(saved, { flowPlanHash: flowPlanHash(saved) });
+    const http = { ...transport, mode: "http-api" } as unknown as ActualBenchTransport;
+    const updateRunStatus = jest.fn(async () => {});
+    const run = { ...(await store.loadRun("r"))!, status: "partial" as const, error: envelope({ code: "upload_failed", message: "offline" }) };
+    const result = await applySyncRun({ runId: "r", targetConnection: connection("T"), selection: { selection: "retry_failed" } }, {
+      transport: { openTransport: async () => http },
+      store: { ...store, updateRunStatus, loadRun: async () => run, loadRunItems: async () => [{ ...item(), applyState: "applied" }] },
+    });
+    expect(result.status).toBe("partial");
+    expect(result.error?.code).toBe("upload_failed");
+    expect(updateRunStatus).toHaveBeenLastCalledWith("r", expect.objectContaining({ status: "partial", error: expect.objectContaining({ data: expect.objectContaining({ code: "upload_failed" }) }) }));
   });
 
   it("still refuses an empty Retry when no upload is pending", async () => {

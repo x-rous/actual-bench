@@ -176,10 +176,12 @@ async function updateSplit(
       // If that read fails, the restore still runs with the categories read at the start.
       const now = changed.length > 0 ? await readLines().catch(() => new Map<string, SplitLine>()) : new Map<string, SplitLine>();
       for (const line of [...changed].reverse()) {
-        // A category cleared meanwhile stays cleared; the start's applies only to a line not read back.
+        // A category or payee changed meanwhile stays as the owner set it, cleared
+        // included; the start's values apply only to a line not read back.
         const current = now.get(line.id as string);
         const categoryId = current ? current.categoryId : line.categoryId;
-        await writeLine(transport, accountId, live.date, { ...line, categoryId }, { amount: line.amount, notes: line.notes });
+        const payeeId = current ? current.payeeId : line.payeeId;
+        await writeLine(transport, accountId, live.date, { ...line, categoryId, payeeId }, { amount: line.amount, notes: line.notes });
       }
     } catch {
       throw new Error(`The split was only partly updated and could not be put back. Check it in Actual. ${describeSyncError(err, "")}`.trim());
@@ -672,7 +674,11 @@ export const transactionAdapter: SyncKindAdapter = {
       }
     }
     let batched = false;
+    // Set once a batch was tried or a delete was sent: from then on each row is read
+    // again (its day of the account) and checked just before its own delete.
+    let readIsOld = false;
     if (toDelete.length > 1 && transport.batchWriteTransactionsForSync && !options?.shouldStop?.()) {
+      readIsOld = true;
       try {
         await transport.batchWriteTransactionsForSync({ updated: [], deleted: toDelete.map((input) => input.targetId) });
         batched = true;
@@ -680,9 +686,6 @@ export const transactionAdapter: SyncKindAdapter = {
         // An unsupported surface: fall through to deleting one at a time.
       }
     }
-    // Set once a delete has been sent: from then on each row is read again (its
-    // day of the account) and checked just before its own delete.
-    let readIsOld = false;
     for (const input of toDelete) {
       if (!batched && options?.shouldStop?.()) {
         results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "Apply stopped before this row; not deleted." });
