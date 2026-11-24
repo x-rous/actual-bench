@@ -236,7 +236,8 @@ export async function runLiveDryRunPreview(
       );
     }
 
-    const manualFxRates = decodeFlowPlanConfig(flow).fxEnabled
+    // Sending categories back converts nothing, so it does not need the rate history.
+    const manualFxRates = decodeFlowPlanConfig(flow).fxEnabled && input.adapterKind !== "category_return"
       ? await deps.store.loadManualFxRates?.(flowId)
       : undefined;
 

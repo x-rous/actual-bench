@@ -145,7 +145,7 @@ function applyStore(): ApplyStore {
       // A terminal status marks the end of the run: flush buffered item writes
       // first so the finalized run reflects them, then update the run itself.
       if (patch.status !== "applying") await flush();
-      await api.updateRun(runId, { status: patch.status, finishedAt: patch.finishedAt, counts: patch.counts, ...(patch.error ? { error: patch.error } : {}) });
+      await api.updateRun(runId, { status: patch.status, finishedAt: patch.finishedAt, counts: patch.counts, ...(patch.error !== undefined ? { error: patch.error } : {}) });
     },
     updateRunItemStatus: async (itemId, patch) => {
       pendingItemPatches.push({ itemId, patch: failedItems.get(itemId) ?? patch });

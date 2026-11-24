@@ -118,7 +118,8 @@ export type RunStatusPatch = {
   status: "draft_preview" | "applying" | "applied" | "partial" | "failed" | "no_changes";
   finishedAt?: string | null;
   counts?: JsonEnvelope;
-  error?: JsonEnvelope;
+  /** Omitted keeps the stored error; null clears it. */
+  error?: JsonEnvelope | null;
 };
 
 export type RunItemStatusPatch = {
@@ -375,8 +376,12 @@ export async function applySyncRun(
     // Upload now rather than whenever the budget is next closed: a tab closed
     // after apply must not leave these writes only in its local copy. One retry,
     // then the run says so instead of reporting success.
+    // Decided by what was sent, not by item outcomes: a row can be written and its
+    // item still fail on bookkeeping, and a Retry can find an earlier attempt's row.
+    // Runs that only link existing rows write nothing to upload.
     let uploadError: ApplyError | null = null;
-    if (counts.applied + counts.updated + counts.deleted > 0 && transport.mode === "browser-api") {
+    const sentWrites = eligible.some((entry) => entry.mode === "create" || entry.mode === "recreate" || entry.mode === "update" || entry.mode === "delete");
+    if (sentWrites && transport.mode === "browser-api") {
       try {
         await transport.sync().catch(() => transport.sync());
       } catch (err) {
@@ -386,6 +391,8 @@ export async function applySyncRun(
         };
       }
     }
+    // The upload can outlast the claim. Another apply may own the run by now.
+    if (isClaimLost()) return lostClaim();
 
     // Per-item mappings/statuses are already persisted; a failure to write the
     // final run summary must not throw away the completed work or leave the run
@@ -402,7 +409,8 @@ export async function applySyncRun(
         status,
         finishedAt: nowIso(),
         counts: { version: 1, data: applyCountsToJson(counts) },
-        ...(uploadError ? { error: { version: 1 as const, data: { code: uploadError.code, message: uploadError.message } } } : {}),
+        // A successful Retry clears the error an earlier attempt left.
+        error: uploadError ? { version: 1 as const, data: { code: uploadError.code, message: uploadError.message } } : null,
       });
     } catch (err) {
       const error: ApplyError = {
@@ -806,15 +814,7 @@ async function applyCreateBatch(
           ? existingMapping
           : null;
       if (existingMapping && !replaces) {
-        // A retry after the row was written but its rate record was not saved.
-        if (existingMapping.status === "active" && existingMapping.targetTransactionId && readFx(payloadJson)) {
-          if (readFx(payloadJson)?.isManual) {
-            assertTargetHoldsAmount(ctx, payloadJson, existingMapping.targetTransactionId);
-            await saveFxSnapshot(store, payloadJson, existingMapping.targetTransactionId, item.id);
-          } else {
-            await recordHeldFx(store, payloadJson, existingMapping.targetTransactionId, ctx.liveTargets?.get(existingMapping.targetTransactionId), item.id);
-          }
-        }
+        await recoverFxRecord(ctx, store, payloadJson, existingMapping, item.id);
         await store.updateRunItemStatus(item.id, {
           status: "skipped",
           applyState: "skipped",
@@ -831,7 +831,7 @@ async function applyCreateBatch(
         if (replaces) await repointMapping(store, replaces, item, markerHit, hitBaseline);
         else await recordMapping(store, ctx.config, item, markerHit, marker, hitBaseline);
         if (readFx(payloadJson)?.isManual) await saveFxSnapshot(store, payloadJson, markerHit, item.id);
-        else await restoreFxRecord(store, payloadJson, markerHit, liveHit);
+        else await restoreFxRecord(store, payloadJson, markerHit, liveHit, item.id);
         await store.updateRunItemStatus(item.id, {
           status: "skipped",
           applyState: "skipped",
@@ -1143,15 +1143,38 @@ function assertTargetHoldsAmount(ctx: ItemContext, payload: JsonObject, targetId
 /**
  * Restore the FX record of a row that was re-linked rather than written. Recorded
  * from what the row holds now: if someone changed its amount, the rate is the one
- * that amount implies and later rate changes leave it alone. Audit, so best-effort.
+ * that amount implies and later rate changes leave it alone. A failed save fails
+ * the item; its Retry finds the mapping and saves only the record.
  */
 async function restoreFxRecord(
   store: ApplyStore,
   payload: JsonObject | null,
   targetId: string,
-  live: { amount: number } | undefined
+  live: { amount: number } | undefined,
+  itemId: string
 ): Promise<void> {
-  await recordHeldFx(store, payload, targetId, live).catch(() => undefined);
+  await recordHeldFx(store, payload, targetId, live, itemId);
+}
+
+/**
+ * A retry after the row was written or linked but its rate record was not saved.
+ * Saving a record that already exists changes nothing.
+ */
+async function recoverFxRecord(
+  ctx: ItemContext,
+  store: ApplyStore,
+  payload: JsonObject | null,
+  mapping: SyncMapping,
+  itemId: string
+): Promise<void> {
+  const targetId = mapping.targetTransactionId;
+  if (!payload || mapping.status !== "active" || !targetId || !readFx(payload)) return;
+  if (readFx(payload)?.isManual) {
+    assertTargetHoldsAmount(ctx, payload, targetId);
+    await saveFxSnapshot(store, payload, targetId, itemId);
+  } else {
+    await recordHeldFx(store, payload, targetId, ctx.liveTargets?.get(targetId), itemId);
+  }
 }
 
 /** Save the FX record for what the row holds now. Throws when the save fails. */
@@ -1242,6 +1265,7 @@ async function repairOneItem(
   try {
     const existingMapping = await store.getMappingBySource(ctx.config.flowId, item.sourceItemKey ?? "");
     if (existingMapping) {
+      if (existingMapping.targetTransactionId === targetId) await recoverFxRecord(ctx, store, eligible.payloadJson, existingMapping, item.id);
       await store.updateRunItemStatus(item.id, {
         status: "skipped",
         applyState: "skipped",
@@ -1264,7 +1288,7 @@ async function repairOneItem(
     // The row as it stands is the baseline, so later corrections can reach it.
     const live = ctx.liveTargets?.get(targetId);
     await recordMapping(store, ctx.config, item, targetId, marker, live ? targetBaseline(live) : null);
-    await restoreFxRecord(store, eligible.payloadJson, targetId, live);
+    await restoreFxRecord(store, eligible.payloadJson, targetId, live, item.id);
     await store.updateRunItemStatus(item.id, {
       status: "repaired",
       applyState: "skipped",
@@ -1304,6 +1328,7 @@ async function mapExactDuplicateItem(
   try {
     const existingMapping = await store.getMappingBySource(ctx.config.flowId, item.sourceItemKey ?? "");
     if (existingMapping) {
+      if (existingMapping.targetTransactionId === targetId) await recoverFxRecord(ctx, store, eligible.payloadJson, existingMapping, item.id);
       await store.updateRunItemStatus(item.id, {
         status: "skipped",
         applyState: "skipped",
@@ -1327,7 +1352,7 @@ async function mapExactDuplicateItem(
 
     const live = ctx.liveTargets?.get(targetId);
     await recordMapping(store, ctx.config, item, targetId, null, live ? targetBaseline(live) : null);
-    await restoreFxRecord(store, eligible.payloadJson, targetId, live);
+    await restoreFxRecord(store, eligible.payloadJson, targetId, live, item.id);
     await store.updateRunItemStatus(item.id, {
       status: "mapped",
       applyState: "skipped",

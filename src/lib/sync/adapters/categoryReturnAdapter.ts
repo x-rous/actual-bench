@@ -167,11 +167,25 @@ export const categoryReturnAdapter: SyncKindAdapter = {
     );
     const results: AdapterMutateResult[] = [];
     const written: { result: AdapterMutateResult; key: string; was: SyncSourceItem }[] = [];
+    // Set once a write has been sent: from then on each row is read again (one
+    // day of the account) just before its own write.
+    let readIsOld = false;
     for (const input of inputs) {
       const payload = input.payload ?? {};
       const key = String(input.sourceItemKey ?? "");
-      const live = before.get(key);
+      let live = before.get(key);
       const skip = (message: string) => results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message });
+      if (live && readIsOld && !options?.shouldStop?.()) {
+        try {
+          live = itemsByKey(
+            await transport.listTransactionsForSync({ accountId: config.sourceAccountId, resolveNames: false, startDate: live.date, endDate: live.date }),
+            config.createTargetSplits
+          ).get(key);
+        } catch (err) {
+          results.push({ itemId: input.itemId, outcome: "failed", targetId: input.targetId, message: describeSyncError(err, "The source row could not be read again.") });
+          continue;
+        }
+      }
       if (options?.shouldStop?.()) {
         skip("Apply stopped before this row; left unchanged.");
       } else if (!live) {
@@ -188,6 +202,7 @@ export const categoryReturnAdapter: SyncKindAdapter = {
         skip("The source row changed after the preview; left unchanged.");
       } else {
         try {
+          readIsOld = true;
           await transport.updateTransactionForSync({
             transactionId: input.targetId,
             accountId: config.sourceAccountId,
@@ -214,7 +229,8 @@ export const categoryReturnAdapter: SyncKindAdapter = {
       const after = itemsByKey(await transport.listTransactionsForSync({ accountId: config.sourceAccountId }), config.createTargetSplits);
       for (const { result, key, was } of written) {
         const item = after.get(key);
-        if (item && sameExceptCategory(item, was)) result.mappingPatch = { sourceFingerprint: item.fingerprint };
+        // A row that is, or became, a grouped split changed shape: keep the old fingerprint.
+        if (item && !item.splitLines && !was.splitLines && sameExceptCategory(item, was)) result.mappingPatch = { sourceFingerprint: item.fingerprint };
       }
     } catch {
       // The category is written. The next preview reports it as a source change,

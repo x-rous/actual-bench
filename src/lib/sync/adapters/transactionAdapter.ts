@@ -63,12 +63,13 @@ function allItemKeys(transactions: SyncSourceTransaction[]): string[] {
   ].flatMap(allKeysOf);
 }
 
-/** The persisted fields of every target row, from one account read. */
+/** The persisted fields of every target row, from one account read (or one day of it). */
 async function readTargetRows(
   transport: ActualBenchTransport,
-  accountId: string
+  accountId: string,
+  onDate?: string
 ): Promise<Map<string, AdapterLiveTarget & { importedId: string | null }>> {
-  const rows = await transport.listTransactionsForSync({ accountId, resolveNames: false });
+  const rows = await transport.listTransactionsForSync({ accountId, resolveNames: false, ...(onDate ? { startDate: onDate, endDate: onDate } : {}) });
   return new Map(
     rows.map((row) => [
       row.id,
@@ -158,6 +159,13 @@ async function updateSplit(
     }
     throw err;
   }
+}
+
+/** A queued update without its category, for a row whose category is already set. */
+function withoutCategory<T extends { fields: BatchTransactionUpdate }>(write: T): T {
+  const fields = { ...write.fields };
+  delete fields.categoryId;
+  return { ...write, fields };
 }
 
 /** Why a grouped split cannot take these lines, or null when it can. */
@@ -474,13 +482,34 @@ export const transactionAdapter: SyncKindAdapter = {
           readIsOld = true;
           payeeId = (await transport.createOrResolvePayee({ name: payeeName })).id;
         }
+        // A split is written line by line straight away, so it is read again first
+        // if anything waited since the account read. Its checks, write and rollback
+        // all use that copy.
+        let target = live;
+        if (plannedLines && readIsOld) {
+          const fresh = (await readTargetRows(transport, config.targetAccountId, live.date)).get(input.targetId);
+          if (options?.shouldStop?.()) {
+            results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "Apply stopped before this row; left unchanged." });
+            continue;
+          }
+          const problem = !fresh
+            ? "Target was edited or removed outside sync; left unchanged."
+            : fresh.transferId || !targetMatchesBaseline(fresh, input.expectedTargetFingerprint)
+              ? "Target was edited outside sync; left unchanged."
+              : splitUpdateProblem(fresh, plannedLines);
+          if (problem || !fresh) {
+            results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: problem ?? "Target was edited outside sync; left unchanged." });
+            continue;
+          }
+          target = fresh;
+        }
         // Category and cleared state belong to the target budget. A category is only
         // filled in when the target row has none. A split's category is on its lines.
         const categoryId = !plannedLines && live.categoryId == null && plannedCategory ? plannedCategory : undefined;
         // The baseline is what this sync wrote. A later read could include someone
         // else's edit and would then let the next update overwrite it.
         const baseline = targetBaseline({
-          ...live,
+          ...target,
           date,
           amount,
           payeeId,
@@ -493,7 +522,7 @@ export const transactionAdapter: SyncKindAdapter = {
             transport,
             config.targetAccountId,
             date,
-            live,
+            target,
             plannedLines,
             () => transport.updateTransactionForSync({ transactionId: input.targetId, accountId: config.targetAccountId, date, amount, payeeId: keepPayee ? undefined : payeeId, notes, returnApplied: false }),
             options?.shouldStop
@@ -517,12 +546,23 @@ export const transactionAdapter: SyncKindAdapter = {
     // Anything that waited since the read may have let someone edit a queued row.
     let queued = plainWrites;
     if (readIsOld && queued.length > 0) {
-      const fresh = await readTargetRows(transport, config.targetAccountId);
-      queued = plainWrites.filter(({ input }) => {
+      const fresh = await readTargetRows(transport, config.targetAccountId).catch(() => null);
+      if (!fresh) {
+        // Splits already written keep their results; the queued rows were not written.
+        for (const { input } of plainWrites) {
+          results.push({ itemId: input.itemId, outcome: "failed", targetId: input.targetId, message: "Could not read the target account again; left unchanged." });
+        }
+        return results;
+      }
+      queued = plainWrites.flatMap((write) => {
+        const { input } = write;
         const row = fresh.get(input.targetId);
-        if (row && !row.transferId && targetMatchesBaseline(row, input.expectedTargetFingerprint as string)) return true;
+        if (row && !row.transferId && targetMatchesBaseline(row, input.expectedTargetFingerprint as string)) {
+          // The fingerprint leaves out the category, so a category set meanwhile must be kept.
+          return [row.categoryId != null ? withoutCategory(write) : write];
+        }
         results.push({ itemId: input.itemId, outcome: "skipped", targetId: row ? input.targetId : null, message: row ? "Target was edited outside sync; left unchanged." : "Target no longer exists; not updated." });
-        return false;
+        return [];
       });
     }
 
@@ -549,13 +589,17 @@ export const transactionAdapter: SyncKindAdapter = {
             results.push({ itemId: input.itemId, outcome: "skipped", targetId: current ? input.targetId : null, message: current ? "Target was edited outside sync; left unchanged." : "Target no longer exists; not updated." });
             continue;
           }
+          if (options?.shouldStop?.()) {
+            results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "Apply stopped before this row; left unchanged." });
+            continue;
+          }
           await transport.updateTransactionForSync({
             transactionId: input.targetId,
             accountId: config.targetAccountId,
             date: fields.date as string,
             amount: fields.amount as number,
             payeeId: fields.payeeId,
-            categoryId: fields.categoryId,
+            categoryId: current.categoryId != null ? undefined : fields.categoryId,
             notes: fields.notes,
             returnApplied: false,
           });

@@ -228,7 +228,8 @@ export async function postFxRevaluation(input: {
       throw new Error("A revaluation for this account was already posted today.");
     }
     await mapRevaluation(existingId, null);
-    return { recovered: true, uploaded: true };
+    // The earlier attempt may have stopped before its upload.
+    return { recovered: true, uploaded: await uploaded(transport) };
   }
   const { created } = await transport.createTransactionsForSync([transaction]);
   const row = created[0];
