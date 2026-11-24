@@ -152,7 +152,7 @@ describe("getHttpTargetLookupForSync", () => {
     const lookup = await getHttpTargetLookupForSync(connection, { accountId: "acct-tgt" });
     expect(lookup.importedIdIndex.get("marker-1")).toBe("x1");
     expect(lookup.transactions).toEqual([
-      { id: "x1", date: "2026-01-05", amount: -500, payeeName: "Grocer", categoryId: "c9" },
+      { id: "x1", date: "2026-01-05", amount: -500, payeeName: "Grocer", categoryId: "c9", transferId: null },
     ]);
     expect(lookup.payees).toEqual([{ id: "p1", name: "Grocer" }]);
   });

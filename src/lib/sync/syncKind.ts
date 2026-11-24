@@ -124,6 +124,10 @@ export type AdapterMutateInput = {
   payload?: JsonObject;
   /** The run item's source key. */
   sourceItemKey?: string;
+  /** The source fingerprint this item was planned with; a skip that settles the item records it. */
+  sourceFingerprint?: string | null;
+  /** The mapping says this sync created the target transfer's other leg. */
+  ownsTransferLeg?: boolean;
 };
 
 export type AdapterMutateResult = {
@@ -137,7 +141,10 @@ export type AdapterMutateResult = {
   targetId: string | null;
   targetFingerprint?: string | null;
   message?: string;
-  /** When set, replaces the default mapping refresh after an update. */
+  /**
+   * When set, replaces the default mapping refresh after an update. On a skip it
+   * settles the item, so the next preview does not offer the same change again.
+   */
   mappingPatch?: SyncMappingPatch;
 };
 
@@ -187,6 +194,13 @@ export interface SyncKindAdapter {
     /** The rate recorded for each synced row, by target transaction id. */
     manualFxRates?: Map<string, import("./plannedChanges").ManualFxRate>;
   }): SyncPlanResult;
+
+  /**
+   * Optional checks of a finished plan that need more of the target than
+   * `loadTarget` reads, such as the other account of a planned transfer. A failure
+   * leaves the plan as it was.
+   */
+  reviewPlan?(transport: ActualBenchTransport, flow: SyncFlow, plan: SyncPlanResult): Promise<SyncPlanResult>;
 
   /** Non-secret source snapshot summary stored on the run. */
   sourceSummary(flow: SyncFlow): JsonObject;

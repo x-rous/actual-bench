@@ -29,6 +29,7 @@ type SyncMappingRow = {
   target_item_key: string | null;
   target_fingerprint: string | null;
   target_marker: string | null;
+  owns_transfer_leg?: number | null;
   created_run_id: string | null;
   status: string;
   last_seen_at: string | null;
@@ -92,6 +93,7 @@ function rowToMapping(row: SyncMappingRow): SyncMapping {
     targetItemKey: row.target_item_key,
     targetFingerprint: row.target_fingerprint,
     targetMarker: row.target_marker,
+    ownsTransferLeg: row.owns_transfer_leg === 1,
     createdRunId: row.created_run_id,
     status: row.status as SyncMappingStatus,
     lastSeenAt: row.last_seen_at,
@@ -125,13 +127,14 @@ export function createSyncMapping(db: SqliteDatabase, input: SyncMappingInput): 
       target_item_key,
       target_fingerprint,
       target_marker,
+      owns_transfer_leg,
       created_run_id,
       status,
       last_seen_at,
       last_applied_at,
       created_at,
       updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     normalizeRequiredText(input.flowId, "flowId"),
@@ -151,6 +154,7 @@ export function createSyncMapping(db: SqliteDatabase, input: SyncMappingInput): 
     normalizeOptionalText(input.targetItemKey, "targetItemKey"),
     normalizeOptionalText(input.targetFingerprint, "targetFingerprint"),
     normalizeOptionalText(input.targetMarker, "targetMarker"),
+    input.ownsTransferLeg === true ? 1 : 0,
     normalizeOptionalText(input.createdRunId, "createdRunId"),
     normalizeStatus(input.status),
     input.lastSeenAt ?? null,
@@ -243,6 +247,7 @@ export function updateSyncMapping(db: SqliteDatabase, mappingId: string, patch: 
          target_item_key = ?,
          target_fingerprint = ?,
          target_marker = ?,
+         owns_transfer_leg = ?,
          created_run_id = ?,
          status = ?,
          last_seen_at = ?,
@@ -255,6 +260,7 @@ export function updateSyncMapping(db: SqliteDatabase, mappingId: string, patch: 
     patch.targetItemKey === undefined ? existing.targetItemKey : normalizeOptionalText(patch.targetItemKey, "targetItemKey"),
     patch.targetFingerprint === undefined ? existing.targetFingerprint : normalizeOptionalText(patch.targetFingerprint, "targetFingerprint"),
     patch.targetMarker === undefined ? existing.targetMarker : normalizeOptionalText(patch.targetMarker, "targetMarker"),
+    (patch.ownsTransferLeg === undefined ? existing.ownsTransferLeg : patch.ownsTransferLeg) ? 1 : 0,
     patch.createdRunId === undefined ? existing.createdRunId : normalizeOptionalText(patch.createdRunId, "createdRunId"),
     patch.status === undefined ? existing.status : normalizeStatus(patch.status),
     patch.lastSeenAt === undefined ? existing.lastSeenAt : patch.lastSeenAt,

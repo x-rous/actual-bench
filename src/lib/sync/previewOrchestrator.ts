@@ -243,7 +243,8 @@ export async function runLiveDryRunPreview(
 
     // 5. Plan (pure) + summary.
     const targetCapabilities = getBudgetFileSyncCapabilities({ mode: input.context.targetConnection.mode }).capabilities;
-    const plan = adapter.plan({ flow, materialized: source.materialized, target, mappings, targetCapabilities, fxRateByDate, fxPendingByDate, manualFxRates });
+    const planned = adapter.plan({ flow, materialized: source.materialized, target, mappings, targetCapabilities, fxRateByDate, fxPendingByDate, manualFxRates });
+    const plan = adapter.reviewPlan ? await adapter.reviewPlan(targetTransport, flow, planned).catch(() => planned) : planned;
     const summary = adapter.buildSummary(plan, source.stats);
 
     // 6. Persist the draft preview run (one transaction).

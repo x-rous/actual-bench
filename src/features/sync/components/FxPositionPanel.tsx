@@ -248,7 +248,7 @@ export function FxPositionPanel({ flow, sourceConnection, targetConnection, onBa
             <section className="flex min-h-0 flex-col gap-2 border-t border-border pt-3">
               <div>
                 <h4 className="text-sm font-semibold">Transfers to link</h4>
-                <p className="text-xs text-muted-foreground">Synced transfers with a likely other side in the main budget. Linking uses that side&apos;s real amount, so reports stop counting the move as spending and income.</p>
+                <p className="text-xs text-muted-foreground">Synced transfers, and synced rows without a category, with a likely other side in the main budget. Linking uses that side&apos;s real amount, so reports stop counting the move as spending and income.</p>
               </div>
               {data.transfers.length === 0 ? (
                 <p className="py-3 text-xs text-muted-foreground">No unlinked transfers with a likely match.</p>

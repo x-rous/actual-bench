@@ -207,6 +207,7 @@ export async function getHttpTargetLookupForSync(
       amount: num(r.amount),
       payeeName: r.payee ? payeeNameById.get(r.payee) ?? null : null,
       categoryId: r.category ?? null,
+      transferId: r.transfer_id ?? null,
       ...(r.is_parent && Array.isArray(r.subtransactions) ? { splitAmounts: r.subtransactions.map((s) => num(s.amount)) } : {}),
     });
   }

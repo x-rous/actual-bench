@@ -79,7 +79,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 69;
+export const LATEST_SCHEMA_VERSION = 70;
 
 type Migration = {
   version: number;
@@ -729,6 +729,9 @@ const MIGRATIONS: readonly Migration[] = [
   // Sync run items gain the `target_missing` classification. No table changes;
   // the bump stops an older build from opening a database that holds the value.
   { version: 69, statements: [] },
+  // A sync mapping records whether the sync created its target transfer's other
+  // leg, so deleting the source may remove both legs only for those.
+  { version: 70, apply: (db) => { if (tableExists(db, "sync_mappings")) addColumnIfMissing(db, "sync_mappings", "owns_transfer_leg", "integer NOT NULL DEFAULT 0"); } },
 ];
 
 function applyAccountClassAccess(db: SqliteDatabase): void {

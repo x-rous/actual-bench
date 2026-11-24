@@ -334,6 +334,8 @@ export type SyncTargetLookupTransaction = {
   categoryId: string | null;
   /** A split's line amounts, in order. Absent for a row that is not a split. */
   splitAmounts?: number[];
+  /** The other leg, when this row is one side of a linked transfer. */
+  transferId?: string | null;
 };
 
 /** Lightweight target lookup used for marker-match dedupe before applying. */

@@ -123,7 +123,9 @@ export function toPreviewRow(item: SyncFlowRunItem): PreviewRow {
     ? ((record(item.warnings?.data).flags as unknown[]).filter((f): f is string => typeof f === "string"))
     : [];
 
-  const isSafeNew = item.classification === "new" && item.plannedAction === "create";
+  // A transfer that may double an existing row is created only when picked by hand.
+  const heldTransfer = flags.includes("transfer_may_duplicate");
+  const isSafeNew = item.classification === "new" && item.plannedAction === "create" && !heldTransfer;
   // An exact duplicate the flow opted to auto-map is safe (mapping-only, no write).
   const isExactDupAutoMap =
     item.classification === "exact_duplicate" && flags.includes("exact_duplicate_auto_map");
@@ -143,6 +145,7 @@ export function toPreviewRow(item: SyncFlowRunItem): PreviewRow {
     // opt-in updates, or review-first deletes.
     selectable:
       isSafeNew ||
+      heldTransfer ||
       item.classification === "target_marker_match" ||
       item.classification === "target_name_match" ||
       isExactDupAutoMap ||
@@ -171,7 +174,9 @@ export function toPreviewRow(item: SyncFlowRunItem): PreviewRow {
       notes: str(payload.notes),
     },
     fx: fxInfo(payload.fx),
-    canOverrideAmount: (isSafeNew || isRecreate) && !!fxInfo(payload.fx) && !payload.subtransactions && numOrNull(source.amount) !== 0,
+    // An update of a transfer this sync created moves both legs, so it may take the
+    // amount the other account recorded.
+    canOverrideAmount: (isSafeNew || heldTransfer || isRecreate || (isUpdate && payload.linkedTransfer === "owned")) && !!fxInfo(payload.fx) && !payload.subtransactions && numOrNull(source.amount) !== 0,
   };
 }
 
