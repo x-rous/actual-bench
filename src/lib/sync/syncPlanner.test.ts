@@ -213,7 +213,7 @@ describe("planSyncFlow - mappings and markers", () => {
     expect(item.plannedTargetPayload).not.toBeNull();
   });
 
-  it("warns (never updates) a changed grouped split parent, whose children can't be patched (RD-057 §4/§6)", () => {
+  it("updates a changed grouped split, carrying its lines (RD-057 §4/§6)", () => {
     const splitParent = txn({
       id: "p", amount: -3000, isParent: true,
       splitLines: [
@@ -235,8 +235,8 @@ describe("planSyncFlow - mappings and markers", () => {
     );
     const item = plan.items[0];
     expect(item.classification).toBe("source_changed_since_sync");
-    expect(item.action).toBe("skip"); // warn only - not "update"
-    expect(item.plannedTargetPayload).toBeNull();
+    expect(item.action).toBe("update");
+    expect(item.plannedTargetPayload?.subtransactions?.map((line) => line.amount)).toEqual([1000, 2000]);
   });
 
   it("still only warns when the source changed but the flow did not opt into updates", () => {

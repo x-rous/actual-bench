@@ -1,4 +1,5 @@
 import { MIN_INTERVAL_MINUTES } from "@/lib/automation/schedule";
+import { fnv1aHex } from "./hash";
 import type { SyncFlow, SyncReviewPolicy } from "@/lib/app-db/types";
 
 /**
@@ -17,6 +18,9 @@ export type SyncAmountDirection = "reverse" | "same";
 
 /** What to do when a source payee has no normalized-name match on the target. */
 export type SyncMissingPayeePolicy = "create" | "leave_empty";
+
+/** Which rate a converting flow uses for a transaction's date. */
+export type SyncFxRatePolicy = "daily" | "monthly_average" | "fixed";
 
 export type SyncFlowPlanConfig = {
   flowId: string;
@@ -74,10 +78,10 @@ export type SyncFlowPlanConfig = {
   updateMappedTargets: boolean;
   /**
    * When true, a mapped item whose source transaction was deleted is surfaced as
-   * a review-first `source_missing` delete candidate (RD-057 §5). Off by default,
-   * and only acted on for whole-account flows (no date filter) so a transaction
-   * merely outside the synced window is never mistaken for a deletion. Deletes
-   * always require explicit selection - they are never applied in bulk.
+   * a review-first `source_missing` delete candidate (RD-057 §5). Off by default.
+   * Presence is checked against the whole source account, so a transaction merely
+   * outside the flow's filters is never mistaken for a deletion. Deletes always
+   * require explicit selection - they are never applied in bulk.
    */
   detectDeletedSource: boolean;
   /**
@@ -105,6 +109,12 @@ export type SyncFlowPlanConfig = {
    * "not edited outside sync" guard.
    */
   fxUpdateOnRateChange: boolean;
+  /** `daily` (default), the mean of the transaction's month, or one fixed rate. */
+  fxRatePolicy: SyncFxRatePolicy;
+  /** Decimal-string rate for the `fixed` policy (useful for pegged currencies). */
+  fxFixedRate: string;
+  /** Bank fee as a decimal-string percentage; empty means none. */
+  fxMarkupPercent: string;
 };
 
 /**
@@ -128,10 +138,12 @@ export function clampSyncInterval(value: unknown): number {
   return Math.max(MIN_SYNC_INTERVAL_MINUTES, Math.round(n));
 }
 
-/** Recognised review-policy values; anything else decodes to the safe default. */
+/**
+ * Recognised review-policy values; anything else decodes to the safe default. That
+ * includes the removed `auto_apply_safe_only`, so such a flow reads as manual.
+ */
 const REVIEW_POLICIES: readonly SyncReviewPolicy[] = [
   "manual_preview_required",
-  "auto_apply_safe_only",
   "auto_sync_on_interval",
   "auto_sync_unattended",
 ];
@@ -162,6 +174,9 @@ export const SYNC_PLAN_CONFIG_DEFAULTS = {
   fxTargetCurrency: "",
   fxAllowProvider: true,
   fxUpdateOnRateChange: false,
+  fxRatePolicy: "daily" as SyncFxRatePolicy,
+  fxFixedRate: "",
+  fxMarkupPercent: "",
 };
 
 type PartialRoute = Partial<
@@ -203,6 +218,9 @@ export function buildPlanConfig(
         | "fxTargetCurrency"
         | "fxAllowProvider"
         | "fxUpdateOnRateChange"
+        | "fxRatePolicy"
+        | "fxFixedRate"
+        | "fxMarkupPercent"
       >
     >
 ): SyncFlowPlanConfig {
@@ -243,7 +261,51 @@ export function buildPlanConfig(
     fxTargetCurrency: input.fxTargetCurrency ?? SYNC_PLAN_CONFIG_DEFAULTS.fxTargetCurrency,
     fxAllowProvider: input.fxAllowProvider ?? SYNC_PLAN_CONFIG_DEFAULTS.fxAllowProvider,
     fxUpdateOnRateChange: input.fxUpdateOnRateChange ?? SYNC_PLAN_CONFIG_DEFAULTS.fxUpdateOnRateChange,
+    fxRatePolicy: input.fxRatePolicy ?? SYNC_PLAN_CONFIG_DEFAULTS.fxRatePolicy,
+    fxFixedRate: input.fxFixedRate ?? SYNC_PLAN_CONFIG_DEFAULTS.fxFixedRate,
+    fxMarkupPercent: input.fxMarkupPercent ?? SYNC_PLAN_CONFIG_DEFAULTS.fxMarkupPercent,
   };
+}
+
+/** JSON with sorted object keys, so equal settings always serialize the same way. */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, entry]) => entry !== undefined)
+      .sort(([a], [b]) => (a < b ? -1 : 1));
+    return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`).join(",")}}`;
+  }
+  return JSON.stringify(value ?? null);
+}
+
+/**
+ * Identifies the settings a preview was planned with. A run whose hash no longer
+ * matches its flow was planned for a different route, filter or transform and
+ * must be previewed again. Schedule and pause settings are left out: changing
+ * them does not change what a preview would write.
+ */
+export function flowPlanHash(flow: SyncFlow): string {
+  const source = (flow.sourceRef.data ?? {}) as Record<string, unknown>;
+  const target = (flow.targetRef.data ?? {}) as Record<string, unknown>;
+  const options = (flow.options.data ?? {}) as Record<string, unknown>;
+  return fnv1aHex(
+    canonicalJson({
+      flowType: flow.flowType,
+      source: { budgetId: source.budgetId, accountId: source.accountId },
+      target: { budgetId: target.budgetId, accountId: target.accountId },
+      filter: flow.filter.data,
+      transform: flow.transform.data,
+      options: {
+        exactDuplicateAutoMap: options.exactDuplicateAutoMap,
+        updateMappedTargets: options.updateMappedTargets,
+        detectDeletedSource: options.detectDeletedSource,
+        createTargetSplits: options.createTargetSplits,
+        defaultGroupName: options.defaultGroupName,
+        createMissingGroup: options.createMissingGroup,
+      },
+    })
+  );
 }
 
 function str(value: unknown): string | undefined {
@@ -298,5 +360,11 @@ export function decodeFlowPlanConfig(flow: SyncFlow): SyncFlowPlanConfig {
     fxTargetCurrency: (str(transform.fxTargetCurrency) ?? "").toUpperCase() || undefined,
     fxAllowProvider: transform.fxAllowProvider == null ? undefined : bool(transform.fxAllowProvider),
     fxUpdateOnRateChange: bool(transform.fxUpdateOnRateChange),
+    fxRatePolicy:
+      transform.fxRatePolicy === "monthly_average" || transform.fxRatePolicy === "fixed" || transform.fxRatePolicy === "daily"
+        ? transform.fxRatePolicy
+        : undefined,
+    fxFixedRate: str(transform.fxFixedRate)?.trim(),
+    fxMarkupPercent: str(transform.fxMarkupPercent)?.trim(),
   });
 }

@@ -332,6 +332,8 @@ export type SyncTargetLookupTransaction = {
   amount: number;
   payeeName: string | null;
   categoryId: string | null;
+  /** A split's line amounts, in order. Absent for a row that is not a split. */
+  splitAmounts?: number[];
 };
 
 /** Lightweight target lookup used for marker-match dedupe before applying. */

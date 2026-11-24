@@ -81,13 +81,13 @@ blocked.
 
 ### Filters
 
-- Date range, cleared/reconciled status, amount sign, payee/category include-exclude, and
-  notes-contains.
+- Date range, cleared and reconciled status, amount sign, minimum and maximum amount, payee and
+  category include and exclude, and notes-contains. **Clear filters** clears all of them.
 - Sync-generated transactions are always excluded to prevent loops.
 
 ### Transforms
 
-- **Amount direction** - reverse sign by default (a common cross-budget consolidation), or same-sign.
+- **Amount direction** - same sign by default, or reverse sign.
 - **Payee match-by-name** - create missing payees by default, or leave empty.
 - **Category match-by-name** - missing categories are left empty (categories are never auto-created).
 - **Notes marker** - a clean visible marker such as `[Synced from <budget> / <account>]`, on by
@@ -116,6 +116,7 @@ Select **Preview** to produce a dry-run. Each row is classified. The exact label
 | **Duplicate** | A likely duplicate on the target; held for review. |
 | **Source changed** | The source changed since it was synced. |
 | **Source deleted** | The mapped source was deleted. |
+| **Deleted on target** | The mapped target was deleted; recreate it or stop syncing it. |
 | **Marker match** / **Name match** | The target already carries this item's marker or matches by name. |
 | **Blocked** | Can't be applied safely (for example, ambiguous category group placement). |
 | **FX pending** | A converting row has no available rate yet (see [Exchange Rates](../fx-rates/)). |
@@ -130,6 +131,8 @@ Select the safe **New** rows and **Apply**:
 - Only the selected safe items are written; each create is stamped with a durable target-side marker
   (`imported_id`), and an app-owned **mapping** is recorded immediately after each success.
 - Partial failures are reported and never lose earlier successes.
+- A run can only be applied once at a time. A preview is refused if the flow's settings changed after it
+  was made, or if it is more than a day old. Run a new preview in that case.
 
 ### Mappings and idempotency
 
@@ -144,11 +147,33 @@ repair the mapping without creating a duplicate.
 ## Updates and deletion (opt-in)
 
 - **Update mapped targets** - when a source transaction changes after it was synced, push the change to
-  its mapped target. A stored field fingerprint prevents overwriting a target that was edited outside
-  sync.
+  its mapped target. Sync owns the amount, date, payee and notes. The **category and cleared state belong
+  to the target budget**: you can categorise synced rows there and later corrections still arrive. A
+  target whose amount, date, payee or notes you edited by hand is never overwritten.
 - **Delete when the source is removed** - when a synced source is deleted, the mapped target surfaces
-  under **Source deleted** for you to delete manually. Never automatic, never in bulk, and only for
-  whole-account flows.
+  under **Source deleted** for you to select. Never automatic and never in bulk. The whole source account
+  is checked, so this works on flows with a date range, and a transaction that only stopped matching a
+  filter is not treated as deleted.
+- **Deleted on target** - a synced row removed from the target budget is reported. Select it to recreate
+  it, or choose **Stop syncing** to keep it deleted.
+
+Clearing or reconciling the source account is not a change and does not put rows in review.
+
+A grouped split is updated line by line while it still has the same number of lines; each line keeps
+its target category. If the number of lines changed, the split is left as it is and reported.
+
+A synced row keeps the exchange rate it was recorded with. Editing only its notes does not re-convert
+it. A new rate is used when its date changes, or when the flow follows rate changes.
+
+If you turn **Keep split transactions grouped** on or off after a split was synced, that split shows as
+**Split setting changed** and is held back, because creating it in the new shape would duplicate it.
+
+### Transfers
+
+A transfer inside the source budget is one leg of a pair. Sync writes it **without a transfer payee**,
+with the other side named in its notes, so it cannot create a second leg on the target. On a
+currency-converting flow you can then link it to its real other side from
+[Currency position](../fx-rates/#currency-position). Updates and deletes leave a linked transfer alone.
 
 ## Review queue
 
@@ -176,15 +201,14 @@ retry, and act on changes.
 Each flow has a **review policy**:
 
 1. **Manual** (default) - preview and apply yourself.
-2. **Auto-apply safe items on preview** - a run auto-applies only safe items (new creates and
-   marker-match repairs); everything uncertain is left for you.
-3. **Auto-sync on a server schedule (unattended)** - the server runs the same safe-only sync on a
-   schedule, **with the app closed**, for HTTP API and Direct budgets alike. It is opt-in and off by
-   default and requires operator setup (see the note below).
-4. **Auto-sync on a schedule (while the app is open)** - turned off. A flow that still has this
+2. **Auto-sync on a server schedule (unattended)** - the server runs a safe-only sync on a schedule,
+   **with the app closed**, for HTTP API and Direct budgets alike. It is opt-in and off by default and
+   requires operator setup (see the note below). Routine runs read the last two months, and one run a
+   day reads the whole account and checks for deletions.
+3. **Auto-sync on a schedule (while the app is open)** - turned off. A flow that still has this
    policy no longer runs automatically and says so in the flow list; edit it and choose the server
    schedule instead.
-5. **Run safe sync now** - a one-click safe-only run for any automated flow.
+4. **Run safe sync now** - a one-click safe-only run for any automated flow.
 
 Additional controls:
 
@@ -198,6 +222,16 @@ enrolled: their API key or Actual server password is saved encrypted on the serv
 budgets, the Bench server must be able to reach your Actual server. See
 [Configuration](../../administration/configuration/) and [Deployment](../../administration/deployment/).
 :::
+
+## Groups and the attention list
+
+Give flows the same **Group** name in the editor to list them together. **Run all** on a group runs its
+flows in order, payees and categories before transactions. Automated flows apply safe items only.
+Manual flows are previewed and write nothing, so you open them to apply.
+
+The bell beside **Sync flows** counts flows whose latest run needs you: failed rows, rows waiting for a
+rate, blocked rows, or rows to review. Open it to go straight to that run. While the page is open, a new
+problem also raises a notice.
 
 ## Flow health and auto-pause
 
@@ -213,9 +247,8 @@ not an error.
 
 ## Limitations
 
-Not in scope: true Actual transfer-linked sync (same-budget uses a plain copy), automatic (non-review)
-target deletes, transaction-flow category auto-creation, fuzzy duplicate auto-mapping, unattended sync
-for **Direct**-mode flows, FX gain/loss accounting, and multi-currency within a single budget file. A
+Not in scope: automatic transfer linking, automatic (non-review) target deletes, transaction-flow
+category auto-creation, fuzzy duplicate auto-mapping, and multi-currency within a single budget file. A
 dedicated **Category** flow can create missing categories under an existing, selected, or explicitly
 created group. See
 [Known Limitations](../../help/known-limitations/).

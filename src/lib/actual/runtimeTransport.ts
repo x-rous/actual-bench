@@ -1244,6 +1244,9 @@ async function getBrowserTargetLookupForSync(
       amount: typeof row.amount === "number" ? row.amount : 0,
       payeeName: payeeId ? payeeNameById.get(payeeId) ?? null : null,
       categoryId: asString(row.category) ?? null,
+      ...(row.is_parent === true && Array.isArray(row.subtransactions)
+        ? { splitAmounts: row.subtransactions.map((line) => (isRecord(line) && typeof line.amount === "number" ? line.amount : 0)) }
+        : {}),
     });
   }
 

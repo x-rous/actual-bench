@@ -79,7 +79,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 68;
+export const LATEST_SCHEMA_VERSION = 69;
 
 type Migration = {
   version: number;
@@ -726,6 +726,9 @@ const MIGRATIONS: readonly Migration[] = [
   // Asset), an account that counted uncategorized money in as income is a Savings account (which now does so by itself), and the
   // Financial Insights cash basis is saved per budget. `account_reporting` and the old flag rows stay in place, unread.
   { version: 68, apply: applyAccountClassAccess },
+  // Sync run items gain the `target_missing` classification. No table changes;
+  // the bump stops an older build from opening a database that holds the value.
+  { version: 69, statements: [] },
 ];
 
 function applyAccountClassAccess(db: SqliteDatabase): void {

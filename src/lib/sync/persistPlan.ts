@@ -1,7 +1,9 @@
 import {
   buildEphemeralSyncFlowRunItem,
   createSyncFlowRun,
+  ABANDONED_APPLY_MS,
   createSyncFlowRunItem,
+  failAbandonedSyncRuns,
 } from "@/lib/app-db/syncRunRepository";
 import type {
   JsonObject,
@@ -86,6 +88,7 @@ export function persistDraftPreviewRun(
   // Persist the run + all its items in ONE transaction: 1 commit instead of
   // N+1, which is the difference between one fsync and hundreds for a big run.
   const persist = db.transaction((): PersistDraftPreviewResult => {
+    failAbandonedSyncRuns(db, plan.flowId, new Date(Date.now() - ABANDONED_APPLY_MS).toISOString());
     const run = createSyncFlowRun(db, {
       flowId: plan.flowId,
       status: "draft_preview",

@@ -157,6 +157,18 @@ export const budgetFileSyncJobType: AutomationJobType<BudgetFileSyncConfig, Budg
         countsAsFailure: true,
       };
     }
+    // Rows the run could not process are not a clean result, even when everything
+    // else worked. Reported as partial, without counting toward an auto-pause:
+    // they wait for a rate or a decision, and retrying the run would not help.
+    if (result.blocked > 0) {
+      const applied = itemCount > 0 ? `${describeCounts(result)}; ` : "";
+      return {
+        outcome: "partial",
+        itemCount,
+        message: `${applied}${result.blocked} blocked item(s) need attention in the flow's preview`,
+        countsAsFailure: false,
+      };
+    }
     if (result.status === "no_safe_items" || itemCount === 0) {
       return { outcome: "no_changes", itemCount: 0, message: "Nothing safe to apply" };
     }

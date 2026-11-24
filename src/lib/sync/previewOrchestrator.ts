@@ -1,5 +1,5 @@
 import { getBudgetFileSyncCapabilities } from "./capabilities";
-import { decodeFlowPlanConfig } from "./flowConfig";
+import { decodeFlowPlanConfig, flowPlanHash } from "./flowConfig";
 import "./adapters"; // register all data-type adapters (side-effect)
 import { describeSyncError, getSyncKindAdapter, SyncKindError } from "./syncKind";
 import type { ActualBenchTransport } from "@/lib/actual/transport";
@@ -40,6 +40,8 @@ export type PreviewPersistMeta = {
 export type PreviewStore = {
   loadFlow(flowId: string): Promise<SyncFlow | null>;
   loadMappings(flowId: string): Promise<SyncMapping[]>;
+  /** The rate recorded for each synced row, by target transaction id. */
+  loadManualFxRates?(flowId: string): Promise<Map<string, import("./plannedChanges").ManualFxRate>>;
   /**
    * `items` is the FULL planned list, including classifications the store
    * chose not to persist (e.g. `already_synced` — see
@@ -67,6 +69,14 @@ export type LiveDryRunInput = {
   allowDisabled?: boolean;
   /** What created this run; stamped on the persisted run (RD-054). */
   trigger?: SyncRunTrigger;
+  /**
+   * Read only rows from this date, for a routine scheduled run. Deletions and
+   * rows deleted on the target are not checked on such a run; the next full scan
+   * does that.
+   */
+  scanSince?: string;
+  /** Run a kind other than the flow's own on this flow's route. */
+  adapterKind?: "category_return";
 };
 
 // --- Result / error shapes --------------------------------------------------
@@ -100,6 +110,8 @@ export type DryRunSummary = {
   sourceChangedWarnings: number;
   targetMarkerMatches: number;
   blocked: number;
+  /** Mapped rows whose target transaction no longer exists. */
+  targetMissing?: number;
 };
 
 export type LiveDryRunResult =
@@ -142,6 +154,8 @@ export type PreviewFxResolver = (
   allowProvider: boolean
 ) => Promise<{
   resolved: Record<string, { requestedDate: string; rate: string; effectiveDate: string; source: string; provider: string | null; fxRateId: string | null }>;
+  /** Keyed `BASE:QUOTE:YYYY-MM-DD`; the reason a date has no rate. */
+  pending?: Record<string, { code: string; message: string }>;
 }>;
 
 export async function runLiveDryRunPreview(
@@ -164,7 +178,7 @@ export async function runLiveDryRunPreview(
   }
 
   // 2. Resolve the data-type adapter and validate the route/capabilities.
-  const adapter = getSyncKindAdapter(flow.flowType);
+  const adapter = getSyncKindAdapter(input.adapterKind ?? flow.flowType);
   if (!adapter) {
     return failedResult(flowId, { code: "unsupported_connection", message: `Unsupported sync type: ${flow.flowType}.` }, warnings);
   }
@@ -184,7 +198,8 @@ export async function runLiveDryRunPreview(
     } catch (err) {
       throw new SyncKindError("source_load_failed", describeSyncError(err, "Failed to open the source budget."));
     }
-    const source = await adapter.loadSource(sourceTransport, flow);
+    const scan = input.scanSince ? { sinceDate: input.scanSince } : undefined;
+    const source = await adapter.loadSource(sourceTransport, flow, scan);
 
     // 4. Target phase: open target (may close source), load its snapshot + mappings.
     // Opening the target must surface as a target failure, not the source fallback.
@@ -194,7 +209,7 @@ export async function runLiveDryRunPreview(
     } catch (err) {
       throw new SyncKindError("target_load_failed", describeSyncError(err, "Failed to open the target budget."));
     }
-    const target = await adapter.loadTarget(targetTransport, flow);
+    const target = await adapter.loadTarget(targetTransport, flow, scan);
     let mappings: SyncMapping[];
     try {
       mappings = await deps.store.loadMappings(flowId);
@@ -206,6 +221,7 @@ export async function runLiveDryRunPreview(
     // the pure planner can convert amounts. Unresolved dates are simply absent →
     // those items plan as `fx_rate_pending` review items.
     let fxRateByDate: Map<string, import("./plannedChanges").FxRateInfo> | undefined;
+    let fxPendingByDate: Map<string, string> | undefined;
     const fxNeeds = adapter.collectFxNeeds?.(source.materialized, flow) ?? [];
     if (fxNeeds.length > 0 && deps.resolveFx) {
       const batch = await deps.resolveFx(fxNeeds, decodeFlowPlanConfig(flow).fxAllowProvider);
@@ -215,11 +231,19 @@ export async function runLiveDryRunPreview(
           { rate: r.rate, effectiveDate: r.effectiveDate, source: r.source, provider: r.provider, fxRateId: r.fxRateId },
         ])
       );
+      fxPendingByDate = new Map(
+        Object.entries(batch.pending ?? {}).map(([key, pending]) => [key.slice(key.lastIndexOf(":") + 1), pending.message])
+      );
     }
+
+    // Sending categories back converts nothing, so it does not need the rate history.
+    const manualFxRates = decodeFlowPlanConfig(flow).fxEnabled && input.adapterKind !== "category_return"
+      ? await deps.store.loadManualFxRates?.(flowId)
+      : undefined;
 
     // 5. Plan (pure) + summary.
     const targetCapabilities = getBudgetFileSyncCapabilities({ mode: input.context.targetConnection.mode }).capabilities;
-    const plan = adapter.plan({ flow, materialized: source.materialized, target, mappings, targetCapabilities, fxRateByDate });
+    const plan = adapter.plan({ flow, materialized: source.materialized, target, mappings, targetCapabilities, fxRateByDate, fxPendingByDate, manualFxRates });
     const summary = adapter.buildSummary(plan, source.stats);
 
     // 6. Persist the draft preview run (one transaction).
@@ -227,7 +251,12 @@ export async function runLiveDryRunPreview(
     let items: SyncFlowRunItem[];
     try {
       ({ runId, items } = await deps.store.persistPlan(plan, {
-        summary: { ...summary },
+        summary: {
+          ...summary,
+          flowPlanHash: flowPlanHash(flow),
+          ...(input.adapterKind ? { adapterKind: input.adapterKind } : {}),
+          ...(input.scanSince ? { scannedSince: input.scanSince } : input.adapterKind ? {} : { fullScanAt: new Date().toISOString() }),
+        },
         sourceSnapshotSummary: adapter.sourceSummary(flow),
         trigger: input.trigger,
       }));

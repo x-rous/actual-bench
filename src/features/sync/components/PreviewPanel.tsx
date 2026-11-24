@@ -4,11 +4,14 @@ import { useEffect, useState } from "react";
 import { CheckCircle2, Download, Info, ListChecks, Loader2, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import {
   filterCount,
+  amountEditText,
   formatAmount,
   isAlreadySyncedCountOnly,
+  parseAmountToMinor,
   matchesPreviewFilter,
   previewFilters,
   previewTiles,
@@ -45,6 +48,11 @@ type PreviewPanelProps = {
   readOnly: boolean;
   /** Run id, used to name the audit export file (RD-057 §7). */
   runId?: string | null;
+  /** Amounts the user set for converted rows, by row id (positive minor units). */
+  amountOverrides?: Record<string, number>;
+  onAmountOverride?: (id: string, minor: number | null) => void;
+  /** Stop syncing a row that was deleted on the target. */
+  onStopSyncing?: (row: PreviewRow) => void;
 };
 
 /** Trigger a client-side file download of `content` (RD-057 §7 audit export). */
@@ -317,7 +325,13 @@ export function PreviewPanel(props: PreviewPanelProps) {
                         <td><EntityCell display={targetEntityDisplay(row.source.categoryName, row.flags, "category")} kind="category" /></td>
                         <td><Truncate text={row.source.notes} width="11rem" /></td>
                         <td className="text-right"><Amount minor={row.source.amount} currency={row.fx?.sourceCurrency} /></td>
-                        <td className="text-right"><Amount minor={row.target.amount} currency={row.fx?.targetCurrency} fx={row.fx} /></td>
+                        <td className="text-right">
+                          {row.canOverrideAmount && !props.readOnly && props.onAmountOverride ? (
+                            <AmountOverride row={row} value={props.amountOverrides?.[row.id]} onChange={(minor) => props.onAmountOverride?.(row.id, minor)} />
+                          ) : (
+                            <Amount minor={row.target.amount} currency={row.fx?.targetCurrency} fx={row.fx} />
+                          )}
+                        </td>
                       </>
                     ) : kind === "category" ? (
                       <>
@@ -331,7 +345,13 @@ export function PreviewPanel(props: PreviewPanelProps) {
                         <td className="text-muted-foreground">{onTarget}</td>
                       </>
                     )}
-                    <td className="text-[11px] text-muted-foreground"><Truncate text={details || null} width="12rem" /></td>
+                    <td className="text-[11px] text-muted-foreground">
+                      {row.group === "target_missing" && !props.readOnly && props.onStopSyncing ? (
+                        <Button size="xs" variant="ghost" onClick={() => props.onStopSyncing?.(row)} title="Keep it deleted and never sync this transaction again">Stop syncing</Button>
+                      ) : (
+                        <Truncate text={details || null} width="12rem" />
+                      )}
+                    </td>
                   </tr>
                 );
               })}
@@ -364,6 +384,47 @@ function Amount({ minor, currency, fx }: { minor: number | null; currency?: stri
           @ {fx.rate}
         </span>
       )}
+    </span>
+  );
+}
+
+/** The converted amount on one line, editable to what the bank actually charged. */
+function AmountOverride({ row, value, onChange }: { row: PreviewRow; value?: number; onChange: (minor: number | null) => void }) {
+  const planned = Math.abs(row.target.amount ?? 0);
+  const shown = formatAmount(value ?? planned);
+  const [draft, setDraft] = useState<string | null>(null);
+  const invalid = draft !== null && draft.trim() !== "" && parseAmountToMinor(draft) === null;
+  const commit = () => {
+    if (draft === null) return;
+    const minor = parseAmountToMinor(draft);
+    if (draft.trim() === "" || minor === planned) onChange(null);
+    else if (minor !== null) onChange(minor);
+    // An invalid entry is dropped, so what is shown is always what would be written.
+    setDraft(null);
+  };
+  return (
+    <span className="inline-flex items-center justify-end gap-1 tabular-nums">
+      <span className="text-[10px] text-muted-foreground">{row.fx?.targetCurrency}</span>
+      {(row.target.amount ?? 0) < 0 && <span className="text-red-600 dark:text-red-400">-</span>}
+      <Input
+        size="sm"
+        aria-label={`Amount charged for ${row.source.payeeName ?? row.sourceItemKey}`}
+        aria-invalid={invalid}
+        inputMode="decimal"
+        title={value !== undefined ? `Set by you. Planned at ${row.fx?.rate}: ${formatAmount(planned)}` : `Planned at ${row.fx?.rate}. Type what your bank charged to replace it.`}
+        className={cn(
+          "h-6 w-24 bg-transparent px-1 text-right text-xs tabular-nums",
+          invalid ? "border-destructive" : value !== undefined ? "border-primary/60" : "border-transparent hover:border-border"
+        )}
+        value={draft ?? shown}
+        onFocus={() => setDraft(amountEditText(value ?? planned))}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") event.currentTarget.blur();
+          if (event.key === "Escape") setDraft(null);
+        }}
+      />
     </span>
   );
 }
@@ -488,6 +549,7 @@ function ApplyResultBanner({ result, kind }: { result: ApplyRunResult; kind: Syn
         <p><strong className="font-semibold">{headline}</strong> {result.counts.applied} {created} · {result.counts.repaired} {linked} · {result.counts.failed} failed.</p>
         {result.counts.appliedWithWarnings > 0 && <p className="text-xs opacity-90">{result.counts.appliedWithWarnings} were adjusted by target-budget rules. They show as “Already synced” next time.</p>}
         {unresolved > 0 && <p className="text-xs opacity-90">{unresolved} couldn&apos;t be confirmed on the target.</p>}
+        {result.error && <p className="text-xs opacity-90">{result.error.message}</p>}
       </div>
     </div>
   );

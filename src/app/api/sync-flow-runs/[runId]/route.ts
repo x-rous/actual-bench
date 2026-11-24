@@ -3,7 +3,9 @@ import { getAppDb } from "@/lib/app-db/connection";
 import { appDbErrorResponse, readJsonBody } from "@/lib/app-db/routeResponses";
 import {
   getAllSyncFlowRunItems,
+  claimSyncFlowRun,
   getSyncFlowRun,
+  heartbeatSyncFlowRun,
   updateSyncFlowRun,
   type UpdateSyncFlowRunPatch,
 } from "@/lib/app-db/syncRunRepository";
@@ -21,6 +23,27 @@ export async function GET(_request: Request, context: RouteContext) {
     if (!run) return NextResponse.json({ error: "Run not found" }, { status: 404 });
     // Complete item set: apply reads this route and must see every planned item.
     return NextResponse.json({ run, items: getAllSyncFlowRunItems(db, runId) });
+  } catch (error) {
+    return appDbErrorResponse(error);
+  }
+}
+
+/** Claim a run for apply (one caller wins), or renew a claim already held. */
+export async function POST(request: Request, context: RouteContext) {
+  try {
+    const { runId } = await context.params;
+    const body = (await readJsonBody(request)) as { retry?: unknown; heartbeat?: unknown } | null;
+    if (body?.heartbeat !== undefined) {
+      if (typeof body.heartbeat !== "string") {
+        return NextResponse.json({ error: "heartbeat must be a string" }, { status: 400 });
+      }
+      return NextResponse.json({ alive: heartbeatSyncFlowRun(getAppDb(), runId, body.heartbeat) });
+    }
+    if (body?.retry !== undefined && typeof body.retry !== "boolean") {
+      return NextResponse.json({ error: "retry must be a boolean" }, { status: 400 });
+    }
+    const from = body?.retry === true ? (["draft_preview", "partial", "failed"] as const) : (["draft_preview"] as const);
+    return NextResponse.json({ token: claimSyncFlowRun(getAppDb(), runId, from) });
   } catch (error) {
     return appDbErrorResponse(error);
   }

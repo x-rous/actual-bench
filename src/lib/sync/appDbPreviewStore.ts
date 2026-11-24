@@ -1,6 +1,8 @@
 import { getSyncFlow } from "@/lib/app-db/syncFlowRepository";
 import { getAllSyncMappingsForFlow } from "@/lib/app-db/syncMappingRepository";
 import { createSyncFlowRun } from "@/lib/app-db/syncRunRepository";
+import { listTransactionFxForFlow } from "@/lib/fx/repositories/transactionFxRepository";
+import { manualFxRates } from "./fxPosition";
 import { persistDraftPreviewRun } from "./persistPlan";
 import type { SqliteDatabase } from "@/lib/app-db/types";
 import type { PreviewStore } from "./previewOrchestrator";
@@ -18,6 +20,7 @@ export function createAppDbPreviewStore(db: SqliteDatabase): PreviewStore {
   return {
     loadFlow: async (flowId) => getSyncFlow(db, flowId),
     loadMappings: async (flowId) => getAllSyncMappingsForFlow(db, flowId),
+    loadManualFxRates: async (flowId) => manualFxRates(listTransactionFxForFlow(db, flowId)),
     persistPlan: async (plan, meta) => {
       const { run, items } = persistDraftPreviewRun(db, plan, {
         summary: meta.summary,

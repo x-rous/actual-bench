@@ -12,8 +12,10 @@ import type {
   SyncRunTrigger,
 } from "@/lib/app-db/types";
 import { startAndWaitForRun } from "@/features/automations/lib/runPolling";
+import type { TransactionFxRecord } from "@/lib/fx/types";
 import type { SyncPlanResult } from "@/lib/sync/plannedChanges";
 import type {
+  SyncFlowAttention,
   UpdateSyncFlowRunItemPatch,
   UpdateSyncFlowRunPatch,
 } from "@/lib/app-db/syncRunRepository";
@@ -87,7 +89,7 @@ export function createMapping(input: SyncMappingInput): Promise<{ mapping: SyncM
 }
 
 /** Bulk-create mappings in one request/transaction (apply-run flush). */
-export function createMappings(inputs: SyncMappingInput[]): Promise<{ mappings: SyncMapping[] }> {
+export function createMappings(inputs: SyncMappingInput[]): Promise<{ mappings: SyncMapping[]; conflicts?: string[] }> {
   return jsonFetch("/api/sync-mappings", { method: "POST", body: JSON.stringify(inputs) });
 }
 
@@ -137,6 +139,21 @@ export function persistFailedRun(body: {
 
 export function updateRun(runId: string, patch: UpdateSyncFlowRunPatch): Promise<{ run: SyncFlowRun }> {
   return jsonFetch(`/api/sync-flow-runs/${runId}`, { method: "PATCH", body: JSON.stringify(patch) });
+}
+
+/** Claim a run for apply; a null token means another apply holds this flow. */
+export function claimRun(runId: string, retry: boolean): Promise<{ token: string | null }> {
+  return jsonFetch(`/api/sync-flow-runs/${runId}`, { method: "POST", body: JSON.stringify({ retry }) });
+}
+
+/** What each flow's latest run left for a person to deal with. */
+export function getSyncAttention(): Promise<{ entries: SyncFlowAttention[] }> {
+  return jsonFetch("/api/sync-flow-runs/attention");
+}
+
+/** Keep an apply's claim alive; false means it no longer owns the run. */
+export function heartbeatRun(runId: string, token: string): Promise<{ alive: boolean }> {
+  return jsonFetch(`/api/sync-flow-runs/${runId}`, { method: "POST", body: JSON.stringify({ heartbeat: token }) });
 }
 
 export function updateRunItem(itemId: string, patch: UpdateSyncFlowRunItemPatch): Promise<{ item: SyncFlowRunItem }> {
@@ -282,14 +299,27 @@ export function persistFxSnapshot(input: {
   effectiveDate: string;
   source: string;
   provider: string | null;
+  isManual?: boolean;
 }): Promise<{ snapshot: unknown }> {
   return jsonFetch("/api/fx/snapshot", { method: "POST", body: JSON.stringify(input) });
+}
+
+/** FX snapshots for the rows a flow has written. */
+export function listFlowFxSnapshots(flowId: string): Promise<{ snapshots: TransactionFxRecord[] }> {
+  return jsonFetch(`/api/fx/snapshot?flowId=${encodeURIComponent(flowId)}`);
+}
+
+/** Persist many FX snapshots in one request and one commit. */
+export function persistFxSnapshots(inputs: Parameters<typeof persistFxSnapshot>[0][]): Promise<{ saved: number }> {
+  return jsonFetch("/api/fx/snapshot", { method: "POST", body: JSON.stringify({ snapshots: inputs }) });
 }
 
 /** Update an FX snapshot after a confirmed rate-change re-sync (RD-056 / PR-025 rate-change update). */
 export function updateFxSnapshot(input: {
   transactionId: string;
   fxRateId: string | null;
+  sourceAmount?: number;
+  isManual?: boolean;
   appliedRate: string;
   convertedAmount: number;
   requestedDate: string;

@@ -1,8 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getAppDb } from "@/lib/app-db/connection";
+import { AppDbConflictError } from "@/lib/app-db/errors";
 import { appDbErrorResponse, readJsonBody } from "@/lib/app-db/routeResponses";
 import {
-  createSyncMapping,
+  createSyncMappingIfAbsent,
   getAllSyncMappingsForFlow,
   getSyncMappingBySource,
   listSyncMappings,
@@ -40,10 +41,21 @@ export async function POST(request: Request) {
     // A batch (array) is written in ONE transaction - one commit for the whole
     // apply run instead of an HTTP round-trip + commit per mapping.
     if (Array.isArray(body)) {
-      const createAll = db.transaction(() => body.map((input) => createSyncMapping(db, input)));
-      return NextResponse.json({ mappings: createAll() }, { status: 201 });
+      // A conflict on one row must not lose the others: those targets are already
+      // written. Conflicts are reported so the apply can fail visibly.
+      const conflicts: string[] = [];
+      const createAll = db.transaction(() => body.flatMap((input) => {
+        try {
+          return [createSyncMappingIfAbsent(db, input)];
+        } catch (error) {
+          if (!(error instanceof AppDbConflictError)) throw error;
+          conflicts.push(input.sourceItemKey);
+          return [];
+        }
+      }));
+      return NextResponse.json({ mappings: createAll(), conflicts }, { status: 201 });
     }
-    const mapping = createSyncMapping(db, body);
+    const mapping = createSyncMappingIfAbsent(db, body);
     return NextResponse.json({ mapping }, { status: 201 });
   } catch (error) {
     return appDbErrorResponse(error);

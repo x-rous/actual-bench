@@ -1,6 +1,6 @@
-import type { ActualBenchTransport } from "@/lib/actual/transport";
+import type { ActualBenchTransport, SyncAppliedSnapshot } from "@/lib/actual/transport";
 import type { ConnectionInstance } from "@/store/connection";
-import type { JsonObject, SyncCapabilitySet, SyncDomain, SyncFlow, SyncMapping } from "@/lib/app-db/types";
+import type { JsonObject, SyncCapabilitySet, SyncDomain, SyncFlow, SyncMapping, SyncMappingPatch } from "@/lib/app-db/types";
 import type { SyncPlanResult } from "./plannedChanges";
 
 /**
@@ -68,12 +68,33 @@ export type AdapterSummary = {
   sourceChangedWarnings: number;
   targetMarkerMatches: number;
   blocked: number;
+  /** Mapped rows whose target transaction no longer exists. */
+  targetMissing?: number;
 };
+
+/** Every registered kind: a flow's type, or a run kind that works on a flow's route. */
+export type SyncAdapterKind = SyncDomain | "category_return";
 
 export type AdapterApplyContext = {
   /** Transaction adapter fills this with the target imported_id index; empty otherwise. */
   markerIndex: Map<string, string>;
+  /** The target account's rows as read for this apply, by id (transactions only). */
+  liveTargets?: Map<string, AdapterLiveTarget>;
 };
+
+/** A target row as apply needs it: its fields, plus split lines when it is a split. */
+export type AdapterLiveTarget = SyncAppliedSnapshot & {
+  transferId: string | null;
+  reconciled?: boolean;
+  isParent?: boolean;
+  splitLines?: { id: string | null; amount: number; notes: string | null; payeeId: string | null; categoryId: string | null; reconciled?: boolean }[];
+};
+
+/** Optional limits on a read: a recent window instead of the whole account. */
+export type AdapterScanOptions = { sinceDate?: string };
+
+/** Lets a long write loop stop as soon as the apply no longer owns its run. */
+export type AdapterWriteOptions = { shouldStop?: () => boolean };
 
 /** One create request the orchestrator asks the adapter to perform on the target. */
 export type AdapterCreateInput = {
@@ -101,6 +122,8 @@ export type AdapterMutateInput = {
   expectedTargetFingerprint: string | null;
   /** The planned payload (update only); absent for delete. */
   payload?: JsonObject;
+  /** The run item's source key. */
+  sourceItemKey?: string;
 };
 
 export type AdapterMutateResult = {
@@ -114,6 +137,8 @@ export type AdapterMutateResult = {
   targetId: string | null;
   targetFingerprint?: string | null;
   message?: string;
+  /** When set, replaces the default mapping refresh after an update. */
+  mappingPatch?: SyncMappingPatch;
 };
 
 export type AdapterValidateInput = {
@@ -128,16 +153,18 @@ export type AdapterValidateInput = {
  * pipeline is type-aware.
  */
 export interface SyncKindAdapter {
-  readonly flowType: SyncDomain;
+  readonly flowType: SyncAdapterKind;
+  /** Which of the flow's budgets this kind writes to. Defaults to the target. */
+  readonly writeSide?: "source" | "target";
 
   /** Route + capability validation; throws SyncKindError on failure. */
   validate(input: AdapterValidateInput): void;
 
   /** Read + materialize the source (runs on the source transport). */
-  loadSource(transport: ActualBenchTransport, flow: SyncFlow): Promise<AdapterSourceResult>;
+  loadSource(transport: ActualBenchTransport, flow: SyncFlow, options?: AdapterScanOptions): Promise<AdapterSourceResult>;
 
   /** Read the target snapshot (runs on the target transport). */
-  loadTarget(transport: ActualBenchTransport, flow: SyncFlow): Promise<unknown>;
+  loadTarget(transport: ActualBenchTransport, flow: SyncFlow, options?: AdapterScanOptions): Promise<unknown>;
 
   /**
    * The distinct FX conversions this materialized source needs (RD-056), so the
@@ -155,6 +182,10 @@ export interface SyncKindAdapter {
     targetCapabilities: SyncCapabilitySet;
     /** Resolved FX rate info per transaction date (RD-056); omitted when FX is off. */
     fxRateByDate?: Map<string, import("./plannedChanges").FxRateInfo>;
+    /** Why a date has no rate, for its pending rows. */
+    fxPendingByDate?: Map<string, string>;
+    /** The rate recorded for each synced row, by target transaction id. */
+    manualFxRates?: Map<string, import("./plannedChanges").ManualFxRate>;
   }): SyncPlanResult;
 
   /** Non-secret source snapshot summary stored on the run. */
@@ -185,7 +216,8 @@ export interface SyncKindAdapter {
   updateBatch?(
     transport: ActualBenchTransport,
     flow: SyncFlow,
-    inputs: AdapterMutateInput[]
+    inputs: AdapterMutateInput[],
+    options?: AdapterWriteOptions
   ): Promise<AdapterMutateResult[]>;
 
   /**
@@ -195,11 +227,12 @@ export interface SyncKindAdapter {
   deleteBatch?(
     transport: ActualBenchTransport,
     flow: SyncFlow,
-    inputs: AdapterMutateInput[]
+    inputs: AdapterMutateInput[],
+    options?: AdapterWriteOptions
   ): Promise<AdapterMutateResult[]>;
 }
 
-const registry = new Map<SyncDomain, SyncKindAdapter>();
+const registry = new Map<SyncAdapterKind, SyncKindAdapter>();
 
 /** Register a data-type adapter (called once per adapter module at import). */
 export function registerSyncKindAdapter(adapter: SyncKindAdapter): void {
@@ -207,6 +240,6 @@ export function registerSyncKindAdapter(adapter: SyncKindAdapter): void {
 }
 
 /** Resolve the adapter for a flow type, or null if the type is unsupported. */
-export function getSyncKindAdapter(flowType: SyncDomain): SyncKindAdapter | null {
+export function getSyncKindAdapter(flowType: SyncAdapterKind): SyncKindAdapter | null {
   return registry.get(flowType) ?? null;
 }

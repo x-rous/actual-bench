@@ -5,6 +5,7 @@ import type { ConnectionInstance } from "@/store/connection";
 import type { JsonObject, SyncFlow, SyncReviewPolicy } from "@/lib/app-db/types";
 import type {
   SyncAmountDirection,
+  SyncFxRatePolicy,
   SyncMissingPayeePolicy,
 } from "@/lib/sync/flowConfig";
 import type {
@@ -65,6 +66,11 @@ export type SyncTransformForm = {
   fxTargetCurrency: string;
   fxAllowProvider: boolean;
   fxUpdateOnRateChange: boolean;
+  fxRatePolicy: SyncFxRatePolicy;
+  /** Decimal rate for the fixed policy. */
+  fxFixedRate: string;
+  /** Bank fee as a percentage; blank for none. */
+  fxMarkupPercent: string;
 };
 
 /** Automation policy for the flow (RD-054 / PR-020). */
@@ -97,6 +103,8 @@ export type SyncEntityForm = {
 
 export type SyncFlowFormState = {
   name: string;
+  /** Flows with the same group name are listed and run together; blank for none. */
+  group: string;
   enabled: boolean;
   flowType: SyncFlowType;
   source: SyncEndpointForm;
@@ -123,6 +131,7 @@ export const EMPTY_ENDPOINT: SyncEndpointForm = {
 export function emptyFlowForm(): SyncFlowFormState {
   return {
     name: "",
+    group: "",
     enabled: true,
     flowType: "transaction_sync",
     source: { ...EMPTY_ENDPOINT },
@@ -152,6 +161,9 @@ export function emptyFlowForm(): SyncFlowFormState {
       fxTargetCurrency: "",
       fxAllowProvider: true,
       fxUpdateOnRateChange: false,
+      fxRatePolicy: "daily",
+      fxFixedRate: "",
+      fxMarkupPercent: "",
     },
     automation: {
       // Existing/new flows stay manual - RD-053 behavior - until opted in.
@@ -283,6 +295,9 @@ export function buildFlowPayload(
     fxTargetCurrency: form.transform.fxTargetCurrency.trim().toUpperCase() || null,
     fxAllowProvider: form.transform.fxAllowProvider,
     fxUpdateOnRateChange: form.transform.fxUpdateOnRateChange,
+    fxRatePolicy: form.transform.fxRatePolicy,
+    fxFixedRate: form.transform.fxFixedRate.trim() || null,
+    fxMarkupPercent: form.transform.fxMarkupPercent.trim() || null,
   };
 
   // Automation/policy metadata lives in the leg `options` envelope (non-secret).
@@ -298,6 +313,7 @@ export function buildFlowPayload(
     // Master-data (entity) options - ignored by transaction flows.
     defaultGroupName: form.entity.defaultGroupName.trim() || null,
     createMissingGroup: form.entity.createMissingGroup,
+    groupName: form.group.trim() || null,
   };
 
   // Each leg ref/filter/transform must be a versioned JSON envelope, matching
@@ -341,6 +357,7 @@ export function flowToFormState(
   form.enabled = flow.enabled;
   form.flowType = flow.flowType === "payee_sync" || flow.flowType === "category_sync" ? flow.flowType : "transaction_sync";
   const options = (flow.options.data ?? {}) as Record<string, unknown>;
+  form.group = typeof options.groupName === "string" ? options.groupName : "";
   form.entity = {
     defaultGroupName: typeof options.defaultGroupName === "string" ? options.defaultGroupName : "",
     createMissingGroup: options.createMissingGroup === true,
@@ -372,6 +389,9 @@ export function flowToFormState(
     fxTargetCurrency: config.fxTargetCurrency,
     fxAllowProvider: config.fxAllowProvider,
     fxUpdateOnRateChange: config.fxUpdateOnRateChange,
+    fxRatePolicy: config.fxRatePolicy,
+    fxFixedRate: config.fxFixedRate,
+    fxMarkupPercent: config.fxMarkupPercent,
   };
   form.automation = {
     reviewPolicy: config.reviewPolicy,

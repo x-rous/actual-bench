@@ -11,6 +11,7 @@ export type PreviewGroup =
   | "duplicate"
   | "source_changed"
   | "source_deleted"
+  | "target_missing"
   | "marker_match"
   | "blocked"
   | "other";
@@ -52,6 +53,8 @@ export type PreviewRow = {
   target: { date: string; amount: number | null; payeeName: string | null; categoryName: string | null; notes: string | null };
   /** FX conversion applied to this row (RD-056), for currency-labelled amounts + rate. */
   fx: { sourceCurrency: string; targetCurrency: string; rate: string; effectiveDate: string } | null;
+  /** A converted, unsplit create whose amount can be set to what the bank charged. */
+  canOverrideAmount?: boolean;
 };
 
 function record(value: unknown): Record<string, unknown> {
@@ -77,6 +80,7 @@ const REVIEW_REQUIRED_CLASSIFICATIONS: readonly SyncItemClassification[] = [
   "weak_duplicate",
   "source_changed_since_sync",
   "source_missing",
+  "target_missing",
   "blocked",
   "warning",
 ];
@@ -99,6 +103,8 @@ export function classificationGroup(classification: SyncItemClassification | nul
       return "source_changed";
     case "source_missing":
       return "source_deleted";
+    case "target_missing":
+      return "target_missing";
     case "target_marker_match":
     case "target_name_match":
       return "marker_match";
@@ -126,6 +132,7 @@ export function toPreviewRow(item: SyncFlowRunItem): PreviewRow {
   // both explicitly selectable so the user drives them (RD-057 §4/§5).
   const isUpdate = item.plannedAction === "update";
   const isDelete = item.plannedAction === "delete";
+  const isRecreate = item.classification === "target_missing" && item.plannedAction === "create";
   return {
     id: item.id,
     classification: item.classification,
@@ -140,7 +147,8 @@ export function toPreviewRow(item: SyncFlowRunItem): PreviewRow {
       item.classification === "target_name_match" ||
       isExactDupAutoMap ||
       isUpdate ||
-      isDelete,
+      isDelete ||
+      isRecreate,
     isSafeNew,
     reviewRequired: isReviewRequired(item.classification) && !isExactDupAutoMap,
     applyState: item.applyState,
@@ -163,7 +171,54 @@ export function toPreviewRow(item: SyncFlowRunItem): PreviewRow {
       notes: str(payload.notes),
     },
     fx: fxInfo(payload.fx),
+    canOverrideAmount: (isSafeNew || isRecreate) && !!fxInfo(payload.fx) && !payload.subtransactions && numOrNull(source.amount) !== 0,
   };
+}
+
+/** The separator the user's locale writes before decimals. */
+function localeDecimalSeparator(): string {
+  return new Intl.NumberFormat().formatToParts(1.5).find((part) => part.type === "decimal")?.value ?? ".";
+}
+
+/**
+ * A typed amount as positive minor units, or null when it is not a valid amount.
+ * Reads both `1,234.56` and `1.234,56`: the last separator is the decimal one when
+ * one or two digits follow it. Three digits after a lone separator are a thousands
+ * group, unless that separator is the locale's decimal one, which would mean three
+ * decimal places and is refused instead of being misread by a factor of 1,000.
+ */
+export function parseAmountToMinor(text: string, decimalSeparator = localeDecimalSeparator()): number | null {
+  const cleaned = text.trim().replace(/^-/, "").replace(/[\s\u00a0\u202f']/g, "");
+  if (!/^\d[\d.,]*$/.test(cleaned) || /[.,]$/.test(cleaned)) return null;
+  const lastIndex = Math.max(cleaned.lastIndexOf(","), cleaned.lastIndexOf("."));
+  let whole = cleaned;
+  let fraction = "";
+  if (lastIndex >= 0) {
+    const tail = cleaned.slice(lastIndex + 1);
+    const separator = cleaned[lastIndex];
+    const other = separator === "," ? "." : ",";
+    const mixed = cleaned.includes(other);
+    const repeated = cleaned.indexOf(separator) !== lastIndex;
+    if (mixed && repeated) return null;
+    if (mixed || tail.length <= 2) {
+      // With both marks present the last one is the decimal point.
+      if (tail.length > 2) return null;
+      whole = cleaned.slice(0, lastIndex);
+      fraction = tail;
+    } else if (tail.length !== 3 || (!repeated && separator === decimalSeparator)) {
+      return null;
+    }
+    const groups = whole.split(/[.,]/);
+    if (groups.length > 1 && (groups[0].length > 3 || groups.slice(1).some((group) => group.length !== 3))) return null;
+    whole = groups.join("");
+  }
+  const minor = Number(whole) * 100 + Number(fraction.padEnd(2, "0") || "0");
+  return Number.isSafeInteger(minor) && minor > 0 ? minor : null;
+}
+
+/** An amount as plain digits for editing: no grouping, always a `.` before the cents. */
+export function amountEditText(minor: number): string {
+  return (Math.abs(minor) / 100).toFixed(2);
 }
 
 function fxInfo(value: unknown): PreviewRow["fx"] {
@@ -204,6 +259,7 @@ const GROUP_LABELS: Record<PreviewGroup, string> = {
   duplicate: "Duplicate",
   source_changed: "Source changed",
   source_deleted: "Source deleted",
+  target_missing: "Deleted on target",
   marker_match: "Marker match",
   blocked: "Blocked",
   other: "Other",
@@ -217,6 +273,9 @@ export function groupLabel(group: PreviewGroup): string {
 export function statusLabel(row: PreviewRow): string {
   if (row.flags.includes("fx_rate_pending")) return "FX pending";
   if (row.flags.includes("fx_rate_changed")) return "Rate changed";
+  if (row.flags.includes("split_mode_changed")) return "Split setting changed";
+  if (row.flags.includes("ambiguous_split_identity")) return "Split needs review";
+  if (row.flags.includes("category_return")) return "Category sent back";
   if (row.classification === "target_name_match") return "Name match";
   return GROUP_LABELS[row.group];
 }
@@ -307,7 +366,7 @@ export function previewFilters(kind: SyncKind): { key: PreviewFilter; label: str
 export type PreviewFilter = "all" | "needs_review" | "review_queue" | PreviewGroup;
 
 /** The three groups the "Needs review" tile/filter covers. */
-const NEEDS_REVIEW_GROUPS: PreviewGroup[] = ["duplicate", "source_changed", "source_deleted", "marker_match"];
+const NEEDS_REVIEW_GROUPS: PreviewGroup[] = ["duplicate", "source_changed", "source_deleted", "target_missing", "marker_match"];
 
 /** Chips shown above the table (detailed statuses; "needs_review" is tile-only). */
 export const PREVIEW_FILTERS: { key: PreviewFilter; label: string }[] = [
@@ -316,6 +375,7 @@ export const PREVIEW_FILTERS: { key: PreviewFilter; label: string }[] = [
   { key: "duplicate", label: "Duplicates" },
   { key: "source_changed", label: "Source changed" },
   { key: "source_deleted", label: "Source deleted" },
+  { key: "target_missing", label: "Deleted on target" },
   { key: "marker_match", label: "Marker match" },
   { key: "already_synced", label: "Already synced" },
   { key: "blocked", label: "Blocked" },
@@ -371,6 +431,7 @@ export function tileCounts(rows: PreviewRow[]): PreviewTileCounts {
       row.group === "duplicate" ||
       row.group === "source_changed" ||
       row.group === "source_deleted" ||
+      row.group === "target_missing" ||
       row.group === "marker_match"
     ) {
       counts.needsReview += 1;

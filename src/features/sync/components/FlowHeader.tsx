@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeftRight, ArrowRight, History, Loader2, Pencil, Play, Zap } from "lucide-react";
+import { ArrowLeftRight, ArrowRight, History, Landmark, Loader2, Pencil, Play, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -26,6 +26,8 @@ type FlowHeaderProps = {
   onEdit: () => void;
   onCreateReverse: () => void;
   onShowHistory: () => void;
+  /** Open the Currency position view; absent unless this flow converts currency. */
+  onShowPosition?: () => void;
 };
 
 function hostOf(connection: ConnectionInstance | undefined, runsOnServer: boolean): string {
@@ -68,8 +70,8 @@ function Endpoint({
 
 function automationChip(form: SyncFlowFormState): string {
   switch (form.automation.reviewPolicy) {
-    case "auto_apply_safe_only":
-      return "Auto-apply safe";
+    case "auto_sync_unattended":
+      return `Server schedule ${form.automation.intervalMinutes}m`;
     case "auto_sync_on_interval":
       return `Auto-sync ${form.automation.intervalMinutes}m`;
     default:
@@ -83,10 +85,17 @@ function typeLabel(form: SyncFlowFormState): string {
 
 function summaryChips(form: SyncFlowFormState): string[] {
   const chips = [typeLabel(form), automationChip(form)]; // data type + automation policy
+  if (form.group.trim()) chips.unshift(`Group: ${form.group.trim()}`);
   if (form.flowType !== "transaction_sync") return chips;
   chips.push(form.transform.amountDirection === "reverse" ? "Reverse sign" : "Same sign");
   chips.push(form.transform.missingPayee === "create" ? "Create missing payees" : "Leave payee empty");
   if (form.transform.notesMarkerEnabled) chips.push("Notes marker on");
+  if (form.transform.fxEnabled) {
+    chips.push(`${form.transform.fxSourceCurrency} → ${form.transform.fxTargetCurrency}`);
+    if (form.transform.fxRatePolicy === "monthly_average") chips.push("Monthly average rate");
+    if (form.transform.fxRatePolicy === "fixed") chips.push(`Fixed rate ${form.transform.fxFixedRate}`);
+    if (form.transform.fxMarkupPercent) chips.push(`Bank fee ${form.transform.fxMarkupPercent}%`);
+  }
   if (form.filter.startDate) chips.push(`From ${form.filter.startDate}`);
   if (form.filter.amountSign === "inflow") chips.push("Inflow only");
   if (form.filter.amountSign === "outflow") chips.push("Outflow only");
@@ -109,6 +118,7 @@ export function FlowHeader({
   onEdit,
   onCreateReverse,
   onShowHistory,
+  onShowPosition,
 }: FlowHeaderProps) {
   const sourceConn = connections.find((c) => c.id === form.source.connectionId);
   const targetConn = connections.find((c) => c.id === form.target.connectionId);
@@ -169,6 +179,11 @@ export function FlowHeader({
           <Button size="icon" variant="outline" className="h-8 w-8" onClick={onCreateReverse} aria-label="Create reverse flow" title="Create a mirror flow with source and target swapped">
             <ArrowLeftRight className="h-3.5 w-3.5" />
           </Button>
+          {onShowPosition && (
+            <Button size="icon" variant="outline" className="h-8 w-8" onClick={onShowPosition} aria-label="Currency position" title="Currency position">
+              <Landmark className="h-3.5 w-3.5" />
+            </Button>
+          )}
           <Button size="icon" variant="outline" className="h-8 w-8" onClick={onShowHistory} aria-label="Run history" title="Run history">
             <History className="h-3.5 w-3.5" />
           </Button>

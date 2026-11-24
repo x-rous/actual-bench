@@ -40,12 +40,52 @@ Rates come from a database-backed registry, filled automatically from the free
 
 - **No API key** is required.
 - Rates are **date-specific**.
-- For a date with no published rate (weekends and holidays), Actual Bench falls back to the **latest
-  prior rate**.
-- If the provider is briefly unavailable, a converting sync doesn't fail - affected rows go to review as
-  **FX pending** (see [Cross Budget Sync](../budget-sync/#preview-a-flow)).
+- Actual Bench uses the rate for the **exact date**, and asks the provider for it before considering an
+  earlier one.
+- For a date the provider has no rate for, it falls back to the **latest prior rate**, up to 10 days back.
+- If the provider is unavailable, affected rows wait as **FX pending** instead of taking an older rate
+  (see [Cross Budget Sync](../budget-sync/#preview-a-flow)). Scheduled runs convert the same way as a
+  manual preview.
 
 You can also override any date manually or import rates from a CSV.
+
+## Choose how a flow converts
+
+Each converting flow has its own settings:
+
+- **Rate** - **Daily** uses the transaction's own date, **Monthly average** uses the mean of that month,
+  and **Fixed** uses one rate you enter, which suits pegged currencies.
+- **Bank fee %** - added to the rate on spending and taken off it on money received, to get closer to what
+  your bank charges.
+- **The amount your bank charged** - in a preview, type the real amount into a new row's target amount.
+  The row keeps the rate that amount implies, and later rate changes leave it alone.
+
+## Currency position
+
+Open **Currency position** from a converting flow's header. For the synced rows it shows the foreign
+balance, what the main budget holds, what that balance is worth today, and the unrealised difference. It
+also warns about unsynced rows, rows deleted on either side, and rows converted with an earlier date's
+rate.
+
+- **Revalue to today's rate** adds one transaction, in a category you choose, so the synced balance
+  matches today's value. You confirm it first, and an account can be revalued once a day.
+- **Transfers to link** lists synced transfers with a likely other side in the main budget. **Link** gives
+  the synced row that side's exact amount, records the real rate, and makes the pair a true Actual
+  transfer, so reports stop counting it as spending and income. The linked pair shares the other row's
+  notes; the original amount and rate stay in the FX snapshot.
+
+The **Conversions** tab lists every synced row's original amount, rate, rate date, rate source and
+converted amount. Filter it by payee, rate, date or source, and export it to CSV.
+
+**Send categories back** copies categories you set in the main budget to the matching rows in the foreign
+budget, matched by category name. It only fills empty categories, and you confirm it first.
+
+## Add a currency
+
+**Add currency** on the Cross Budget Sync page sets up a foreign-currency budget in one step. Choose the
+main and foreign budgets and their currencies, then confirm the account pairs, which are matched by name.
+It creates the payee and category flows plus one converting transaction flow per account, in a group
+named after the currency. Every flow starts manual, and flows that already exist are left as they are.
 
 ## Open the Exchange Rates page
 
@@ -102,7 +142,7 @@ or future-dated rate is sent to the review queue as **FX pending** rather than f
 
 ## Limitations
 
-- No FX gain/loss accounting.
+- Revaluation posts one adjustment per account. It is not full realised and unrealised gain/loss accounting.
 - No silent recalculation of past conversions.
 - No multi-currency within a single Actual budget file.
 - Rate availability depends on the provider and on the coverage you've filled or imported.

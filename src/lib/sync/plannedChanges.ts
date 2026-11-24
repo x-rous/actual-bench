@@ -39,7 +39,17 @@ export type SyncPlanFlag =
   /** FX conversion is enabled but no rate is available for this item's date (RD-056). */
   | "fx_rate_pending"
   /** An already-synced item whose FX rate changed; target amount will be updated (RD-056). */
-  | "fx_rate_changed";
+  | "fx_rate_changed"
+  /** Mapped target no longer exists; the user chooses to recreate it or stop syncing it. */
+  | "target_missing_review"
+  /** The flow's split setting changed after this split was synced; creating it would duplicate it. */
+  | "split_mode_changed"
+  /** A transfer in the source budget, created without a transfer payee so it cannot create a second leg. */
+  | "source_transfer"
+  /** A split line's earlier keys point at different target rows; held for review. */
+  | "ambiguous_split_identity"
+  /** Sends a target-budget category back to this source row. */
+  | "category_return";
 
 /** The transaction the engine would create on the target (create-only, no splits). */
 export type PlannedTargetPayload = {
@@ -67,6 +77,10 @@ export type PlannedTargetPayload = {
    * the converted amount; `sourceAmount` here is the original.
    */
   fx?: PlannedFx | null;
+  /** An update leaves the target's payee alone: this row is a transfer in the source. */
+  keepTargetPayee?: boolean;
+  /** For a category return: the target row the mapping must still point at. */
+  mappedTargetId?: string;
 };
 
 /** FX provenance carried on a planned payload; the source layer stays decimal-string decoupled. */
@@ -80,6 +94,8 @@ export type PlannedFx = {
   source: string;
   provider: string | null;
   fxRateId: string | null;
+  /** The user set this row's amount; later rate changes leave it alone. */
+  isManual?: boolean;
 };
 
 /** Resolved rate info for a transaction date (RD-056), threaded into the planner. */
@@ -89,6 +105,21 @@ export type FxRateInfo = {
   source: string;
   provider: string | null;
   fxRateId: string | null;
+  /** The user set this row's rate; it stays marked as theirs through updates. */
+  isManual?: boolean;
+};
+
+/** The rate recorded when a row was synced, which later conversions of it keep. */
+export type ManualFxRate = {
+  rate: string;
+  effectiveDate: string;
+  /** The transaction date the rate was recorded for. */
+  requestedDate?: string;
+  /** Set by the user for this row: later rate changes never replace it. */
+  isManual?: boolean;
+  source?: string;
+  provider?: string | null;
+  fxRateId?: string | null;
 };
 
 /** A resolved split child line to create under a grouped target split. */
@@ -167,6 +198,8 @@ export type SyncTargetTransactionForDedupe = {
   amount: number;
   payeeName: string | null;
   categoryId: string | null;
+  /** A split's line amounts, in order. Absent for a row that is not a split. */
+  splitAmounts?: number[];
 };
 
 export type SyncPlannerTargetSnapshot = {
@@ -176,6 +209,11 @@ export type SyncPlannerTargetSnapshot = {
   importedIdIndex: Map<string, string>;
   /** Target transactions in range for duplicate classification. */
   transactions: SyncTargetTransactionForDedupe[];
+  /**
+   * Every transaction id in the target account, whatever its date. When present,
+   * a mapping whose target is not in it is reported as `target_missing`.
+   */
+  allTransactionIds?: Set<string>;
 };
 
 export type SyncPlannerInput = {
@@ -191,11 +229,20 @@ export type SyncPlannerInput = {
    * `blocked` with `fx_rate_pending`. Omitted when FX is off.
    */
   fxRateByDate?: Map<string, FxRateInfo>;
+  /** Why a date has no rate, shown on its pending rows (provider down, bad code, future date). */
+  fxPendingByDate?: Map<string, string>;
+  /** The day rates were requested through; a monthly average needs every day up to it. */
+  fxToday?: string;
+  /** The rate recorded for each synced row, by target transaction id. */
+  manualFxRates?: Map<string, ManualFxRate>;
   /**
    * When true, active mappings with no matching source item are emitted as
-   * review-first `source_missing` delete candidates (RD-057 §5). The adapter
-   * only sets this for a whole-account scan, so an item outside a date window is
-   * never mistaken for a deletion.
+   * review-first `source_missing` delete candidates (RD-057 §5).
    */
   detectDeletedSource?: boolean;
+  /**
+   * Every item key that exists in the source account, before any filter. With
+   * it, an item that merely left the flow's filters is not taken for a deletion.
+   */
+  presentSourceKeys?: Set<string>;
 };

@@ -148,7 +148,7 @@ function makeTargetTransport(opts: TargetOptions = {}) {
 function makeStore(opts: { runStatus?: string; items?: SyncFlowRunItem[]; seedMappings?: SyncMapping[] } = {}) {
   const run: SyncFlowRun = {
     id: "run-1", flowId: "flow-1", status: opts.runStatus ?? "draft_preview",
-    startedAt: "2026-07-01T00:00:00.000Z", finishedAt: null,
+    startedAt: new Date().toISOString(), finishedAt: null,
     summary: { version: 1, data: {} }, error: null, createdByTrigger: "manual_preview",
     sourceSnapshotSummary: null, targetSnapshotSummary: null, counts: null,
   };
@@ -231,7 +231,8 @@ describe("applySyncRun - validation", () => {
     const result = await applySyncRun({ runId: "run-1", targetConnection: targetConn }, { transport: provider(transport), store });
     expect(result.status).toBe("applied");
     expect(store.persistFxSnapshot).toHaveBeenCalledWith(
-      expect.objectContaining({ sourceCurrency: "AED", targetCurrency: "AUD", appliedRate: "0.4", convertedAmount: 500, sourceAmount: -1250, fxRateId: "fx-1" })
+      expect.objectContaining({ sourceCurrency: "AED", targetCurrency: "AUD", appliedRate: "0.4", convertedAmount: 500, sourceAmount: -1250, fxRateId: "fx-1" }),
+      "item-1"
     );
   });
 
@@ -363,7 +364,7 @@ describe("applySyncRun - update & delete (RD-057)", () => {
   it("updates the mapped target when the flow opts in and the target is unedited", async () => {
     const { hashTargetFields } = await import("./targetFingerprint");
     const row = liveRow();
-    const seed = { id: "m1", flowId: "flow-1", sourceItemKey: "txn:t1", targetTransactionId: "tgt-1", targetFingerprint: hashTargetFields({ amount: row.amount, date: row.date, cleared: row.cleared, categoryId: row.categoryId, payeeId: row.payeeId, notes: row.notes }) } as unknown as SyncMapping;
+    const seed = { id: "m1", status: "active", flowId: "flow-1", sourceItemKey: "txn:t1", targetTransactionId: "tgt-1", targetFingerprint: hashTargetFields({ amount: row.amount, date: row.date, cleared: row.cleared, categoryId: row.categoryId, payeeId: row.payeeId, notes: row.notes }) } as unknown as SyncMapping;
     const { store } = makeStore({ items: [updateItem()], seedMappings: [seed] });
     const { transport, updateTransactionForSync } = makeTargetTransport({ preloaded: [row] });
     const result = await applySyncRun({ runId: "run-1", targetConnection: targetConn }, { transport: provider(transport), store });
@@ -373,7 +374,7 @@ describe("applySyncRun - update & delete (RD-057)", () => {
   });
 
   it("never overwrites a target that was edited outside sync", async () => {
-    const seed = { id: "m1", flowId: "flow-1", sourceItemKey: "txn:t1", targetTransactionId: "tgt-1", targetFingerprint: "stale-does-not-match" } as unknown as SyncMapping;
+    const seed = { id: "m1", status: "active", flowId: "flow-1", sourceItemKey: "txn:t1", targetTransactionId: "tgt-1", targetFingerprint: "stale-does-not-match" } as unknown as SyncMapping;
     const { store } = makeStore({ items: [updateItem()], seedMappings: [seed] });
     const { transport, updateTransactionForSync } = makeTargetTransport({ preloaded: [liveRow()] });
     const result = await applySyncRun({ runId: "run-1", targetConnection: targetConn }, { transport: provider(transport), store });
@@ -384,7 +385,7 @@ describe("applySyncRun - update & delete (RD-057)", () => {
   it("deletes a source-missing target only when explicitly selected", async () => {
     const { hashTargetFields } = await import("./targetFingerprint");
     const row = liveRow();
-    const seed = { id: "m1", flowId: "flow-1", sourceItemKey: "txn:t1", targetTransactionId: "tgt-1", targetFingerprint: hashTargetFields({ amount: row.amount, date: row.date, cleared: row.cleared, categoryId: row.categoryId, payeeId: row.payeeId, notes: row.notes }) } as unknown as SyncMapping;
+    const seed = { id: "m1", status: "active", flowId: "flow-1", sourceItemKey: "txn:t1", targetTransactionId: "tgt-1", targetFingerprint: hashTargetFields({ amount: row.amount, date: row.date, cleared: row.cleared, categoryId: row.categoryId, payeeId: row.payeeId, notes: row.notes }) } as unknown as SyncMapping;
     const delItem = runItem({
       id: "item-1", classification: "source_missing", plannedAction: "delete",
       plannedTargetPayload: null, targetItemRef: { version: 1, data: { targetTransactionId: "tgt-1" } },

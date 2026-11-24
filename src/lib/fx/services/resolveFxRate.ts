@@ -27,6 +27,8 @@ export type ResolveFxRateInput = {
 export type ResolveFxRateDeps = {
   provider?: FxRateProvider;
   nowMs?: number;
+  /** Skip the earlier-date fallback, so a batch can ask the provider for the real rate first. */
+  exactDateOnly?: boolean;
 };
 
 function snapshotToResult(snap: TransactionFxRecord): FxRateResult {
@@ -85,7 +87,9 @@ export async function resolveFxRate(
 
   // 6a. Registry fallback: the latest stored rate on or before the date, within
   // the fallback window (a weekend/holiday date served from a filled range).
-  const prior = findLatestActiveFxRateOnOrBefore(db, { baseCurrency: base, quoteCurrency: quote, date: input.date, notBefore: fallbackFromDate(input.date) });
+  const prior = deps.exactDateOnly
+    ? null
+    : findLatestActiveFxRateOnOrBefore(db, { baseCurrency: base, quoteCurrency: quote, date: input.date, notBefore: fallbackFromDate(input.date) });
   if (prior) {
     return { provider: prior.provider, baseCurrency: base, quoteCurrency: quote, requestedDate: input.date, effectiveDate: prior.requestedDate, rate: prior.rate, source: prior.source, isManual: prior.source === "manual", fxRateId: prior.id };
   }

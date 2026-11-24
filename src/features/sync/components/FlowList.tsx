@@ -1,8 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Plus } from "lucide-react";
+import { Fragment } from "react";
+import { BellRing, Coins, Play, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { flowGroupName, groupFlows } from "../lib/flowGroups";
 import { cn } from "@/lib/utils";
 import { useNowMs } from "@/hooks/useNowMs";
 import { connectionFingerprint, connectionMatchesBudget } from "@/lib/sync/connectionRef";
@@ -33,6 +35,13 @@ type FlowListProps = {
   enginePauses?: Map<string, EnginePause | null>;
   onSelect: (flowId: string) => void;
   onCreate: () => void;
+  /** Open the guided setup for a foreign-currency budget. */
+  onAddCurrency?: () => void;
+  /** How many flows need attention, and how to open that list. */
+  attentionCount?: number;
+  onShowAttention?: () => void;
+  /** Open the run dialog for a named group. */
+  onRunGroup?: (name: string) => void;
 };
 
 function connectionAvailable(
@@ -56,6 +65,10 @@ export function FlowList({
   enginePauses = new Map<string, EnginePause | null>(),
   onSelect,
   onCreate,
+  onAddCurrency,
+  attentionCount = 0,
+  onShowAttention,
+  onRunGroup,
 }: FlowListProps) {
   const [search, setSearch] = useState("");
   const nowMs = useNowMs();
@@ -73,14 +86,41 @@ export function FlowList({
     });
   }, [flows, search]);
 
+  const ordered = groupFlows(filtered).flatMap((group) => group.flows);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-28 flex-col justify-center gap-2 border-b border-border px-3">
         <div className="flex items-center justify-between">
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Sync flows</span>
-          <Button size="sm" variant="outline" className="text-xs" onClick={onCreate} aria-label="Create sync flow">
-            <Plus className="h-3.5 w-3.5" /> New
-          </Button>
+          <span className="flex items-center gap-1 whitespace-nowrap text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Sync flows
+            {onShowAttention && (
+              <button
+                type="button"
+                onClick={onShowAttention}
+                aria-label={`${attentionCount} flow${attentionCount === 1 ? "" : "s"} need attention`}
+                title="Flows that need attention"
+                className={cn(
+                  "inline-flex items-center gap-0.5 rounded-full border px-1.5 py-px normal-case tabular-nums",
+                  attentionCount > 0
+                    ? "border-amber-400/50 bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400"
+                    : "border-border text-muted-foreground"
+                )}
+              >
+                <BellRing className="h-3 w-3" aria-hidden /> {attentionCount}
+              </button>
+            )}
+          </span>
+          <span className="flex items-center gap-1">
+            {onAddCurrency && (
+              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onAddCurrency} aria-label="Add currency" title="Add currency: set up the flows for a foreign-currency budget">
+                <Coins className="h-3.5 w-3.5" />
+              </Button>
+            )}
+            <Button size="sm" variant="outline" className="text-xs" onClick={onCreate} aria-label="Create sync flow">
+              <Plus className="h-3.5 w-3.5" /> New
+            </Button>
+          </span>
         </div>
         <SearchInput
           value={search}
@@ -103,7 +143,10 @@ export function FlowList({
           <p className="px-2 py-8 text-center text-sm text-muted-foreground">No flows match “{search}”.</p>
         ) : (
           <div className="flex flex-col gap-0.5">
-            {filtered.map((flow) => {
+            {ordered.map((flow, index) => {
+              const groupName = flowGroupName(flow);
+              const startsGroup = !!groupName && (index === 0 || flowGroupName(ordered[index - 1]) !== groupName);
+              const endsGroups = !groupName && index > 0 && !!flowGroupName(ordered[index - 1]);
               const selected = flow.id === selectedFlowId;
               const config = decodeFlowPlanConfig(flow);
               const connected =
@@ -149,8 +192,19 @@ export function FlowList({
                     : `${runQueuedCount(latestRun)} to review`
                   : null;
               return (
+                <Fragment key={flow.id}>
+                {startsGroup && (
+                  <div className="mt-1 flex items-center justify-between gap-1 px-2.5 py-1 first:mt-0">
+                    <span className="truncate text-[11px] font-semibold uppercase tracking-wide text-muted-foreground" title={groupName}>{groupName}</span>
+                    {onRunGroup && (
+                      <Button size="xs" variant="ghost" onClick={() => onRunGroup(groupName)} aria-label={`Run all flows in ${groupName}`} title="Run this group in order">
+                        <Play /> Run all
+                      </Button>
+                    )}
+                  </div>
+                )}
+                {endsGroups && <div className="mx-2.5 my-1 border-t border-border" aria-hidden />}
                 <button
-                  key={flow.id}
                   type="button"
                   onClick={() => onSelect(flow.id)}
                   className={cn(
@@ -203,6 +257,7 @@ export function FlowList({
                     </div>
                   )}
                 </button>
+                </Fragment>
               );
             })}
           </div>

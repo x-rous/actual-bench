@@ -40,9 +40,9 @@ export async function resolveFxBatch(
   const out: FxBatchResult = { resolved: {}, pending: {} };
   const distinctNeeds = distinct(needs);
 
-  // Phase 1: resolve from the registry only (no provider). Records rate hits and
-  // collects the dates that would otherwise need a per-date provider fetch.
-  const registryOnly: ResolveFxRateDeps = { ...deps, provider: undefined };
+  // Phase 1: the registry's rate for the exact date. With a provider available,
+  // an earlier date's rate is not accepted yet: it would hide the real rate.
+  const registryOnly: ResolveFxRateDeps = { ...deps, provider: undefined, exactDateOnly: !!deps.provider };
   const needProvider: FxNeed[] = [];
   const resolveOne = async (need: FxNeed) => {
     const key = fxNeedKey(need);
@@ -71,20 +71,27 @@ export async function resolveFxBatch(
       const gkey = `${n.baseCurrency.toUpperCase()}:${n.quoteCurrency.toUpperCase()}`;
       byPair.set(gkey, [...(byPair.get(gkey) ?? []), n]);
     }
-    for (const pairNeeds of byPair.values()) {
+    const failedPairs = new Map<string, FxPending>();
+    for (const [gkey, pairNeeds] of byPair) {
       const dates = pairNeeds.map((n) => n.date).sort();
       try {
         await fillFxRateRange(db, { baseCurrency: pairNeeds[0].baseCurrency, quoteCurrency: pairNeeds[0].quoteCurrency, from: fallbackFromDate(dates[0]), to: dates[dates.length - 1] }, deps.provider);
-      } catch {
-        // Provider unavailable → the retry below leaves these as pending.
+      } catch (err) {
+        failedPairs.set(gkey, err instanceof FxError
+          ? { code: err.code, message: err.message }
+          : { code: "PROVIDER_UNAVAILABLE", message: "Could not reach the FX rate provider." });
       }
     }
     for (const need of needProvider) {
       const key = fxNeedKey(need);
+      const failure = failedPairs.get(`${need.baseCurrency.toUpperCase()}:${need.quoteCurrency.toUpperCase()}`);
       try {
-        out.resolved[key] = await resolveFxRate(db, need, registryOnly);
+        // After a failed fetch the real rate is unknown, so the row waits rather
+        // than locking in an older date's rate. A date the provider answered
+        // without a rate (no publication that day) may use the latest earlier one.
+        out.resolved[key] = await resolveFxRate(db, need, { ...deps, provider: undefined, exactDateOnly: !!failure });
       } catch (err) {
-        out.pending[key] = err instanceof FxError ? { code: err.code, message: err.message } : { code: "DATABASE_ERROR", message: "FX resolution failed." };
+        out.pending[key] = failure ?? (err instanceof FxError ? { code: err.code, message: err.message } : { code: "DATABASE_ERROR", message: "FX resolution failed." });
       }
     }
   }

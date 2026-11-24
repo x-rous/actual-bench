@@ -26,6 +26,20 @@ export function useConnectionById(connectionId: string): ConnectionInstance | un
   return connections.find((c) => c.id === connectionId);
 }
 
+/**
+ * A Direct runtime holds one budget at a time, so the source and target pickers of
+ * a flow must read their accounts one after the other: read together, one switches
+ * the runtime under the other and its list comes back empty.
+ */
+let directAccountReads: Promise<unknown> = Promise.resolve();
+
+function inTurn<T>(connection: ConnectionInstance, read: () => Promise<T>): Promise<T> {
+  if (connection.mode !== "browser-api") return read();
+  const result = directAccountReads.then(read, read);
+  directAccountReads = result.catch(() => undefined);
+  return result;
+}
+
 /** Accounts for a chosen connection (opens that budget via the transport). */
 export function useFlowAccounts(connectionId: string) {
   const connection = useConnectionById(connectionId);
@@ -35,10 +49,36 @@ export function useFlowAccounts(connectionId: string) {
       if (!connection) return [];
       // A flow's budget is usually not the active one: open it explicitly, as
       // the sync run itself does (a Direct budget takes the tab's runtime).
-      await ensureTransportReady(connection);
-      return getTransport(connection).getAccounts();
+      return inTurn(connection, async () => {
+        await ensureTransportReady(connection);
+        return getTransport(connection).getAccounts();
+      });
     },
     enabled: !!connection,
+  });
+}
+
+/**
+ * The accounts of two budgets, read one after the other. A Direct runtime holds
+ * one budget at a time, so two parallel reads would switch it under each other.
+ */
+export function useTwoBudgetAccounts(firstConnectionId: string, secondConnectionId: string) {
+  const connections = useSyncConnections();
+  const first = connections.find((c) => c.id === firstConnectionId);
+  const second = connections.find((c) => c.id === secondConnectionId);
+  return useQuery({
+    queryKey: ["sync-two-budget-accounts", firstConnectionId, secondConnectionId],
+    queryFn: async () => {
+      const readAccounts = (connection: ConnectionInstance) => inTurn(connection, async () => {
+        await ensureTransportReady(connection);
+        return getTransport(connection).getAccounts();
+      });
+      const firstAccounts = await readAccounts(first!);
+      const secondAccounts = await readAccounts(second!);
+      return { first: firstAccounts, second: secondAccounts };
+    },
+    enabled: !!first && !!second && firstConnectionId !== secondConnectionId,
+    retry: false,
   });
 }
 
@@ -54,6 +94,19 @@ export function useSyncRun(runId: string | null) {
 /** Server vault status + enrolled credentials, for unattended arming/badges. */
 export function useVaultStatus() {
   return useQuery({ queryKey: ["sync-vault-status"], queryFn: api.getVaultStatus, staleTime: 60_000 });
+}
+
+/**
+ * Flows whose latest run needs a person. Reads only Bench's own database, so
+ * polling cannot disturb staged edits, and unattended runs show up without a reload.
+ */
+export function useSyncAttention() {
+  return useQuery({
+    queryKey: ["sync-attention"],
+    queryFn: async () => (await api.getSyncAttention()).entries,
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
 }
 
 /** Run history for a flow. */

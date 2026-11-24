@@ -8,13 +8,16 @@ import {
   filterSourceTransactions,
   type SyncSourceFilter,
 } from "../sourceFilter";
-import { expandSourceTransactions, type SyncSourceItem } from "../sourceItems";
+import { allKeysOf, expandSourceTransactions, type SyncSourceItem } from "../sourceItems";
 import { planExpandedItems } from "../syncPlanner";
 import {
   describeSyncError,
   registerSyncKindAdapter,
   SyncKindError,
   type AdapterApplyContext,
+  type AdapterLiveTarget,
+  type AdapterScanOptions,
+  type AdapterWriteOptions,
   type AdapterCreateInput,
   type AdapterCreateResult,
   type AdapterMutateInput,
@@ -24,10 +27,12 @@ import {
   type AdapterValidateInput,
   type SyncKindAdapter,
 } from "../syncKind";
-import { hashTargetFields } from "../targetFingerprint";
+import { fxNeedDates } from "../fxPolicy";
+import { targetBaseline, targetMatchesBaseline } from "../targetFingerprint";
 import type {
   ActualBenchTransport,
-  SyncAppliedSnapshot,
+  BatchTransactionUpdate,
+  SyncSourceTransaction,
   SyncTargetSplitChild,
   SyncTargetTransactionInput,
 } from "@/lib/actual/transport";
@@ -40,7 +45,166 @@ import type { SyncPlannerTargetSnapshot, SyncPlanResult } from "../plannedChange
  * inline transaction logic behind the `SyncKindAdapter` interface).
  */
 
-type MaterializedSource = { items: SyncSourceItem[]; filter: SyncSourceFilter; config: SyncFlowPlanConfig };
+type MaterializedSource = {
+  items: SyncSourceItem[];
+  filter: SyncSourceFilter;
+  config: SyncFlowPlanConfig;
+  /** Every item key in the source account before filters; set when deletions are detected. */
+  presentSourceKeys?: string[];
+  /** The day rates were asked for, so planning judges a month against the same days. */
+  fxToday: string;
+};
+
+/** Keys in both split shapes, so changing the split setting never reads as a deletion. */
+function allItemKeys(transactions: SyncSourceTransaction[]): string[] {
+  return [
+    ...expandSourceTransactions(transactions, { groupSplits: false }),
+    ...expandSourceTransactions(transactions, { groupSplits: true }),
+  ].flatMap(allKeysOf);
+}
+
+/** The persisted fields of every target row, from one account read (or a few days of it). */
+async function readTargetRows(
+  transport: ActualBenchTransport,
+  accountId: string,
+  ...dates: string[]
+): Promise<Map<string, AdapterLiveTarget & { importedId: string | null }>> {
+  const range = dates.length > 0 ? { startDate: [...dates].sort()[0], endDate: [...dates].sort()[dates.length - 1] } : {};
+  const rows = await transport.listTransactionsForSync({ accountId, resolveNames: false, ...range });
+  return new Map(
+    rows.map((row) => [
+      row.id,
+      {
+        amount: row.amount,
+        date: row.date,
+        cleared: row.cleared,
+        categoryId: row.categoryId,
+        payeeId: row.payeeId,
+        notes: row.notes,
+        importedPayee: row.importedPayee ?? null,
+        importedId: row.importedId ?? null,
+        transferId: row.transferId ?? null,
+        reconciled: row.reconciled,
+        isParent: row.isParent,
+        splitLines: row.isParent
+          ? row.splitLines.map((line) => ({
+              id: line.id,
+              amount: line.amount,
+              notes: line.notes,
+              payeeId: line.payeeId,
+              categoryId: line.categoryId,
+              reconciled: line.reconciled,
+            }))
+          : undefined,
+      },
+    ])
+  );
+}
+
+type PlannedLine = { amount: number; notes: string | null };
+type SplitLine = NonNullable<AdapterLiveTarget["splitLines"]>[number];
+
+const writeLine = (
+  transport: ActualBenchTransport,
+  accountId: string,
+  date: string,
+  line: SplitLine,
+  next: PlannedLine
+) => transport.updateTransactionForSync({
+  transactionId: line.id as string,
+  accountId,
+  date,
+  amount: next.amount,
+  payeeId: line.payeeId,
+  categoryId: line.categoryId,
+  notes: next.notes ?? null,
+  returnApplied: false,
+});
+
+/**
+ * Rewrite a grouped split, each line on the line itself. Actual gives a line its
+ * parent's payee and category when an update leaves them out, so every write names
+ * the line's own. The parent follows last, once the lines add up.
+ *
+ * Lines are written one at a time, so after the first write each line is read
+ * again before its own: its category belongs to the target and may have been set
+ * meanwhile, and a line edited meanwhile stops the update.
+ *
+ * A failed write puts the lines already changed back, so a retry does not take
+ * this sync's own half-finished work for an outside edit. Returns false when the
+ * apply lost its claim part-way: another writer may own the row, so it stops there.
+ */
+async function updateSplit(
+  transport: ActualBenchTransport,
+  accountId: string,
+  date: string,
+  live: AdapterLiveTarget,
+  planned: PlannedLine[],
+  writeParent: () => Promise<unknown>,
+  readLines: () => Promise<Map<string, SplitLine>>,
+  shouldStop?: () => boolean
+): Promise<boolean> {
+  const changed: SplitLine[] = [];
+  try {
+    for (const [index, line] of (live.splitLines ?? []).entries()) {
+      const next = planned[index];
+      if (line.amount === next.amount && (line.notes ?? null) === (next.notes ?? null)) continue;
+      if (shouldStop?.()) return false;
+      let current = line;
+      if (changed.length > 0) {
+        const fresh = (await readLines()).get(line.id as string);
+        if (
+          !fresh ||
+          fresh.amount !== line.amount ||
+          (fresh.notes ?? null) !== (line.notes ?? null) ||
+          (fresh.payeeId ?? null) !== (line.payeeId ?? null)
+        ) {
+          throw new Error("A split line was edited outside sync during the update.");
+        }
+        if (shouldStop?.()) return false;
+        current = { ...line, categoryId: fresh.categoryId };
+      }
+      await writeLine(transport, accountId, date, current, next);
+      changed.push(line);
+    }
+    if (shouldStop?.()) return false;
+    await writeParent();
+    return true;
+  } catch (err) {
+    try {
+      // Amounts and notes go back to what they were; each category stays as it is now.
+      // If that read fails, the restore still runs with the categories read at the start.
+      const now = changed.length > 0 ? await readLines().catch(() => new Map<string, SplitLine>()) : new Map<string, SplitLine>();
+      for (const line of [...changed].reverse()) {
+        // A category or payee changed meanwhile stays as the owner set it, cleared
+        // included; the start's values apply only to a line not read back.
+        const current = now.get(line.id as string);
+        const categoryId = current ? current.categoryId : line.categoryId;
+        const payeeId = current ? current.payeeId : line.payeeId;
+        await writeLine(transport, accountId, live.date, { ...line, categoryId, payeeId }, { amount: line.amount, notes: line.notes });
+      }
+    } catch {
+      throw new Error(`The split was only partly updated and could not be put back. Check it in Actual. ${describeSyncError(err, "")}`.trim());
+    }
+    throw err;
+  }
+}
+
+/** A queued update without its category, for a row whose category is already set. */
+function withoutCategory<T extends { fields: BatchTransactionUpdate }>(write: T): T {
+  const fields = { ...write.fields };
+  delete fields.categoryId;
+  return { ...write, fields };
+}
+
+/** Why a grouped split cannot take these lines, or null when it can. */
+function splitUpdateProblem(live: AdapterLiveTarget, planned: PlannedLine[]): string | null {
+  if (!live.isParent || !live.splitLines) return "Target is not a split; left unchanged.";
+  if (live.splitLines.length !== planned.length) return "The split now has a different number of lines; left unchanged.";
+  if (live.reconciled || live.splitLines.some((line) => line.reconciled)) return "Target split is reconciled; left unchanged.";
+  if (live.splitLines.some((line) => !line.id)) return "A target split line has no id; left unchanged.";
+  return null;
+}
 
 function decodeFilterOrDefault(flow: SyncFlow): SyncSourceFilter {
   try {
@@ -53,23 +217,31 @@ function decodeFilterOrDefault(flow: SyncFlow): SyncSourceFilter {
 async function loadTargetSnapshot(
   transport: ActualBenchTransport,
   config: SyncFlowPlanConfig,
-  filter: SyncSourceFilter
+  filter: SyncSourceFilter,
+  scan?: AdapterScanOptions
 ): Promise<SyncPlannerTargetSnapshot> {
-  const range = { accountId: config.targetAccountId, startDate: filter.startDate ?? undefined, endDate: filter.endDate ?? undefined };
-  const lookup = await transport.getTargetLookupForSync(range);
+  // The whole account: a mapped row may have moved outside the flow's date window
+  // without being deleted. Duplicate checks still only consider the window. A
+  // routine scan reads from its own date and leaves the deleted-row check to the
+  // next full scan.
+  const lookup = await transport.getTargetLookupForSync({ accountId: config.targetAccountId, startDate: scan?.sinceDate });
   const categoryGroups = await transport.getCategoryGroups();
+  const inWindow = (date: string) =>
+    (!filter.startDate || date >= filter.startDate) && (!filter.endDate || date <= filter.endDate);
 
   return {
     payees: lookup.payees.map((p) => ({ id: p.id, name: p.name })),
     categories: categoryGroups.categories.map((c) => ({ id: c.id, name: c.name })),
     importedIdIndex: lookup.importedIdIndex,
-    transactions: lookup.transactions.map((t) => ({
+    transactions: lookup.transactions.filter((t) => inWindow(t.date)).map((t) => ({
       id: t.id,
       date: t.date,
       amount: t.amount,
       payeeName: t.payeeName,
       categoryId: t.categoryId,
+      splitAmounts: t.splitAmounts,
     })),
+    allTransactionIds: scan?.sinceDate ? undefined : new Set(lookup.transactions.map((t) => t.id)),
   };
 }
 
@@ -111,14 +283,15 @@ export const transactionAdapter: SyncKindAdapter = {
     }
   },
 
-  async loadSource(transport: ActualBenchTransport, flow: SyncFlow): Promise<AdapterSourceResult> {
+  async loadSource(transport: ActualBenchTransport, flow: SyncFlow, scan?: AdapterScanOptions): Promise<AdapterSourceResult> {
     const config = decodeFlowPlanConfig(flow);
     const filter = decodeFilterOrDefault(flow);
+    const startDate = [filter.startDate, scan?.sinceDate].filter((date): date is string => !!date).sort().pop();
     let rawSource;
     try {
       rawSource = await transport.listTransactionsForSync({
         accountId: config.sourceAccountId,
-        startDate: filter.startDate ?? undefined,
+        startDate,
         endDate: filter.endDate ?? undefined,
       });
     } catch (err) {
@@ -131,15 +304,27 @@ export const transactionAdapter: SyncKindAdapter = {
     const expandedCount = expanded.length;
     const kept = filterSourceItems(expanded, filter);
     const items = JSON.parse(JSON.stringify(kept)) as SyncSourceItem[];
-    const materialized: MaterializedSource = { items, filter, config };
+    // Deletions are judged against the whole account, not the filtered rows.
+    let presentSourceKeys: string[] | undefined;
+    if (config.detectDeletedSource && !scan?.sinceDate) {
+      try {
+        const whole = filter.startDate || filter.endDate
+          ? await transport.listTransactionsForSync({ accountId: config.sourceAccountId, resolveNames: false })
+          : rawSource;
+        presentSourceKeys = allItemKeys(whole);
+      } catch (err) {
+        throw new SyncKindError("source_load_failed", describeSyncError(err, "Failed to read the source account."));
+      }
+    }
+    const materialized: MaterializedSource = { items, filter, config, presentSourceKeys, fxToday: new Date().toISOString().slice(0, 10) };
     return { materialized, stats: { scanned, generatedExcluded, expandedCount, keptCount: items.length } };
   },
 
-  async loadTarget(transport: ActualBenchTransport, flow: SyncFlow): Promise<unknown> {
+  async loadTarget(transport: ActualBenchTransport, flow: SyncFlow, scan?: AdapterScanOptions): Promise<unknown> {
     const config = decodeFlowPlanConfig(flow);
     const filter = decodeFilterOrDefault(flow);
     try {
-      return await loadTargetSnapshot(transport, config, filter);
+      return await loadTargetSnapshot(transport, config, filter, scan);
     } catch (err) {
       throw new SyncKindError("target_load_failed", describeSyncError(err, "Failed to read target lookup data."));
     }
@@ -150,24 +335,25 @@ export const transactionAdapter: SyncKindAdapter = {
     const source = materialized as MaterializedSource;
     const { config } = source;
     if (!config.fxEnabled || config.fxSourceCurrency === config.fxTargetCurrency) return [];
-    const dates = new Set(source.items.map((item) => item.date));
-    return [...dates].map((date) => ({ baseCurrency: config.fxSourceCurrency, quoteCurrency: config.fxTargetCurrency, date }));
+    return fxNeedDates(config, source.items.map((item) => item.date), source.fxToday)
+      .map((date) => ({ baseCurrency: config.fxSourceCurrency, quoteCurrency: config.fxTargetCurrency, date }));
   },
 
-  plan({ flow, materialized, target, mappings, targetCapabilities, fxRateByDate }): SyncPlanResult {
+  plan({ flow, materialized, target, mappings, targetCapabilities, fxRateByDate, fxPendingByDate, manualFxRates }): SyncPlanResult {
     const source = materialized as MaterializedSource;
     void flow;
-    // Deleted-source detection is only safe for a whole-account scan: with a date
-    // window, a source item outside the range would look "missing" (RD-057 §5).
-    const wholeAccount = !source.filter.startDate && !source.filter.endDate;
     return planExpandedItems({
       config: source.config,
       capabilities: { mode: "browser-api", supported: true, reason: null, capabilities: targetCapabilities },
       sourceItems: source.items,
       target: target as SyncPlannerTargetSnapshot,
       existingMappings: mappings as SyncMapping[],
-      detectDeletedSource: source.config.detectDeletedSource && wholeAccount,
+      detectDeletedSource: source.config.detectDeletedSource && !!source.presentSourceKeys,
+      presentSourceKeys: source.presentSourceKeys ? new Set(source.presentSourceKeys) : undefined,
       fxRateByDate,
+      fxPendingByDate,
+      fxToday: source.fxToday,
+      manualFxRates,
     });
   },
 
@@ -197,13 +383,19 @@ export const transactionAdapter: SyncKindAdapter = {
       sourceChangedWarnings: c.source_changed_since_sync ?? 0,
       targetMarkerMatches: c.target_marker_match ?? 0,
       blocked: c.blocked ?? 0,
+      targetMissing: c.target_missing ?? 0,
     };
   },
 
   async prepareApply(transport: ActualBenchTransport, flow: SyncFlow): Promise<AdapterApplyContext> {
     const config = decodeFlowPlanConfig(flow);
-    const lookup = await transport.getTargetLookupForSync({ accountId: config.targetAccountId });
-    return { markerIndex: lookup.importedIdIndex };
+    // One read serves the marker index and every repair's baseline.
+    const liveTargets = await readTargetRows(transport, config.targetAccountId);
+    const markerIndex = new Map<string, string>();
+    for (const [id, row] of liveTargets) {
+      if (row.importedId && !markerIndex.has(row.importedId)) markerIndex.set(row.importedId, id);
+    }
+    return { markerIndex, liveTargets };
   },
 
   assertCanApply(caps: SyncCapabilitySet, willCreate: boolean): void {
@@ -234,9 +426,15 @@ export const transactionAdapter: SyncKindAdapter = {
         : null,
     }));
     const { created } = await transport.createTransactionsForSync(createInputs);
+    // A split's baseline covers its lines, which the create result does not return.
+    let splitRows: Awaited<ReturnType<typeof readTargetRows>> | null = null;
+    if (createInputs.some((input) => input.subtransactions?.length)) {
+      splitRows = await readTargetRows(transport, config.targetAccountId).catch(() => null);
+    }
     return inputs.map((input, i) => {
       const res = created[i];
       const actual = res?.applied ?? null;
+      const lines = res?.transactionId ? splitRows?.get(res.transactionId)?.splitLines : undefined;
       const changedFields = actual
         ? diffPlannedVsActual(input.payload, res?.resolvedPayeeId ?? (input.payload.payeeId as string | null) ?? null, actual)
         : [];
@@ -244,7 +442,7 @@ export const transactionAdapter: SyncKindAdapter = {
         itemId: input.itemId,
         targetId: res?.transactionId ?? null,
         changedFields,
-        targetFingerprint: actual ? hashTargetFields(actual) : null,
+        targetFingerprint: actual ? targetBaseline({ ...actual, splitLines: lines }) : null,
       };
     });
   },
@@ -252,51 +450,195 @@ export const transactionAdapter: SyncKindAdapter = {
   async updateBatch(
     transport: ActualBenchTransport,
     flow: SyncFlow,
-    inputs: AdapterMutateInput[]
+    inputs: AdapterMutateInput[],
+    options?: AdapterWriteOptions
   ): Promise<AdapterMutateResult[]> {
     const config = decodeFlowPlanConfig(flow);
     const results: AdapterMutateResult[] = [];
+    // Read by id from one account read: the row may still be on its old date when
+    // the source date changed.
+    const liveRows = await readTargetRows(transport, config.targetAccountId);
+    const plainWrites: { input: AdapterMutateInput; fields: BatchTransactionUpdate; baseline: string; liveDate: string }[] = [];
+    // Set once anything has waited since `liveRows` was read.
+    let readIsOld = false;
+
     for (const input of inputs) {
+      if (options?.shouldStop?.()) {
+        results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "Apply stopped before this row; left unchanged." });
+        continue;
+      }
       // Per-item try/catch: one failed target write must not discard the results
       // of items already updated earlier in the batch.
       try {
         const payload = input.payload ?? {};
-        const live = await transport.readTargetTransactionForSync({
-          accountId: config.targetAccountId,
-          transactionId: input.targetId,
-          date: typeof payload.date === "string" ? payload.date : undefined,
-        });
+        const live = liveRows.get(input.targetId);
         if (!live) {
           results.push({ itemId: input.itemId, outcome: "skipped", targetId: null, message: "Target no longer exists; not updated." });
           continue;
         }
         // Without a recorded baseline we cannot prove the target is unmodified, so
-        // refuse to overwrite it (RD-057 §4). With one, only overwrite an exact match.
+        // refuse to overwrite it (RD-057 §4). With one, only overwrite a match.
         if (!input.expectedTargetFingerprint) {
           results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "No sync baseline for this target; left unchanged." });
           continue;
         }
-        if (hashTargetFields(live) !== input.expectedTargetFingerprint) {
+        if (!targetMatchesBaseline(live, input.expectedTargetFingerprint)) {
           results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "Target was edited outside sync; left unchanged." });
           continue;
         }
-        const applied: SyncAppliedSnapshot | null = await transport.updateTransactionForSync({
-          transactionId: input.targetId,
-          accountId: config.targetAccountId,
-          date: String(payload.date ?? live.date),
-          amount: Number(payload.amount ?? live.amount),
-          payeeId: (payload.payeeId as string | null) ?? null,
-          payeeName: (payload.payeeName as string | null) ?? null,
-          categoryId: (payload.categoryId as string | null) ?? null,
-          notes: (payload.notes as string | null) ?? null,
-          cleared: payload.cleared === true,
+        // A linked transfer's amount and payee are shared with its other leg.
+        if (live.transferId) {
+          results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "Target is a linked transfer; left unchanged." });
+          continue;
+        }
+        const keepPayee = payload.keepTargetPayee === true;
+        const plannedCategory = (payload.categoryId as string | null) ?? null;
+        const date = String(payload.date ?? live.date);
+        const amount = Number(payload.amount ?? live.amount);
+        const notes = (payload.notes as string | null) ?? null;
+        const plannedLines = Array.isArray(payload.subtransactions) ? (payload.subtransactions as PlannedLine[]) : null;
+        if (plannedLines) {
+          const problem = splitUpdateProblem(live, plannedLines);
+          if (problem) {
+            results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: problem });
+            continue;
+          }
+        }
+        // Resolved first so the baseline below can state exactly what was written.
+        const payeeName = (payload.payeeName as string | null) ?? null;
+        let payeeId = keepPayee ? live.payeeId : (payload.payeeId as string | null) ?? null;
+        if (!keepPayee && !payeeId && payeeName) {
+          readIsOld = true;
+          payeeId = (await transport.createOrResolvePayee({ name: payeeName })).id;
+        }
+        // A split is written line by line straight away, so it is read again first
+        // if anything waited since the account read. Its checks, write and rollback
+        // all use that copy.
+        let target = live;
+        if (plannedLines && readIsOld) {
+          const fresh = (await readTargetRows(transport, config.targetAccountId, live.date)).get(input.targetId);
+          if (options?.shouldStop?.()) {
+            results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "Apply stopped before this row; left unchanged." });
+            continue;
+          }
+          const problem = !fresh
+            ? "Target was edited or removed outside sync; left unchanged."
+            : fresh.transferId || !targetMatchesBaseline(fresh, input.expectedTargetFingerprint)
+              ? "Target was edited outside sync; left unchanged."
+              : splitUpdateProblem(fresh, plannedLines);
+          if (problem || !fresh) {
+            results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: problem ?? "Target was edited outside sync; left unchanged." });
+            continue;
+          }
+          target = fresh;
+        }
+        // Category and cleared state belong to the target budget. A category is only
+        // filled in when the target row has none. A split's category is on its lines.
+        const categoryId = !plannedLines && live.categoryId == null && plannedCategory ? plannedCategory : undefined;
+        // The baseline is what this sync wrote. A later read could include someone
+        // else's edit and would then let the next update overwrite it.
+        const baseline = targetBaseline({
+          ...target,
+          date,
+          amount,
+          payeeId,
+          notes,
+          splitLines: plannedLines ? plannedLines.map((line) => ({ amount: line.amount, notes: line.notes ?? null })) : undefined,
         });
-        results.push({
-          itemId: input.itemId,
-          outcome: "updated",
-          targetId: input.targetId,
-          targetFingerprint: applied ? hashTargetFields(applied) : null,
+        if (plannedLines) {
+          readIsOld = true;
+          const finished = await updateSplit(
+            transport,
+            config.targetAccountId,
+            date,
+            target,
+            plannedLines,
+            () => transport.updateTransactionForSync({ transactionId: input.targetId, accountId: config.targetAccountId, date, amount, payeeId: keepPayee ? undefined : payeeId, notes, returnApplied: false }),
+            async () => {
+              // Lines already written may be on the new date, the rest on the old one.
+              const row = (await readTargetRows(transport, config.targetAccountId, target.date, date)).get(input.targetId);
+              return new Map((row?.splitLines ?? []).map((line) => [line.id as string, line]));
+            },
+            options?.shouldStop
+          );
+          results.push(finished
+            ? { itemId: input.itemId, outcome: "updated", targetId: input.targetId, targetFingerprint: baseline }
+            : { itemId: input.itemId, outcome: "failed", targetId: input.targetId, message: "Apply stopped part-way through this split. Check it in Actual." });
+          continue;
+        }
+        plainWrites.push({
+          input,
+          baseline,
+          liveDate: live.date,
+          fields: { id: input.targetId, date, amount, ...(keepPayee ? {} : { payeeId }), ...(categoryId ? { categoryId } : {}), notes },
         });
+      } catch (err) {
+        results.push({ itemId: input.itemId, outcome: "failed", targetId: input.targetId, message: describeSyncError(err, "Update failed.") });
+      }
+    }
+
+    // Anything that waited since the read may have let someone edit a queued row.
+    let queued = plainWrites;
+    if (readIsOld && queued.length > 0) {
+      const fresh = await readTargetRows(transport, config.targetAccountId).catch(() => null);
+      if (!fresh) {
+        // Splits already written keep their results; the queued rows were not written.
+        for (const { input } of plainWrites) {
+          results.push({ itemId: input.itemId, outcome: "failed", targetId: input.targetId, message: "Could not read the target account again; left unchanged." });
+        }
+        return results;
+      }
+      queued = plainWrites.flatMap((write) => {
+        const { input } = write;
+        const row = fresh.get(input.targetId);
+        if (row && !row.transferId && targetMatchesBaseline(row, input.expectedTargetFingerprint as string)) {
+          // The fingerprint leaves out the category, so a category set meanwhile must be kept.
+          return [row.categoryId != null ? withoutCategory(write) : write];
+        }
+        results.push({ itemId: input.itemId, outcome: "skipped", targetId: row ? input.targetId : null, message: row ? "Target was edited outside sync; left unchanged." : "Target no longer exists; not updated." });
+        return [];
+      });
+    }
+
+    // One write for the whole set where the transport can do it; one at a time otherwise.
+    let batched = false;
+    if (queued.length > 1 && transport.batchWriteTransactionsForSync && !options?.shouldStop?.()) {
+      try {
+        await transport.batchWriteTransactionsForSync({ updated: queued.map((write) => write.fields), deleted: [] });
+        batched = true;
+      } catch {
+        // An unsupported surface: fall through to writing one at a time.
+      }
+    }
+    for (const { input, fields, baseline, liveDate } of queued) {
+      if (!batched && options?.shouldStop?.()) {
+        results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "Apply stopped before this row; left unchanged." });
+        continue;
+      }
+      try {
+        if (!batched) {
+          // One at a time takes longer, so each row is checked just before its write.
+          const current = await transport.readTargetTransactionForSync({ accountId: config.targetAccountId, transactionId: input.targetId, date: liveDate });
+          if (!current || !targetMatchesBaseline(current, input.expectedTargetFingerprint as string)) {
+            results.push({ itemId: input.itemId, outcome: "skipped", targetId: current ? input.targetId : null, message: current ? "Target was edited outside sync; left unchanged." : "Target no longer exists; not updated." });
+            continue;
+          }
+          if (options?.shouldStop?.()) {
+            results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "Apply stopped before this row; left unchanged." });
+            continue;
+          }
+          await transport.updateTransactionForSync({
+            transactionId: input.targetId,
+            accountId: config.targetAccountId,
+            date: fields.date as string,
+            amount: fields.amount as number,
+            payeeId: fields.payeeId,
+            categoryId: current.categoryId != null ? undefined : fields.categoryId,
+            notes: fields.notes,
+            returnApplied: false,
+          });
+        }
+        results.push({ itemId: input.itemId, outcome: "updated", targetId: input.targetId, targetFingerprint: baseline });
       } catch (err) {
         results.push({ itemId: input.itemId, outcome: "failed", targetId: input.targetId, message: describeSyncError(err, "Update failed.") });
       }
@@ -307,32 +649,71 @@ export const transactionAdapter: SyncKindAdapter = {
   async deleteBatch(
     transport: ActualBenchTransport,
     flow: SyncFlow,
-    inputs: AdapterMutateInput[]
+    inputs: AdapterMutateInput[],
+    options?: AdapterWriteOptions
   ): Promise<AdapterMutateResult[]> {
     const config = decodeFlowPlanConfig(flow);
     const results: AdapterMutateResult[] = [];
+    const liveRows = await readTargetRows(transport, config.targetAccountId);
+    const toDelete: AdapterMutateInput[] = [];
     for (const input of inputs) {
-      // Per-item try/catch so one failed delete doesn't discard earlier successes.
-      try {
-        const live = await transport.readTargetTransactionForSync({
-          accountId: config.targetAccountId,
-          transactionId: input.targetId,
-        });
-        if (!live) {
-          results.push({ itemId: input.itemId, outcome: "skipped", targetId: null, message: "Target already gone." });
-          continue;
-        }
+      const live = liveRows.get(input.targetId);
+      if (!live) {
+        results.push({ itemId: input.itemId, outcome: "skipped", targetId: null, message: "Target already gone." });
+      } else if (!input.expectedTargetFingerprint) {
         // Only delete a target we can prove is exactly what sync wrote: no baseline
         // (or a mismatch) means it may have been re-used/edited - never delete it.
-        if (!input.expectedTargetFingerprint) {
-          results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "No sync baseline for this target; not deleted." });
-          continue;
+        results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "No sync baseline for this target; not deleted." });
+      } else if (!targetMatchesBaseline(live, input.expectedTargetFingerprint)) {
+        results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "Target was edited outside sync; not deleted." });
+      } else if (live.transferId) {
+        // Deleting one leg of a linked transfer would delete the other account's row too.
+        results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "Target is a linked transfer; not deleted." });
+      } else {
+        toDelete.push(input);
+      }
+    }
+    let batched = false;
+    // Set once a batch was tried or a delete was sent: from then on each row is read
+    // again (its day of the account) and checked just before its own delete.
+    let readIsOld = false;
+    if (toDelete.length > 1 && transport.batchWriteTransactionsForSync && !options?.shouldStop?.()) {
+      readIsOld = true;
+      try {
+        await transport.batchWriteTransactionsForSync({ updated: [], deleted: toDelete.map((input) => input.targetId) });
+        batched = true;
+      } catch {
+        // An unsupported surface: fall through to deleting one at a time.
+      }
+    }
+    for (const input of toDelete) {
+      if (!batched && options?.shouldStop?.()) {
+        results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "Apply stopped before this row; not deleted." });
+        continue;
+      }
+      // Per-item try/catch so one failed delete doesn't discard earlier successes.
+      try {
+        if (!batched) {
+          if (readIsOld) {
+            const date = (liveRows.get(input.targetId) as AdapterLiveTarget).date;
+            const current = (await readTargetRows(transport, config.targetAccountId, date)).get(input.targetId);
+            const problem = !current
+              ? "Target is gone or was moved to another date; not deleted."
+              : !targetMatchesBaseline(current, input.expectedTargetFingerprint as string)
+                ? "Target was edited outside sync; not deleted."
+                : current.transferId
+                  ? "Target is a linked transfer; not deleted."
+                  : options?.shouldStop?.()
+                    ? "Apply stopped before this row; not deleted."
+                    : null;
+            if (problem) {
+              results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: problem });
+              continue;
+            }
+          }
+          readIsOld = true;
+          await transport.deleteTransactionForSync({ transactionId: input.targetId });
         }
-        if (hashTargetFields(live) !== input.expectedTargetFingerprint) {
-          results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "Target was edited outside sync; not deleted." });
-          continue;
-        }
-        await transport.deleteTransactionForSync({ transactionId: input.targetId });
         results.push({ itemId: input.itemId, outcome: "deleted", targetId: input.targetId });
       } catch (err) {
         results.push({ itemId: input.itemId, outcome: "failed", targetId: input.targetId, message: describeSyncError(err, "Delete failed.") });
