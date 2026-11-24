@@ -192,6 +192,9 @@ export const categoryReturnAdapter: SyncKindAdapter = {
         skip("The source row no longer exists.");
       } else if (live.categoryId || live.reconciled) {
         skip("The source row now has a category or is reconciled; left unchanged.");
+      } else if (live.splitLines?.length) {
+        // The plan never includes a split parent; one that became a split since is not written.
+        skip("The source row is now a split; left unchanged.");
       } else if (!sameExceptCategory(live, {
         amount: Number(payload.amount),
         date: String(payload.date),

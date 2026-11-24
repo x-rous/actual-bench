@@ -1,6 +1,6 @@
 import { ABANDONED_APPLY_MS } from "@/lib/sync/applyClaim";
 import { generateId } from "@/lib/uuid";
-import { AppDbValidationError } from "./errors";
+import { AppDbConflictError, AppDbValidationError } from "./errors";
 import {
   normalizeEnvelopeOrEmpty as normalizeEnvelope,
   normalizeOptionalEnvelope,
@@ -377,7 +377,25 @@ export type UpdateSyncFlowRunPatch = {
   summary?: JsonEnvelope;
   error?: JsonEnvelope | null;
   counts?: JsonEnvelope | null;
+  /** Sent by an apply: the write is refused unless this claim still owns the run. */
+  applyToken?: string | null;
 };
+
+/**
+ * Refuse a write from an apply that no longer owns its run: another apply took
+ * it over, or it was closed as abandoned. Writes without a token are not from an
+ * apply and are not checked.
+ */
+function assertApplyOwner(db: SqliteDatabase, runId: string, applyToken: string | null | undefined): void {
+  if (applyToken == null) return;
+  const owned = db
+    .prepare(
+      `SELECT 1 AS owned FROM sync_flow_runs
+       WHERE id = ? AND status = 'applying' AND json_extract(summary_json, '$.data.applyToken') = ?`
+    )
+    .get<{ owned: number }>(runId, applyToken);
+  if (!owned) throw new AppDbConflictError("This apply no longer owns the run; its write was refused.");
+}
 
 export { ABANDONED_APPLY_MS };
 
@@ -457,6 +475,7 @@ export function updateSyncFlowRun(
 ): SyncFlowRun | null {
   const existing = getSyncFlowRun(db, runId);
   if (!existing) return null;
+  assertApplyOwner(db, runId, patch.applyToken);
 
   const summary = patch.summary === undefined ? existing.summary : normalizeEnvelope(patch.summary, "summary");
   const error = patch.error === undefined ? existing.error : normalizeOptionalEnvelope(patch.error, "error");
@@ -562,6 +581,8 @@ export type UpdateSyncFlowRunItemPatch = {
   selectedForApply?: boolean;
   createdTargetTransactionId?: string | null;
   createdTargetMarker?: string | null;
+  /** Sent by an apply: the write is refused unless this claim still owns the item's run. */
+  applyToken?: string | null;
 };
 
 export function updateSyncFlowRunItem(
@@ -571,6 +592,7 @@ export function updateSyncFlowRunItem(
 ): SyncFlowRunItem | null {
   const existing = getSyncFlowRunItem(db, itemId);
   if (!existing) return null;
+  assertApplyOwner(db, existing.runId, patch.applyToken);
 
   const warnings = patch.warnings === undefined ? existing.warnings : normalizeOptionalEnvelope(patch.warnings, "warnings");
   const errors = patch.errors === undefined ? existing.errors : normalizeOptionalEnvelope(patch.errors, "errors");

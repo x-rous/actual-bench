@@ -70,6 +70,9 @@ function applyStore(): ApplyStore {
   // HTTP round-trip per item - the dominant apply cost on large runs. The
   // durable target `imported_id` marker is the real idempotency guarantee, so a
   // deferred flush cannot cause duplicates even if the tab closes mid-run.
+  // One store serves one apply. Its run and item writes carry the claim token,
+  // so the server refuses them once another apply owns the run.
+  let applyToken: string | null = null;
   const pendingMappings: SyncMappingInput[] = [];
   const pendingItemPatches: { itemId: string; patch: RunItemStatusPatch }[] = [];
   const pendingFxSnapshots: { input: FxSnapshotInput; itemId?: string }[] = [];
@@ -107,17 +110,20 @@ function applyStore(): ApplyStore {
       return;
     }
     if (pendingItemPatches.length > 0) {
-      await api.updateRunItems(pendingItemPatches);
+      await api.updateRunItems(pendingItemPatches.map(({ itemId, patch }) => ({ itemId, patch: { ...patch, applyToken } })));
       pendingItemPatches.length = 0;
     }
   }
 
   return {
-    claimRun: async (runId, retry) => (await api.claimRun(runId, retry)).token,
+    claimRun: async (runId, retry) => {
+      applyToken = (await api.claimRun(runId, retry)).token;
+      return applyToken;
+    },
     heartbeatRun: async (runId, token) => (await api.heartbeatRun(runId, token)).alive,
     saveRunItemPayloads: async (payloads) => {
       // One request and one transaction: all of them are saved, or none.
-      await api.updateRunItems(payloads.map(({ itemId, payload }) => ({ itemId, patch: { plannedTargetPayload: payload } })));
+      await api.updateRunItems(payloads.map(({ itemId, payload }) => ({ itemId, patch: { plannedTargetPayload: payload, applyToken } })));
     },
     flushWrites: async () => {
       await flush();
@@ -145,7 +151,7 @@ function applyStore(): ApplyStore {
       // A terminal status marks the end of the run: flush buffered item writes
       // first so the finalized run reflects them, then update the run itself.
       if (patch.status !== "applying") await flush();
-      await api.updateRun(runId, { status: patch.status, finishedAt: patch.finishedAt, counts: patch.counts, ...(patch.error !== undefined ? { error: patch.error } : {}) });
+      await api.updateRun(runId, { status: patch.status, finishedAt: patch.finishedAt, counts: patch.counts, ...(patch.error !== undefined ? { error: patch.error } : {}), applyToken });
     },
     updateRunItemStatus: async (itemId, patch) => {
       pendingItemPatches.push({ itemId, patch: failedItems.get(itemId) ?? patch });
@@ -157,6 +163,7 @@ function applyStore(): ApplyStore {
         status: "failed",
         finishedAt: new Date().toISOString(),
         error: { version: 1, data: { code: error.code, message: error.message } },
+        applyToken,
       });
     },
     persistFxSnapshot: async (input, itemId) => {

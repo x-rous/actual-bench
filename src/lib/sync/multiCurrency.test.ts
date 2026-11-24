@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
 import { AppDbConflictError } from "@/lib/app-db/errors";
 import { createSyncMappingIfAbsent } from "@/lib/app-db/syncMappingRepository";
-import { claimSyncFlowRun, createSyncFlowRun, failAbandonedSyncRuns, getSyncFlowRun, heartbeatSyncFlowRun } from "@/lib/app-db/syncRunRepository";
+import { claimSyncFlowRun, createSyncFlowRun, createSyncFlowRunItem, failAbandonedSyncRuns, getSyncFlowRun, heartbeatSyncFlowRun, updateSyncFlowRun, updateSyncFlowRunItem } from "@/lib/app-db/syncRunRepository";
 import { amountEditText, parseAmountToMinor } from "@/features/sync/lib/previewRows";
 import { adjustRateByPercent, averageRates, impliedRate } from "@/lib/fx/fxMath";
 import { findTransactionFx, saveTransactionFx, updateTransactionFxSnapshot } from "@/lib/fx/repositories/transactionFxRepository";
@@ -149,6 +149,22 @@ describe("rate resolution", () => {
     expect(heartbeatSyncFlowRun(db, run.id, token!)).toBe(false);
   });
 
+  it("refuses run and item writes from an apply that lost its claim", () => {
+    db.prepare("INSERT INTO sync_flows (id, name, enabled, flow_type, created_at, updated_at, source_ref_json, target_ref_json, filter_json, transform_json, options_json) VALUES ('f', 'x', 1, 'transaction_sync', '', '', '{}', '{}', '{}', '{}', '{}')").run();
+    const run = createSyncFlowRun(db, { flowId: "f", status: "failed", summary: envelope({}) });
+    const item = createSyncFlowRunItem(db, { runId: run.id, flowId: "f", sourceItemRef: envelope({}) });
+    const stale = claimSyncFlowRun(db, run.id, ["failed"])!;
+    // A Retry takes the run over after the first apply stalled.
+    updateSyncFlowRun(db, run.id, { status: "failed" });
+    const owner = claimSyncFlowRun(db, run.id, ["failed"])!;
+    expect(() => updateSyncFlowRun(db, run.id, { status: "applied", applyToken: stale })).toThrow(AppDbConflictError);
+    expect(() => updateSyncFlowRunItem(db, item.id, { status: "failed", applyToken: stale })).toThrow(AppDbConflictError);
+    expect(updateSyncFlowRunItem(db, item.id, { status: "applied", applyToken: owner })?.status).toBe("applied");
+    expect(updateSyncFlowRun(db, run.id, { status: "applied", applyToken: owner })?.status).toBe("applied");
+    // A finished run takes no more apply writes, even from its own claim.
+    expect(() => updateSyncFlowRun(db, run.id, { status: "failed", applyToken: owner })).toThrow(AppDbConflictError);
+  });
+
   it("repeats an identical mapping but refuses a different target", () => {
     db.prepare("INSERT INTO sync_flows (id, name, enabled, flow_type, created_at, updated_at, source_ref_json, target_ref_json, filter_json, transform_json, options_json) VALUES ('f', 'x', 1, 'transaction_sync', '', '', '{}', '{}', '{}', '{}', '{}')").run();
     const input = {
@@ -213,7 +229,10 @@ describe("the target budget owns category and cleared state", () => {
   });
 
   it("puts split lines back when a later write fails, so a retry is not blocked", async () => {
-    const lines = [{ id: "l1", amount: -1000, notes: "a", payeeId: "p", categoryId: "c1" }, { id: "l2", amount: -1500, notes: "b", payeeId: "p", categoryId: "c2" }];
+    const lines: { id: string; amount: number; notes: string | null; payeeId: string; categoryId: string }[] = [
+      { id: "l1", amount: -1000, notes: null, payeeId: "p", categoryId: "c1" },
+      { id: "l2", amount: -1500, notes: "b", payeeId: "p", categoryId: "c2" },
+    ];
     // A small budget: each write changes the stored line, and l2 fails once.
     const stored = lines.map((line) => ({ ...line }));
     const row = () => ({ id: "T1", ...written, isParent: true, splitLines: stored.map((line) => ({ ...line })) });
@@ -222,7 +241,7 @@ describe("the target budget owns category and cleared state", () => {
     const update = jest.fn(async (input: { transactionId: string; amount?: number; notes?: string | null }) => {
       const line = stored.find((l) => l.id === input.transactionId);
       if (input.transactionId === "l2" && failures-- > 0) throw new Error("boom");
-      if (line) Object.assign(line, { amount: input.amount ?? line.amount, notes: input.notes ?? line.notes });
+      if (line) Object.assign(line, { amount: input.amount ?? line.amount, ...("notes" in input ? { notes: input.notes } : {}) });
       return null;
     });
     const transport = { listTransactionsForSync: async () => [row()], updateTransactionForSync: update } as unknown as ActualBenchTransport;
@@ -231,12 +250,35 @@ describe("the target budget owns category and cleared state", () => {
 
     const [first] = await apply();
     expect(first.outcome).toBe("failed");
-    expect(stored.map((line) => [line.amount, line.notes])).toEqual([[-1000, "a"], [-1500, "b"]]);
+    // Both the amount and the empty note are put back.
+    expect(stored.map((line) => [line.amount, line.notes])).toEqual([[-1000, null], [-1500, "b"]]);
 
     // The restored split still matches the original baseline, so the retry goes through.
     const [retry] = await apply();
     expect(retry.outcome).toBe("updated");
     expect(stored.map((line) => [line.amount, line.notes])).toEqual([[-1100, "a"], [-1500, "c"]]);
+  });
+
+  it("keeps a category set on a later split line while an earlier line was written", async () => {
+    const stored = [
+      { id: "l1", amount: -1000, notes: "a", payeeId: "p", categoryId: null as string | null },
+      { id: "l2", amount: -1500, notes: "b", payeeId: "p", categoryId: null as string | null },
+    ];
+    const row = () => ({ id: "T1", ...written, isParent: true, splitLines: stored.map((line) => ({ ...line })) });
+    const baseline = targetBaseline(row());
+    const update = jest.fn(async (input: { transactionId: string }) => {
+      // The owner categorises l2 while l1 is being written.
+      if (input.transactionId === "l1") stored[1].categoryId = "mine";
+      return null;
+    });
+    const transport = { listTransactionsForSync: async () => [row()], updateTransactionForSync: update } as unknown as ActualBenchTransport;
+    const [result] = await adapter.updateBatch!(transport, flow(), [{
+      itemId: "i", targetId: "T1", expectedTargetFingerprint: baseline,
+      payload: { ...payload, subtransactions: [{ amount: -1100, notes: "a" }, { amount: -1400, notes: "b" }] },
+    }]);
+    expect(result.outcome).toBe("updated");
+    const l2 = (update.mock.calls as unknown as [{ transactionId: string; categoryId: string | null }][]).find(([input]) => input.transactionId === "l2")?.[0];
+    expect(l2?.categoryId).toBe("mine");
   });
 
   it("stops inside a split as soon as the claim is lost", async () => {
@@ -605,6 +647,18 @@ describe("apply safety", () => {
     expect(sync).toHaveBeenCalled();
   });
 
+  it("does not upload when every selected write was skipped", async () => {
+    const saved = flow();
+    const { store, transport } = harness(saved, { flowPlanHash: flowPlanHash(saved) });
+    const sync = jest.fn(async () => { throw new Error("offline"); });
+    const browser = { ...transport, mode: "browser-api", sync } as unknown as ActualBenchTransport;
+    // Linked by another apply since the preview: nothing is written.
+    const result = await applySyncRun({ runId: "r", targetConnection: connection("T") }, { transport: { openTransport: async () => browser }, store: { ...store, getMappingBySource: async () => mapping("txn:x", "fp", "other") } });
+    expect(result.counts.skipped).toBe(1);
+    expect(sync).not.toHaveBeenCalled();
+    expect(result.error).toBeUndefined();
+  });
+
   it("clears an earlier attempt's error when the apply succeeds", async () => {
     const saved = flow();
     const { store, transport } = harness(saved, { flowPlanHash: flowPlanHash(saved) });
@@ -702,6 +756,18 @@ describe("sending categories back", () => {
     const results = await categoryReturnAdapter.updateBatch!(transport, flow(), [input("a"), input("b")]);
     expect(results.map((r) => [r.itemId, r.outcome])).toEqual([["a", "updated"], ["b", "skipped"]]);
     expect(update).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not write a category onto a row that became a split", async () => {
+    const a = txn("a", { isParent: true, splitLines: [{ id: "a1", amount: -400, notes: null, payeeId: "p", payeeName: "Cafe", categoryId: null, categoryName: null }, { id: "a2", amount: -600, notes: null, payeeId: "p", payeeName: "Cafe", categoryId: null, categoryName: null }] as unknown as SyncSourceTransaction["splitLines"] });
+    const update = jest.fn(async () => null);
+    const transport = { listTransactionsForSync: async () => [a], updateTransactionForSync: update } as unknown as ActualBenchTransport;
+    const [result] = await categoryReturnAdapter.updateBatch!(transport, flow({ createTargetSplits: true }), [{
+      itemId: "i", targetId: "a", sourceItemKey: "txn:a", expectedTargetFingerprint: null,
+      payload: { date: a.date, amount: a.amount, payeeId: a.payeeId, notes: null, categoryId: "s-food" },
+    }]);
+    expect(result).toMatchObject({ outcome: "skipped", message: "The source row is now a split; left unchanged." });
+    expect(update).not.toHaveBeenCalled();
   });
 
   it("skips a source row that changed after the preview", async () => {

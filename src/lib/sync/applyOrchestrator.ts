@@ -262,6 +262,8 @@ export async function applySyncRun(
 
   const isRetry = input.selection != null && "selection" in input.selection && input.selection.selection === "retry_failed";
   let token: string | null = null;
+  // The server stamps the claim no earlier than this, so counting from here is safe.
+  const claimSentAt = Date.now();
   if (deps.store.claimRun) {
     token = await deps.store.claimRun(runId, isRetry);
     if (!token) {
@@ -276,7 +278,7 @@ export async function applySyncRun(
   // working. A definite "no" stops the apply at once. If renewals keep failing it
   // stops on its own, well before cleanup could hand the flow to another apply.
   let claimLost = false;
-  let lastRenewedAt = Date.now();
+  let lastRenewedAt = claimSentAt;
   const tracksClaim = !!token && !!deps.store.heartbeatRun;
   const heartbeat = tracksClaim
     ? setInterval(() => {
@@ -345,7 +347,13 @@ export async function applySyncRun(
       return { status: "failed", runId, error, counts, items };
     }
 
-    const ctx: ItemContext = { config, adapter, flow, transport, markerIndex, liveTargets, isClaimLost };
+    // Set before a write goes to the budget, or when an earlier attempt's row may
+    // still be waiting to upload. Bookkeeping can fail after a write; it still uploads.
+    let sentWrites = prepared.uploadPending;
+    const markSent = () => {
+      sentWrites = true;
+    };
+    const ctx: ItemContext = { config, adapter, flow, transport, markerIndex, liveTargets, isClaimLost, markSent };
 
     // Repair/map items write nothing, so they stay per-item (cheap). Creates are
     // batched into ONE insert + ONE id-recovery read instead of one round-trip per
@@ -380,7 +388,6 @@ export async function applySyncRun(
     // item still fail on bookkeeping, and a Retry can find an earlier attempt's row.
     // Runs that only link existing rows write nothing to upload.
     let uploadError: ApplyError | null = null;
-    const sentWrites = eligible.some((entry) => entry.mode === "create" || entry.mode === "recreate" || entry.mode === "update" || entry.mode === "delete");
     if (sentWrites && transport.mode === "browser-api") {
       try {
         await transport.sync().catch(() => transport.sync());
@@ -450,6 +457,8 @@ type PreparedApply = {
   eligible: EligibleItem[];
   /** Where the run was before this apply claimed it. */
   runStatus: "draft_preview" | "partial" | "failed";
+  /** An earlier attempt's writes may still be only in the browser. */
+  uploadPending: boolean;
 };
 
 function isEligibleNew(item: SyncFlowRunItem): boolean {
@@ -702,6 +711,7 @@ async function validateAndPrepare(
     adapter,
     eligible: applyAmountOverrides(eligible, input.amountOverrides),
     runStatus: run.status as PreparedApply["runStatus"],
+    uploadPending: (run.error?.data as { code?: string } | undefined)?.code === "upload_failed",
   };
 }
 
@@ -769,6 +779,8 @@ type ItemContext = {
   liveTargets?: AdapterApplyContext["liveTargets"];
   /** True once this apply no longer owns its run and must not write. */
   isClaimLost: () => boolean;
+  /** Called before a write is sent to the budget, so it is uploaded afterwards. */
+  markSent: () => void;
 };
 
 /** Repair/map items perform no Actual write; they are applied one at a time. */
@@ -814,6 +826,8 @@ async function applyCreateBatch(
           ? existingMapping
           : null;
       if (existingMapping && !replaces) {
+        // A Retry of a row whose earlier attempt wrote it: that write may not have uploaded.
+        if (item.applyState === "failed" && existingMapping.status === "active") ctx.markSent();
         await recoverFxRecord(ctx, store, payloadJson, existingMapping, item.id);
         await store.updateRunItemStatus(item.id, {
           status: "skipped",
@@ -864,6 +878,7 @@ async function applyCreateBatch(
   // id-recovery read; entities: create payees/categories) and returns per-item ids.
   let created: AdapterCreateResult[];
   try {
+    ctx.markSent();
     created = await ctx.adapter.createBatch(
       ctx.transport,
       ctx.flow,
@@ -995,7 +1010,10 @@ async function applyMutateBatch(
   let mutated;
   try {
     mutated = await batch(ctx.transport, ctx.flow, inputs, { shouldStop: ctx.isClaimLost });
+    // Rows the adapter skipped were never written. A failed one may be part-written.
+    if (mutated.some((result) => result.outcome !== "skipped")) ctx.markSent();
   } catch (err) {
+    ctx.markSent();
     for (const { item } of meta.values()) {
       await store.updateRunItemStatus(item.id, {
         status: "failed",

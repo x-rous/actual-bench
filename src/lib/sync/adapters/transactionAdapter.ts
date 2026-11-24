@@ -63,13 +63,14 @@ function allItemKeys(transactions: SyncSourceTransaction[]): string[] {
   ].flatMap(allKeysOf);
 }
 
-/** The persisted fields of every target row, from one account read (or one day of it). */
+/** The persisted fields of every target row, from one account read (or a few days of it). */
 async function readTargetRows(
   transport: ActualBenchTransport,
   accountId: string,
-  onDate?: string
+  ...dates: string[]
 ): Promise<Map<string, AdapterLiveTarget & { importedId: string | null }>> {
-  const rows = await transport.listTransactionsForSync({ accountId, resolveNames: false, ...(onDate ? { startDate: onDate, endDate: onDate } : {}) });
+  const range = dates.length > 0 ? { startDate: [...dates].sort()[0], endDate: [...dates].sort()[dates.length - 1] } : {};
+  const rows = await transport.listTransactionsForSync({ accountId, resolveNames: false, ...range });
   return new Map(
     rows.map((row) => [
       row.id,
@@ -101,12 +102,13 @@ async function readTargetRows(
 }
 
 type PlannedLine = { amount: number; notes: string | null };
+type SplitLine = NonNullable<AdapterLiveTarget["splitLines"]>[number];
 
 const writeLine = (
   transport: ActualBenchTransport,
   accountId: string,
   date: string,
-  line: NonNullable<AdapterLiveTarget["splitLines"]>[number],
+  line: SplitLine,
   next: PlannedLine
 ) => transport.updateTransactionForSync({
   transactionId: line.id as string,
@@ -124,6 +126,10 @@ const writeLine = (
  * parent's payee and category when an update leaves them out, so every write names
  * the line's own. The parent follows last, once the lines add up.
  *
+ * Lines are written one at a time, so after the first write each line is read
+ * again before its own: its category belongs to the target and may have been set
+ * meanwhile, and a line edited meanwhile stops the update.
+ *
  * A failed write puts the lines already changed back, so a retry does not take
  * this sync's own half-finished work for an outside edit. Returns false when the
  * apply lost its claim part-way: another writer may own the row, so it stops there.
@@ -135,15 +141,25 @@ async function updateSplit(
   live: AdapterLiveTarget,
   planned: PlannedLine[],
   writeParent: () => Promise<unknown>,
+  readLines: () => Promise<Map<string, SplitLine>>,
   shouldStop?: () => boolean
 ): Promise<boolean> {
-  const changed: NonNullable<AdapterLiveTarget["splitLines"]> = [];
+  const changed: SplitLine[] = [];
   try {
     for (const [index, line] of (live.splitLines ?? []).entries()) {
       const next = planned[index];
       if (line.amount === next.amount && (line.notes ?? null) === (next.notes ?? null)) continue;
       if (shouldStop?.()) return false;
-      await writeLine(transport, accountId, date, line, next);
+      let current = line;
+      if (changed.length > 0) {
+        const fresh = (await readLines()).get(line.id as string);
+        if (!fresh || fresh.amount !== line.amount || (fresh.notes ?? null) !== (line.notes ?? null)) {
+          throw new Error("A split line was edited outside sync during the update.");
+        }
+        if (shouldStop?.()) return false;
+        current = { ...line, categoryId: fresh.categoryId };
+      }
+      await writeLine(transport, accountId, date, current, next);
       changed.push(line);
     }
     if (shouldStop?.()) return false;
@@ -151,8 +167,12 @@ async function updateSplit(
     return true;
   } catch (err) {
     try {
+      // Amounts and notes go back to what they were; each category stays as it is now.
+      // If that read fails, the restore still runs with the categories read at the start.
+      const now = changed.length > 0 ? await readLines().catch(() => new Map<string, SplitLine>()) : new Map<string, SplitLine>();
       for (const line of [...changed].reverse()) {
-        await writeLine(transport, accountId, live.date, line, { amount: line.amount, notes: line.notes });
+        const categoryId = now.get(line.id as string)?.categoryId ?? line.categoryId;
+        await writeLine(transport, accountId, live.date, { ...line, categoryId }, { amount: line.amount, notes: line.notes });
       }
     } catch {
       throw new Error(`The split was only partly updated and could not be put back. Check it in Actual. ${describeSyncError(err, "")}`.trim());
@@ -525,6 +545,11 @@ export const transactionAdapter: SyncKindAdapter = {
             target,
             plannedLines,
             () => transport.updateTransactionForSync({ transactionId: input.targetId, accountId: config.targetAccountId, date, amount, payeeId: keepPayee ? undefined : payeeId, notes, returnApplied: false }),
+            async () => {
+              // Lines already written may be on the new date, the rest on the old one.
+              const row = (await readTargetRows(transport, config.targetAccountId, target.date, date)).get(input.targetId);
+              return new Map((row?.splitLines ?? []).map((line) => [line.id as string, line]));
+            },
             options?.shouldStop
           );
           results.push(finished

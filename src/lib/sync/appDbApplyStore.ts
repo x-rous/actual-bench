@@ -19,6 +19,9 @@ import type { ApplyStore } from "./applyOrchestrator";
  * decoupled.
  */
 export function createAppDbApplyStore(db: SqliteDatabase): ApplyStore {
+  // One store serves one apply. Its run and item writes carry the claim token,
+  // so they are refused once another apply owns the run.
+  let applyToken: string | null = null;
   return {
     loadRun: async (runId) => getSyncFlowRun(db, runId),
     loadRunItems: async (runId) => getAllSyncFlowRunItems(db, runId),
@@ -30,12 +33,14 @@ export function createAppDbApplyStore(db: SqliteDatabase): ApplyStore {
     updateMapping: async (mappingId, patch) => {
       updateSyncMapping(db, mappingId, patch);
     },
-    claimRun: async (runId, retry) =>
-      claimSyncFlowRun(db, runId, retry ? ["draft_preview", "partial", "failed"] : ["draft_preview"]),
+    claimRun: async (runId, retry) => {
+      applyToken = claimSyncFlowRun(db, runId, retry ? ["draft_preview", "partial", "failed"] : ["draft_preview"]);
+      return applyToken;
+    },
     heartbeatRun: async (runId, token) => heartbeatSyncFlowRun(db, runId, token),
     saveRunItemPayloads: async (payloads) => {
       db.transaction(() => {
-        for (const { itemId, payload } of payloads) updateSyncFlowRunItem(db, itemId, { plannedTargetPayload: payload });
+        for (const { itemId, payload } of payloads) updateSyncFlowRunItem(db, itemId, { plannedTargetPayload: payload, applyToken });
       })();
     },
     updateRunStatus: async (runId, patch) => {
@@ -44,16 +49,18 @@ export function createAppDbApplyStore(db: SqliteDatabase): ApplyStore {
         finishedAt: patch.finishedAt,
         counts: patch.counts,
         ...(patch.error !== undefined ? { error: patch.error } : {}),
+        applyToken,
       });
     },
     updateRunItemStatus: async (itemId, patch) => {
-      updateSyncFlowRunItem(db, itemId, patch);
+      updateSyncFlowRunItem(db, itemId, { ...patch, applyToken });
     },
     persistApplyFailure: async (runId, error) => {
       updateSyncFlowRun(db, runId, {
         status: "failed",
         finishedAt: new Date().toISOString(),
         error: { version: 1, data: { code: error.code, message: error.message } },
+        applyToken,
       });
     },
     persistFxSnapshot: async (input) => {
