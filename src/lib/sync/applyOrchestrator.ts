@@ -870,7 +870,8 @@ async function applyCreateBatch(
         const hitBaseline = liveHit ? targetBaseline(liveHit) : null;
         // Only this item's own earlier write proves the sync made the other leg: a
         // row the sync wrote may since have been linked to the user's own row.
-        const owns = item.createdTargetTransactionId === markerHit && !!liveHit?.transferId && createsTransfer(payloadJson);
+        const liveLegLinked = !!liveHit?.transferId || !!liveHit?.splitLines?.some((line) => !!line.transferId);
+        const owns = item.createdTargetTransactionId === markerHit && liveLegLinked && createsTransfer(payloadJson);
         if (replaces) await repointMapping(store, replaces, item, markerHit, hitBaseline, owns);
         else await recordMapping(store, ctx.config, item, markerHit, marker, hitBaseline, owns);
         if (readFx(payloadJson)?.isManual) await saveFxSnapshot(store, payloadJson, markerHit, item.id);

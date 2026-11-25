@@ -331,6 +331,9 @@ async function splitTransferProblem(
   if (!input.ownsTransferLeg) {
     return settledSkip(input, `A line of this split is a transfer this sync did not create, ${left}`, patch);
   }
+  if (live.reconciled || live.splitLines?.some((line) => line.reconciled)) {
+    return settledSkip(input, `The split is reconciled in the target budget, ${left}`, patch);
+  }
   for (const line of lines) {
     const other = await readOtherLeg(transport, payeeAccounts, { ...live, payeeId: line.payeeId, transferId: line.transferId ?? null });
     if (!other) {
@@ -886,6 +889,8 @@ export const transactionAdapter: SyncKindAdapter = {
     const liveRows = await readTargetRows(transport, config.targetAccountId);
     const payeeAccounts = transferAccountsOf(transport);
     const toDelete: AdapterMutateInput[] = [];
+    // Set when a transfer's other legs were read: the target may have changed meanwhile.
+    let waited = false;
     for (const input of inputs) {
       const live = liveRows.get(input.targetId);
       if (!live) {
@@ -898,6 +903,7 @@ export const transactionAdapter: SyncKindAdapter = {
         results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "Target was edited outside sync; not deleted." });
       } else if (live.transferId || live.splitLines?.some((line) => line.transferId)) {
         // Deleting one leg of a linked transfer deletes the other account's row too.
+        waited = true;
         const problem = live.transferId
           ? await linkedTransferDeleteProblem(transport, input, live, payeeAccounts)
           : await splitTransferProblem(transport, input, live, payeeAccounts, "delete");
@@ -911,7 +917,8 @@ export const transactionAdapter: SyncKindAdapter = {
     // Set once a batch was tried or a delete was sent: from then on each row is read
     // again (its day of the account) and checked just before its own delete.
     let readIsOld = false;
-    if (toDelete.length > 1 && transport.batchWriteTransactionsForSync && !options?.shouldStop?.()) {
+    // Transfers go one at a time, each checked again just before its delete.
+    if (toDelete.length > 1 && !waited && transport.batchWriteTransactionsForSync && !options?.shouldStop?.()) {
       readIsOld = true;
       try {
         await transport.batchWriteTransactionsForSync({ updated: [], deleted: toDelete.map((input) => input.targetId) });
@@ -928,34 +935,34 @@ export const transactionAdapter: SyncKindAdapter = {
       // Per-item try/catch so one failed delete doesn't discard earlier successes.
       try {
         if (!batched) {
-          if (readIsOld) {
-            const date = (liveRows.get(input.targetId) as AdapterLiveTarget).date;
-            const current = (await readTargetRows(transport, config.targetAccountId, date)).get(input.targetId);
+          if (readIsOld || waited) {
+            const live = liveRows.get(input.targetId) as LiveRow;
+            const stopped = "Apply stopped before this row; not deleted.";
+            // The other legs may have been reconciled since the first check. They are
+            // read first, so the target's own read below is the last one before its delete.
+            if (live.transferId || transferLinesOf(live)) {
+              const legProblem = live.transferId
+                ? await linkedTransferDeleteProblem(transport, input, live, payeeAccounts)
+                : await splitTransferProblem(transport, input, live, payeeAccounts, "delete");
+              if (legProblem) {
+                results.push(legProblem);
+                continue;
+              }
+            }
+            const current = (await readTargetRows(transport, config.targetAccountId, live.date)).get(input.targetId);
             const problem = !current
               ? "Target is gone or was moved to another date; not deleted."
-              : !targetMatchesBaseline(current, input.expectedTargetFingerprint as string)
+              : !targetMatchesBaseline(current, input.expectedTargetFingerprint as string) ||
+                  (current.transferId ?? null) !== (live.transferId ?? null) ||
+                  transferLinesOf(current) !== transferLinesOf(live)
                 ? "Target was edited outside sync; not deleted."
                 : current.transferId && !input.ownsTransferLeg
                   ? "Target is a linked transfer; not deleted."
                   : options?.shouldStop?.()
-                    ? "Apply stopped before this row; not deleted."
+                    ? stopped
                     : null;
             if (problem) {
               results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: problem });
-              continue;
-            }
-            // The other leg may have been reconciled since the first check.
-            const legProblem = !current
-              ? null
-              : current.transferId
-                ? await linkedTransferDeleteProblem(transport, input, current, payeeAccounts)
-                : await splitTransferProblem(transport, input, current, payeeAccounts, "delete");
-            if (legProblem) {
-              results.push(legProblem);
-              continue;
-            }
-            if (options?.shouldStop?.()) {
-              results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "Apply stopped before this row; not deleted." });
               continue;
             }
           }

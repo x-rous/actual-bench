@@ -302,6 +302,14 @@ describe("writing a linked transfer", () => {
     expect(deleteTransactionForSync).toHaveBeenCalledTimes(1);
   });
 
+  it("reads the target again after checking the other leg, and does not delete it if it was edited meanwhile", async () => {
+    let reads = 0;
+    const { transport, deleteTransactionForSync } = datedTransport(other, () => (reads++ === 0 ? [leg] : [{ ...leg, notes: "edited by hand" }]));
+    const [result] = await adapter.deleteBatch!(transport, flow(), [input({}, true)]);
+    expect(result).toMatchObject({ outcome: "skipped", message: "Target was edited outside sync; not deleted." });
+    expect(deleteTransactionForSync).not.toHaveBeenCalled();
+  });
+
   it("reads the target again before writing, and skips it if it was edited meanwhile", async () => {
     let reads = 0;
     const { transport, updateTransactionForSync } = datedTransport(other, () => (reads++ === 0 ? [leg] : [{ ...leg, notes: "edited by hand" }]));
@@ -362,6 +370,18 @@ describe("a split whose lines are transfers", () => {
     const [kept] = await adapter.deleteBatch!(external.transport, flow(), [input(false)]);
     expect(kept).toMatchObject({ outcome: "skipped", mappingPatch: { status: "source_missing" } });
     expect(external.deleteTransactionForSync).not.toHaveBeenCalled();
+  });
+
+  it("does not delete a split whose own line is reconciled", async () => {
+    const reconciledLines = [lines[0], { ...lines[1], reconciled: true }];
+    const { transport, deleteTransactionForSync } = transportWith(false);
+    const list = transport.listTransactionsForSync;
+    (transport as { listTransactionsForSync: unknown }).listTransactionsForSync = async (args: { accountId: string }) =>
+      (await list(args as never)).map((row) => (row.id === "S1" ? { ...row, splitLines: reconciledLines } : row));
+    const [held] = await adapter.deleteBatch!(transport, flow(), [{ ...input(true), expectedTargetFingerprint: targetBaseline({ ...split, splitLines: reconciledLines }) }]);
+    expect(held).toMatchObject({ outcome: "skipped", mappingPatch: { status: "source_missing" } });
+    expect(held.message).toContain("reconciled in the target budget");
+    expect(deleteTransactionForSync).not.toHaveBeenCalled();
   });
 
   it("does not rewrite a split's lines when a line's other leg is reconciled", async () => {
@@ -504,7 +524,7 @@ describe("a transfer that may already be recorded", () => {
 
   it("claims a found transfer's other leg only when this item's own earlier write made it", async () => {
     const marker = "absync:S:T:ta:txn:a";
-    const repairWith = async (createdTargetTransactionId: string | null) => {
+    const repairWith = async (createdTargetTransactionId: string | null, asSplit = false) => {
       const saved = flow({}, { fxEnabled: false });
       const run: SyncFlowRun = { id: "r", flowId: "f", status: "draft_preview", startedAt: new Date().toISOString(), finishedAt: null, summary: envelope({ flowPlanHash: flowPlanHash(saved) }), error: null, createdByTrigger: "manual_preview", sourceSnapshotSummary: null, targetSnapshotSummary: null, counts: null };
       const item: SyncFlowRunItem = {
@@ -512,7 +532,10 @@ describe("a transfer that may already be recorded", () => {
         sourceEntityType: "transaction", sourceItemKey: "txn:a", sourceTransactionId: "a", sourceSplitId: null, sourceFingerprint: "fp",
         plannedAction: "create", classification: "new", duplicateConfidence: "none", warnings: envelope({ flags: ["creates_transfer"] }), errors: null, selectedForApply: true,
         applyState: createdTargetTransactionId ? "failed" : "pending", createdTargetTransactionId, createdTargetMarker: null, createdAt: "", updatedAt: null,
-        plannedTargetPayload: envelope({ accountId: "ta", date: "2026-11-20", amount: 1000000, payeeId: "to-aed", payeeName: null, categoryId: null, notes: null, cleared: false, importedId: marker, transferAccountId: "aed" }),
+        plannedTargetPayload: envelope(asSplit
+          ? { accountId: "ta", date: "2026-11-20", amount: 1010000, payeeId: null, payeeName: null, categoryId: null, notes: null, cleared: false, importedId: marker,
+              subtransactions: [{ amount: 1000000, categoryId: null, payeeId: "to-aed", payeeName: null, notes: null, transferAccountId: "aed" }, { amount: 10000, categoryId: null, payeeId: "cafe", payeeName: null, notes: null }] }
+          : { accountId: "ta", date: "2026-11-20", amount: 1000000, payeeId: "to-aed", payeeName: null, categoryId: null, notes: null, cleared: false, importedId: marker, transferAccountId: "aed" }),
       };
       const createMapping = jest.fn(async () => {});
       const store = {
@@ -522,7 +545,12 @@ describe("a transfer that may already be recorded", () => {
       } as unknown as ApplyStore;
       const createTransactionsForSync = jest.fn();
       const t = {
-        listTransactionsForSync: async () => [txn("T1", { accountId: "ta", amount: 1000000, payeeId: "to-aed", importedId: marker, transferId: "L1" })],
+        listTransactionsForSync: async () => [asSplit
+          ? txn("T1", { accountId: "ta", amount: 1010000, payeeId: null as never, importedId: marker, isParent: true, splitLines: [
+              { id: "c1", amount: 1000000, payeeId: "to-aed", payeeName: null, categoryId: null, categoryName: null, notes: null, transferId: "L1" },
+              { id: "c2", amount: 10000, payeeId: "cafe", payeeName: null, categoryId: null, categoryName: null, notes: null },
+            ] })
+          : txn("T1", { accountId: "ta", amount: 1000000, payeeId: "to-aed", importedId: marker, transferId: "L1" })],
         createTransactionsForSync,
       } as unknown as ActualBenchTransport;
       await applySyncRun({ runId: "r", targetConnection: connection("T"), selection: { selectedItemIds: ["i"] } }, { transport: { openTransport: async () => t }, store });
@@ -533,6 +561,8 @@ describe("a transfer that may already be recorded", () => {
     expect(await repairWith(null)).toBe(false);
     // A Retry after this item wrote the row and its mapping failed.
     expect(await repairWith("T1")).toBe(true);
+    // The same for a split whose line is the transfer.
+    expect(await repairWith("T1", true)).toBe(true);
   });
 
   it("shows held transfers as selectable but not safe, and lets an owned transfer update take the real amount", () => {
