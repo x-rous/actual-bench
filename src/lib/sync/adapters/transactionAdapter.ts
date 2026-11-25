@@ -952,6 +952,8 @@ export const transactionAdapter: SyncKindAdapter = {
             const current = (await readTargetRows(transport, config.targetAccountId, live.date)).get(input.targetId);
             const problem = !current
               ? "Target is gone or was moved to another date; not deleted."
+              : transferLinesOf(live) && (current.reconciled || current.splitLines?.some((line) => line.reconciled))
+                ? "Target split is reconciled; not deleted."
               : !targetMatchesBaseline(current, input.expectedTargetFingerprint as string) ||
                   (current.transferId ?? null) !== (live.transferId ?? null) ||
                   transferLinesOf(current) !== transferLinesOf(live)

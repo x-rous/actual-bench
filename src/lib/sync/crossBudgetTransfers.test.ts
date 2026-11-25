@@ -384,6 +384,20 @@ describe("a split whose lines are transfers", () => {
     expect(deleteTransactionForSync).not.toHaveBeenCalled();
   });
 
+  it("does not delete a split reconciled while its other legs were being read", async () => {
+    const { transport, deleteTransactionForSync } = transportWith(false);
+    const list = transport.listTransactionsForSync;
+    let targetReads = 0;
+    (transport as { listTransactionsForSync: unknown }).listTransactionsForSync = async (args: { accountId: string }) => {
+      const rows = await list(args as never);
+      if (args.accountId !== "ta" || targetReads++ === 0) return rows;
+      return rows.map((row) => ({ ...row, splitLines: lines.map((line) => ({ ...line, reconciled: line.id === "c2" })) }));
+    };
+    const [held] = await adapter.deleteBatch!(transport, flow(), [input(true)]);
+    expect(held).toMatchObject({ outcome: "skipped", message: "Target split is reconciled; not deleted." });
+    expect(deleteTransactionForSync).not.toHaveBeenCalled();
+  });
+
   it("does not rewrite a split's lines when a line's other leg is reconciled", async () => {
     const { transport, updateTransactionForSync } = transportWith(true);
     const payload = { date: "2026-11-20", amount: 1020000, notes: null, subtransactions: [{ amount: 1010000, notes: null }, { amount: 10000, notes: null }] };
