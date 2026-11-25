@@ -101,3 +101,21 @@ That reads from `docs-site/src/assets/screenshots/` and writes to
 `docs/readme-images/`. Run it after retaking screenshots, or the README keeps
 showing the previous ones. The list of which images the README uses lives at the
 top of that script.
+
+## Pages that need the demo's own Bench data
+
+Financial Insights, Loans, Credit Cards, Assets, Cashflow Planning and Payee
+Cleanup read what Bench stores about the demo household (loan terms, card
+statements, registered assets), and a private instance does not have that. Their
+guide screenshots are taken from the demo deployment itself:
+
+```bash
+node docs-site/scripts/capture-guides.mjs              # everything
+node docs-site/scripts/capture-guides.mjs loans cards  # named groups
+```
+
+It photographs a 1920x1080 window at 3x and crops each shot to the part of the
+page that shows the function, without the sidebar and top bar; a dialog is shot
+on its own. The `cashflow` group creates a plan in the shared demo and deletes it
+again. The front page's images come from `capture-landing.mjs` the same way, and
+both share `demo-capture.mjs`.

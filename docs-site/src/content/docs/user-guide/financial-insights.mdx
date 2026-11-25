@@ -62,6 +62,10 @@ A period never holds more than 200 years (2,400 months); if your history or a cu
 
 ## The Summary tab
 
+![The Summary tab for a demo household: net worth, change in net worth, money kept, change in cash and savings rate, the month-by-month chart of what they own and owe, and a cash buffer of 7.2 months.](../../../assets/screenshots/user-guide/fi-summary.png)
+
+*The headline figures, what you own and owe month by month, and how many months your cash would last.*
+
 - **Net worth, change in net worth, money kept, change in cash and savings rate** across the top. Under money kept, the received and spent amounts that make it up open their transactions. When Assets classifies entries as capital put into an asset without a recorded transfer, money kept and the savings rate are still shown, with a warning and the amount that may be counted twice. Money kept and the savings rate also show how they moved against the stretch of the same length just before the period, when your budget has data that far back.
 - **What you own and owe, month by month** stacks your assets above zero and your liabilities below, with net worth as a line. **Mo**, **Qtr** and **Yr** buttons show the balance at the end of each month, quarter or year; the chart opens in months for a period up to 18 months, in quarters up to five years and in years beyond that, and your own choice replaces it for that period. Every card with these buttons does the same: change the period and each card that you have not set by hand opens by its new length. Select a class in the legend (Cash & checking, Savings, Fixed deposits, Investments, Property, Vehicles, Other assets, Loans, Credit cards, Other liabilities) to take it out of the picture or put it back, so cash and investments are easier to read when property is large. It is only a filtered view: the net worth line is always the true total.
 - **Your cash buffer** shows the months of cover large, with cash less card balances beside it and the monthly need laid out as a sum: spending per month, plus each loan, equals needed per month. It is always *as of today*, whatever period you picked. Cash follows the header switch. The monthly need is your average spending over the last 12 complete months (all available complete months when there are three to eleven; "Insufficient history" below three) plus each loan you owe, in full:
@@ -81,7 +85,15 @@ A period never holds more than 200 years (2,400 months); if your history or a cu
 - **What you own and owe, start and end** compares the balances before the period with the balances at its end, by class. Total owned, Total owed and Net worth rows sit under the classes. Each class opens, with the chevron beside it, into its accounts, largest first, each with its treatment; accounts with no balance at the start or the end are left out and counted. Vehicles and other assets are separate classes, and so are credit cards and other liabilities.
 - **How the three measures differ:** *money kept* is income minus spending; *change in cash* is how your cash balance moved (after savings, investments, card payments and loans, as the header switch counts cash); *change in net worth* is everything you own minus everything you owe, end minus start.
 
+![The Simulate dialog: every category group and loan repayment with a checkbox, its share, its typical monthly amount and a field for your own amount, and the months of cover for the scenario beside them.](../../../assets/screenshots/user-guide/fi-simulate.png)
+
+*Simulate: leave out or change what you spend and repay, and watch the months of cover change beside the real figure.*
+
 ## The Money in & out tab
+
+![The Money in & out tab: received, spent, kept from income, savings rate and change in cash, a month-by-month chart of money in and out with the savings rate above each month, and the cash change shown one step at a time.](../../../assets/screenshots/user-guide/fi-money-in-out.png)
+
+*Money in above the line, money out below it, and every step between cash at the start and cash at the end.*
 
 - **Received, Spent, Kept from income, Savings rate** and **Change in cash**. Under Savings rate, a slim bar shows how much of every 100 received was spent and how much kept (left out when there was no income, or while Money kept needs review). Received, Spent and Kept from income also show how they moved against the stretch of the same length just before the period (whole months only, the running month left out of both; shown only when your budget has data that far back), in green for the better direction and red for the other.
 - **Money in, money out** (with the same Mo, Qtr and Yr buttons; a quarter or year adds up its months and one the period only partly covers is marked *) puts what you received above the zero line, what you spent below it, and what you kept (received less spent) as a dashed line with a marker for each month. The **savings rate** (kept ÷ received) is written above each month, quarter or year; it is left out where nothing was received or Money kept needs review. Nothing is stacked, so nothing is counted twice.
@@ -92,6 +104,10 @@ A period never holds more than 200 years (2,400 months); if your history or a cu
 - **Other movements** lists entries that are not plain income or spending, each with a link. An entry with no category in an **investment or retirement account** is **investment activity**: a price change, dividend, interest or fee recorded there. It changes your net worth, is not income or spending, and Bench calculates no return from it. An entry with no category in a loan account that is not a transfer is an **other entry in a loan account** (see below for a loan tracked in Loans). An entry with no category in any other off-budget account is an unidentified movement.
 
 ## The Income tab
+
+![The Income tab: total received, monthly average, largest source, highest month and recent pace, income each month by category, where the money came from, and a category-by-month table.](../../../assets/screenshots/user-guide/fi-income.png)
+
+*Where the money came from, month by month, with each cell shaded against its row's usual amount.*
 
 Income is the other half of Spending: where the money that came in came from. It is **money received**, what actually arrived in your accounts, not the income you budgeted, and it uses the same definition as **Received** on Money in & out, so the two totals are always equal. Transfers between your accounts are not income, and entries the Asset Registry has since classified (a sale, a change in value) are left out. Money in with no category in an on-budget account is listed as **Uncategorized**. Money in with no category in an off-budget Cash or Bank account you set to **Uncategorized entries are income** (interest, for example) is also received, listed as **Interest & income in off-budget accounts**; money out of such an account stays an unidentified movement.
 
@@ -104,6 +120,10 @@ When no money was received in the period, the tab says so instead of drawing emp
 
 ## The Spending tab
 
+![The Spending tab: total spent, monthly average, largest group, highest month and recent pace, spending each month by category group, where the money went, and a category-by-month table with cells above or below the usual marked.](../../../assets/screenshots/user-guide/fi-spending.png)
+
+*Spending by group and by month; a cell well above or below its usual amount is marked so it stands out.*
+
 - **Total spent, Monthly average, Largest group, Highest month and Recent pace.** Total spent shows its change against the stretch before, what it is of what you received and how much of it has no category; Largest group shows its share of spending. The average uses complete months only and says how many; the current month is shown but not counted. Recent pace compares the latest three complete months with the earliest three, and appears only with at least six.
 - **Spending each month** stacks the month by category group. The ten largest groups in the period have a colour of their own and every other group is "Other groups"; the colours are the same everywhere on the tab. A partial month is drawn lighter with a dashed outline. **Mo**, **Qtr** and **Yr** buttons regroup it into calendar quarters or years; a quarter or year the period only partly covers (or that includes the month still running) is marked * and drawn lighter, and selecting a bar opens the transactions of the whole quarter or year.
 - **Where the money went** lists all groups in Actual order by default; sort by spending or name instead. Select a group's total to see every transaction in that group; expand a group for its categories, each also a link.
@@ -111,6 +131,10 @@ When no money was received in the period, the tab says so instead of drawing emp
 - **Frequent payees** by amount, with the number of entries and the average. Entries with no payee are shown below the ranking, with how many of them are parts of split transactions.
 
 ## The My budget tab
+
+![The My budget tab for an envelope budget: budgeted, expenses spent, overspending not covered, months needing adjustment and ending balance, a spending reconciliation marked Reconciled, budgeted against spent month by month, and assigned against spent by group.](../../../assets/screenshots/user-guide/fi-my-budget.png)
+
+*Your budget against what really happened, with a reconciliation that explains why it differs from the Spending tab.*
 
 My budget answers "did I stay on my plan?" from the plan you already keep in Actual. It appears after Spending once Bench knows whether your budget is **Tracking** or **Envelope** (it reads Actual's own setting, so there is no switch) and Actual has returned a month. Every plan and spent figure is Actual's own, so it matches Budget Cockpit for the same month and category.
 
@@ -127,11 +151,19 @@ My budget answers "did I stay on my plan?" from the plan you already keep in Act
 
 ## The Investments tab
 
+![The Investments tab: investments, money put in and withdrawn, investment activity and share of your assets, your wealth over time, what changed your investments, and the investment accounts.](../../../assets/screenshots/user-guide/fi-investments.png)
+
+*What you put in, what you took out, and what happened inside your investments, adding up to the value at the end.*
+
 The tab opens with five tiles about the portfolio (**Investments**, **Put in**, **Withdrawn**, **Investment activity** and **Share of your assets**), then the cards: the two timelines (your wealth over time and the portfolio by month) on the left, and the bridge and the account table on the right. In your wealth over time (which has the same Mo, Qtr and Yr buttons), net worth is the strongest line; a month in which you borrowed is marked with a ◆ and explained, because assets and debts rise together and that is not an increase in wealth; and the last point is labelled **Today** because today's balance is valid, only not a month-end one.
 
 Investments answers "what have my investments built up, and what did they add?" It appears after My budget once you have an Investment or Retirement account. Property, vehicles and other assets have their own tab. It never shows a percentage or annualised return: it shows what went in, what came out, what was recorded inside, and what is left unexplained.
 
 ## The Property & assets tab
+
+![The Property & assets tab: asset value, change in value, debt against assets, equity and loan-to-value, value, debt and equity over time, what changed the value of your assets, and value, loan and equity for each asset.](../../../assets/screenshots/user-guide/fi-property.png)
+
+*Each property and vehicle with the loan against it, the equity you hold and its loan-to-value.*
 
 Property & assets answers "what are my property and other fixed assets worth, what is owed against them, and what is left?" It appears after Investments once you have a property, vehicle or fixed other-asset account.
 
@@ -144,6 +176,10 @@ Property & assets answers "what are my property and other fixed assets worth, wh
 Nothing here is written to Actual or to the registry, and nothing is estimated: a value Bench cannot read says so.
 
 ## The Loans & cards tab
+
+![The Loans & cards tab: what you owe, loans, credit cards, other liabilities and interest and fees paid, what each month's loan payments did split into principal, interest and fees, and the loan repayments for each loan with the next 12 months due.](../../../assets/screenshots/user-guide/fi-loans-cards.png)
+
+*What your loan payments did each month - principal, interest and fees - and what each loan is due to cost over the next year.*
 
 - **Five tiles, the same for everyone.** **You owe** (loans, cards and other liabilities at the end of the period, the same figure as Total liabilities on the Summary tab, with its change) and one tile each for **Loans**, **Credit cards** and **Other liabilities**, with the balance, its change in the period and its share of what you owe. A group you do not have says **None**. The fifth, **Interest & fees paid**, adds up what your tracked loans cost and what your cards were charged where the interest and fee categories are set in Credit Cards; it says when loans are not tracked and so are left out.
 - **What you owe, account by account** is the last card on the page and starts collapsed (select its title to open it); it lists every loan, credit card and other liability in three groups that you can collapse and expand, with what was owed at the start and the end of the period and the change. A legend shows how what you owe splits across the groups, and the **Share** column gives each account's part of it. A **View credit cards** link beside the Credit cards heading opens the [Credit Cards](/user-guide/credit-cards/) workspace. For a loan the table adds the principal repaid in the period (select it to see the transactions), **Next 12 months** and **Later** (what is owed today after them). Only a loan tracked in [Loans](/user-guide/assets-debt/) whose schedule agrees with its account in Actual has these two; a loan that is not tracked says **Not scheduled**, and one whose schedule does not agree says **Review in Loans** with the reason. Credit cards and other liabilities have no schedule here. An account with no balance and no activity in the period is not listed.
@@ -161,6 +197,10 @@ If you have a credit card, two more cards follow:
 Property equity and loan-to-value are on [Property & assets](#the-property--assets-tab). An unmatched one-sided transfer to a loan or card shows under **In transit** on the Summary tab, with the reason it is there.
 
 ## The Statements tab
+
+![The Statements tab: a cash flow statement with operating, investing and financing activities beside an income statement with income and expenses by group, each line underlined to open its transactions.](../../../assets/screenshots/user-guide/fi-statements.png)
+
+*A household cash flow statement and P&L side by side; the cash flow statement marks when its balances reconcile.*
 
 The cash flow and income statements use the existing global reporting period in both Tracking and Envelope budgets, including recorded activity through today in a partial month. Plans, category assignments, holds and carryover are outside these statements. The global toolbar shows the period; the statements do not repeat it in another banner.
 
@@ -256,6 +296,10 @@ Each card has **Copy image** and **Download PNG** at its top right. The picture 
 The picture is 1200 × 675 pixels and is drawn in your browser. It contains only what you see on the card: no metadata and no hidden text. Nothing is uploaded, and nothing is written to Actual or to Bench.
 
 ## See the transactions behind a number
+
+![The transactions behind Money spent: where it went by category, when it happened by month, and the list of matching transactions, which add up to the figure that was selected.](../../../assets/screenshots/user-guide/fi-drilldown.png)
+
+*Select an underlined figure to see the transactions behind it; the footer confirms they match the figure.*
 
 Underlined figures, bars, stacked segments, waterfall steps and heatmap cells open a read-only list of the real transactions behind them, with the usual search and sort. A segment or cell opens exactly that group or category in exactly that month. The footer compares what is listed with the figure you clicked: **Matches the figure**, or **Differs from the figure by …** if they do not add up. Once you narrow the list with a filter it says so instead of comparing. Balances and unattributed amounts have no list. Nothing in the list can be changed.
 

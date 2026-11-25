@@ -7,6 +7,10 @@ Open **Financial Management → Credit Cards** after connecting your Actual budg
 
 **All cards** lists each card with its balance, credit used, next due date and anything needing attention. A card has six tabs: **Overview**, **Statements**, **Payments**, **Activity**, **Instalment Plans** and **Insights**. **Guide** opens the built-in guide, with section navigation and a searchable glossary.
 
+![All cards: total owed, left to pay, minimum left, available credit and interest and fees, then each card with its next payment, due date, statement balance, credit used and anything needing attention.](../../../assets/screenshots/user-guide/cards-all.png)
+
+*What every card owes, what is due next and when, and what needs a look.*
+
 Before opening this workspace, save or discard pending entity or budget edits from other pages.
 Bench shows an entry screen until those edits are resolved, with **Save**, **Discard**, **Undo** and
 **Redo** available in the temporarily expanded changes panel. The workspace's own review/save actions
@@ -33,11 +37,19 @@ Bench reads activity from the **first tracked statement** onwards and never inve
 
 ## Statements
 
+![The Statements tab: each statement with what the bank printed, the amount due, minimum, paid and left to pay, how it was paid against the due date, and its payment and bank-match status.](../../../assets/screenshots/user-guide/card-statements.png)
+
+*One row per statement: the bank's figures, how the bill is going, and a Review button for what still needs checking.*
+
 Each row of **Statements** is one bank statement: what the bank printed, and how the bill is going (amount due, minimum, paid, left to pay, paid against the due date). Rows you haven't entered yet are marked **Estimate**.
 
 **Enter statement** asks for the figures on the paper or PDF: period, closing and due dates, statement balance and minimum due. If the bank prints a separate amount due, enter that too; otherwise the statement balance is used. You can also enter them while starting a **Bank Reconciliation** for the card, then review the statement here once the reconciliation is applied.
 
 ### Review a statement
+
+![Reviewing a statement: the previous balance, payments, charges and interest add up to a calculated balance compared with the bank's, and each transaction has Yes, No or ? for whether it is on this statement.](../../../assets/screenshots/user-guide/card-statement-review.png)
+
+*The calculation against the bank's figure, and a Yes, No or ? for each transaction until the difference is explained.*
 
 Saving the figures opens **Review statement**. The bar at the top reads as an equation:
 
@@ -55,17 +67,29 @@ Bench never adds a balancing transaction: fix the transaction in Actual, your an
 
 ## Payments
 
+![The Payments tab: each payment with its date, source account, amount, the statement it pays, the bill's due date and whether it arrived early, on time or late.](../../../assets/screenshots/user-guide/card-payments.png)
+
+*Each payment matched to the statement it paid, and how it landed against the due date.*
+
 A payment counts toward a bill when it lands after that statement closes and no later than its due date (or the next close, if that is later). The **Payments** tab lists every payment with the bill it paid and what was left after it. Each bill shows one status: **Paid in full**, **Paid late**, **Minimum paid**, **Part paid**, **Pending** (made in time, not cleared in Actual yet), **Overdue**, or **Due in N days**.
 
 Refunds and cashback reduce what you owe but are never counted as payments. When a bill is settled by refunds and payments together it shows **Covered with credits**. When the bank moves part of a bill into an instalment plan after the statement closes, the bill shows **Settled with a plan**: **Paid** still shows only your real payments, and the minimum is met only by real payments.
 
 ## Activity and types
 
+![The Activity tab: the card's transactions filtered by type - purchases, payments, credits, interest and fees, plans - each with its category, type, amount and statement.](../../../assets/screenshots/user-guide/card-activity.png)
+
+*Every transaction on the card with its type and the statement it belongs to.*
+
 **Activity** lists the card's transactions with their notes, category, type, amount, cleared status, statement and plan. Tags in notes are shown in blue. Sort by the **Date**, **Payee**, **Type** or **Amount** header.
 
 Every transaction has a **type** (purchase, interest, fee, payment, refund, plan instalment and so on), suggested from your category mappings, the account on the other side and the description. A dotted chip is a suggestion, a plain chip comes from your category, and a solid chip with ✓ is one you set. Click the chip (or press **T**) to change it; your choice applies everywhere in Bench. Suggested interest and fees are not counted until you accept them.
 
 ## Instalment plans
+
+![The Instalment Plans tab: a laptop instalment plan billed by the bank on the card, with its original amount, what remains, 11 of 12 instalments billed, the next instalment and when it ends.](../../../assets/screenshots/user-guide/card-instalment-plans.png)
+
+*A plan's progress at a glance: how many instalments are billed and what is still to come.*
 
 An instalment plan is a purchase, balance transfer or cash the bank lets you repay in instalments. Add one from **Instalment Plans → Add instalment plan**, or from a transaction's menu with **Make this a plan**. Choose where the principal is kept:
 
@@ -83,9 +107,17 @@ If the bank includes plan balances in the statement balance, tick **Statement ba
 
 ## Overview and Insights
 
+![A card's Overview: statements needing attention, the next payment with what is left to pay and the due date, total owed, available credit, and the balance over six months against the limit with each bill's outcome.](../../../assets/screenshots/user-guide/card-overview.png)
+
+*What to pay now, what is owed in total, and the balance over time against the card's limit.*
+
 **Overview** shows what to pay now, total owed (card plus plan principal, counted once), credit used and a 6- or 12-month balance chart with statements, payments, due dates and the limit. **Insights** shows interest and fees, how bills were paid, and an estimate of paying only the minimum (an illustration, not a bank quote).
 
 **Payoff plan.** On **All cards**, **Payoff plan** takes one amount you can pay across every card each month. Each card gets its minimum, and the rest goes to one card at a time: **Highest APR first** (the least interest) or **Smallest balance first** (cards cleared sooner). It shows the debt-free month, the interest each order costs and when each card is cleared. It is an estimate from today's balances with no new spending; instalment plans are not included (what is left of a plan kept in the card balance is taken off that card's balance), and a card with no APR set counts as 0%. A card whose balance has not loaded is named and left out. Past 50 years it says the cards are not paid off within that time.
+
+![The Payoff plan beside the card list: one amount paid across all cards each month, highest APR first against smallest balance first, the debt-free month, and when each card is cleared.](../../../assets/screenshots/user-guide/cards-payoff-plan.png)
+
+*One monthly amount, two orders compared, and the month you are debt-free.*
 
 **Export.** **Statements** and **Payments** each have **Export**, which saves the rows shown as a CSV file. Amounts are plain numbers with no currency.
 

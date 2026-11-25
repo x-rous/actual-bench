@@ -1,0 +1,1268 @@
+---
+// The Actual Bench front page.
+//
+// This page is the product's first impression, so it is built by hand rather
+// than with Starlight's splash template: it tells one story, from "what does
+// my money look like" to "running in a minute", with the real app (photographed
+// from the public demo household) as the evidence. The documentation itself
+// lives behind it, unchanged, in Starlight.
+import '@fontsource-variable/schibsted-grotesk';
+import { Image, getImage } from 'astro:assets';
+
+import logo from '../assets/actual-bench-icon.png';
+import insightsSummary from '../assets/landing/insights-summary.png';
+import cashBuffer from '../assets/landing/insights-cash-buffer.png';
+import waterfall from '../assets/landing/insights-waterfall.png';
+import moneyFlow from '../assets/landing/insights-money-flow.png';
+import spending from '../assets/landing/insights-spending.png';
+import loanTerms from '../assets/landing/loan-terms.png';
+import cardOverview from '../assets/landing/card-overview.png';
+import assetHome from '../assets/landing/asset-home.png';
+import accounts from '../assets/landing/accounts.png';
+import cashflow from '../assets/landing/cashflow.png';
+import cockpit from '../assets/landing/cockpit.png';
+import progressNetWorth from '../assets/landing/progress-net-worth.png';
+import progressDebt from '../assets/landing/progress-debt-payoff.png';
+import progressSavings from '../assets/landing/progress-savings-rate.png';
+import progressConsistency from '../assets/landing/progress-savings-consistency.png';
+import progressBuffer from '../assets/landing/progress-cash-buffer.png';
+import progressAssets from '../assets/landing/progress-asset-composition.png';
+import ruleDiagnostics from '../assets/landing/bench-rule-diagnostics.png';
+import payeeCleanup from '../assets/landing/bench-payee-cleanup.png';
+import backups from '../assets/landing/bench-backups.png';
+import actualql from '../assets/landing/bench-actualql.png';
+
+const base = import.meta.env.BASE_URL.replace(/\/?$/, '/');
+const docs = (path: string) => `${base}${path}`;
+const DEMO = 'https://actual-bench-demo.vercel.app';
+const GITHUB = 'https://github.com/x-rous/actual-bench';
+
+const title = 'Actual Bench: see the whole picture of your money';
+const description =
+	'Actual Bench connects to your Actual Budget and turns the data you already keep into net worth, loans, credit cards, cash runway and plans for the years ahead. Free, open source and self-hosted.';
+const social = await getImage({ src: insightsSummary, width: 1200, format: 'png' });
+const socialUrl = new URL(social.src, Astro.site).href;
+
+const runCommand =
+	'docker run -d --name actual-bench --restart unless-stopped \\\n  -p 3000:3000 -v actual-bench-data:/data xrous/actual-bench:latest';
+
+// Screenshots are full of 1px table borders and small numerals, where lossy
+// encoding is at its worst, so these keep the site's quality setting
+// (astro.config.mjs) and offer widths up to 3x the size each is shown at.
+const shot = { format: 'webp' as const };
+
+const ownAndOwe = [
+	{
+		id: 'loans',
+		name: 'Loans',
+		title: 'Know every loan inside out.',
+		body: 'Enter your mortgage, car or personal loan the way the contract reads. Bench lines up every installment with the payment you made in Actual, splits it into principal and interest for you, and shows exactly where the loan is heading.',
+		points: [
+			'Payoff date, interest paid and interest still to come',
+			'Rate changes, extra payments, offsets and redraw',
+			'See what an extra payment saves before you make it',
+			'Link the loan to the home or car it paid for',
+		],
+		image: loanTerms,
+		alt: 'A home mortgage in Actual Bench: the loan terms beside a balance-over-time chart running to 2045, with the interest and payoff time an extra payment saved.',
+		link: docs('user-guide/assets-debt/'),
+	},
+	{
+		id: 'cards',
+		name: 'Credit Cards',
+		title: 'Never wonder what a card bill still needs.',
+		body: 'Every statement is checked against your transactions, so you always know what is due, what is paid and what is left, and when. Instalment plans are tracked to the last payment.',
+		points: [
+			'Next payment, due date and credit used at a glance',
+			'Instalment plans, limit history and annual-fee reminders',
+			'A payoff plan with your debt-free month',
+			'Highest-rate-first or smallest-balance-first, compared',
+		],
+		image: cardOverview,
+		alt: 'A credit card overview: statements to review, the next payment and its due date, total owed, available credit, and the balance over six months against the limit.',
+		link: docs('user-guide/credit-cards/'),
+	},
+	{
+		id: 'assets',
+		name: 'Assets',
+		title: 'Your home and car, not just a number.',
+		body: 'Register what you own and Bench follows it through time: its value, what you put in, the debt against it and what it earns. Your home shows its real gain, and a rental shows its real return.',
+		points: [
+			'Value over time against the capital you invested',
+			'Equity and loan-to-value from the linked loan',
+			'Rental income and running costs, year by year',
+			'Depreciation schedules for cars and equipment',
+		],
+		image: assetHome,
+		alt: 'The family home in Actual Bench: current value, capital invested, value gain and total return, with its recorded value since 2019 against the capital put in and the mortgage against it.',
+		link: docs('user-guide/asset-registry/'),
+	},
+	{
+		id: 'classes',
+		name: 'Account types',
+		title: 'Tell Bench once what each account is.',
+		body: 'Checking, savings, fixed deposit, investment, retirement, property, vehicle, loan, credit card and more. Mark what you can spend today and what is locked away. One minute of setup, and every view understands your money.',
+		points: [
+			'Thirteen account classes, set per account or per group',
+			'Money you can use now, kept apart from money that is locked',
+			'Groups and balances side by side',
+			'Never changes how Actual budgets an account',
+		],
+		image: accounts,
+		alt: 'The Accounts table grouped into credit cards, daily banking and loans, each account with its class, whether its money is available, and its balance.',
+		link: docs('user-guide/accounts/'),
+	},
+];
+
+// What a first look at Financial Insights tells the demo household, pinned to
+// where each figure sits in the hero screenshot (fractions of its width and height).
+const notes = [
+	{ x: 0.86, y: 0.135, text: 'You kept a third of everything you earned.' },
+	{ x: 0.54, y: 0.29, text: 'Your cash would last 7.2 months.' },
+	{ x: 0.506, y: 0.428, text: 'Net worth went up every single month.' },
+];
+
+const progressCards = [
+	{ image: progressSavings, alt: 'Savings rate card: 33.5% over the period, best month September, twelve months in a row above zero.' },
+	{ image: progressBuffer, alt: 'Cash buffer card: 7.2 months of spending covered.' },
+	{ image: progressDebt, alt: 'Debt payoff card: credit card debt falling sharply from its highest month.' },
+	{ image: progressConsistency, alt: 'Savings consistency card: a square for each month that money was saved.' },
+	{ image: progressNetWorth, alt: 'Net worth journey card: a line that crossed zero and kept climbing.' },
+	{ image: progressAssets, alt: 'Asset composition card: what you own, split by share between cash, investments and property.' },
+];
+
+const bench = [
+	{
+		title: 'Keep your books right',
+		image: ruleDiagnostics,
+		alt: 'Rule Diagnostics: a rule whose conditions contradict each other, and identical rules with a one-click merge.',
+		items: [
+			['Bank Reconciliation', 'Drop in a statement, even a PDF, and settle every difference with Actual in one reviewed step.', 'user-guide/bank-reconciliation/'],
+			['Payee Cleanup', 'Merge the duplicate payees your bank keeps creating, and add the rules that stop them coming back.', 'user-guide/payee-cleanup/'],
+			['Rule Diagnostics', 'Find broken, conflicting and duplicate rules, see why, and fix them on the spot.', 'user-guide/rule-diagnostics/'],
+		],
+	},
+	{
+		title: 'Shape your budget at scale',
+		image: payeeCleanup,
+		alt: 'Payee Cleanup suggesting two payees to merge, what changes, and a rule to stop the duplicate coming back.',
+		items: [
+			['Accounts, categories, payees, tags, rules and schedules', 'Edit hundreds of rows at once, paste from a spreadsheet, import and export CSV, and see what depends on something before you delete it.', 'getting-started/editing-and-saving/'],
+			['Bundle Export / Import', 'Your whole budget structure in one file: start a new budget from a template, or snapshot before a big cleanup.', 'getting-started/bundle-export-import/'],
+			['Quick Create and Global Search', 'Create anything or find anything, from anywhere in the app.', 'getting-started/editing-and-saving/'],
+		],
+	},
+	{
+		title: 'Runs on its own',
+		image: backups,
+		alt: 'Backups saying a verified backup could be restored from a few hours ago, with each stored copy and its state.',
+		items: [
+			['Backups', 'Scheduled copies to a folder or S3-compatible storage, each one verified by opening it, with your last good copy always kept.', 'user-guide/backups/'],
+			['Automations and Bank Sync', 'Run Actual’s bank sync, backups and syncs on a timetable, with a history of every run.', 'user-guide/automations/'],
+			['Cross Budget Sync and Exchange Rates', 'Keep a household or sub-budget in step with your main one, even in another currency.', 'user-guide/budget-sync/'],
+		],
+	},
+	{
+		title: 'Look under the hood',
+		image: actualql,
+		alt: 'The ActualQL workbench: a query in the editor and its results as a table.',
+		items: [
+			['ActualQL Queries', 'Ask your budget anything, with examples, explanations and queries you can reuse across budgets.', 'user-guide/actualql/'],
+			['Data Browser', 'Every table in your budget, with linked records and CSV export.', 'user-guide/data-browser/'],
+			['Budget File Health', 'A full check-up of your budget file, with a report you can export.', 'user-guide/budget-file-health/'],
+		],
+	},
+];
+---
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>{title}</title>
+		<meta name="description" content={description} />
+		<link rel="icon" href={`${base}favicon.png`} />
+		<link rel="canonical" href={new URL(base, Astro.site).href} />
+		<meta property="og:type" content="website" />
+		<meta property="og:title" content={title} />
+		<meta property="og:description" content={description} />
+		<meta property="og:image" content={socialUrl} />
+		<meta name="twitter:card" content="summary_large_image" />
+		<meta name="theme-color" content="#f6f7f9" />
+	</head>
+	<body>
+		<a class="skip" href="#main">Skip to content</a>
+
+		<header class="bar">
+			<div class="wrap bar-inner">
+				<a class="brand" href={base}>
+					<Image src={logo} alt="" width={28} height={28} />
+					<span>Actual Bench</span>
+				</a>
+				<nav aria-label="Main">
+					<a href="#own-and-owe">Features</a>
+					<a href="#install">Install</a>
+					<a href={docs('getting-started/introduction/')}>Docs</a>
+					<a href={GITHUB}>GitHub</a>
+					<a class="btn btn-small" href={DEMO}>Try the live demo</a>
+				</nav>
+			</div>
+		</header>
+
+		<main id="main">
+			<section class="hero">
+				<div class="wrap">
+					<h1>See the whole picture of your&nbsp;money.</h1>
+					<p class="lead">
+						Actual Bench connects to your Actual Budget and turns the data you already keep into net worth,
+						loans, credit cards, cash runway and plans for the years ahead. Nothing to re-enter.
+					</p>
+					<div class="actions">
+						<a class="btn" href={DEMO}>Try the live demo</a>
+						<a class="btn btn-quiet" href="#install">Install with Docker</a>
+					</div>
+					<p class="fine">Free and open source. Runs on your own server, right next to Actual.</p>
+				</div>
+
+				<figure class="hero-shot wrap">
+					<div class="shot-area">
+						<div class="window">
+							<Image
+								src={insightsSummary}
+								alt="Financial Insights in Actual Bench for the demo household: net worth, money kept, savings rate, what they own and owe month by month, and a cash buffer of 7.2 months."
+								widths={[1040, 2080, 3120, 5136]}
+								sizes="(min-width: 1340px) 1040px, 94vw"
+								loading="eager"
+								fetchpriority="high"
+								{...shot}
+							/>
+						</div>
+						<ul class="notes" role="list">
+							{notes.map((note, index) => (
+								<li style={`--x: ${note.x}; --y: ${note.y}; --d: ${index * 0.45}s`}>
+									<span class="leader" aria-hidden="true"></span>
+									<span class="note-text"><span class="mark">{note.text}</span></span>
+								</li>
+							))}
+						</ul>
+					</div>
+					<figcaption>
+						The demo household’s Financial Insights. Every figure comes from the same Actual budget you already keep.
+					</figcaption>
+				</figure>
+			</section>
+
+			<section class="insights" aria-labelledby="insights-title">
+				<div class="wrap">
+					<h2 id="insights-title">Your budget already knows. Bench tells you.</h2>
+					<p class="section-lead">
+						Financial Insights reads every account and transaction and answers the questions a budget never asks.
+						Each answer opens the transactions behind it, so you can always see why.
+					</p>
+
+					<div class="finding">
+						<div class="finding-text">
+							<h3>How long would your cash last?</h3>
+							<p>
+								Your cash buffer in months, worked out from what you really spend and every loan you pay.
+								Then ask “what if”: drop a subscription, pay off the car, and watch your runway change. Save it as
+								a scenario and come back to it.
+							</p>
+						</div>
+						<Image src={cashBuffer} alt="The cash buffer card: 7.2 months of cover, with the monthly need laid out as spending plus each loan repayment." widths={[540, 1080, 1620, 2156]} sizes="(min-width: 960px) 540px, 92vw" {...shot} />
+					</div>
+
+					<div class="finding finding-flip">
+						<div class="finding-text">
+							<h3>Why did your net worth change?</h3>
+							<p>
+								Not just that it went up, but exactly why: money kept, loan principal paid, changes in value,
+								investments. Every step adds up to the change, and Bench marks it reconciled when it does.
+							</p>
+						</div>
+						<Image src={waterfall} alt="A net worth waterfall from the start to the end of the year, marked Reconciled." widths={[640, 1280, 1920, 2584]} sizes="(min-width: 960px) 640px, 92vw" {...shot} />
+					</div>
+
+					<div class="finding">
+						<div class="finding-text">
+							<h3>Where did every dollar come from and go?</h3>
+							<p>
+								Money in and money out, side by side and adding up to the same total. Spending, loans paid off,
+								money put into savings and investments, each line one click from its transactions.
+							</p>
+						</div>
+						<Image src={moneyFlow} alt="Money in and money out lists that add up to the same total." widths={[640, 1280, 1920, 2584]} sizes="(min-width: 960px) 640px, 92vw" {...shot} />
+					</div>
+
+					<div class="finding-wide">
+						<Image src={spending} alt="The Spending tab: total spent, monthly average, spending each month by category group, and a category-by-month table shaded against each row’s usual." widths={[1280, 2560, 3840]} sizes="(min-width: 1360px) 1280px, 92vw" {...shot} />
+						<p>
+							And it keeps going: income, spending by category and month, your budget against reality, investments,
+							property, loans and cards, and a household P&amp;L, cash flow statement and balance sheet.
+							<a href={docs('user-guide/financial-insights/')}>Explore Financial Insights</a>
+						</p>
+					</div>
+				</div>
+			</section>
+
+			<section class="own" id="own-and-owe" aria-labelledby="own-title">
+				<div class="wrap">
+					<h2 id="own-title">Everything you own and owe, in one place.</h2>
+					<p class="section-lead">
+						Your loans, cards, home and car are already in your budget as balances. Bench understands what they are,
+						and shows you where each one is going.
+					</p>
+				</div>
+
+				{ownAndOwe.map((feature) => (
+					<article class="feature wrap" id={feature.id}>
+						<div class="feature-head">
+							<p class="feature-name">{feature.name}</p>
+							<h3>{feature.title}</h3>
+						</div>
+						<div class="feature-body">
+							<p>{feature.body}</p>
+							<ul>
+								{feature.points.map((point) => <li>{point}</li>)}
+							</ul>
+							<a class="more" href={feature.link}>How {feature.name.toLowerCase()} work</a>
+						</div>
+						<div class="feature-shot">
+							<Image src={feature.image} alt={feature.alt} widths={[1280, 2560, 3840]} sizes="(min-width: 1340px) 1280px, 94vw" {...shot} />
+						</div>
+					</article>
+				))}
+			</section>
+
+			<section class="plan" aria-labelledby="plan-title">
+				<div class="wrap">
+					<h2 id="plan-title">Plan the year, and the years after.</h2>
+				</div>
+				<article class="feature wrap">
+					<div class="feature-head">
+						<p class="feature-name">Budget Cockpit</p>
+						<h3>Twelve months on one screen.</h3>
+					</div>
+					<div class="feature-body">
+						<p>
+							Your whole year at once: budgeted, actuals and balance side by side. Edit it like a spreadsheet, with copy,
+							paste, fill across and bulk actions, then review every change before you save.
+						</p>
+						<a class="more" href={docs('user-guide/budget-management/')}>See the Budget Cockpit</a>
+					</div>
+					<div class="feature-shot">
+						<Image src={cockpit} alt="The Budget Cockpit showing a full year of an envelope budget with the details panel beside it." widths={[1280, 2560, 3840]} sizes="(min-width: 1340px) 1280px, 94vw" {...shot} />
+					</div>
+				</article>
+				<article class="feature wrap">
+					<div class="feature-head">
+						<p class="feature-name">Cashflow Planning</p>
+						<h3>Your cash, years ahead.</h3>
+					</div>
+					<div class="feature-body">
+						<p>
+							Starts from your real history and forecasts every month, up to fifty years out. See how low your cash gets
+							and when, track your savings goals, and keep a careful plan beside an optimistic one.
+						</p>
+						<a class="more" href={docs('user-guide/cashflow-planning/')}>See Cashflow Planning</a>
+					</div>
+					<div class="feature-shot">
+						<Image src={cashflow} alt="A five-year cash plan: cash today, the lowest point in the next twelve months, a forecast chart and a month-by-month grid of income and expenses." widths={[1280, 2560, 3840]} sizes="(min-width: 1340px) 1280px, 94vw" {...shot} />
+					</div>
+				</article>
+			</section>
+
+			<section class="progress" aria-labelledby="progress-title">
+				<div class="wrap">
+					<h2 id="progress-title">Share the win. Keep the numbers private.</h2>
+					<p class="section-lead">
+						Progress cards turn your milestones into pictures you can post anywhere: a savings streak, a card paid off,
+						net worth crossing zero. They show shapes, percentages and months, and never a single amount.
+					</p>
+				</div>
+				<ul class="cards wrap" role="list">
+					{progressCards.map((card) => (
+						<li>
+							<Image src={card.image} alt={card.alt} widths={[400, 800, 1200]} sizes="(min-width: 1100px) 400px, (min-width: 700px) 45vw, 88vw" {...shot} />
+						</li>
+					))}
+				</ul>
+			</section>
+
+			<section class="bench" aria-labelledby="bench-title">
+				<div class="wrap">
+					<h2 id="bench-title">And a full workbench behind it.</h2>
+					<p class="section-lead">
+						When it is time to tidy up, catch up or dig in, the tools are already there.
+					</p>
+				</div>
+				<div class="bench-groups wrap">
+					{bench.map((group) => (
+						<section class="bench-group" aria-label={group.title}>
+							<h3>{group.title}</h3>
+							<dl>
+								{group.items.map(([name, text, path]) => (
+									<div>
+										<dt><a href={docs(path)}>{name}</a></dt>
+										<dd>{text}</dd>
+									</div>
+								))}
+							</dl>
+							<Image src={group.image} alt={group.alt} widths={[1280, 2560, 3840]} sizes="(min-width: 1340px) 1280px, 94vw" {...shot} />
+						</section>
+					))}
+				</div>
+			</section>
+
+			<section class="control" aria-labelledby="control-title">
+				<div class="wrap control-inner">
+					<h2 id="control-title">You decide what reaches your budget.</h2>
+					<ul role="list">
+						<li><strong>Review before Save.</strong> Edits to accounts, categories, rules and budget amounts wait for you, with undo, until you save them.</li>
+						<li><strong>Preview before Apply.</strong> Reconciliation and budget sync show you every change first.</li>
+						<li><strong>Read-only where it should be.</strong> Insights, Cashflow Planning, diagnostics and queries never change your budget.</li>
+						<li><strong>Automation on your terms.</strong> Scheduled jobs run only when you switch them on, with a history of every run.</li>
+					</ul>
+				</div>
+			</section>
+
+			<section class="install" id="install" aria-labelledby="install-title">
+				<div class="wrap">
+					<h2 id="install-title">Running in a minute.</h2>
+					<ol class="steps">
+						<li>
+							<h3>Start Actual Bench</h3>
+							<p>One container, next to the Actual server you already run.</p>
+							<div class="code">
+								<pre><code>{runCommand}</code></pre>
+								<button type="button" class="copy" data-copy={runCommand.replace(' \\\n  ', ' ')}>Copy</button>
+							</div>
+						</li>
+						<li>
+							<h3>Open it and set a password</h3>
+							<p>
+								Go to <code>http://localhost:3000</code>, or to your server's address or reverse-proxy URL if it runs
+								on another machine, and choose the password that protects your Bench.
+							</p>
+						</li>
+						<li>
+							<h3>Connect your budget</h3>
+							<p>
+								Point it at your Actual server and pick a budget. Your accounts, transactions and budget are read straight
+								from Actual, so nothing is re-entered. Then give your accounts their <a href={docs('user-guide/accounts/')}>types</a>
+								and add your <a href={docs('user-guide/assets-debt/')}>loans</a>, <a href={docs('user-guide/credit-cards/')}>cards</a>
+								and <a href={docs('user-guide/asset-registry/')}>assets</a> once, and every view you have just seen fills in with
+								your own money.
+							</p>
+						</li>
+					</ol>
+					<p class="fine">
+						Docker Compose, reverse proxies and hosted options are in the <a href={docs('getting-started/installation/')}>installation guide</a>.
+					</p>
+				</div>
+			</section>
+
+			<section class="closing">
+				<div class="wrap">
+					<h2>See it with a real household first.</h2>
+					<p>The demo opens a full sample budget with loans, cards, a home, a rental and a year of history. No sign-up.</p>
+					<div class="actions">
+						<a class="btn" href={DEMO}>Try the live demo</a>
+						<a class="btn btn-quiet" href={docs('getting-started/introduction/')}>Read the docs</a>
+					</div>
+				</div>
+			</section>
+		</main>
+
+		<footer class="foot">
+			<div class="wrap foot-inner">
+				<p>
+					Actual Bench is a free, open-source companion for <a href="https://actualbudget.org/">Actual Budget</a>. MIT licensed.
+				</p>
+				<nav aria-label="Footer">
+					<a href={docs('getting-started/introduction/')}>Docs</a>
+					<a href={`${GITHUB}/releases`}>Releases</a>
+					<a href={GITHUB}>GitHub</a>
+					<a href={`${GITHUB}/issues`}>Issues</a>
+				</nav>
+			</div>
+		</footer>
+
+		<script>
+			for (const button of document.querySelectorAll<HTMLButtonElement>('button[data-copy]')) {
+				button.addEventListener('click', async () => {
+					try {
+						await navigator.clipboard.writeText(button.dataset.copy ?? '');
+						button.textContent = 'Copied';
+					} catch {
+						button.textContent = 'Select and copy';
+					}
+					setTimeout(() => (button.textContent = 'Copy'), 2000);
+				});
+			}
+		</script>
+	</body>
+</html>
+
+<style is:global>
+	:root {
+		--paper: #f6f7f9;
+		--surface: #ffffff;
+		--ink: #15181e;
+		--ink-soft: #3d434e;
+		--muted: #5f6673;
+		--line: #dde1e8;
+		--ledger: #1d52d1;
+		--ledger-deep: #163f9f;
+		--marker: #ffe24a;
+		--gain: #1f8a5b;
+		--radius-window: 14px;
+		--radius-small: 8px;
+		--font: 'Schibsted Grotesk Variable', ui-sans-serif, system-ui, sans-serif;
+		--measure: 66ch;
+		color-scheme: light;
+	}
+
+	*,
+	*::before,
+	*::after {
+		box-sizing: border-box;
+	}
+
+	html {
+		scroll-behavior: smooth;
+		-webkit-text-size-adjust: 100%;
+	}
+
+	body {
+		margin: 0;
+		background: var(--paper);
+		color: var(--ink);
+		font-family: var(--font);
+		font-size: 1.0625rem;
+		line-height: 1.6;
+		text-rendering: optimizeLegibility;
+	}
+
+	img {
+		display: block;
+		max-width: 100%;
+		height: auto;
+	}
+
+	a {
+		color: var(--ledger);
+		text-underline-offset: 0.2em;
+		text-decoration-thickness: 1px;
+	}
+
+	a:hover {
+		color: var(--ledger-deep);
+	}
+
+	:focus-visible {
+		outline: 3px solid var(--ledger);
+		outline-offset: 3px;
+		border-radius: 4px;
+	}
+
+	h1,
+	h2,
+	h3 {
+		margin: 0;
+		font-weight: 700;
+		letter-spacing: -0.02em;
+		text-wrap: balance;
+	}
+
+	p {
+		margin: 0;
+		text-wrap: pretty;
+	}
+
+	code,
+	pre {
+		font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+		font-size: 0.9em;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		html {
+			scroll-behavior: auto;
+		}
+	}
+</style>
+
+<style>
+	.wrap {
+		width: min(100% - 2.5rem, 1280px);
+		margin-inline: auto;
+	}
+
+	.skip {
+		position: absolute;
+		left: 1rem;
+		top: -3rem;
+		padding: 0.5rem 0.75rem;
+		background: var(--ink);
+		color: #fff;
+		z-index: 10;
+	}
+
+	.skip:focus {
+		top: 1rem;
+	}
+
+	/* Top bar */
+	.bar {
+		position: sticky;
+		top: 0;
+		z-index: 5;
+		background: color-mix(in srgb, var(--paper) 88%, transparent);
+		backdrop-filter: blur(10px);
+		border-bottom: 1px solid var(--line);
+	}
+
+	.bar-inner {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		min-height: 60px;
+	}
+
+	.brand {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.6rem;
+		color: var(--ink);
+		font-weight: 700;
+		text-decoration: none;
+	}
+
+	.brand img {
+		border-radius: 7px;
+	}
+
+	.bar nav {
+		display: flex;
+		align-items: center;
+		gap: 1.4rem;
+		font-size: 0.95rem;
+	}
+
+	.bar nav a:not(.btn) {
+		color: var(--ink-soft);
+		text-decoration: none;
+	}
+
+	.bar nav a:not(.btn):hover {
+		color: var(--ink);
+	}
+
+	/* Buttons */
+	.btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 48px;
+		padding: 0 1.4rem;
+		border-radius: 999px;
+		background: var(--ledger);
+		color: #fff;
+		font-weight: 600;
+		text-decoration: none;
+		border: 1px solid var(--ledger);
+	}
+
+	.btn:hover {
+		background: var(--ledger-deep);
+		border-color: var(--ledger-deep);
+		color: #fff;
+	}
+
+	.btn-quiet {
+		background: transparent;
+		color: var(--ink);
+		border-color: var(--line);
+		background: var(--surface);
+	}
+
+	.btn-quiet:hover {
+		background: var(--surface);
+		border-color: var(--ink);
+		color: var(--ink);
+	}
+
+	.btn-small {
+		min-height: 38px;
+		padding: 0 1rem;
+		font-size: 0.92rem;
+	}
+
+	.actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.75rem;
+		margin-top: 2rem;
+	}
+
+	.fine {
+		margin-top: 1rem;
+		color: var(--muted);
+		font-size: 0.95rem;
+	}
+
+	/* Hero */
+	.hero {
+		padding-top: clamp(3.5rem, 8vw, 6.5rem);
+	}
+
+	.hero h1 {
+		max-width: 15ch;
+		font-size: clamp(2.6rem, 6.4vw, 5.25rem);
+		line-height: 1.02;
+		letter-spacing: -0.035em;
+	}
+
+	.lead {
+		max-width: 56ch;
+		margin-top: 1.5rem;
+		font-size: clamp(1.15rem, 1.8vw, 1.35rem);
+		line-height: 1.5;
+		color: var(--ink-soft);
+	}
+
+	.hero-shot {
+		margin-top: clamp(3rem, 6vw, 4.5rem);
+		margin-bottom: 0;
+	}
+
+	.window {
+		position: relative;
+		border-radius: var(--radius-window);
+		background: var(--surface);
+		border: 1px solid var(--line);
+		box-shadow:
+			0 1px 0 rgba(21, 24, 30, 0.04),
+			0 30px 60px -30px rgba(21, 40, 90, 0.35);
+	}
+
+	.window img {
+		border-radius: var(--radius-window);
+	}
+
+	.hero-shot figcaption {
+		margin-top: 1rem;
+		color: var(--muted);
+		font-size: 0.92rem;
+	}
+
+	/* The highlighter notes: the one moment of motion on the page. Each note
+	   sits in a margin beside the screenshot, with a leader line running to the
+	   figure it is about. */
+	.shot-area {
+		position: relative;
+		--notes: 15rem;
+	}
+
+	.notes {
+		margin: 1.5rem 0 0;
+		padding: 0;
+		list-style: none;
+		display: grid;
+		gap: 0.75rem;
+	}
+
+	.note-text {
+		font-size: 1.15rem;
+		font-weight: 700;
+		line-height: 1.35;
+	}
+
+	.mark {
+		background-image: linear-gradient(var(--marker), var(--marker));
+		background-repeat: no-repeat;
+		background-size: 100% 100%;
+		box-decoration-break: clone;
+		-webkit-box-decoration-break: clone;
+		padding: 0.08em 0.3em;
+		border-radius: 2px;
+	}
+
+	.leader {
+		display: none;
+	}
+
+	@media (min-width: 1240px) {
+		.shot-area {
+			padding-right: calc(var(--notes) + 1.5rem);
+		}
+
+		.notes {
+			position: absolute;
+			inset: 0;
+			margin: 0;
+			pointer-events: none;
+		}
+
+		.notes li {
+			position: absolute;
+			left: calc((100% - var(--notes) - 1.5rem) * var(--x));
+			right: 0;
+			top: calc(100% * var(--y));
+			display: flex;
+			align-items: flex-start;
+			transform: translateY(-0.85rem);
+		}
+
+		.leader {
+			display: block;
+			position: relative;
+			flex: 1;
+			margin-top: 0.85rem;
+			border-top: 1.5px solid var(--ink);
+			box-shadow: 0 -2px 0 rgba(255, 255, 255, 0.9), 0 1.5px 0 rgba(255, 255, 255, 0.9);
+		}
+
+		.leader::before {
+			content: '';
+			position: absolute;
+			left: -6px;
+			top: -7px;
+			width: 12px;
+			height: 12px;
+			border-radius: 50%;
+			background: var(--ink);
+			box-shadow: 0 0 0 4px var(--marker);
+		}
+
+		.note-text {
+			flex: 0 0 var(--notes);
+			padding-left: 0.9rem;
+		}
+
+		.mark {
+			animation: mark 0.7s cubic-bezier(0.3, 0.7, 0.2, 1) both;
+			animation-delay: calc(0.5s + var(--d));
+		}
+	}
+
+	@keyframes mark {
+		from {
+			background-size: 0% 100%;
+		}
+		to {
+			background-size: 100% 100%;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.mark {
+			animation: none;
+		}
+	}
+
+	/* Sections */
+	section > .wrap > h2,
+	.closing h2 {
+		max-width: 22ch;
+		font-size: clamp(2rem, 4.2vw, 3.25rem);
+		line-height: 1.06;
+	}
+
+	.section-lead {
+		max-width: var(--measure);
+		margin-top: 1.25rem;
+		font-size: 1.2rem;
+		color: var(--ink-soft);
+	}
+
+	.insights,
+	.own,
+	.plan,
+	.progress,
+	.bench,
+	.install {
+		padding-block: clamp(4.5rem, 10vw, 8rem) 0;
+	}
+
+	/* Insights findings */
+	.finding {
+		display: grid;
+		grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+		gap: clamp(2rem, 5vw, 4.5rem);
+		align-items: center;
+		margin-top: clamp(3rem, 6vw, 5rem);
+	}
+
+	.finding-flip .finding-text {
+		order: 2;
+	}
+
+	.finding h3 {
+		font-size: clamp(1.5rem, 2.6vw, 2rem);
+		line-height: 1.15;
+	}
+
+	.finding p {
+		margin-top: 1rem;
+		max-width: 46ch;
+		color: var(--ink-soft);
+	}
+
+	.finding img,
+	.finding-wide img,
+	.feature-shot img,
+	.bench-group img {
+		border-radius: var(--radius-small);
+		border: 1px solid var(--line);
+		background: var(--surface);
+		box-shadow: 0 18px 40px -28px rgba(21, 40, 90, 0.4);
+	}
+
+	.finding-wide {
+		margin-top: clamp(3.5rem, 7vw, 6rem);
+	}
+
+	.finding-wide p {
+		max-width: var(--measure);
+		margin-top: 1.5rem;
+		color: var(--ink-soft);
+	}
+
+	.finding-wide a,
+	.more {
+		display: inline-block;
+		font-weight: 600;
+	}
+
+	.finding-wide a {
+		margin-left: 0.25rem;
+	}
+
+	/* Own and owe, and Plan: each feature is a chapter, with the words above
+	   and the real screen below at a size you can read. */
+	.feature {
+		display: grid;
+		grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+		gap: 1.25rem clamp(2rem, 5vw, 4.5rem);
+		margin-top: clamp(4rem, 8vw, 6.5rem);
+	}
+
+	.feature-name {
+		color: var(--ledger);
+		font-weight: 700;
+		margin-bottom: 0.5rem;
+	}
+
+	.feature h3 {
+		font-size: clamp(1.75rem, 3vw, 2.4rem);
+		line-height: 1.1;
+		max-width: 16ch;
+	}
+
+	.feature-body > p {
+		color: var(--ink-soft);
+		max-width: 60ch;
+	}
+
+	.feature ul {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		column-gap: 2rem;
+		margin: 1.25rem 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.feature li {
+		position: relative;
+		padding: 0.5rem 0 0.5rem 1.6rem;
+		border-top: 1px solid var(--line);
+		font-size: 0.98rem;
+	}
+
+	.feature li::before {
+		content: '';
+		position: absolute;
+		left: 0.1rem;
+		top: 1.05rem;
+		width: 0.7rem;
+		height: 0.38rem;
+		border-left: 2px solid var(--gain);
+		border-bottom: 2px solid var(--gain);
+		transform: rotate(-45deg);
+	}
+
+	.feature-shot {
+		grid-column: 1 / -1;
+		margin-top: 1.25rem;
+	}
+
+	.plan .feature:first-of-type {
+		margin-top: clamp(2.5rem, 5vw, 3.5rem);
+	}
+
+	/* Progress cards: the only dark band on the page, so the cards read as
+	   finished pictures you would post, not as part of the UI. */
+	.progress {
+		margin-top: clamp(4.5rem, 10vw, 8rem);
+		padding-bottom: clamp(4rem, 8vw, 6rem);
+		background: var(--ink);
+		color: #fff;
+	}
+
+	.progress .section-lead {
+		color: #c9ced8;
+	}
+
+	.cards {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 1.25rem;
+		margin-top: clamp(2.5rem, 5vw, 3.5rem);
+		padding: 0;
+		list-style: none;
+	}
+
+	.cards img {
+		border-radius: 12px;
+		box-shadow: 0 20px 40px -24px rgba(0, 0, 0, 0.7);
+	}
+
+	/* Bench: one row per group, the tools side by side above a strip of the
+	   real screen. */
+	.bench-groups {
+		display: grid;
+		gap: clamp(3.5rem, 7vw, 5.5rem);
+		margin-top: clamp(2.5rem, 5vw, 3.5rem);
+	}
+
+	.bench-group h3 {
+		font-size: clamp(1.5rem, 2.4vw, 1.9rem);
+	}
+
+	.bench-group dl {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 0 2rem;
+		margin: 1rem 0 1.5rem;
+	}
+
+	.bench-group dl > div {
+		padding-top: 0.75rem;
+		border-top: 1px solid var(--line);
+	}
+
+	.bench-group dt {
+		font-weight: 700;
+	}
+
+	.bench-group dt a {
+		color: var(--ink);
+		text-decoration: none;
+	}
+
+	.bench-group dt a:hover {
+		color: var(--ledger);
+		text-decoration: underline;
+	}
+
+	.bench-group dd {
+		margin: 0.2rem 0 0;
+		color: var(--ink-soft);
+	}
+
+	/* Control */
+	.control {
+		margin-top: clamp(4.5rem, 10vw, 8rem);
+		padding-block: clamp(3rem, 6vw, 4.5rem);
+		background: var(--surface);
+		border-block: 1px solid var(--line);
+	}
+
+	.control-inner {
+		display: grid;
+		grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+		gap: clamp(2rem, 5vw, 4rem);
+		align-items: start;
+	}
+
+	.control h2 {
+		font-size: clamp(1.8rem, 3.4vw, 2.6rem);
+		line-height: 1.1;
+	}
+
+	.control ul {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+		display: grid;
+		gap: 1rem;
+	}
+
+	.control li {
+		color: var(--ink-soft);
+	}
+
+	.control strong {
+		color: var(--ink);
+	}
+
+	/* Install */
+	.steps {
+		counter-reset: step;
+		margin: clamp(2.5rem, 5vw, 3.5rem) 0 0;
+		padding: 0;
+		list-style: none;
+		display: grid;
+		gap: 2rem;
+	}
+
+	.steps > li {
+		counter-increment: step;
+		display: grid;
+		grid-template-columns: 3rem minmax(0, 1fr);
+		column-gap: 1rem;
+	}
+
+	.steps > li::before {
+		content: counter(step);
+		grid-row: span 3;
+		display: grid;
+		place-items: center;
+		width: 2.5rem;
+		height: 2.5rem;
+		border-radius: 50%;
+		background: var(--ink);
+		color: #fff;
+		font-weight: 700;
+	}
+
+	.steps h3 {
+		font-size: 1.3rem;
+		line-height: 2.5rem;
+	}
+
+	.steps p {
+		color: var(--ink-soft);
+	}
+
+	.steps p code {
+		padding: 0.1em 0.35em;
+		border-radius: 4px;
+		background: var(--surface);
+		border: 1px solid var(--line);
+	}
+
+	.code {
+		position: relative;
+		margin-top: 1rem;
+		max-width: 760px;
+	}
+
+	.code pre {
+		margin: 0;
+		padding: 1.1rem 6rem 1.1rem 1.25rem;
+		overflow-x: auto;
+		border-radius: var(--radius-small);
+		background: var(--ink);
+		color: #e8ebf1;
+		line-height: 1.6;
+	}
+
+	.copy {
+		position: absolute;
+		top: 0.7rem;
+		right: 0.7rem;
+		min-height: 34px;
+		padding: 0 0.85rem;
+		border-radius: 999px;
+		border: 1px solid #4a5160;
+		background: transparent;
+		color: #fff;
+		font: inherit;
+		font-size: 0.85rem;
+		cursor: pointer;
+	}
+
+	.copy:hover {
+		background: #2a2f39;
+	}
+
+	.install .fine {
+		margin-top: 2rem;
+	}
+
+	/* Closing */
+	.closing {
+		margin-top: clamp(4.5rem, 10vw, 8rem);
+		padding-block: clamp(4rem, 8vw, 6rem);
+		border-top: 1px solid var(--line);
+	}
+
+	.closing p {
+		max-width: 52ch;
+		margin-top: 1rem;
+		font-size: 1.15rem;
+		color: var(--ink-soft);
+	}
+
+	/* Footer */
+	.foot {
+		padding-block: 2rem 3rem;
+		border-top: 1px solid var(--line);
+		font-size: 0.92rem;
+		color: var(--muted);
+	}
+
+	.foot-inner {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: space-between;
+		gap: 1rem;
+	}
+
+	.foot nav {
+		display: flex;
+		gap: 1.25rem;
+	}
+
+	.foot nav a {
+		color: var(--ink-soft);
+	}
+
+	/* Narrow screens */
+	@media (max-width: 960px) {
+		.finding,
+		.feature,
+		.control-inner {
+			grid-template-columns: 1fr;
+		}
+
+		.finding-flip .finding-text {
+			order: 0;
+		}
+
+		.feature ul,
+		.bench-group dl {
+			grid-template-columns: 1fr;
+		}
+
+		.cards {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
+	}
+
+	@media (max-width: 720px) {
+		.bar nav a:not(.btn) {
+			display: none;
+		}
+
+		.cards {
+			grid-template-columns: 1fr;
+		}
+	}
+</style>

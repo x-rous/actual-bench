@@ -20,6 +20,10 @@ the page or switching budgets checks pending drafts again.
 
 ## Compare your loans
 
+![The Loans overview: outstanding balance, upcoming repayments, principal repaid, interest to date and interest over the next 12 months, then one row per loan with its terms, balance, next payment, principal paid, interest and payoff date.](../../../assets/screenshots/user-guide/loans-overview.png)
+
+*Every loan on one row: what is left, what is next, how much is repaid and when it ends.*
+
 The **Loans** overview shows one compact table row per loan, with at most three lines
 in each cell. Its search, filters, and table header follow the reconciliation list design.
 
@@ -64,6 +68,10 @@ A loan that is not saved yet can use **Terms & Schedule** and **Link to Actual**
 Discarding an unsaved loan clears its in-memory settings before you start another loan.
 
 ## Terms & Schedule
+
+![A home mortgage on Terms & Schedule: the loan, interest rate and repayment settings beside the monthly repayment, total repayments, total interest and payoff date, a chart of the balance and interest paid over time, the events with the interest an extra payment saved, and the amortization schedule.](../../../assets/screenshots/user-guide/loan-terms.png)
+
+*The contract on the left, the calculation on the right: payoff date, total interest, the balance over time and the full schedule.*
 
 The in-app **Guide** has section navigation for loan workflows and concepts. Its **Settings** section explains every calculation-method field and its available choices, including
 rounding, business-day adjustments and lender-statement allocation. It marks new-loan defaults; a preset or saved loan
@@ -200,6 +208,10 @@ refused with the same explanation when once-per-period interest cannot follow th
 
 ## Link to Actual
 
+![Link to Actual for a mortgage: the loan and its Actual account, how repayments are found, how interest is recorded, the tracking start with a starting balance that matches Actual, and what Bench found in Actual.](../../../assets/screenshots/user-guide/loan-link.png)
+
+*Each step is checked off once it is set; the panel on the right says what Bench found in the loan account.*
+
 Create the loan's account in Actual first: it must be **off budget** and hold only this loan. Then, on **Link to Actual**:
 
 1. **Loan and its account:** the name, the kind of loan and the off-budget account. If the loan has an offset account,
@@ -235,6 +247,10 @@ else, or a loan in a currency with another number of decimals stays a calculatio
 
 ## Repayments
 
+![The Repayments tab: owed in Actual, what Bench expects, the next payment, installments still to do and interest paid, then each installment with its due date, the payment that paid it, and its principal, interest and balance.](../../../assets/screenshots/user-guide/loan-repayments.png)
+
+*Each installment next to the payment that paid it, split into principal and interest.*
+
 **Repayments** lists every installment from the tracking start, newest first, matched to the payment that paid it,
 with what Bench would write. The figures above the list show **Owed in Actual**, **Bench expects** (and whether it agrees),
 the **Next payment** (the next installment nothing has paid) and what is **To do**.
@@ -268,6 +284,10 @@ away from the recorded loan history. If a recorded split needs a drift review, t
 
 ## Loan Ledger
 
+![The Loan Ledger: account balance, repayments, extra principal, draws and fees, and the loan account's rows in Actual, each with its type, installment and running balance.](../../../assets/screenshots/user-guide/loan-ledger.png)
+
+*The loan account in Actual, row for row, with what each row is.*
+
 The **Loan Ledger** is the loan account in Actual, row for row, with what each row is. Its balance is the debt
 Actual shows, and the calculation in Terms & Schedule follows it up to today.
 
@@ -289,6 +309,10 @@ unclassified row that adds to the debt is left out of the calculation, so Bench 
 a Draw and a correction an Adjustment.
 
 ## Linked Assets
+
+![Linked Assets for a mortgage: debt today, the part allocated to assets, combined loan-to-value and equity, and the family home it financed with its value, allocated debt and equity.](../../../assets/screenshots/user-guide/loan-linked-assets.png)
+
+*The home this mortgage financed, with your share of the debt and the equity left over.*
 
 **Linked Assets** shows the assets this loan financed, such as a home or a car, with your share of the loan for each.
 Links are made from the asset, in **Assets → Linked Loans**; Bench then shows the asset's value, your allocated debt
