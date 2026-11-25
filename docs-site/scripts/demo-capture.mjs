@@ -148,13 +148,31 @@ export async function closeDialog(page) {
 }
 
 /**
+ * Open the New cash plan dialog from either state of Cashflow Planning: the
+ * empty state's "Create your first plan", or the plan menu's "New plan…" when a
+ * plan is already open (someone may have left one in the shared demo).
+ */
+export async function openNewPlanDialog(page) {
+  const first = page.getByRole("button", { name: /Create your first plan/ });
+  const more = page.getByRole("button", { name: "More plan actions" });
+  await first.or(more).first().waitFor({ timeout: 60000 });
+  if (await first.isVisible()) {
+    await first.click();
+  } else {
+    await more.click();
+    await page.getByRole("menuitem", { name: "New plan…" }).click();
+  }
+  await page.waitForTimeout(3000);
+}
+
+/**
  * Cashflow Planning has no plan until someone makes one. Create one in the
  * shared demo, run `work` with it open, and delete it again whatever happens.
+ * Only the plan this created is deleted: it is the one open after creating.
  */
 export async function withTemporaryCashPlan(page, work) {
   await nav(page, "Cashflow Planning", 10000);
-  await page.getByRole("button", { name: /Create your first plan/ }).click();
-  await page.waitForTimeout(3000);
+  await openNewPlanDialog(page);
   const dialog = page.locator('[role="dialog"]').first();
   await dialog.getByLabel("Name").fill("Five-year plan");
   await dialog.getByRole("button", { name: /^Create/ }).last().click();
@@ -164,7 +182,7 @@ export async function withTemporaryCashPlan(page, work) {
   } finally {
     // Leave the shared demo as it was found.
     await closeDialog(page);
-    await page.getByRole("button", { name: /More|actions/i }).first().click().catch(() => {});
+    await page.getByRole("button", { name: "More plan actions" }).click();
     await page.waitForTimeout(1200);
     await page.getByRole("menuitem", { name: /Delete/ }).click();
     await page.waitForTimeout(1200);

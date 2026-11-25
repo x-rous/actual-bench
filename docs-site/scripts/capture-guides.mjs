@@ -31,6 +31,7 @@ import {
   groupsWanted,
   nav,
   openDemo,
+  openNewPlanDialog,
   scrollMain,
   shooter,
   tab,
@@ -181,7 +182,7 @@ try {
   if (want("cashflow")) {
     await step("cashflow-new-plan", async () => {
       await nav(page, "Cashflow Planning", 10000);
-      await page.getByRole("button", { name: /Create your first plan/ }).click();
+      await openNewPlanDialog(page);
       // The create button reads the loan schedules first; wait until it is ready.
       await dialog().getByRole("button", { name: /^Create/ }).last().waitFor({ timeout: 120000 });
       await page.waitForTimeout(1500);

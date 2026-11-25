@@ -441,11 +441,20 @@ const bench = [
 						</li>
 						<li>
 							<h3>Open it and set a password</h3>
-							<p>Go to <code>http://localhost:3000</code> and choose the password that protects your Bench.</p>
+							<p>
+								Go to <code>http://localhost:3000</code>, or to your server's address or reverse-proxy URL if it runs
+								on another machine, and choose the password that protects your Bench.
+							</p>
 						</li>
 						<li>
 							<h3>Connect your budget</h3>
-							<p>Point it at your Actual server, pick a budget, and everything you have just seen fills in with your own money.</p>
+							<p>
+								Point it at your Actual server and pick a budget. Your accounts, transactions and budget are read straight
+								from Actual, so nothing is re-entered. Then give your accounts their <a href={docs('user-guide/accounts/')}>types</a>
+								and add your <a href={docs('user-guide/assets-debt/')}>loans</a>, <a href={docs('user-guide/credit-cards/')}>cards</a>
+								and <a href={docs('user-guide/asset-registry/')}>assets</a> once, and every view you have just seen fills in with
+								your own money.
+							</p>
 						</li>
 					</ol>
 					<p class="fine">
