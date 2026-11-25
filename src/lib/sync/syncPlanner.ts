@@ -1,7 +1,7 @@
 import { classifyDuplicate } from "./duplicateClassifier";
 import { createFxRateResolver } from "./fxPolicy";
 import { isRevaluationKey } from "./fxPosition";
-import { resolveCategory, resolvePayee } from "./entityResolution";
+import { resolveCategory, resolveTargetPayee } from "./entityResolution";
 import { generateSyncMarker } from "./marker";
 import { allKeysOf, expandSourceTransactions, sourceTransactionItemKey, type SyncSourceItem } from "./sourceItems";
 import { buildPlannedTargetPayload } from "./transform";
@@ -144,7 +144,7 @@ export function planExpandedItems(
       // A positional split key embeds the line's content, so an edit changes it.
       // Only the parent's existence can say whether that line was really deleted.
       if (mapping.sourceEntityType === "split_line" && !mapping.sourceSplitId && mapping.sourceTransactionId && presentKeys.has(sourceTransactionItemKey(mapping.sourceTransactionId))) continue;
-      items.push(deletedSourceItem(mapping));
+      items.push(deletedSourceItem(mapping, context));
     }
   }
 
@@ -192,7 +192,8 @@ function withExistingKey(
 }
 
 /** A review-first delete candidate for a mapping whose source was deleted. */
-function deletedSourceItem(mapping: SyncMapping): SyncPlannedItem {
+function deletedSourceItem(mapping: SyncMapping, context: PlanContext): SyncPlannedItem {
+  const linked = !!(mapping.targetTransactionId && context.targetById.get(mapping.targetTransactionId)?.transferId);
   return {
     sourceItemKey: mapping.sourceItemKey,
     sourceEntityType: mapping.sourceEntityType,
@@ -204,11 +205,15 @@ function deletedSourceItem(mapping: SyncMapping): SyncPlannedItem {
     classification: "source_missing",
     duplicateConfidence: "none",
     action: "delete",
-    flags: ["source_deleted_review"],
+    flags: linked ? ["source_deleted_review", "linked_transfer"] : ["source_deleted_review"],
     selectedForApply: false,
     plannedTargetPayload: null,
     targetTransactionId: mapping.targetTransactionId,
-    message: "Source transaction was deleted; select to delete the mapped target.",
+    message: !linked
+      ? "Source transaction was deleted; select to delete the mapped target."
+      : mapping.ownsTransferLeg
+        ? "Source transaction was deleted. Deleting this transfer removes both of its legs."
+        : "Source transaction was deleted. This transfer is linked to your own row in another account, so both rows stay; select to stop syncing it.",
   };
 }
 
@@ -277,7 +282,8 @@ function fxRateChangeUpdate(
   if (!config.fxUpdateOnRateChange || !fxRate || !fxInfo || !mapping.targetTransactionId) return null;
 
   const targetTxn = context.targetById.get(mapping.targetTransactionId);
-  if (!targetTxn) return null;
+  // A transfer moved a fixed amount; a newer market rate does not change it.
+  if (!targetTxn || targetTxn.transferId) return null;
   const { payload: built } = buildCreatePayload(item, input, fxInfo);
   // A split's total can round to the same amount while its lines move.
   const lines = built.subtransactions?.map((line) => line.amount);
@@ -332,7 +338,7 @@ function buildCreatePayload(
   const { config, target } = input;
   const item = withoutTransferPayee(sourceItem);
   const fxRate = fxInfo?.rate ?? null;
-  const payee = resolvePayee(item, config, target.payees);
+  const payee = resolveTargetPayee(item, config, target.payees);
   const category = resolveCategory(item, target.categories);
   const importedId = generateSyncMarker({
     sourceBudgetId: config.sourceBudgetId,
@@ -344,8 +350,8 @@ function buildCreatePayload(
   // apply the flow's amount direction, so the parent creates as one target split.
   const subtransactions = item.splitLines?.map((line) => {
     const childPayee = line.transferId
-      ? resolvePayee({ payeeName: null }, config, target.payees)
-      : resolvePayee({ payeeName: line.payeeName ?? item.payeeName }, config, target.payees);
+      ? resolveTargetPayee({ payeeName: null }, config, target.payees)
+      : resolveTargetPayee({ payeeName: line.payeeName ?? item.payeeName }, config, target.payees);
     const childCategory = resolveCategory({ categoryName: line.categoryName }, target.categories);
     const directedChild = config.amountDirection === "same" ? line.amount : -line.amount;
     return {
@@ -354,6 +360,7 @@ function buildCreatePayload(
       payeeId: childPayee.payeeId,
       payeeName: childPayee.payeeName,
       notes: line.transferId ? transferNote(line.payeeName, line.notes) : line.notes,
+      ...(childPayee.transferAccountId ? { transferAccountId: childPayee.transferAccountId, transferAccountName: childPayee.transferName } : {}),
     };
   }) ?? null;
   // With FX, converting each child independently can round the children so they
@@ -366,8 +373,29 @@ function buildCreatePayload(
     const remainder = parentConverted - childSum;
     if (remainder !== 0) subtransactions[subtransactions.length - 1].amount += remainder;
   }
-  const payload = buildPlannedTargetPayload({ item, config, payee, category, importedId, subtransactions, fx: fxInfo });
+  const built = buildPlannedTargetPayload({ item, config, payee, category, importedId, subtransactions, fx: fxInfo });
+  // A grouped split's parent cannot be a transfer; Actual makes its lines the transfers.
+  const payload = payee.transferAccountId && !built.subtransactions
+    ? { ...built, transferAccountId: payee.transferAccountId, transferAccountName: payee.transferName }
+    : built;
   return { payee, category, importedId, payload };
+}
+
+/** The accounts a create would add transfers to: its own, or its split lines'. */
+function transferAccountNames(payload: PlannedTargetPayload): string[] {
+  const lines = payload.transferAccountId ? [payload] : (payload.subtransactions ?? []).filter((line) => line.transferAccountId);
+  return [...new Set(lines.map((line) => line.transferAccountName ?? "the other account"))];
+}
+
+/** The preview text for a create that adds transfers, or null. */
+function transferCreateText(payload: PlannedTargetPayload, fxRate: string | null): string | null {
+  const names = transferAccountNames(payload);
+  if (names.length === 0) return null;
+  const to = names.join(", ");
+  // An amount can be set only for a single row; a split's lines use the rate.
+  return payload.transferAccountId && fxRate
+    ? `Creates a transfer to ${to}. Set the amount ${to} recorded, or it uses this rate.`
+    : `Creates a transfer to ${to}.`;
 }
 
 /** True when this item's split shape differs from how the split was first synced. */
@@ -401,9 +429,12 @@ function planSourceItem(
   // A synced row keeps the rate it was recorded with. One the user set keeps it
   // always; any other keeps it while its date stands, unless the flow opted into
   // following rate changes. A note edit must not re-convert the amount.
-  const recorded = needsFx ? input.manualFxRates?.get(mappingByKey.get(item.itemKey)?.targetTransactionId ?? "") : undefined;
+  const mappedTargetId = mappingByKey.get(item.itemKey)?.targetTransactionId ?? "";
+  const recorded = needsFx ? input.manualFxRates?.get(mappedTargetId) : undefined;
   const manualRate = recorded?.isManual !== false ? recorded : undefined;
-  const lockedRate = recorded && !manualRate && recorded.requestedDate === item.date && !config.fxUpdateOnRateChange ? recorded : undefined;
+  // A transfer moved a fixed amount, so it never follows a newer market rate.
+  const followsRates = config.fxUpdateOnRateChange && !context.targetById.get(mappedTargetId)?.transferId;
+  const lockedRate = recorded && !manualRate && recorded.requestedDate === item.date && !followsRates ? recorded : undefined;
   const keptRate = manualRate ?? lockedRate;
   const fxInfo: FxRateInfo | null = !needsFx
     ? null
@@ -439,13 +470,15 @@ function planSourceItem(
       if (fxPending) return fxPendingItem(item, fxPendingReason);
       const { importedId, payload } = buildCreatePayload(item, input, fxInfo);
       const canRecreate = canWriteMarker && !!importedId;
+      // A recreated transfer gets the same check for a row already on its other side.
+      const transferText = canRecreate ? transferCreateText(payload, fxRate) : null;
       return baseItem(item, {
         classification: "target_missing",
         action: canRecreate ? "create" : "skip",
-        flags: ["target_missing_review"],
+        flags: transferText ? ["target_missing_review", "creates_transfer"] : ["target_missing_review"],
         plannedTargetPayload: canRecreate ? payload : null,
         targetTransactionId: mapping.targetTransactionId,
-        message: "Deleted from the target budget. Select it to recreate, or stop syncing it.",
+        message: ["Deleted from the target budget. Select it to recreate, or stop syncing it.", transferText].filter(Boolean).join(" · "),
       });
     }
     if (mapping.sourceFingerprint === item.fingerprint || item.legacyFingerprints?.includes(mapping.sourceFingerprint)) {
@@ -468,15 +501,31 @@ function planSourceItem(
     if (config.updateMappedTargets && mapping.targetTransactionId) {
       if (fxPending) return fxPendingItem(item, fxPendingReason);
       const { payload: builtUpdate } = buildCreatePayload(item, input, fxInfo);
-      const upPayload = { ...builtUpdate, keepTargetPayee: !!item.isTransfer };
+      const linked = !!context.targetById.get(mapping.targetTransactionId)?.transferId;
+      // A linked transfer keeps its payee, or Actual would unlink it.
+      const upPayload: PlannedTargetPayload = linked
+        ? { ...builtUpdate, keepTargetPayee: true, transferAccountId: null, linkedTransfer: mapping.ownsTransferLeg ? "owned" : "external" }
+        : { ...builtUpdate, keepTargetPayee: !!item.isTransfer };
+      // Giving a plain row a transfer payee makes Actual add the other leg, so it gets
+      // the same check for a row already on that side as a new transfer.
+      const becomesTransfer = !linked && !upPayload.keepTargetPayee && !!upPayload.transferAccountId;
+      const flags: SyncPlanFlag[] = ["source_changed_since_sync", "source_changed_update"];
+      if (linked) flags.push("linked_transfer");
+      if (becomesTransfer) flags.push("creates_transfer");
       return baseItem(item, {
         classification: "source_changed_since_sync",
         action: "update",
-        flags: ["source_changed_since_sync", "source_changed_update"],
+        flags,
         selectedForApply: true,
         plannedTargetPayload: upPayload,
         targetTransactionId: mapping.targetTransactionId,
-        message: "Source changed since last sync; target will be updated to match.",
+        message: !linked
+          ? becomesTransfer
+            ? `Source changed since last sync; target will be updated to match. Its payee becomes a transfer to ${upPayload.transferAccountName ?? "the other account"}.`
+            : "Source changed since last sync; target will be updated to match."
+          : mapping.ownsTransferLeg
+            ? "Source changed since last sync. Both legs of this transfer will be updated to match."
+            : "Source changed since last sync. This transfer is linked to your own row in another account, which holds the real amount, so it is left unchanged.",
       });
     }
     return baseItem(item, {
@@ -578,6 +627,9 @@ function planSourceItem(
   if (payee.leftEmpty) flags.push("missing_payee_left_empty");
   if (category.leftEmpty) flags.push("missing_category_left_empty");
   if (item.isTransfer) flags.push("source_transfer");
+  const createsTransfer = transferAccountNames(payload).length > 0;
+  if (createsTransfer) flags.push("creates_transfer");
+  const transferText = createsTransfer ? transferCreateText(payload, fxRate) : payee.note;
 
   return baseItem(item, {
     classification: "new",
@@ -587,11 +639,14 @@ function planSourceItem(
     plannedTargetPayload: payload,
     // Surface the applied FX rate in the preview's Details (RD-056); the source
     // and target amount columns already show original vs converted.
-    message: fxRate
-      ? `FX ${config.fxSourceCurrency}→${config.fxTargetCurrency} @ ${fxRate}${item.isTransfer ? " · source transfer, created without a transfer payee" : ""}`
-      : item.isTransfer
-        ? "Transfer in the source budget; created without a transfer payee."
-        : null,
+    message: [
+      fxRate
+        ? `FX ${config.fxSourceCurrency}→${config.fxTargetCurrency} @ ${fxRate}${item.isTransfer ? " · source transfer, created without a transfer payee" : ""}`
+        : item.isTransfer
+          ? "Transfer in the source budget; created without a transfer payee."
+          : null,
+      transferText,
+    ].filter(Boolean).join(" · ") || null,
   });
 }
 
@@ -601,7 +656,7 @@ function planSourceItem(
  */
 function resolveEffectivePayeeName(
   item: SyncSourceItem,
-  payee: ReturnType<typeof resolvePayee>,
+  payee: ReturnType<typeof resolveTargetPayee>,
   target: SyncPlannerInput["target"]
 ): string | null {
   if (payee.payeeId) {

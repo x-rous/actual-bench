@@ -49,7 +49,13 @@ export type SyncPlanFlag =
   /** A split line's earlier keys point at different target rows; held for review. */
   | "ambiguous_split_identity"
   /** Sends a target-budget category back to this source row. */
-  | "category_return";
+  | "category_return"
+  /** The row's payee is a transfer payee on the target: Actual creates the other leg. */
+  | "creates_transfer"
+  /** The mapped target is one leg of a linked transfer. */
+  | "linked_transfer"
+  /** The other account already holds a row that looks like this transfer's other side. */
+  | "transfer_may_duplicate";
 
 /** The transaction the engine would create on the target (create-only, no splits). */
 export type PlannedTargetPayload = {
@@ -77,8 +83,18 @@ export type PlannedTargetPayload = {
    * the converted amount; `sourceAmount` here is the original.
    */
   fx?: PlannedFx | null;
-  /** An update leaves the target's payee alone: this row is a transfer in the source. */
+  /** An update leaves the target's payee alone: this row is a transfer in the source, or the target is a linked transfer. */
   keepTargetPayee?: boolean;
+  /** The payee is a transfer payee: creating this row creates a transfer to this target account. */
+  transferAccountId?: string | null;
+  /** That account's name, for messages. */
+  transferAccountName?: string | null;
+  /**
+   * The update's target is a linked transfer: "owned" when this sync created its
+   * other leg (both legs follow the update), "external" when it is linked to the
+   * user's own row (left unchanged).
+   */
+  linkedTransfer?: "owned" | "external";
   /** For a category return: the target row the mapping must still point at. */
   mappedTargetId?: string;
 };
@@ -129,6 +145,10 @@ export type PlannedSplitChild = {
   payeeId: string | null;
   payeeName: string | null;
   notes: string | null;
+  /** The line's payee is a transfer payee: creating the split adds a transfer to this account. */
+  transferAccountId?: string | null;
+  /** That account's name, for messages. */
+  transferAccountName?: string | null;
 };
 
 /**
@@ -188,7 +208,12 @@ export type SyncPlanResult = {
 
 // --- Planner input snapshots (fixture-friendly; no DB/Actual access) --------
 
-export type SyncPlannerPayee = { id: string; name: string };
+export type SyncPlannerPayee = {
+  id: string;
+  name: string;
+  /** Set for a transfer payee: the account a row with this payee transfers to. */
+  transferAccountId?: string | null;
+};
 export type SyncPlannerCategory = { id: string; name: string };
 
 /** Minimal target transaction shape used for duplicate detection. */
@@ -200,6 +225,8 @@ export type SyncTargetTransactionForDedupe = {
   categoryId: string | null;
   /** A split's line amounts, in order. Absent for a row that is not a split. */
   splitAmounts?: number[];
+  /** The other leg, when this row is one side of a linked transfer. */
+  transferId?: string | null;
 };
 
 export type SyncPlannerTargetSnapshot = {

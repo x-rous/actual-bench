@@ -128,10 +128,16 @@ export async function loadFxPosition(input: {
       .flatMap(allKeysOf)
   );
   const targetById = new Map(targetTransactions.map((row) => [row.id, row]));
-  const synced = mappings
-    .filter((m) => m.status === "active" && !isRevaluationKey(m.sourceItemKey) && transferKeys.has(m.sourceItemKey) && m.targetTransactionId)
+  const syncedRows = (fromTransfer: boolean) => mappings
+    .filter((m) => m.status === "active" && !isRevaluationKey(m.sourceItemKey) && transferKeys.has(m.sourceItemKey) === fromTransfer && m.targetTransactionId)
     .map((m) => targetById.get(m.targetTransactionId as string))
     .filter((row): row is SyncSourceTransaction => !!row && !row.transferId);
+  // Transfers in the source, and synced rows left without a category: money moved
+  // between the budgets and entered once in each. The other side may have been
+  // categorised by a rule, so only the synced row's category counts.
+  const fromTransfers = syncedRows(true);
+  const uncategorised = syncedRows(false).filter((row) => !row.categoryId);
+  const synced = [...fromTransfers, ...uncategorised];
 
   let transfers: FxTransferPair[] = [];
   if (synced.length > 0) {
@@ -149,7 +155,10 @@ export async function loadFxPosition(input: {
       [false, true].flatMap((groupSplits) => expandSourceTransactions(sourceTransactions, { groupSplits }))
         .flatMap((item) => allKeysOf(item).map((key) => [key, item.amount] as const))
     );
-    transfers = findTransferCandidates(synced, others).map((pair) => {
+    const fromTransferPairs = findTransferCandidates(fromTransfers, others);
+    const taken = new Set(fromTransferPairs.map((pair) => pair.counterpart.id));
+    const plainPairs = findTransferCandidates(uncategorised, others.filter((row) => !taken.has(row.id)));
+    transfers = [...fromTransferPairs, ...plainPairs].map((pair) => {
       const row = targetById.get(pair.syncedId) as SyncSourceTransaction;
       const sourceAmount = sourceAmounts.get(sourceByTarget.get(pair.syncedId) ?? "");
       return {

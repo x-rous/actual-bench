@@ -19,13 +19,14 @@ import {
   type AdapterValidateInput,
   type SyncKindAdapter,
 } from "../syncKind";
+import { transferPayeeName } from "../entityResolution";
 import type { ActualBenchTransport } from "@/lib/actual/transport";
 import type { JsonObject, SyncCapabilitySet, SyncFlow, SyncMapping } from "@/lib/app-db/types";
 import type { SyncPlanResult } from "../plannedChanges";
 
 /** Payee master-data adapter for the unified sync engine (RD-055). */
 
-type Payee = { id: string; name: string };
+type Payee = { id: string; name: string; transferAccountId?: string | null };
 type MaterializedPayees = { payees: Payee[] };
 type TargetPayees = { byName: Map<string, string> };
 
@@ -57,7 +58,7 @@ export const payeeAdapter: SyncKindAdapter = {
   async loadSource(transport: ActualBenchTransport): Promise<AdapterSourceResult> {
     let payees: Payee[];
     try {
-      payees = (await transport.getPayees()).map((p) => ({ id: p.id, name: p.name }));
+      payees = (await transport.getPayees()).map((p) => ({ id: p.id, name: p.name, transferAccountId: p.transferAccountId ?? null }));
     } catch (err) {
       throw new SyncKindError("source_load_failed", describeSyncError(err, "Failed to read source payees."));
     }
@@ -83,7 +84,12 @@ export const payeeAdapter: SyncKindAdapter = {
     const { byName } = target as TargetPayees;
     const items = source.payees
       .filter((p) => p.name.trim() !== "")
-      .map((payee) => {
+      .map((source) => {
+        // A transfer payee names an account the target budget does not have. It
+        // arrives as `Transfer: <account>`, and a row with it syncs back as a real
+        // transfer to that account.
+        const isTransfer = !!source.transferAccountId;
+        const payee = isTransfer ? { ...source, name: transferPayeeName(source.name) } : source;
         const key = `payee:${payee.id}`;
         const mapping = mappingFor(mappings as SyncMapping[], key);
         if (mapping) {
@@ -105,7 +111,8 @@ export const payeeAdapter: SyncKindAdapter = {
         return buildEntityPlannedItem({
           entityType: "payee", sourceId: payee.id, name: payee.name,
           classification: "new", action: "create", targetId: null,
-          entityPayload: { entity: "payee", name: payee.name }, selectedForApply: true, message: null,
+          entityPayload: { entity: "payee", name: payee.name }, selectedForApply: true,
+          message: isTransfer ? `Use it for money moved to or from ${source.name}; that row syncs back as a transfer.` : null,
         });
       });
     return toPlanResult(flow.id, items);

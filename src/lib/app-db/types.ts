@@ -263,6 +263,11 @@ export type SyncMapping = {
   targetItemKey: string | null;
   targetFingerprint: string | null;
   targetMarker: string | null;
+  /**
+   * The target is a transfer whose other leg this sync created (Actual adds it for
+   * a transfer payee). Deleting it removes both legs, which only then is the sync's to do.
+   */
+  ownsTransferLeg?: boolean;
   createdRunId: string | null;
   status: SyncMappingStatus;
   lastSeenAt: string | null;
@@ -286,6 +291,7 @@ export type SyncMappingPatch = Partial<
     | "targetItemKey"
     | "targetFingerprint"
     | "targetMarker"
+    | "ownsTransferLeg"
     | "createdRunId"
     | "status"
     | "lastSeenAt"

@@ -173,7 +173,36 @@ If you turn **Keep split transactions grouped** on or off after a split was sync
 A transfer inside the source budget is one leg of a pair. Sync writes it **without a transfer payee**,
 with the other side named in its notes, so it cannot create a second leg on the target. On a
 currency-converting flow you can then link it to its real other side from
-[Currency position](../fx-rates/#currency-position). Updates and deletes leave a linked transfer alone.
+[Currency position](../fx-rates/#currency-position).
+
+### Moving money between the two budgets
+
+To record money moved between an account in the main budget and one in the other budget, enter it
+once, in the budget being synced from, and let sync make the transfer:
+
+1. A **Payee** flow from the main budget brings each of its accounts across as a payee named
+   `Transfer: <account>`, for example `Transfer: AED Current`.
+2. In the other budget, record the money with that payee: money in when it left the main account,
+   money out when it went to it. Do not record the main budget's side yourself.
+3. The preview says **Creates a transfer to AED Current**. On a converting flow, type the amount that
+   account recorded, so both sides match what the bank did.
+
+Sync then writes one real transfer in the main budget, and Actual adds its other leg. Because sync
+created both legs, it keeps them together: a later correction updates both legs, including the date,
+and deleting the source row removes both. A transfer whose other leg is reconciled is left alone.
+
+A row cannot transfer to the account it is synced into; its payee is left empty. If the other account
+already has a row that looks like the other side (within three days and 5% of the amount), the transfer
+is not selected, and **Select all** and automatic runs skip it, so the move is not counted twice. Pick
+it by hand only if the two are different. The same check covers a split line with a transfer payee and
+a transfer being recreated after it was deleted from the main budget, and a correction that gives an already synced row a transfer payee. A split whose lines are transfers is changed or deleted only if sync created it, and not once one of those transfers is reconciled in its other account. If the other account cannot be
+read, the transfer is not selected either. A transfer keeps the rate it was recorded with, even on a
+flow that follows rate changes.
+
+If you record both sides yourself instead, leave the synced row without a category and link the two from
+[Currency position](../fx-rates/#currency-position). A transfer linked that way keeps the amount your
+own row recorded: a later source change is reported once and left alone, and deleting the source row
+stops syncing it while both rows stay.
 
 ## Review queue
 

@@ -283,7 +283,8 @@ Consolidate budgets kept in **different currencies**: a transaction flow can con
 - **Conversions**: every synced row's original amount, rate, rate date, rate source and converted amount, with search, date and source filters and CSV export
 - **Send categories back**: fills empty categories in the foreign budget from the ones set in the main budget, matched by name, after a confirmation
 - The target budget owns **category and cleared state**: categorising a synced row no longer blocks later corrections, and updates never overwrite either. A row deleted on the target is reported, to recreate or stop syncing. Source transfers are written without a transfer payee so they cannot create a second leg
-- Not in scope: automatic transfer linking, automatic (non-review) target deletes, category auto-create, fuzzy duplicate auto-mapping, full FX gain/loss accounting, multi-currency within a single budget file, and silent recalculation of past conversions
+- **Transfers between the budgets**: a Payee flow brings the main budget's accounts across as `Transfer: <account>` payees. A row recorded with one syncs as a real transfer, the preview says so and takes the amount the other account recorded, and the sync keeps both legs together on later corrections and deletes. A likely existing other side holds the transfer unselected, and Currency position also links rows recorded on both sides when the synced row has no category
+- Not in scope: automatic linking of rows recorded on both sides, automatic (non-review) target deletes, category auto-create, fuzzy duplicate auto-mapping, full FX gain/loss accounting, multi-currency within a single budget file, and silent recalculation of past conversions
 
 ## Bank Statement Reconciliation
 

@@ -27,7 +27,7 @@ import type {
   SyncMappingInput,
   SyncMappingPatch,
 } from "@/lib/app-db/types";
-import type { PlannedFx, PlannedTargetPayload } from "./plannedChanges";
+import type { PlannedFx, PlannedTargetPayload, SyncPlanFlag } from "./plannedChanges";
 import type { AdapterMutateInput } from "./syncKind";
 
 /**
@@ -477,6 +477,11 @@ type PreparedApply = {
   uploadPending: boolean;
 };
 
+function hasFlag(item: SyncFlowRunItem, flag: SyncPlanFlag): boolean {
+  const flags = (item.warnings?.data as { flags?: unknown } | undefined)?.flags;
+  return Array.isArray(flags) && flags.includes(flag);
+}
+
 function isEligibleNew(item: SyncFlowRunItem): boolean {
   return (
     item.classification === "new" &&
@@ -670,13 +675,16 @@ async function validateAndPrepare(
     // review-first (explicit selection only) - so neither is included here.
     const includeUpdates = input.selection?.selection !== "all_safe";
     for (const item of allItems) {
-      if (isEligibleNew(item)) {
+      // A transfer that may double an existing row waits for the user to pick it.
+      if (isEligibleNew(item) && !hasFlag(item, "transfer_may_duplicate")) {
         eligible.push(toCreateCandidate(item));
+      } else if (isEligibleNew(item)) {
+        continue;
       } else if (includeRepairs && isRepairable(item)) {
         eligible.push(toRepairCandidate(item, "repair"));
       } else if (includeRepairs && isExactDupAutoMap(item)) {
         eligible.push(toRepairCandidate(item, "map"));
-      } else if (includeUpdates && isEligibleUpdate(item)) {
+      } else if (includeUpdates && isEligibleUpdate(item) && !hasFlag(item, "transfer_may_duplicate")) {
         eligible.push(toMutateCandidate(item, "update"));
       }
     }
@@ -742,7 +750,7 @@ function applyAmountOverrides(eligible: EligibleItem[], overrides: Record<string
     const payload = entry.payloadJson as (JsonObject & { amount?: number; notes?: string | null; fx?: PlannedFx | null; subtransactions?: unknown }) | null;
     const fx = payload?.fx;
     // Refused rather than ignored: the user asked for this amount to be written.
-    if (!payload || !fx || !payload.amount || payload.subtransactions || fx.sourceAmount === 0 || (entry.mode !== "create" && entry.mode !== "recreate") || !Number.isInteger(magnitude) || magnitude <= 0) {
+    if (!payload || !fx || !payload.amount || payload.subtransactions || fx.sourceAmount === 0 || (entry.mode !== "create" && entry.mode !== "recreate" && entry.mode !== "update") || !Number.isInteger(magnitude) || magnitude <= 0) {
       throw new ApplyPreflightError("ineligible_selection", `A charged amount cannot be applied to item ${entry.item.id}.`);
     }
     const rate = impliedRate(fx.sourceAmount, magnitude);
@@ -860,8 +868,12 @@ async function applyCreateBatch(
         if (readFx(payloadJson)?.isManual) assertTargetHoldsAmount(ctx, payloadJson, markerHit);
         const liveHit = ctx.liveTargets?.get(markerHit);
         const hitBaseline = liveHit ? targetBaseline(liveHit) : null;
-        if (replaces) await repointMapping(store, replaces, item, markerHit, hitBaseline);
-        else await recordMapping(store, ctx.config, item, markerHit, marker, hitBaseline);
+        // Only this item's own earlier write proves the sync made the other leg: a
+        // row the sync wrote may since have been linked to the user's own row.
+        const liveLegLinked = !!liveHit?.transferId || !!liveHit?.splitLines?.some((line) => !!line.transferId);
+        const owns = item.createdTargetTransactionId === markerHit && liveLegLinked && createsTransfer(payloadJson);
+        if (replaces) await repointMapping(store, replaces, item, markerHit, hitBaseline, owns);
+        else await recordMapping(store, ctx.config, item, markerHit, marker, hitBaseline, owns);
         if (readFx(payloadJson)?.isManual) await saveFxSnapshot(store, payloadJson, markerHit, item.id);
         else await restoreFxRecord(store, payloadJson, markerHit, liveHit, item.id);
         await store.updateRunItemStatus(item.id, {
@@ -938,8 +950,8 @@ async function applyCreateBatch(
     try {
       // Store the persisted target field hash so a later update can detect a
       // manual edit before overwriting (RD-057 §4).
-      if (replaces) await repointMapping(store, replaces, item, targetId, res?.targetFingerprint ?? null);
-      else await recordMapping(store, ctx.config, item, targetId, marker, res?.targetFingerprint ?? null);
+      if (replaces) await repointMapping(store, replaces, item, targetId, res?.targetFingerprint ?? null, createsTransfer(payloadJson));
+      else await recordMapping(store, ctx.config, item, targetId, marker, res?.targetFingerprint ?? null, createsTransfer(payloadJson));
       // RD-056: record the FX snapshot. It holds the rate later conversions keep,
       // so losing it fails the item, and Retry saves it without writing again.
       try {
@@ -997,7 +1009,7 @@ async function applyMutateBatch(
   if (!batch) return results; // preflight already guarded this; defensive.
 
   // Resolve each item's mapping (for the expected fingerprint + patch target).
-  const meta = new Map<string, { item: SyncFlowRunItem; mapping: SyncMapping | null }>();
+  const meta = new Map<string, { item: SyncFlowRunItem; mapping: SyncMapping | null; payload: JsonObject | null }>();
   const inputs: AdapterMutateInput[] = [];
   for (const eligible of mutateItems) {
     const item = eligible.item;
@@ -1013,13 +1025,15 @@ async function applyMutateBatch(
       results.push({ itemId: item.id, sourceItemKey: item.sourceItemKey ?? "", outcome: "skipped", targetTransactionId: mapping?.targetTransactionId ?? null, message });
       continue;
     }
-    meta.set(item.id, { item, mapping });
+    meta.set(item.id, { item, mapping, payload: eligible.payloadJson });
     inputs.push({
       itemId: item.id,
       targetId: eligible.targetTransactionId ?? "",
       expectedTargetFingerprint: mapping?.targetFingerprint ?? null,
       payload: eligible.payloadJson ?? undefined,
       sourceItemKey: item.sourceItemKey ?? undefined,
+      sourceFingerprint: item.sourceFingerprint ?? null,
+      ownsTransferLeg: mapping.ownsTransferLeg === true,
     });
   }
 
@@ -1047,7 +1061,7 @@ async function applyMutateBatch(
   for (const res of mutated) {
     const entry = meta.get(res.itemId);
     if (!entry) continue;
-    const { item, mapping } = entry;
+    const { item, mapping, payload } = entry;
     const base = { itemId: item.id, sourceItemKey: item.sourceItemKey ?? "" };
     try {
       if (res.outcome === "failed") {
@@ -1061,6 +1075,8 @@ async function applyMutateBatch(
         continue;
       }
       if (res.outcome === "skipped") {
+        // A skip that settles the item records it, so it is reported once.
+        if (res.mappingPatch && mapping) await store.updateMapping(mapping.id, res.mappingPatch);
         await store.updateRunItemStatus(item.id, {
           status: "skipped",
           applyState: "skipped",
@@ -1076,13 +1092,17 @@ async function applyMutateBatch(
             ...(res.mappingPatch ?? {
               sourceFingerprint: item.sourceFingerprint ?? mapping.sourceFingerprint,
               targetFingerprint: res.targetFingerprint ?? null,
+              // An update that gave the row a transfer payee made Actual add the other leg.
+              ...(payload?.transferAccountId && payload.keepTargetPayee !== true ? { ownsTransferLeg: true } : {}),
             }),
             lastAppliedAt: nowIso(),
           });
         }
         // RD-056: an FX rate-change update also revalues the immutable snapshot,
         // so the audit stays consistent with the rewritten target amount.
-        const fx = (item.plannedTargetPayload?.data as { fx?: PlannedFx | null; amount?: number } | undefined)?.fx;
+        // The written payload: it holds a charged amount the user set in the preview.
+        const written = (payload ?? item.plannedTargetPayload?.data) as { fx?: PlannedFx | null; amount?: number } | undefined;
+        const fx = written?.fx;
         if (fx && res.targetId && store.updateFxSnapshot) {
           // The rate later conversions keep. If this fails the item fails too, and a
           // retry repeats the same write and saves it.
@@ -1092,7 +1112,7 @@ async function applyMutateBatch(
             sourceAmount: fx.sourceAmount,
             isManual: fx.isManual === true,
             appliedRate: fx.rate,
-            convertedAmount: (item.plannedTargetPayload?.data as { amount?: number }).amount ?? 0,
+            convertedAmount: written?.amount ?? 0,
             requestedDate: fx.requestedDate,
             effectiveDate: fx.effectiveDate,
             source: fx.source,
@@ -1138,7 +1158,8 @@ async function recordMapping(
   item: SyncFlowRunItem,
   targetTransactionId: string,
   targetMarker: string | null,
-  targetFingerprint: string | null
+  targetFingerprint: string | null,
+  ownsTransferLeg = false
 ): Promise<void> {
   const entityType: SyncEntityType = item.sourceEntityType ?? "transaction";
   // Master-data entities map to a same-type target; transactions/splits to a txn.
@@ -1163,9 +1184,16 @@ async function recordMapping(
     targetItemKey,
     targetFingerprint,
     targetMarker,
+    ...(ownsTransferLeg ? { ownsTransferLeg: true } : {}),
     createdRunId: item.runId,
     lastAppliedAt: nowIso(),
   }, item.id);
+}
+
+/** The planned row, or a line of its split, has a transfer payee, so creating it makes Actual add the other leg. */
+function createsTransfer(payload: JsonObject | null | undefined): boolean {
+  const isTransfer = (row: unknown) => typeof (row as { transferAccountId?: unknown } | null)?.transferAccountId === "string" && (row as { transferAccountId: string }).transferAccountId !== "";
+  return isTransfer(payload) || (Array.isArray(payload?.subtransactions) && payload.subtransactions.some(isTransfer));
 }
 
 /** A charged rate may only be recorded for a row that really holds that amount. */
@@ -1261,13 +1289,15 @@ async function repointMapping(
   mapping: SyncMapping,
   item: SyncFlowRunItem,
   targetTransactionId: string,
-  targetFingerprint: string | null
+  targetFingerprint: string | null,
+  ownsTransferLeg = false
 ): Promise<void> {
   await store.updateMapping(mapping.id, {
     sourceFingerprint: item.sourceFingerprint ?? mapping.sourceFingerprint,
     targetTransactionId,
     targetItemKey: "txn:" + targetTransactionId,
     targetFingerprint,
+    ownsTransferLeg,
     status: "active",
     lastAppliedAt: nowIso(),
   });
@@ -1323,6 +1353,9 @@ async function repairOneItem(
 
     // The row as it stands is the baseline, so later corrections can reach it.
     const live = ctx.liveTargets?.get(targetId);
+    // The marker shows this sync wrote the row, not who made its other leg: it may
+    // have been linked to the user's own row. Treated as theirs, it is never
+    // changed or deleted from here.
     await recordMapping(store, ctx.config, item, targetId, marker, live ? targetBaseline(live) : null);
     await restoreFxRecord(store, eligible.payloadJson, targetId, live, item.id);
     await store.updateRunItemStatus(item.id, {

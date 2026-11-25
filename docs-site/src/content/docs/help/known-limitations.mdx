@@ -105,8 +105,10 @@ credentials.
 
 Not currently in scope:
 
-- **Automatic** transfer linking. Source transfers sync without a transfer payee; a converting flow can
-  link them one at a time from **Currency position**.
+- **Automatic** linking of rows recorded on both sides. A row entered with a `Transfer: <account>`
+  payee syncs as a real transfer; rows entered in both budgets are linked one at a time from
+  **Currency position**. A transfer linked to your own row keeps that row's amount, so sync does not
+  update or delete it.
 - **Automatic (non-review) target deletes** - deletion is always review-first.
 - Transaction-flow **category auto-create**. Dedicated Category flows can create missing categories
   under a placeable target group.
