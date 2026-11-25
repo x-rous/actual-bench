@@ -87,7 +87,7 @@ export type AdapterLiveTarget = SyncAppliedSnapshot & {
   transferId: string | null;
   reconciled?: boolean;
   isParent?: boolean;
-  splitLines?: { id: string | null; amount: number; notes: string | null; payeeId: string | null; categoryId: string | null; reconciled?: boolean }[];
+  splitLines?: { id: string | null; amount: number; notes: string | null; payeeId: string | null; categoryId: string | null; reconciled?: boolean; transferId?: string | null }[];
 };
 
 /** Optional limits on a read: a recent window instead of the whole account. */

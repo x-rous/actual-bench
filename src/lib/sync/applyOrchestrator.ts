@@ -684,7 +684,7 @@ async function validateAndPrepare(
         eligible.push(toRepairCandidate(item, "repair"));
       } else if (includeRepairs && isExactDupAutoMap(item)) {
         eligible.push(toRepairCandidate(item, "map"));
-      } else if (includeUpdates && isEligibleUpdate(item)) {
+      } else if (includeUpdates && isEligibleUpdate(item) && !hasFlag(item, "transfer_may_duplicate")) {
         eligible.push(toMutateCandidate(item, "update"));
       }
     }
@@ -1189,9 +1189,10 @@ async function recordMapping(
   }, item.id);
 }
 
-/** The planned row has a transfer payee, so creating it makes Actual add the other leg. */
+/** The planned row, or a line of its split, has a transfer payee, so creating it makes Actual add the other leg. */
 function createsTransfer(payload: JsonObject | null | undefined): boolean {
-  return typeof payload?.transferAccountId === "string" && payload.transferAccountId !== "";
+  const isTransfer = (row: unknown) => typeof (row as { transferAccountId?: unknown } | null)?.transferAccountId === "string" && (row as { transferAccountId: string }).transferAccountId !== "";
+  return isTransfer(payload) || (Array.isArray(payload?.subtransactions) && payload.subtransactions.some(isTransfer));
 }
 
 /** A charged rate may only be recorded for a row that really holds that amount. */

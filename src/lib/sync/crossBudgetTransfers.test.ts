@@ -14,7 +14,7 @@ import { resolveTargetPayee, transferPayeeAccount } from "./entityResolution";
 import { buildPlanConfig, flowPlanHash } from "./flowConfig";
 import { expandSourceTransactions } from "./sourceItems";
 import { planExpandedItems } from "./syncPlanner";
-import { hashTargetFields } from "./targetFingerprint";
+import { hashTargetFields, targetBaseline } from "./targetFingerprint";
 import type { ActualBenchTransport, SyncAppliedSnapshot, SyncSourceTransaction } from "@/lib/actual/transport";
 import type { JsonObject, SyncFlow, SyncFlowRun, SyncFlowRunItem, SyncMapping } from "@/lib/app-db/types";
 import type { BrowserApiConnection } from "@/store/connection";
@@ -322,6 +322,90 @@ describe("writing a linked transfer", () => {
     const calls = updateTransactionForSync.mock.calls.map(([call]) => call);
     expect(calls).toHaveLength(3);
     expect(calls[2]).toEqual({ transactionId: "T1", accountId: "ta", date: "2026-11-20", amount: 1000000, notes: "n", returnApplied: false });
+  });
+});
+
+describe("a split whose lines are transfers", () => {
+  const lines = [
+    { id: "c1", amount: 1000000, notes: null, payeeId: "to-aed", categoryId: null, reconciled: false, transferId: "L1" },
+    { id: "c2", amount: 10000, notes: null, payeeId: "cafe", categoryId: null, reconciled: false, transferId: null },
+  ];
+  const split = { id: "S1", amount: 1010000, date: "2026-11-20", cleared: false, categoryId: null, payeeId: null, notes: null, transferId: null, isParent: true, splitLines: lines };
+  const baseline = targetBaseline(split);
+  const transportWith = (otherReconciled: boolean) => {
+    const deleteTransactionForSync = jest.fn(async () => {});
+    const updateTransactionForSync = jest.fn(async () => null);
+    const transport = {
+      listTransactionsForSync: async ({ accountId }: { accountId: string }) =>
+        accountId === "aed"
+          ? [txn("L1", { accountId: "aed", amount: -1000000, payeeId: "to-aud", transferId: "c1", reconciled: otherReconciled })]
+          : [{ ...txn("S1", { accountId: "ta", amount: 1010000, payeeId: null as never, isParent: true }), splitLines: lines }],
+      getPayees: async () => [{ id: "to-aed", name: "AED Current", transferAccountId: "aed" }],
+      deleteTransactionForSync,
+      updateTransactionForSync,
+    } as unknown as ActualBenchTransport;
+    return { transport, deleteTransactionForSync, updateTransactionForSync };
+  };
+  const input = (ownsTransferLeg: boolean, payload: JsonObject = {}) => ({ itemId: "i", targetId: "S1", expectedTargetFingerprint: baseline, payload, sourceFingerprint: "new", ownsTransferLeg });
+
+  it("deletes only a split this sync made, and not once a line's other leg is reconciled", async () => {
+    const owned = transportWith(false);
+    expect((await adapter.deleteBatch!(owned.transport, flow(), [input(true)]))[0].outcome).toBe("deleted");
+
+    const reconciled = transportWith(true);
+    const [held] = await adapter.deleteBatch!(reconciled.transport, flow(), [input(true)]);
+    expect(held).toMatchObject({ outcome: "skipped", mappingPatch: { status: "source_missing" } });
+    expect(held.message).toContain("reconciled");
+    expect(reconciled.deleteTransactionForSync).not.toHaveBeenCalled();
+
+    const external = transportWith(false);
+    const [kept] = await adapter.deleteBatch!(external.transport, flow(), [input(false)]);
+    expect(kept).toMatchObject({ outcome: "skipped", mappingPatch: { status: "source_missing" } });
+    expect(external.deleteTransactionForSync).not.toHaveBeenCalled();
+  });
+
+  it("does not rewrite a split's lines when a line's other leg is reconciled", async () => {
+    const { transport, updateTransactionForSync } = transportWith(true);
+    const payload = { date: "2026-11-20", amount: 1020000, notes: null, subtransactions: [{ amount: 1010000, notes: null }, { amount: 10000, notes: null }] };
+    const [result] = await adapter.updateBatch!(transport, flow(), [input(true, payload)]);
+    expect(result).toMatchObject({ outcome: "skipped", mappingPatch: { sourceFingerprint: "new" } });
+    expect(updateTransactionForSync).not.toHaveBeenCalled();
+  });
+});
+
+describe("an update that turns a row into a transfer", () => {
+  it("is flagged, and held like a new transfer when the other side is already there", async () => {
+    const plainRow = target({ transactions: [{ id: "T1", date: "2026-11-20", amount: 1025000, payeeName: null, categoryId: null, transferId: null }] });
+    const [planned] = plan([txn("a")], plainRow, [mapping("txn:a", "before", "T1")]).items;
+    expect(planned.action).toBe("update");
+    expect(planned.flags).toContain("creates_transfer");
+    expect(planned.plannedTargetPayload).toMatchObject({ payeeId: "to-aed", transferAccountId: "aed" });
+    expect(planned.message).toContain("becomes a transfer to AED Current");
+
+    const t = { listTransactionsForSync: jest.fn(async () => [txn("r", { accountId: "aed", payeeName: null, amount: -1025000 })]) };
+    const reviewed = await adapter.reviewPlan!(t as unknown as ActualBenchTransport, flow(), { flowId: "f", counts: {}, items: [planned] });
+    expect(reviewed.items[0].selectedForApply).toBe(false);
+    expect(reviewed.items[0].flags).toContain("transfer_may_duplicate");
+  });
+
+  it("is left out of a bulk apply when held", async () => {
+    const saved = flow({}, { fxEnabled: false });
+    const run: SyncFlowRun = { id: "r", flowId: "f", status: "draft_preview", startedAt: new Date().toISOString(), finishedAt: null, summary: envelope({ flowPlanHash: flowPlanHash(saved) }), error: null, createdByTrigger: "manual_preview", sourceSnapshotSummary: null, targetSnapshotSummary: null, counts: null };
+    const held: SyncFlowRunItem = {
+      id: "i", runId: "r", flowId: "f", sequence: 0, sourceItemRef: envelope({}), targetItemRef: envelope({ targetTransactionId: "T1" }), status: "planned", message: null,
+      sourceEntityType: "transaction", sourceItemKey: "txn:a", sourceTransactionId: "a", sourceSplitId: null, sourceFingerprint: "fp",
+      plannedAction: "update", classification: "source_changed_since_sync", duplicateConfidence: "none", warnings: envelope({ flags: ["creates_transfer", "transfer_may_duplicate"] }), errors: null, selectedForApply: false,
+      applyState: "pending", createdTargetTransactionId: null, createdTargetMarker: null, createdAt: "", updatedAt: null,
+      plannedTargetPayload: envelope({ accountId: "ta", date: "2026-11-20", amount: 1025000, payeeId: "to-aed", payeeName: null, categoryId: null, notes: null, cleared: false, importedId: "m", transferAccountId: "aed" }),
+    };
+    const store = {
+      loadRun: async () => run, loadRunItems: async () => [held], loadFlow: async () => saved, getMappingBySource: async () => null,
+      createMapping: async () => {}, updateMapping: async () => {}, updateRunStatus: async () => {},
+      updateRunItemStatus: async () => {}, persistApplyFailure: async () => {}, persistFxSnapshot: async () => {},
+    } as unknown as ApplyStore;
+    const t = { listTransactionsForSync: async () => [] } as unknown as ActualBenchTransport;
+    const bulk = await applySyncRun({ runId: "r", targetConnection: connection("T") }, { transport: { openTransport: async () => t }, store });
+    expect(bulk.error?.code).toBe("no_eligible_items");
   });
 });
 

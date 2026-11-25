@@ -506,15 +506,23 @@ function planSourceItem(
       const upPayload: PlannedTargetPayload = linked
         ? { ...builtUpdate, keepTargetPayee: true, transferAccountId: null, linkedTransfer: mapping.ownsTransferLeg ? "owned" : "external" }
         : { ...builtUpdate, keepTargetPayee: !!item.isTransfer };
+      // Giving a plain row a transfer payee makes Actual add the other leg, so it gets
+      // the same check for a row already on that side as a new transfer.
+      const becomesTransfer = !linked && !upPayload.keepTargetPayee && !!upPayload.transferAccountId;
+      const flags: SyncPlanFlag[] = ["source_changed_since_sync", "source_changed_update"];
+      if (linked) flags.push("linked_transfer");
+      if (becomesTransfer) flags.push("creates_transfer");
       return baseItem(item, {
         classification: "source_changed_since_sync",
         action: "update",
-        flags: linked ? ["source_changed_since_sync", "source_changed_update", "linked_transfer"] : ["source_changed_since_sync", "source_changed_update"],
+        flags,
         selectedForApply: true,
         plannedTargetPayload: upPayload,
         targetTransactionId: mapping.targetTransactionId,
         message: !linked
-          ? "Source changed since last sync; target will be updated to match."
+          ? becomesTransfer
+            ? `Source changed since last sync; target will be updated to match. Its payee becomes a transfer to ${upPayload.transferAccountName ?? "the other account"}.`
+            : "Source changed since last sync; target will be updated to match."
           : mapping.ownsTransferLeg
             ? "Source changed since last sync. Both legs of this transfer will be updated to match."
             : "Source changed since last sync. This transfer is linked to your own row in another account, which holds the real amount, so it is left unchanged.",

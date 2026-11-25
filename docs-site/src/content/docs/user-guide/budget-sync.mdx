@@ -195,7 +195,7 @@ A row cannot transfer to the account it is synced into; its payee is left empty.
 already has a row that looks like the other side (within three days and 5% of the amount), the transfer
 is not selected, and **Select all** and automatic runs skip it, so the move is not counted twice. Pick
 it by hand only if the two are different. The same check covers a split line with a transfer payee and
-a transfer being recreated after it was deleted from the main budget. If the other account cannot be
+a transfer being recreated after it was deleted from the main budget, and a correction that gives an already synced row a transfer payee. A split whose lines are transfers is changed or deleted only if sync created it, and not once one of those transfers is reconciled in its other account. If the other account cannot be
 read, the transfer is not selected either. A transfer keeps the rate it was recorded with, even on a
 flow that follows rate changes.
 

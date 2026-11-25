@@ -94,6 +94,7 @@ async function readTargetRows(
               payeeId: line.payeeId,
               categoryId: line.categoryId,
               reconciled: line.reconciled,
+              transferId: line.transferId ?? null,
             }))
           : undefined,
       },
@@ -310,6 +311,40 @@ async function linkedTransferDeleteProblem(
   return null;
 }
 
+/**
+ * Why a split whose lines are transfers must not be changed or deleted, or null
+ * when it may. Changing a line's amount or notes changes its other leg, and
+ * deleting the split deletes them all. Only a split this sync created with those
+ * transfers is touched, and not once any other leg is reconciled.
+ */
+async function splitTransferProblem(
+  transport: ActualBenchTransport,
+  input: AdapterMutateInput,
+  live: LiveRow,
+  payeeAccounts: () => Promise<Map<string, string>>,
+  mode: "update" | "delete"
+): Promise<AdapterMutateResult | null> {
+  const lines = (live.splitLines ?? []).filter((line) => line.transferId);
+  if (lines.length === 0) return null;
+  const left = mode === "delete" ? "so every row stays. It is no longer synced." : "left unchanged.";
+  const patch = mode === "delete" ? { status: "source_missing" as const } : input.sourceFingerprint ? { sourceFingerprint: input.sourceFingerprint } : undefined;
+  if (!input.ownsTransferLeg) {
+    return settledSkip(input, `A line of this split is a transfer this sync did not create, ${left}`, patch);
+  }
+  for (const line of lines) {
+    const other = await readOtherLeg(transport, payeeAccounts, { ...live, payeeId: line.payeeId, transferId: line.transferId ?? null });
+    if (!other) {
+      return { itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: `A transfer in this split could not be found in its other account; ${mode === "delete" ? "not deleted" : "left unchanged"}.` };
+    }
+    if (other.row.reconciled) return settledSkip(input, `A transfer in this split is reconciled in its other account, ${left}`, patch);
+  }
+  return null;
+}
+
+/** A split's transfer lines and their legs, to tell whether they changed between reads. */
+const transferLinesOf = (row: LiveRow) =>
+  (row.splitLines ?? []).filter((line) => line.transferId).map((line) => `${line.id}:${line.transferId}`).sort().join(",");
+
 /** A queued update without its category, for a row whose category is already set. */
 function withoutCategory<T extends { fields: BatchTransactionUpdate }>(write: T): T {
   const fields = { ...write.fields };
@@ -490,7 +525,7 @@ export const transactionAdapter: SyncKindAdapter = {
     type Leg = { item: SyncPlannedItem; accountId: string; accountName: string | null; date: string; amount: number };
     const legs: Leg[] = plan.items.flatMap((item) => {
       const payload = item.plannedTargetPayload;
-      if (item.action !== "create" || !item.flags.includes("creates_transfer") || !payload) return [];
+      if ((item.action !== "create" && item.action !== "update") || !item.flags.includes("creates_transfer") || !payload) return [];
       const lines = payload.transferAccountId ? [payload] : (payload.subtransactions ?? []).filter((line) => line.transferAccountId);
       return lines.map((line) => ({ item, accountId: line.transferAccountId as string, accountName: line.transferAccountName ?? null, date: payload.date, amount: line.amount }));
     });
@@ -689,6 +724,14 @@ export const transactionAdapter: SyncKindAdapter = {
             results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: problem });
             continue;
           }
+          if (live.splitLines?.some((line) => line.transferId)) {
+            readIsOld = true;
+            const legProblem = await splitTransferProblem(transport, input, live, payeeAccounts, "update");
+            if (legProblem) {
+              results.push(legProblem);
+              continue;
+            }
+          }
         }
         // Resolved first so the baseline below can state exactly what was written.
         const payeeName = (payload.payeeName as string | null) ?? null;
@@ -709,7 +752,7 @@ export const transactionAdapter: SyncKindAdapter = {
           }
           const problem = !fresh
             ? "Target was edited or removed outside sync; left unchanged."
-            : fresh.transferId || !targetMatchesBaseline(fresh, input.expectedTargetFingerprint)
+            : fresh.transferId || !targetMatchesBaseline(fresh, input.expectedTargetFingerprint) || transferLinesOf(fresh) !== transferLinesOf(live)
               ? "Target was edited outside sync; left unchanged."
               : splitUpdateProblem(fresh, plannedLines);
           if (problem || !fresh) {
@@ -853,9 +896,11 @@ export const transactionAdapter: SyncKindAdapter = {
         results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "No sync baseline for this target; not deleted." });
       } else if (!targetMatchesBaseline(live, input.expectedTargetFingerprint)) {
         results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "Target was edited outside sync; not deleted." });
-      } else if (live.transferId) {
+      } else if (live.transferId || live.splitLines?.some((line) => line.transferId)) {
         // Deleting one leg of a linked transfer deletes the other account's row too.
-        const problem = await linkedTransferDeleteProblem(transport, input, live, payeeAccounts);
+        const problem = live.transferId
+          ? await linkedTransferDeleteProblem(transport, input, live, payeeAccounts)
+          : await splitTransferProblem(transport, input, live, payeeAccounts, "delete");
         if (problem) results.push(problem);
         else toDelete.push(input);
       } else {
@@ -900,7 +945,11 @@ export const transactionAdapter: SyncKindAdapter = {
               continue;
             }
             // The other leg may have been reconciled since the first check.
-            const legProblem = current?.transferId ? await linkedTransferDeleteProblem(transport, input, current, payeeAccounts) : null;
+            const legProblem = !current
+              ? null
+              : current.transferId
+                ? await linkedTransferDeleteProblem(transport, input, current, payeeAccounts)
+                : await splitTransferProblem(transport, input, current, payeeAccounts, "delete");
             if (legProblem) {
               results.push(legProblem);
               continue;
