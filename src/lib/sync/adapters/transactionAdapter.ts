@@ -37,7 +37,7 @@ import type {
   SyncTargetTransactionInput,
 } from "@/lib/actual/transport";
 import type { JsonObject, SyncCapabilitySet, SyncFlow, SyncMapping } from "@/lib/app-db/types";
-import type { PlannedTargetPayload, SyncPlannedItem, SyncPlannerTargetSnapshot, SyncPlanResult } from "../plannedChanges";
+import type { SyncPlannedItem, SyncPlannerTargetSnapshot, SyncPlanResult } from "../plannedChanges";
 
 /**
  * Transaction data-type adapter for the unified sync engine (RD-053 behavior,
@@ -194,19 +194,23 @@ type LiveRow = AdapterLiveTarget & { importedId: string | null };
 
 /**
  * The other leg of a linked transfer, read from its own account. The leg's account
- * is the one its transfer payee points at. Null when it cannot be found.
+ * is the one its transfer payee points at. Its date can differ from this leg's, so
+ * a miss on that day reads the whole account. Null when it cannot be found.
  */
 async function readOtherLeg(
   transport: ActualBenchTransport,
   payeeAccounts: () => Promise<Map<string, string>>,
-  live: LiveRow,
-  date: string
+  live: LiveRow
 ): Promise<{ accountId: string; row: LiveRow } | null> {
   const accountId = live.payeeId ? (await payeeAccounts()).get(live.payeeId) : undefined;
   if (!accountId || !live.transferId) return null;
-  const row = (await readTargetRows(transport, accountId, date)).get(live.transferId);
+  const row = (await readTargetRows(transport, accountId, live.date)).get(live.transferId)
+    ?? (await readTargetRows(transport, accountId)).get(live.transferId);
   return row ? { accountId, row } : null;
 }
+
+const STOPPED = "Apply stopped before this row; left unchanged.";
+const EDITED_OUTSIDE = "Target was edited outside sync; left unchanged.";
 
 const TRANSFER_MATCH_DAYS = 3;
 const TRANSFER_MATCH_BPS = 500;
@@ -250,20 +254,36 @@ async function updateLinkedTransfer(
   const date = String(payload.date ?? live.date);
   const amount = Number(payload.amount ?? live.amount);
   const notes = (payload.notes as string | null) ?? null;
-  const other = await readOtherLeg(transport, payeeAccounts, live, live.date);
-  if (!other) return { itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "The transfer's other leg could not be found; left unchanged." };
+  const skip = (message: string): AdapterMutateResult => ({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message });
+  const other = await readOtherLeg(transport, payeeAccounts, live);
+  if (!other) return skip("The transfer's other leg could not be found; left unchanged.");
   if (other.row.reconciled) return settledSkip(input, "The transfer's other leg is reconciled; left unchanged.", seen);
-  if (shouldStop?.()) return { itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "Apply stopped before this row; left unchanged." };
+  // Reading the other leg waited, so the target is read again just before its write.
+  const fresh = (await readTargetRows(transport, targetAccountId, live.date)).get(input.targetId);
+  if (!fresh || fresh.transferId !== live.transferId || !targetMatchesBaseline(fresh, input.expectedTargetFingerprint as string)) {
+    return skip(EDITED_OUTSIDE);
+  }
+  if (shouldStop?.()) return skip(STOPPED);
   // The payee stays: it is what makes the row a transfer. The category is the target's.
   await transport.updateTransactionForSync({ transactionId: input.targetId, accountId: targetAccountId, date, amount, notes, returnApplied: false });
-  if (date !== live.date) {
-    await transport.updateTransactionForSync({ transactionId: live.transferId as string, accountId: other.accountId, date, amount: -amount, returnApplied: false });
+  if (date !== fresh.date) {
+    try {
+      await transport.updateTransactionForSync({ transactionId: live.transferId as string, accountId: other.accountId, date, amount: -amount, returnApplied: false });
+    } catch (err) {
+      // Put the target back, so both legs match again and Retry finds the row as sync left it.
+      try {
+        await transport.updateTransactionForSync({ transactionId: input.targetId, accountId: targetAccountId, date: fresh.date, amount: fresh.amount, notes: fresh.notes, returnApplied: false });
+      } catch {
+        throw new Error(`The transfer was only partly updated and could not be put back. Check both legs in Actual. ${describeSyncError(err, "")}`.trim());
+      }
+      throw err;
+    }
   }
   return {
     itemId: input.itemId,
     outcome: "updated",
     targetId: input.targetId,
-    targetFingerprint: targetBaseline({ ...live, date, amount, notes }),
+    targetFingerprint: targetBaseline({ ...fresh, date, amount, notes }),
     message: "Both legs of the transfer updated.",
   };
 }
@@ -283,8 +303,10 @@ async function linkedTransferDeleteProblem(
   if (!input.ownsTransferLeg) {
     return settledSkip(input, "This transfer is linked to your own row in another account, so both rows stay. It is no longer synced.", stop);
   }
-  const other = await readOtherLeg(transport, payeeAccounts, live, live.date);
-  if (other?.row.reconciled) return settledSkip(input, "The transfer's other leg is reconciled, so both rows stay. It is no longer synced.", stop);
+  const other = await readOtherLeg(transport, payeeAccounts, live);
+  // Deleting removes the other leg too, so it must be found and checked first.
+  if (!other) return { itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "The transfer's other leg could not be found; not deleted." };
+  if (other.row.reconciled) return settledSkip(input, "The transfer's other leg is reconciled, so both rows stay. It is no longer synced.", stop);
   return null;
 }
 
@@ -463,37 +485,50 @@ export const transactionAdapter: SyncKindAdapter = {
    * unselected and the message says where to link the two instead.
    */
   async reviewPlan(transport: ActualBenchTransport, flow: SyncFlow, plan: SyncPlanResult): Promise<SyncPlanResult> {
-    const planned = plan.items.filter((item) => item.action === "create" && item.flags.includes("creates_transfer") && item.plannedTargetPayload?.transferAccountId);
-    if (planned.length === 0) return plan;
     void flow;
-    const byAccount = new Map<string, SyncPlannedItem[]>();
-    for (const item of planned) {
-      const accountId = item.plannedTargetPayload?.transferAccountId as string;
-      byAccount.set(accountId, [...(byAccount.get(accountId) ?? []), item]);
-    }
-    const used = new Set<string>();
+    // Each transfer a create would add: the row itself, or a grouped split's lines.
+    type Leg = { item: SyncPlannedItem; accountId: string; accountName: string | null; date: string; amount: number };
+    const legs: Leg[] = plan.items.flatMap((item) => {
+      const payload = item.plannedTargetPayload;
+      if (item.action !== "create" || !item.flags.includes("creates_transfer") || !payload) return [];
+      const lines = payload.transferAccountId ? [payload] : (payload.subtransactions ?? []).filter((line) => line.transferAccountId);
+      return lines.map((line) => ({ item, accountId: line.transferAccountId as string, accountName: line.transferAccountName ?? null, date: payload.date, amount: line.amount }));
+    });
+    if (legs.length === 0) return plan;
+    const byAccount = new Map<string, Leg[]>();
+    for (const leg of legs) byAccount.set(leg.accountId, [...(byAccount.get(leg.accountId) ?? []), leg]);
     const held = new Map<SyncPlannedItem, string>();
-    for (const [accountId, items] of byAccount) {
-      const dates = items.map((item) => item.plannedTargetPayload?.date as string).sort();
-      const rows = (await transport.listTransactionsForSync({
-        accountId,
-        startDate: shiftDays(dates[0], -TRANSFER_MATCH_DAYS),
-        endDate: shiftDays(dates[dates.length - 1], TRANSFER_MATCH_DAYS),
-        resolveNames: false,
-      })).filter((row) => !row.transferId && !row.isParent && !row.isChild && row.amount !== 0);
-      for (const item of items) {
-        const payload = item.plannedTargetPayload as PlannedTargetPayload;
-        // The other leg Actual would add carries the opposite amount.
-        const expected = -payload.amount;
+    const hold = (item: SyncPlannedItem, message: string) => { if (!held.has(item)) held.set(item, message); };
+    for (const [accountId, accountLegs] of byAccount) {
+      const dates = accountLegs.map((leg) => leg.date).sort();
+      let rows;
+      try {
+        rows = (await transport.listTransactionsForSync({
+          accountId,
+          startDate: shiftDays(dates[0], -TRANSFER_MATCH_DAYS),
+          endDate: shiftDays(dates[dates.length - 1], TRANSFER_MATCH_DAYS),
+          resolveNames: false,
+        })).filter((row) => !row.transferId && !row.isParent && !row.isChild && row.amount !== 0);
+      } catch {
+        // Unchecked, a transfer could count the move twice.
+        for (const leg of accountLegs) {
+          hold(leg.item, `${leg.accountName ?? "The other account"} could not be read to check for its other side, so it is not selected. Preview again, or select it if you know it is not recorded there.`);
+        }
+        continue;
+      }
+      for (const leg of accountLegs) {
+        // The other leg Actual would add carries the opposite amount. A row that
+        // matches several transfers holds every one of them.
+        const expected = -leg.amount;
+        if (expected === 0) continue;
         const match = rows
-          .filter((row) => !used.has(row.id) && Math.sign(row.amount) === Math.sign(expected))
-          .map((row) => ({ row, days: dayGap(row.date, payload.date), bps: Math.round((Math.abs(Math.abs(row.amount) - Math.abs(expected)) * 10_000) / Math.abs(expected)) }))
+          .filter((row) => Math.sign(row.amount) === Math.sign(expected))
+          .map((row) => ({ row, days: dayGap(row.date, leg.date), bps: Math.round((Math.abs(Math.abs(row.amount) - Math.abs(expected)) * 10_000) / Math.abs(expected)) }))
           .filter((entry) => entry.days <= TRANSFER_MATCH_DAYS && entry.bps <= TRANSFER_MATCH_BPS)
           .sort((a, b) => a.bps - b.bps || a.days - b.days)[0];
         if (!match) continue;
-        used.add(match.row.id);
-        const name = payload.transferAccountName ?? "The other account";
-        held.set(item, `${name} already has ${formatMinor(match.row.amount)} on ${match.row.date}, which looks like the other side of this transfer. Creating it would count the move twice, so it is not selected. Select it only if they are different, or link the two in the currency panel after syncing.`);
+        const name = leg.accountName ?? "The other account";
+        hold(leg.item, `${name} already has ${formatMinor(match.row.amount)} on ${match.row.date}, which looks like the other side of this transfer. Creating it would count the move twice, so it is not selected. Select it only if they are different, or link the two in the currency panel after syncing.`);
       }
     }
     if (held.size === 0) return plan;
@@ -862,6 +897,16 @@ export const transactionAdapter: SyncKindAdapter = {
                     : null;
             if (problem) {
               results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: problem });
+              continue;
+            }
+            // The other leg may have been reconciled since the first check.
+            const legProblem = current?.transferId ? await linkedTransferDeleteProblem(transport, input, current, payeeAccounts) : null;
+            if (legProblem) {
+              results.push(legProblem);
+              continue;
+            }
+            if (options?.shouldStop?.()) {
+              results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "Apply stopped before this row; not deleted." });
               continue;
             }
           }

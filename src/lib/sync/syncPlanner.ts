@@ -360,6 +360,7 @@ function buildCreatePayload(
       payeeId: childPayee.payeeId,
       payeeName: childPayee.payeeName,
       notes: line.transferId ? transferNote(line.payeeName, line.notes) : line.notes,
+      ...(childPayee.transferAccountId ? { transferAccountId: childPayee.transferAccountId, transferAccountName: childPayee.transferName } : {}),
     };
   }) ?? null;
   // With FX, converting each child independently can round the children so they
@@ -378,6 +379,23 @@ function buildCreatePayload(
     ? { ...built, transferAccountId: payee.transferAccountId, transferAccountName: payee.transferName }
     : built;
   return { payee, category, importedId, payload };
+}
+
+/** The accounts a create would add transfers to: its own, or its split lines'. */
+function transferAccountNames(payload: PlannedTargetPayload): string[] {
+  const lines = payload.transferAccountId ? [payload] : (payload.subtransactions ?? []).filter((line) => line.transferAccountId);
+  return [...new Set(lines.map((line) => line.transferAccountName ?? "the other account"))];
+}
+
+/** The preview text for a create that adds transfers, or null. */
+function transferCreateText(payload: PlannedTargetPayload, fxRate: string | null): string | null {
+  const names = transferAccountNames(payload);
+  if (names.length === 0) return null;
+  const to = names.join(", ");
+  // An amount can be set only for a single row; a split's lines use the rate.
+  return payload.transferAccountId && fxRate
+    ? `Creates a transfer to ${to}. Set the amount ${to} recorded, or it uses this rate.`
+    : `Creates a transfer to ${to}.`;
 }
 
 /** True when this item's split shape differs from how the split was first synced. */
@@ -411,9 +429,12 @@ function planSourceItem(
   // A synced row keeps the rate it was recorded with. One the user set keeps it
   // always; any other keeps it while its date stands, unless the flow opted into
   // following rate changes. A note edit must not re-convert the amount.
-  const recorded = needsFx ? input.manualFxRates?.get(mappingByKey.get(item.itemKey)?.targetTransactionId ?? "") : undefined;
+  const mappedTargetId = mappingByKey.get(item.itemKey)?.targetTransactionId ?? "";
+  const recorded = needsFx ? input.manualFxRates?.get(mappedTargetId) : undefined;
   const manualRate = recorded?.isManual !== false ? recorded : undefined;
-  const lockedRate = recorded && !manualRate && recorded.requestedDate === item.date && !config.fxUpdateOnRateChange ? recorded : undefined;
+  // A transfer moved a fixed amount, so it never follows a newer market rate.
+  const followsRates = config.fxUpdateOnRateChange && !context.targetById.get(mappedTargetId)?.transferId;
+  const lockedRate = recorded && !manualRate && recorded.requestedDate === item.date && !followsRates ? recorded : undefined;
   const keptRate = manualRate ?? lockedRate;
   const fxInfo: FxRateInfo | null = !needsFx
     ? null
@@ -449,13 +470,15 @@ function planSourceItem(
       if (fxPending) return fxPendingItem(item, fxPendingReason);
       const { importedId, payload } = buildCreatePayload(item, input, fxInfo);
       const canRecreate = canWriteMarker && !!importedId;
+      // A recreated transfer gets the same check for a row already on its other side.
+      const transferText = canRecreate ? transferCreateText(payload, fxRate) : null;
       return baseItem(item, {
         classification: "target_missing",
         action: canRecreate ? "create" : "skip",
-        flags: ["target_missing_review"],
+        flags: transferText ? ["target_missing_review", "creates_transfer"] : ["target_missing_review"],
         plannedTargetPayload: canRecreate ? payload : null,
         targetTransactionId: mapping.targetTransactionId,
-        message: "Deleted from the target budget. Select it to recreate, or stop syncing it.",
+        message: ["Deleted from the target budget. Select it to recreate, or stop syncing it.", transferText].filter(Boolean).join(" · "),
       });
     }
     if (mapping.sourceFingerprint === item.fingerprint || item.legacyFingerprints?.includes(mapping.sourceFingerprint)) {
@@ -596,10 +619,9 @@ function planSourceItem(
   if (payee.leftEmpty) flags.push("missing_payee_left_empty");
   if (category.leftEmpty) flags.push("missing_category_left_empty");
   if (item.isTransfer) flags.push("source_transfer");
-  if (payload.transferAccountId) flags.push("creates_transfer");
-  const transferText = payload.transferAccountId
-    ? `Creates a transfer to ${payee.transferName}.${fxRate ? ` Set the amount ${payee.transferName} recorded, or it uses this rate.` : ""}`
-    : payee.note;
+  const createsTransfer = transferAccountNames(payload).length > 0;
+  if (createsTransfer) flags.push("creates_transfer");
+  const transferText = createsTransfer ? transferCreateText(payload, fxRate) : payee.note;
 
   return baseItem(item, {
     classification: "new",

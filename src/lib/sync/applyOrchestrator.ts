@@ -868,8 +868,11 @@ async function applyCreateBatch(
         if (readFx(payloadJson)?.isManual) assertTargetHoldsAmount(ctx, payloadJson, markerHit);
         const liveHit = ctx.liveTargets?.get(markerHit);
         const hitBaseline = liveHit ? targetBaseline(liveHit) : null;
-        if (replaces) await repointMapping(store, replaces, item, markerHit, hitBaseline, createsTransfer(payloadJson));
-        else await recordMapping(store, ctx.config, item, markerHit, marker, hitBaseline, createsTransfer(payloadJson));
+        // Only this item's own earlier write proves the sync made the other leg: a
+        // row the sync wrote may since have been linked to the user's own row.
+        const owns = item.createdTargetTransactionId === markerHit && !!liveHit?.transferId && createsTransfer(payloadJson);
+        if (replaces) await repointMapping(store, replaces, item, markerHit, hitBaseline, owns);
+        else await recordMapping(store, ctx.config, item, markerHit, marker, hitBaseline, owns);
         if (readFx(payloadJson)?.isManual) await saveFxSnapshot(store, payloadJson, markerHit, item.id);
         else await restoreFxRecord(store, payloadJson, markerHit, liveHit, item.id);
         await store.updateRunItemStatus(item.id, {
@@ -1348,8 +1351,10 @@ async function repairOneItem(
 
     // The row as it stands is the baseline, so later corrections can reach it.
     const live = ctx.liveTargets?.get(targetId);
-    // The marker says this sync wrote the row, so a transfer it is was this sync's.
-    await recordMapping(store, ctx.config, item, targetId, marker, live ? targetBaseline(live) : null, !!live?.transferId && createsTransfer(eligible.payloadJson));
+    // The marker shows this sync wrote the row, not who made its other leg: it may
+    // have been linked to the user's own row. Treated as theirs, it is never
+    // changed or deleted from here.
+    await recordMapping(store, ctx.config, item, targetId, marker, live ? targetBaseline(live) : null);
     await restoreFxRecord(store, eligible.payloadJson, targetId, live, item.id);
     await store.updateRunItemStatus(item.id, {
       status: "repaired",

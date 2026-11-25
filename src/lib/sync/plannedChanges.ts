@@ -145,6 +145,10 @@ export type PlannedSplitChild = {
   payeeId: string | null;
   payeeName: string | null;
   notes: string | null;
+  /** The line's payee is a transfer payee: creating the split adds a transfer to this account. */
+  transferAccountId?: string | null;
+  /** That account's name, for messages. */
+  transferAccountName?: string | null;
 };
 
 /**

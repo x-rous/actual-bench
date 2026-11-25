@@ -194,7 +194,10 @@ and deleting the source row removes both. A transfer whose other leg is reconcil
 A row cannot transfer to the account it is synced into; its payee is left empty. If the other account
 already has a row that looks like the other side (within three days and 5% of the amount), the transfer
 is not selected, and **Select all** and automatic runs skip it, so the move is not counted twice. Pick
-it by hand only if the two are different.
+it by hand only if the two are different. The same check covers a split line with a transfer payee and
+a transfer being recreated after it was deleted from the main budget. If the other account cannot be
+read, the transfer is not selected either. A transfer keeps the rate it was recorded with, even on a
+flow that follows rate changes.
 
 If you record both sides yourself instead, leave the synced row without a category and link the two from
 [Currency position](../fx-rates/#currency-position). A transfer linked that way keeps the amount your

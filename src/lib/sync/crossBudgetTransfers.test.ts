@@ -132,6 +132,54 @@ describe("planning a transfer between the budgets", () => {
     });
     expect(result.items[0].classification).toBe("already_synced");
   });
+
+  it("keeps a transfer's recorded rate when only its notes change, even when the flow follows rates", () => {
+    const [item] = expandSourceTransactions([txn("a", { notes: "rent" })], { groupSplits: false });
+    const linked = target({ transactions: [{ id: "T1", date: "2026-11-20", amount: 1025000, payeeName: "AED Current", categoryId: null, transferId: "L1" }] });
+    const result = planExpandedItems({
+      config: { ...config(), fxUpdateOnRateChange: true },
+      capabilities,
+      sourceItems: [item],
+      target: linked,
+      existingMappings: [mapping("txn:a", "before-notes", "T1", { ownsTransferLeg: true })],
+      fxRateByDate: new Map([["2026-11-20", { ...rate, rate: "2.6" }]]),
+      manualFxRates: new Map([["T1", { rate: "2.5", requestedDate: "2026-11-20", effectiveDate: "2026-11-20", source: "frankfurter", provider: "frankfurter", fxRateId: "r", isManual: false }]]) as never,
+    });
+    expect(result.items[0].action).toBe("update");
+    expect(result.items[0].plannedTargetPayload).toMatchObject({ amount: 1025000, notes: expect.stringContaining("rent") });
+  });
+
+  it("checks a recreated transfer for a row already on its other side", () => {
+    const [item] = expandSourceTransactions([txn("a")], { groupSplits: false });
+    const gone = target({ allTransactionIds: new Set() });
+    const [planned] = plan([txn("a")], gone, [mapping("txn:a", item.fingerprint, "T1", { ownsTransferLeg: true })]).items;
+    expect(planned).toMatchObject({ classification: "target_missing", action: "create", selectedForApply: false });
+    expect(planned.flags).toEqual(expect.arrayContaining(["target_missing_review", "creates_transfer"]));
+    expect(planned.message).toContain("Creates a transfer to AED Current");
+  });
+
+  it("marks a grouped split whose line is a transfer, so its other side is checked too", () => {
+    const split = txn("s", {
+      payeeName: "Cafe", isParent: true,
+      splitLines: [
+        { id: "l1", amount: 400000, payeeId: "p", payeeName: "AED Current", categoryId: null, categoryName: null, notes: null },
+        { id: "l2", amount: 10000, payeeId: "c", payeeName: "Cafe", categoryId: null, categoryName: null, notes: null },
+      ],
+    });
+    const [item] = planExpandedItems({
+      config: { ...config(), createTargetSplits: true },
+      capabilities,
+      sourceItems: expandSourceTransactions([split], { groupSplits: true }),
+      target: target(),
+      existingMappings: [],
+      fxRateByDate: new Map([["2026-11-20", rate]]),
+    }).items;
+    expect(item.flags).toContain("creates_transfer");
+    expect(item.plannedTargetPayload?.transferAccountId).toBeUndefined();
+    expect(item.plannedTargetPayload?.subtransactions?.[0]).toMatchObject({ payeeId: "to-aed", transferAccountId: "aed", transferAccountName: "AED Current", amount: 1000000 });
+    expect(item.message).toContain("Creates a transfer to AED Current.");
+    expect(item.message).not.toContain("Set the amount");
+  });
 });
 
 describe("payee sync", () => {
@@ -207,6 +255,74 @@ describe("writing a linked transfer", () => {
     expect(held).toMatchObject({ outcome: "skipped", mappingPatch: { status: "source_missing" } });
     expect(reconciled.deleteTransactionForSync).not.toHaveBeenCalled();
   });
+
+  /** Reads honour the date range, so an other leg on another day is missed by a one-day read. */
+  function datedTransport(otherLeg: typeof other | null, targetRows: () => (typeof leg)[] = () => [leg]) {
+    const inRange = (date: string, range: { startDate?: string; endDate?: string }) =>
+      (!range.startDate || date >= range.startDate) && (!range.endDate || date <= range.endDate);
+    const updateTransactionForSync = jest.fn<Promise<null>, [Record<string, unknown>]>(async () => null);
+    const deleteTransactionForSync = jest.fn(async () => {});
+    const transport = {
+      listTransactionsForSync: async (range: { accountId: string; startDate?: string; endDate?: string }) =>
+        (range.accountId === "aed" ? (otherLeg ? [otherLeg] : []) : targetRows().map((row) => ({ ...row, accountId: "ta", reconciled: false })))
+          .filter((row) => inRange(row.date, range)),
+      getPayees: async () => [{ id: "to-aed", name: "AED Current", transferAccountId: "aed" }],
+      updateTransactionForSync,
+      deleteTransactionForSync,
+    } as unknown as ActualBenchTransport;
+    return { transport, updateTransactionForSync, deleteTransactionForSync };
+  }
+
+  it("finds the other leg on another date before deleting, and never deletes when it cannot be found", async () => {
+    const elsewhere = datedTransport({ ...other, date: "2026-11-25", reconciled: true });
+    const [held] = await adapter.deleteBatch!(elsewhere.transport, flow(), [input({}, true)]);
+    expect(held).toMatchObject({ outcome: "skipped", mappingPatch: { status: "source_missing" } });
+    expect(elsewhere.deleteTransactionForSync).not.toHaveBeenCalled();
+
+    const missing = datedTransport(null);
+    const [kept] = await adapter.deleteBatch!(missing.transport, flow(), [input({}, true)]);
+    expect(kept).toMatchObject({ outcome: "skipped", message: "The transfer's other leg could not be found; not deleted." });
+    expect(missing.deleteTransactionForSync).not.toHaveBeenCalled();
+  });
+
+  it("checks the other leg again before each later delete", async () => {
+    const second = { ...leg, id: "T2", transferId: "L2" };
+    let reconciledNow = false;
+    const legs = (id: string) => ({ ...other, id, transferId: id === "L1" ? "T1" : "T2", reconciled: id === "L2" && reconciledNow });
+    const deleteTransactionForSync = jest.fn(async () => { reconciledNow = true; });
+    const transport = {
+      listTransactionsForSync: async ({ accountId }: { accountId: string }) =>
+        accountId === "aed" ? [legs("L1"), legs("L2")] : [leg, second].map((row) => ({ ...row, accountId: "ta", reconciled: false })),
+      getPayees: async () => [{ id: "to-aed", name: "AED Current", transferAccountId: "aed" }],
+      deleteTransactionForSync,
+    } as unknown as ActualBenchTransport;
+    const results = await adapter.deleteBatch!(transport, flow(), [input({}, true), { ...input({}, true), itemId: "j", targetId: "T2", expectedTargetFingerprint: hashTargetFields(second) }]);
+    expect(results.map((r) => r.outcome)).toEqual(["deleted", "skipped"]);
+    expect(results[1].message).toContain("reconciled");
+    expect(deleteTransactionForSync).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads the target again before writing, and skips it if it was edited meanwhile", async () => {
+    let reads = 0;
+    const { transport, updateTransactionForSync } = datedTransport(other, () => (reads++ === 0 ? [leg] : [{ ...leg, notes: "edited by hand" }]));
+    const [result] = await adapter.updateBatch!(transport, flow(), [input({ date: "2026-11-20", amount: 1050000, notes: "n" }, true)]);
+    expect(result).toMatchObject({ outcome: "skipped", message: "Target was edited outside sync; left unchanged." });
+    expect(updateTransactionForSync).not.toHaveBeenCalled();
+  });
+
+  it("puts the target back when the other leg's date cannot be moved", async () => {
+    const { transport, updateTransactionForSync } = datedTransport(other);
+    updateTransactionForSync.mockImplementation(async (call: Record<string, unknown>) => {
+      if (call.transactionId === "L1") throw new Error("server down");
+      return null;
+    });
+    const [result] = await adapter.updateBatch!(transport, flow(), [input({ date: "2026-11-21", amount: 1050000, notes: "new" }, true)]);
+    expect(result).toMatchObject({ outcome: "failed" });
+    expect(result.message).toContain("server down");
+    const calls = updateTransactionForSync.mock.calls.map(([call]) => call);
+    expect(calls).toHaveLength(3);
+    expect(calls[2]).toEqual({ transactionId: "T1", accountId: "ta", date: "2026-11-20", amount: 1000000, notes: "n", returnApplied: false });
+  });
 });
 
 describe("a transfer that may already be recorded", () => {
@@ -242,6 +358,35 @@ describe("a transfer that may already be recorded", () => {
     expect(reviewed.items[0].flags).not.toContain("transfer_may_duplicate");
   });
 
+  it("holds every transfer that matches the same row", async () => {
+    const one = planned(1000000);
+    const two = { ...one.items[0], sourceItemKey: "txn:b", sourceTransactionId: "b" };
+    const t = transport([{ amount: -1000000 }]);
+    const reviewed = await adapter.reviewPlan!(t as unknown as ActualBenchTransport, flow(), { ...one, items: [one.items[0], two] });
+    expect(reviewed.items.map((item) => item.selectedForApply)).toEqual([false, false]);
+    expect(reviewed.items.every((item) => item.flags.includes("transfer_may_duplicate"))).toBe(true);
+  });
+
+  it("holds the transfer when the other account cannot be read", async () => {
+    const t = { listTransactionsForSync: jest.fn(async () => { throw new Error("offline"); }) };
+    const reviewed = await adapter.reviewPlan!(t as unknown as ActualBenchTransport, flow(), planned(1000000));
+    expect(reviewed.items[0]).toMatchObject({ selectedForApply: false });
+    expect(reviewed.items[0].flags).toContain("transfer_may_duplicate");
+    expect(reviewed.items[0].message).toContain("AED Current could not be read");
+  });
+
+  it("checks a grouped split's transfer line", async () => {
+    const base = planned(1010000);
+    const payload = { ...base.items[0].plannedTargetPayload!, transferAccountId: undefined, transferAccountName: undefined, subtransactions: [
+      { amount: 1000000, categoryId: null, payeeId: "to-aed", payeeName: null, notes: null, transferAccountId: "aed", transferAccountName: "AED Current" },
+      { amount: 10000, categoryId: null, payeeId: "cafe", payeeName: null, notes: null },
+    ] };
+    const t = transport([{ amount: -1000000 }]);
+    const reviewed = await adapter.reviewPlan!(t as unknown as ActualBenchTransport, flow(), { ...base, items: [{ ...base.items[0], plannedTargetPayload: payload }] });
+    expect(reviewed.items[0].selectedForApply).toBe(false);
+    expect(reviewed.items[0].message).toContain("AED Current already has -10,000.00");
+  });
+
   it("is created only when picked by hand", async () => {
     const run: SyncFlowRun = { id: "r", flowId: "f", status: "draft_preview", startedAt: new Date().toISOString(), finishedAt: null, summary: envelope({ flowPlanHash: flowPlanHash(flow()) }), error: null, createdByTrigger: "manual_preview", sourceSnapshotSummary: null, targetSnapshotSummary: null, counts: null };
     const held: SyncFlowRunItem = {
@@ -271,6 +416,39 @@ describe("a transfer that may already be recorded", () => {
     expect(picked.counts.applied).toBe(1);
     // The sync created the other leg, so its mapping says so.
     expect(createMapping).toHaveBeenCalledWith(expect.objectContaining({ ownsTransferLeg: true }), "i");
+  });
+
+  it("claims a found transfer's other leg only when this item's own earlier write made it", async () => {
+    const marker = "absync:S:T:ta:txn:a";
+    const repairWith = async (createdTargetTransactionId: string | null) => {
+      const saved = flow({}, { fxEnabled: false });
+      const run: SyncFlowRun = { id: "r", flowId: "f", status: "draft_preview", startedAt: new Date().toISOString(), finishedAt: null, summary: envelope({ flowPlanHash: flowPlanHash(saved) }), error: null, createdByTrigger: "manual_preview", sourceSnapshotSummary: null, targetSnapshotSummary: null, counts: null };
+      const item: SyncFlowRunItem = {
+        id: "i", runId: "r", flowId: "f", sequence: 0, sourceItemRef: envelope({}), targetItemRef: null, status: "planned", message: null,
+        sourceEntityType: "transaction", sourceItemKey: "txn:a", sourceTransactionId: "a", sourceSplitId: null, sourceFingerprint: "fp",
+        plannedAction: "create", classification: "new", duplicateConfidence: "none", warnings: envelope({ flags: ["creates_transfer"] }), errors: null, selectedForApply: true,
+        applyState: createdTargetTransactionId ? "failed" : "pending", createdTargetTransactionId, createdTargetMarker: null, createdAt: "", updatedAt: null,
+        plannedTargetPayload: envelope({ accountId: "ta", date: "2026-11-20", amount: 1000000, payeeId: "to-aed", payeeName: null, categoryId: null, notes: null, cleared: false, importedId: marker, transferAccountId: "aed" }),
+      };
+      const createMapping = jest.fn(async () => {});
+      const store = {
+        loadRun: async () => run, loadRunItems: async () => [item], loadFlow: async () => saved, getMappingBySource: async () => null,
+        createMapping, updateMapping: async () => {}, updateRunStatus: async (_: string, patch: { status: SyncFlowRun["status"] }) => { run.status = patch.status; },
+        updateRunItemStatus: async () => {}, persistApplyFailure: async () => {}, persistFxSnapshot: async () => {},
+      } as unknown as ApplyStore;
+      const createTransactionsForSync = jest.fn();
+      const t = {
+        listTransactionsForSync: async () => [txn("T1", { accountId: "ta", amount: 1000000, payeeId: "to-aed", importedId: marker, transferId: "L1" })],
+        createTransactionsForSync,
+      } as unknown as ActualBenchTransport;
+      await applySyncRun({ runId: "r", targetConnection: connection("T"), selection: { selectedItemIds: ["i"] } }, { transport: { openTransport: async () => t }, store });
+      expect(createTransactionsForSync).not.toHaveBeenCalled();
+      return (createMapping.mock.calls[0] as unknown as [{ ownsTransferLeg?: boolean }])[0].ownsTransferLeg === true;
+    };
+    // Found on the target but not written by this item: it may be linked to the user's own row.
+    expect(await repairWith(null)).toBe(false);
+    // A Retry after this item wrote the row and its mapping failed.
+    expect(await repairWith("T1")).toBe(true);
   });
 
   it("shows held transfers as selectable but not safe, and lets an owned transfer update take the real amount", () => {
