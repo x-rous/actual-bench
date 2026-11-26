@@ -173,6 +173,7 @@ const steps = [
 		// Set once playback starts or someone picks a step; nothing watches after that.
 		let settled = false;
 		let onResize: (() => void) | undefined;
+		let sizeWatch: ResizeObserver | undefined;
 
 		const show = (step: number, focus = false) => {
 			picture.dataset.step = String(step);
@@ -196,6 +197,7 @@ const steps = [
 			window.clearTimeout(timer);
 			observer?.disconnect();
 			if (onResize) window.removeEventListener('resize', onResize);
+			sizeWatch?.disconnect();
 			picture.classList.remove('is-playing');
 		};
 
@@ -227,7 +229,9 @@ const steps = [
 			// isIntersecting is true for any sliver on screen, so the share itself
 			// decides: 40% of the picture, or most of what a short screen can show.
 			// The observer only reports at its thresholds, so the cutoff is one of
-			// them, and it is worked out again when the window changes size.
+			// them, and it is worked out again when the window or the picture
+			// changes height (a font loading or the page reflowing changes the
+			// picture without resizing the window).
 			const watch = () => {
 				observer?.disconnect();
 				if (settled) return;
@@ -249,6 +253,14 @@ const steps = [
 				resizing = window.setTimeout(watch, 150);
 			};
 			window.addEventListener('resize', onResize);
+			let lastHeight = picture.getBoundingClientRect().height;
+			sizeWatch = new ResizeObserver(() => {
+				const height = picture.getBoundingClientRect().height;
+				if (Math.abs(height - lastHeight) < 1) return;
+				lastHeight = height;
+				onResize?.();
+			});
+			sizeWatch.observe(picture);
 			watch();
 		}
 	}
