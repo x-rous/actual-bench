@@ -21,20 +21,45 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   belowChrome,
+  closeDialog,
   groupsWanted,
   nav,
+  openCockpitMonth,
   openDemo,
+  openMonthTransactions,
+  openMonthVariance,
   scrollMain,
   shooter,
   shrinkLossless,
+  storyMonth,
   withTemporaryCashPlan,
 } from "./demo-capture.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, "..", "src", "assets", "landing");
 const want = groupsWanted();
-const { shoot, card } = await shooter(outDir);
+const { shoot, card, element } = await shooter(outDir);
 const { browser, page } = await openDemo();
+
+/**
+ * The budget showcase under the hero: for each budget mode, the cockpit with
+ * the story month selected, then the two dialogs its figures open. Dialogs are
+ * photographed on their own; the page lays them over the cockpit.
+ */
+async function budgetShowcase(target, budget) {
+  const month = storyMonth();
+  const mode = budget.toLowerCase();
+  // Every category, so the grid fills the window the dialogs open over.
+  await openCockpitMonth(target, month, { expand: true });
+  await shoot(target, `budget-${mode}-cockpit`, belowChrome(1032));
+  const dialog = target.locator('[role="dialog"]').first();
+  await openMonthTransactions(target, month);
+  await element(dialog, `budget-${mode}-transactions`);
+  await closeDialog(target);
+  await openMonthVariance(target, month, budget);
+  await element(dialog, `budget-${mode}-variance`);
+  await closeDialog(target);
+}
 
 try {
   if (want("insights")) {
@@ -111,11 +136,14 @@ try {
     await shoot(page, "accounts", belowChrome(670, 1880));
   }
 
-  if (want("cockpit")) {
-    await nav(page, "Budget Cockpit", 12000);
-    await page.getByRole("button", { name: /Expand/ }).first().click();
-    await page.waitForTimeout(3000);
-    await shoot(page, "cockpit", belowChrome(712));
+  if (want("budget")) {
+    await budgetShowcase(page, "Envelope");
+    const tracking = await openDemo("Tracking");
+    try {
+      await budgetShowcase(tracking.page, "Tracking");
+    } finally {
+      await tracking.browser.close();
+    }
   }
 
   // The workbench close-ups: one strip per group, the part of the page that

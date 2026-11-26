@@ -1,0 +1,366 @@
+---
+// The Budget Cockpit, right under the hero: a year of the budget on one
+// screen, and the two drill-throughs that explain any figure in it. A visitor
+// picks the budget mode (Envelope first: most Actual budgets use it) and one
+// of three views; the dialogs open over the cockpit as they do in the app.
+//
+// Images come from docs-site/scripts/capture-landing.mjs ("budget" group):
+// the demo household's month with the most to explain, in both modes.
+import { Image } from 'astro:assets';
+
+import envelopeCockpit from '../../assets/landing/budget-envelope-cockpit.png';
+import envelopeTransactions from '../../assets/landing/budget-envelope-transactions.png';
+import envelopeVariance from '../../assets/landing/budget-envelope-variance.png';
+import trackingCockpit from '../../assets/landing/budget-tracking-cockpit.png';
+import trackingTransactions from '../../assets/landing/budget-tracking-transactions.png';
+import trackingVariance from '../../assets/landing/budget-tracking-variance.png';
+
+interface Props {
+	guide: string;
+}
+
+const { guide } = Astro.props;
+
+const modes = [
+	{
+		id: 'envelope',
+		label: 'Envelope',
+		cockpit: envelopeCockpit,
+		cockpitAlt:
+			'The Budget Cockpit for an envelope budget: twelve months of every category side by side, To Budget checked each month, spending bars under each cell, and the month summary for February beside the grid.',
+		transactions: envelopeTransactions,
+		transactionsAlt:
+			'Spending Analysis for February: 10,718 spent of 9,615 budgeted, where the money went by group, spending week by week, and the 59 transactions behind it.',
+		variance: envelopeVariance,
+		varianceAlt:
+			'Variance Drivers for an envelope budget: 1,122 in deficit, a bridge from allocated to spent, balances month by month with deficits below zero, the envelopes that drove it and the transactions behind them.',
+		text: [
+			'Every envelope for twelve months, side by side: assigned, spent and balance, with To Budget checked every month. Edit it like a spreadsheet, then review every change before you save.',
+			'Select Spent for any month, group or category and see where the money went, when it left, and every transaction behind it, to search, sort and export.',
+			'Select a balance and see which envelopes went into deficit, which were covered by money carried in, and which deficits came out of next month’s To Budget.',
+		],
+	},
+	{
+		id: 'tracking',
+		label: 'Tracking',
+		cockpit: trackingCockpit,
+		cockpitAlt:
+			'The Budget Cockpit for a tracking budget: twelve months of every category, each month marked under, on or over budget with what was saved, and the month summary for February beside the grid.',
+		transactions: trackingTransactions,
+		transactionsAlt:
+			'Spending Analysis for February: 10,718 spent of 10,620 budgeted, where the money went by group, spending week by week, and the 59 transactions behind it.',
+		variance: trackingVariance,
+		varianceAlt:
+			'Variance Drivers for a tracking budget: 98 over budget, as 1,972 overspent less 1,874 saved, a waterfall from budgeted to spent, recent months over and under plan, and the groups that drove it.',
+		text: [
+			'Twelve months of plan against what really happened, every month marked under, on or over budget, and what you saved. Edit it like a spreadsheet, then review every change before you save.',
+			'Select Spent for any month, group or category and see where the money went, when it left, and every transaction behind it, to search, sort and export.',
+			'Select a variance and see what overspent, what was saved to offset it, and whether it is a one-off or a pattern across recent months.',
+		],
+	},
+];
+
+const views = [
+	{ id: 'year', label: 'The year' },
+	{ id: 'transactions', label: 'The transactions behind it' },
+	{ id: 'variance', label: 'What moved it' },
+];
+
+// Shown at the full width of the page: offer widths up to 3x.
+const shot = { format: 'webp' as const, widths: [1280, 2560, 3840], sizes: '(min-width: 1340px) 1280px, 94vw' };
+---
+
+<div class="showcase" data-mode="envelope" data-view="year">
+		<div class="controls">
+			<div class="modes" role="group" aria-label="Budget type">
+				{modes.map((mode, index) => (
+					<button type="button" data-mode-to={mode.id} aria-pressed={index === 0 ? 'true' : 'false'}>
+						{mode.label}
+					</button>
+				))}
+			</div>
+			<div class="views" role="tablist" aria-label="What to look at">
+				{views.map((view, index) => (
+					<button
+						type="button"
+						role="tab"
+						id={`showcase-tab-${view.id}`}
+						aria-controls="showcase-stage"
+						aria-selected={index === 0 ? 'true' : 'false'}
+						tabindex={index === 0 ? 0 : -1}
+						data-view-to={view.id}
+					>
+						{view.label}
+					</button>
+				))}
+			</div>
+		</div>
+
+		<div class="explain" aria-live="polite">
+			{modes.map((mode) =>
+				views.map((view, index) => (
+					<p data-for-mode={mode.id} data-for-view={view.id}>{mode.text[index]}</p>
+				)),
+			)}
+		</div>
+
+		<div class="stage" id="showcase-stage" role="tabpanel" aria-labelledby="showcase-tab-year">
+			{modes.map((mode) => (
+				<div class="mode-layer" data-for-mode={mode.id}>
+					<Image class="cockpit" src={mode.cockpit} alt={mode.cockpitAlt} {...shot} />
+					<div class="backdrop" aria-hidden="true"></div>
+					<Image class="dialog" data-for-view="transactions" src={mode.transactions} alt={mode.transactionsAlt} {...shot} />
+					<Image class="dialog" data-for-view="variance" src={mode.variance} alt={mode.varianceAlt} {...shot} />
+				</div>
+			))}
+		</div>
+
+		<a class="more" href={guide}>How the Budget Cockpit works</a>
+</div>
+
+<script>
+	for (const showcase of document.querySelectorAll<HTMLElement>('.showcase')) {
+		const modeButtons = [...showcase.querySelectorAll<HTMLButtonElement>('[data-mode-to]')];
+		const tabs = [...showcase.querySelectorAll<HTMLButtonElement>('[data-view-to]')];
+		const stage = showcase.querySelector<HTMLElement>('.stage');
+
+		const setMode = (mode: string) => {
+			showcase.dataset.mode = mode;
+			for (const button of modeButtons) button.setAttribute('aria-pressed', String(button.dataset.modeTo === mode));
+		};
+
+		const setView = (view: string, focus = false) => {
+			showcase.dataset.view = view;
+			for (const tab of tabs) {
+				const selected = tab.dataset.viewTo === view;
+				tab.setAttribute('aria-selected', String(selected));
+				tab.tabIndex = selected ? 0 : -1;
+				if (selected) {
+					stage?.setAttribute('aria-labelledby', tab.id);
+					if (focus) tab.focus();
+				}
+			}
+		};
+
+		for (const button of modeButtons) button.addEventListener('click', () => setMode(button.dataset.modeTo ?? 'envelope'));
+		tabs.forEach((tab, index) => {
+			tab.addEventListener('click', () => setView(tab.dataset.viewTo ?? 'year'));
+			tab.addEventListener('keydown', (event) => {
+				const move = { ArrowRight: 1, ArrowLeft: -1 }[event.key];
+				if (move === undefined) return;
+				event.preventDefault();
+				const next = tabs[(index + move + tabs.length) % tabs.length];
+				setView(next.dataset.viewTo ?? 'year', true);
+			});
+		});
+	}
+</script>
+
+<style>
+	.controls {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		margin-top: 2.25rem;
+	}
+
+	/* The budget type: a small switch, separate from the views it changes. */
+	.modes {
+		display: inline-flex;
+		padding: 4px;
+		border-radius: 999px;
+		background: var(--paper);
+		border: 1px solid var(--line);
+	}
+
+	.modes button {
+		min-height: 40px;
+		padding: 0 1.2rem;
+		border: 0;
+		border-radius: 999px;
+		background: transparent;
+		color: var(--ink-soft);
+		font: inherit;
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	.modes button[aria-pressed='true'] {
+		background: var(--ink);
+		color: #fff;
+	}
+
+	.views {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.25rem;
+	}
+
+	.views button {
+		min-height: 44px;
+		padding: 0 1rem;
+		border: 0;
+		border-bottom: 2px solid transparent;
+		background: transparent;
+		color: var(--muted);
+		font: inherit;
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	.views button[aria-selected='true'] {
+		color: var(--ink);
+		border-bottom-color: var(--ledger);
+	}
+
+	.modes button:focus-visible,
+	.views button:focus-visible {
+		outline: 2px solid var(--ledger);
+		outline-offset: 2px;
+	}
+
+	.explain {
+		min-height: calc(3 * 1.6em);
+		margin-top: 1.25rem;
+		max-width: 72ch;
+		color: var(--ink-soft);
+		font-size: 1.05rem;
+	}
+
+	.explain p {
+		display: none;
+		margin: 0;
+	}
+
+	/* One mode and one view at a time. */
+	[data-mode='envelope'][data-view='year'] .explain [data-for-mode='envelope'][data-for-view='year'],
+	[data-mode='envelope'][data-view='transactions'] .explain [data-for-mode='envelope'][data-for-view='transactions'],
+	[data-mode='envelope'][data-view='variance'] .explain [data-for-mode='envelope'][data-for-view='variance'],
+	[data-mode='tracking'][data-view='year'] .explain [data-for-mode='tracking'][data-for-view='year'],
+	[data-mode='tracking'][data-view='transactions'] .explain [data-for-mode='tracking'][data-for-view='transactions'],
+	[data-mode='tracking'][data-view='variance'] .explain [data-for-mode='tracking'][data-for-view='variance'] {
+		display: block;
+	}
+
+	/* The stage: the cockpit at the shape of the app's page, a dialog over it. */
+	.stage {
+		position: relative;
+		margin-top: 1.5rem;
+		aspect-ratio: 1712 / 1032;
+		border-radius: var(--radius-window);
+		border: 1px solid var(--line);
+		background: var(--surface);
+		overflow: hidden;
+		box-shadow:
+			0 1px 0 rgba(21, 24, 30, 0.04),
+			0 30px 60px -30px rgba(21, 40, 90, 0.35);
+	}
+
+	.mode-layer {
+		position: absolute;
+		inset: 0;
+		display: none;
+	}
+
+	[data-mode='envelope'] .mode-layer[data-for-mode='envelope'],
+	[data-mode='tracking'] .mode-layer[data-for-mode='tracking'] {
+		display: block;
+	}
+
+	.stage :global(img.cockpit) {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		object-position: top left;
+	}
+
+	.backdrop {
+		position: absolute;
+		inset: 0;
+		background: rgba(21, 24, 30, 0.42);
+		opacity: 0;
+		transition: opacity 0.25s ease;
+	}
+
+	.stage :global(img.dialog) {
+		position: absolute;
+		left: 50%;
+		top: 50%;
+		width: auto;
+		max-width: 88%;
+		max-height: 95%;
+		border-radius: 10px;
+		box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.5);
+		opacity: 0;
+		visibility: hidden;
+		transform: translate(-50%, -48%) scale(0.98);
+		transition:
+			opacity 0.25s ease,
+			transform 0.25s ease,
+			visibility 0s linear 0.25s;
+	}
+
+	[data-view='transactions'] .backdrop,
+	[data-view='variance'] .backdrop {
+		opacity: 1;
+	}
+
+	[data-view='transactions'] .stage :global(img.dialog[data-for-view='transactions']),
+	[data-view='variance'] .stage :global(img.dialog[data-for-view='variance']) {
+		opacity: 1;
+		visibility: visible;
+		transform: translate(-50%, -50%);
+		transition:
+			opacity 0.25s ease,
+			transform 0.25s ease;
+	}
+
+	.more {
+		display: inline-block;
+		margin-top: 1.25rem;
+		font-weight: 600;
+		text-decoration: none;
+	}
+
+	@media (max-width: 760px) {
+		/* On a phone the dialog alone, at full width, is the readable picture. */
+		.stage {
+			aspect-ratio: auto;
+		}
+
+		.mode-layer {
+			position: static;
+		}
+
+		[data-view='transactions'] .stage :global(img.cockpit),
+		[data-view='variance'] .stage :global(img.cockpit),
+		.backdrop {
+			display: none;
+		}
+
+		.stage :global(img.dialog) {
+			display: none;
+			position: static;
+			max-width: 100%;
+			max-height: none;
+			transform: none;
+			box-shadow: none;
+			border-radius: 0;
+		}
+
+		[data-view='transactions'] .stage :global(img.dialog[data-for-view='transactions']),
+		[data-view='variance'] .stage :global(img.dialog[data-for-view='variance']) {
+			display: block;
+			transform: none;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.backdrop,
+		.stage :global(img.dialog) {
+			transition: none;
+		}
+	}
+</style>
