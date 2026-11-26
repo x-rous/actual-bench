@@ -39,18 +39,21 @@ ACTUAL_PORT=5197 ACTUAL_DATA_DIR=/tmp/demo-actual \
 
 # A private Bench on a copy of the seed's Bench data, under /data as in Docker,
 # so App Health shows the paths a reader will see. The seed's backup destination
-# is /data/backups, which must exist and be empty.
-# Only on a machine with no Bench of its own: it never overwrites one.
+# is /data/backups, which must exist and be empty. Use a disposable container, or
+# a machine where you created /data yourself and can write to it.
+seeded=false
 if [ -e /data/actual-bench.sqlite ]; then
   echo "/data already holds a Bench database; use a disposable machine or container" >&2
-else
-  mkdir -p /data/backups
-  cp demo/seed-bench.sqlite /data/actual-bench.sqlite
+elif mkdir -p /data/backups && cp demo/seed-bench.sqlite /data/actual-bench.sqlite; then
+  seeded=true
   ACTUAL_BENCH_AUTH=none ACTUAL_BENCH_DB_PATH=/data/actual-bench.sqlite \
     ACTUAL_BENCH_DIST_DIR=.next-live-tmp npx next dev -p 3517 &
+else
+  echo "could not write the seed into /data" >&2
 fi
 
-# Wait for each to answer (the first Bench page compiles), then capture
+# Wait for each to answer (the first Bench page compiles), then capture. Nothing
+# runs unless the seed was copied, so a capture never reaches another Bench.
 wait_for() {
   for i in $(seq 1 90); do
     curl -s -o /dev/null --max-time 2 "$1" && return 0
@@ -59,7 +62,7 @@ wait_for() {
   echo "$1 did not answer" >&2
   return 1
 }
-wait_for http://localhost:5197 && wait_for http://localhost:3517/connect && {
+[ "$seeded" = true ] && wait_for http://localhost:5197 && wait_for http://localhost:3517/connect && {
   export BENCH_URL=http://localhost:3517 ACTUAL_URL=http://localhost:5197
   node docs-site/scripts/capture-pages.mjs
   node docs-site/scripts/capture-guides.mjs
