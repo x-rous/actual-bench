@@ -31,6 +31,8 @@ const {
   CATEGORY_GROUPS,
   DEMO_BUDGETS,
   TAGS,
+  MARKET_RETURNS,
+  TURNING_POINT,
   budgetPlanForMonth,
   buildMonths,
   pad,
@@ -227,6 +229,10 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
     { name: "Brokerage", type: "investment", offbudget: true },
     0
   );
+  account.retirement = await api.createAccount(
+    { name: "Retirement 401(k)", type: "investment", offbudget: true },
+    0
+  );
   account.property = await api.createAccount({ name: "Family Home", type: "other", offbudget: true }, 0);
   account.vehicle = await api.createAccount({ name: "Family Car", type: "other", offbudget: true }, 0);
   account.mortgage = await api.createAccount({ name: "Home Mortgage", type: "other", offbudget: true }, 0);
@@ -241,8 +247,8 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
   for (const [name, keys] of [
     ["Daily banking", ["checking", "savings", "cash"]],
     ["Credit cards", ["credit", "installmentCard"]],
-    ["Property and investments", ["property", "rentalProperty", "brokerage"]],
-    ["Vehicles", ["vehicle"]],
+    ["Investments", ["brokerage", "retirement"]],
+    ["Property and vehicles", ["property", "rentalProperty", "vehicle"]],
     ["Loans", ["mortgage", "carLoan", "personalLoan", "rentalLoan"]],
   ]) {
     const id = await api.createAccountGroup({ name });
@@ -360,6 +366,10 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
     oldSubscription: "Old Subscription (Cancelled)",
     unknownMarket: "SQ *UNKNOWN MARKET",
     vanguard: "Vanguard",
+    retirementPlan: "Northstar 401(k) Plan",
+    cable: "Streamline Cable",
+    delivery: "QuickBite Delivery",
+    plumber: "Maple Plumbing & Heating",
   };
   for (const [key, name] of Object.entries(payeeDefinitions)) {
     payee[key] = await api.createPayee({ name });
@@ -448,7 +458,7 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
     start: dateString(current, Math.min(day, current.dayLimit)),
   });
   const scheduleDefinitions = [
-    ["Primary Paycheck", account.checking, payee.primaryEmployer, 570000, 1],
+    ["Primary Paycheck", account.checking, payee.primaryEmployer, 605000, 1],
     ["Secondary Paycheck", account.checking, payee.secondaryEmployer, 340000, 15],
     ["Mortgage", account.checking, payee.mortgage, -185000, 1],
     ["Health Insurance", account.checking, payee.healthInsurance, -46000, 2],
@@ -530,6 +540,10 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
 
   const oldest = months[0];
   const homeOpeningDate = `${oldest.y - 6}-${pad(oldest.monthNumber)}-01`;
+  // Every account already exists when the story starts: its opening balance
+  // falls in the month before the first one, outside any period a visitor can
+  // pick except All time. Opening inside the period would make Financial
+  // Insights start the household from nothing and call the balances "growth".
   const loanOpeningMonth = new Date(Date.UTC(oldest.y, oldest.mIdx - 1, 1)).toISOString().slice(0, 7);
   const openingBalances = [
     ["checking", 640000, "Opening household checking balance"],
@@ -541,6 +555,7 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
     ["rentalProperty", 24000000, "Opening investment property value"],
     ["cash", 20000, "Opening cash balance"],
     ["brokerage", 8500000, "Opening off-budget investment balance"],
+    ["retirement", 14200000, "Opening retirement plan balance"],
     ["property", 36000000, "Opening property value"],
     ["vehicle", 3200000, "Opening vehicle value"],
     ["mortgage", -28000000, "Opening mortgage principal"],
@@ -552,7 +567,7 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
         // Like Actual's own opening balance: the Starting Balance payee, and nothing imported from a bank.
         ...transaction(oldest, 1, "startingBalance", amount, null, { notes }),
         imported_payee: undefined,
-        ...(["mortgage", "personalLoan", "rentalLoan"].includes(accountKey) ? { date: `${loanOpeningMonth}-01` } : {}),
+        date: `${loanOpeningMonth}-01`,
         ...(accountKey === "carLoan" ? { date: `${loanOpeningMonth}-05` } : {}),
         ...(accountKey === "property" ? { date: homeOpeningDate } : {}),
         starting_balance_flag: true,
@@ -560,7 +575,9 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
     ]);
   }
 
-  for (let year = 1; year <= 6; year++) {
+  // Five annual valuations before the story starts; the twice-yearly ones
+  // inside it are posted with each month below.
+  for (let year = 1; year <= 5; year++) {
     await push("property", [{ ...transaction(oldest, 1, null, 1000000, null, { notes: "Annual property valuation" }), date: `${oldest.y - 6 + year}-${pad(oldest.monthNumber)}-01` }]);
   }
 
@@ -574,11 +591,17 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
   let carPrincipal = 2200000;
   let personalPrincipal = 1200000;
   let rentalPrincipal = 15000000;
+  // The portfolio's balances, so each month's market move is a share of what is there.
+  let brokerageBalance = 8500000;
+  let retirementBalance = 14200000;
+  // Months counted from the end: the card and instalment examples sit in the last year.
+  const lastIndex = months.length - 1;
   for (let monthIndex = 0; monthIndex < months.length; monthIndex++) {
     const month = months[monthIndex];
     const scenario = scenarioForMonth(month, monthIndex);
     eventMonths.set(scenario.label, month.key);
     const historical = !month.isCurrent;
+    const secondYear = monthIndex >= TURNING_POINT;
 
     const checkingTransactions = [];
     const mortgageInterest = Math.round(mortgagePrincipal * 5 / 1200);
@@ -587,8 +610,8 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
     const rentalInterest = Math.round(rentalPrincipal * 6 / 1200);
     if (canPost(month, 1)) {
       checkingTransactions.push(
-        transaction(month, 1, "primaryEmployer", 570000 + scenario.incomeAdjustment, "primarySalary", {
-          notes: scenario.label === "lower-income" ? "Reduced hours this month" : "Monthly payroll",
+        transaction(month, 1, "primaryEmployer", (secondYear ? 605000 : 570000) + scenario.incomeAdjustment, "primarySalary", {
+          notes: scenario.label === "lower-income" ? "Reduced hours this month" : monthIndex === TURNING_POINT ? "Monthly payroll, first month at the new salary" : "Monthly payroll",
           cleared: historical,
         }),
         transaction(month, 1, "mortgage", -185000, "mortgage", { notes: "Mortgage payment", reconciled: false })
@@ -600,8 +623,11 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
     if (canPost(month, 5)) checkingTransactions.push(transaction(month, 5, "carLoan", -38000, "carPayment", { notes: "Car loan payment", reconciled: false }));
     if (canPost(month, 1)) checkingTransactions.push(transaction(month, 1, "rentalLoan", -100000, "rentalMortgage", { notes: "Rental mortgage payment", reconciled: false }));
     if (canPost(month, 5)) checkingTransactions.push(transaction(month, 5, "personalLoan", -25000, "personalPayment", { notes: "Personal loan payment", reconciled: false }));
-    if (canPost(month, 6)) checkingTransactions.push(transaction(month, 6, "tenant", 160000, "rentalIncome", { notes: "Monthly rent #rental-property" }));
+    // The rental: a month between tenants, a rent review in the second year, and one large repair.
+    if (canPost(month, 6) && monthIndex !== 9) checkingTransactions.push(transaction(month, 6, "tenant", secondYear ? 168000 : 160000, "rentalIncome", { notes: monthIndex === 10 ? "First rent from the new tenant #rental-property" : "Monthly rent #rental-property" }));
     if (canPost(month, 8)) checkingTransactions.push(transaction(month, 8, "propertyManager", -25000, "rentalExpenses", { notes: "Rental management and repairs #rental-property" }));
+    if (monthIndex === 14 && canPost(month, 19)) checkingTransactions.push(transaction(month, 19, "plumber", -145000, "rentalExpenses", { notes: "Replaced the rental's water heater #rental-property #home-project" }));
+    if (monthIndex < 9 && canPost(month, 9)) checkingTransactions.push(transaction(month, 9, "cable", -8900, "legacyCable", { notes: monthIndex === 8 ? "Final bill, plan cancelled" : "Cable TV plan" }));
     if (canPost(month, 6)) checkingTransactions.push(transaction(month, 6, "electric", -rint(8500, [6, 7, 8].includes(month.monthNumber) ? 17500 : 13500), "electric"));
     if (canPost(month, 7)) checkingTransactions.push(transaction(month, 7, "internet", -7500, "internet"));
     if (canPost(month, 8)) checkingTransactions.push(transaction(month, 8, "gasUtility", -rint(3000, [12, 1, 2].includes(month.monthNumber) ? 14500 : 7500), "naturalGas"));
@@ -665,22 +691,31 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
         _payeeKey: `transfer:${targetAccount}`,
       });
     };
-    if (monthIndex === 6 && canPost(month, 1)) {
-      addTransfer(1, "mortgage", 50000, "mortgage", "Additional mortgage principal");
-      mortgagePrincipal -= 50000;
+    // Extra mortgage principal: a small one in the first year, part of the bonus in the second.
+    const extraPrincipal = { 6: 50000, 22: 150000 }[monthIndex];
+    if (extraPrincipal && canPost(month, 1)) {
+      addTransfer(1, "mortgage", extraPrincipal, "mortgage", "Additional mortgage principal");
+      mortgagePrincipal -= extraPrincipal;
+    }
+    // Investing from the checking account: a little in the first year, three times as much after the raise.
+    const contribution = secondYear ? 90000 : 30000;
+    if (canPost(month, 2)) {
+      addTransfer(2, "brokerage", contribution, "investing", "Monthly brokerage contribution");
+      brokerageBalance += contribution;
     }
     addTransfer(16, "savings", 25000, "emergencyFund", "Automatic emergency-fund contribution");
     addTransfer(17, "savings", 18000, "vacationFund", "Vacation sinking fund");
     addTransfer(20, "savings", 12000, "homeImprovement", "Home-project sinking fund");
     addTransfer(21, "savings", 15000, "annualBills", "Annual bills sinking fund #annual");
     addTransfer(22, "cash", 8000, null, "Cash withdrawal");
-    // Pay the August-style statement in full, then make a smaller payment on
-    // the following statement so visitors can see both payment states.
+    // The card's statement is paid in full every month, except at the end:
+    // a missed minimum three months back, then the whole balance, then a
+    // token payment in the running month, so visitors see every payment state.
     const prior = months[monthIndex - 1];
-    const fullCardPayment = monthIndex === 11 && prior
+    const fullCardPayment = prior
       ? Math.max(0, -(await api.getAccountBalance(account.credit, new Date(`${prior.key}-28T12:00:00Z`))))
-      : null;
-    addTransfer(24, "credit", fullCardPayment ?? ([10, 12].includes(monthIndex) ? 1000 : 210000), null, "Monthly credit card payment");
+      : 118000;
+    addTransfer(24, "credit", [lastIndex - 2, lastIndex].includes(monthIndex) ? 1000 : fullCardPayment, null, "Monthly credit card payment");
     const installmentPayment = prior ? Math.max(0, -(await api.getAccountBalance(account.installmentCard, new Date(`${prior.key}-28T12:00:00Z`)))) : 0;
     if (installmentPayment > 0) addTransfer(24, "installmentCard", installmentPayment, null, "Installment card full statement payment");
     await push("checking", transferTransactions, { transfers: true });
@@ -691,8 +726,8 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
       await api.updateTransaction(payment.id, { cleared: true, reconciled: historical });
     }
 
-    if (monthIndex > 0 && canPost(month, 12)) await push("installmentCard", [transaction(month, 12, "amazon", -10000, "household", { notes: "Laptop installment #home-project" })]);
-    if (monthIndex >= 10 && canPost(month, 25)) await push("credit", [transaction(month, 25, "creditCardInterest", -2300, "creditInterest", { notes: "Credit card interest #loan-interest" })]);
+    if (monthIndex > lastIndex - 12 && canPost(month, 12)) await push("installmentCard", [transaction(month, 12, "amazon", -10000, "household", { notes: "Laptop installment #home-project" })]);
+    if (monthIndex >= lastIndex - 2 && canPost(month, 25)) await push("credit", [transaction(month, 25, "creditCardInterest", -2300, "creditInterest", { notes: "Credit card interest #loan-interest" })]);
 
     if (installmentPayment > 0 && canPost(month, 24)) {
       const posted = await api.getTransactions(account.installmentCard, dateString(month, 24), dateString(month, 24));
@@ -718,6 +753,13 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
         transaction(month, day, payeeKey, -scaled(rint(3200, 9200), scenario.restaurantFactor), "restaurants", {
           notes: day === 11 && monthIndex % 3 === 0 ? "Dinner with family #shared" : undefined,
         })
+      );
+    }
+    // The first year's habit: takeaway delivered three times a month, down to an occasional order after.
+    for (const day of secondYear ? [16] : [4, 16, 27]) {
+      if (!canPost(month, day)) continue;
+      creditTransactions.push(
+        transaction(month, day, "delivery", -scaled(rint(3400, 6200), scenario.restaurantFactor), "restaurants", { notes: "Takeaway delivery" })
       );
     }
     for (const day of [3, 9, 16, 24]) {
@@ -862,13 +904,15 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
     }
     await push("cash", cashTransactions);
 
-    if (monthIndex === 4 && canPost(month, 15)) {
-      await push("property", [transaction(month, 15, null, 1250000, null, { notes: "Property valuation update" })]);
-      await push("vehicle", [transaction(month, 15, null, -180000, null, { notes: "Vehicle valuation update" })]);
+    // Twice-yearly valuations: the home and the rental rise, the car loses value.
+    const homeValuation = { 2: 900000, 8: 650000, 14: 1100000, 20: 800000 }[monthIndex];
+    if (homeValuation && canPost(month, 15)) {
+      await push("property", [transaction(month, 15, null, homeValuation, null, { notes: "Property valuation update" })]);
+      await push("vehicle", [transaction(month, 15, null, -rint(140000, 190000), null, { notes: "Vehicle valuation update" })]);
     }
-    if (monthIndex === 10 && canPost(month, 15)) {
-      await push("property", [transaction(month, 15, null, 850000, null, { notes: "Property valuation update" })]);
-      await push("vehicle", [transaction(month, 15, null, -120000, null, { notes: "Vehicle valuation update" })]);
+    const rentalValuation = { 5: 600000, 17: 780000 }[monthIndex];
+    if (rentalValuation && canPost(month, 15)) {
+      await push("rentalProperty", [transaction(month, 15, null, rentalValuation, null, { notes: "Rental property valuation update" })]);
     }
 
     const savingsTransactions = [];
@@ -879,17 +923,39 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
     }
     await push("savings", savingsTransactions);
 
+    // Inside the portfolio: dividends each quarter, payroll contributions to
+    // the retirement plan, and a market move at each month end. None of these
+    // has a category, which is how Actual records an investment account's
+    // activity and what Financial Insights reads as investment activity.
     const brokerageTransactions = [];
-    if (canPost(month, 20)) {
-      brokerageTransactions.push(
-        transaction(month, 20, "vanguard", rint(2800, 6800), null, { notes: "Quarterly-style dividend #tax" })
-      );
+    if ([3, 6, 9, 12].includes(month.monthNumber) && canPost(month, 20)) {
+      const dividend = Math.round(brokerageBalance * 0.0042);
+      brokerageTransactions.push(transaction(month, 20, "vanguard", dividend, null, { notes: "Quarterly dividend, reinvested #tax" }));
+      brokerageBalance += dividend;
+    }
+    if (canPost(month, 28)) {
+      const move = Math.round((brokerageBalance * MARKET_RETURNS[monthIndex]) / 100);
+      brokerageTransactions.push(transaction(month, 28, null, move, null, { notes: "Month-end market value" }));
+      brokerageBalance += move;
     }
     await push("brokerage", brokerageTransactions);
 
+    const retirementTransactions = [];
+    if (canPost(month, 15)) {
+      const payroll = secondYear ? 130000 : 115000;
+      retirementTransactions.push(transaction(month, 15, "retirementPlan", payroll, null, { notes: "Payroll contribution with employer match" }));
+      retirementBalance += payroll;
+    }
+    if (canPost(month, 28)) {
+      const move = Math.round((retirementBalance * MARKET_RETURNS[monthIndex] * 0.8) / 100);
+      retirementTransactions.push(transaction(month, 28, null, move, null, { notes: "Month-end market value" }));
+      retirementBalance += move;
+    }
+    await push("retirement", retirementTransactions);
+
     if (scenario.event === "bonus" && canPost(month, 14)) {
       await push("checking", [
-        transaction(month, 14, "payrollBonus", 180000, "bonus", { notes: "Annual performance bonus" }),
+        transaction(month, 14, "payrollBonus", scenario.bonusAmount, "bonus", { notes: "Annual performance bonus" }),
       ]);
     }
     if (canPost(month, 22) && monthIndex % 4 === 0) {
@@ -916,13 +982,15 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
         await api.setBudgetCarryover(month.key, category[key], true);
       }
       if (demoBudget.mode === "tracking") {
-        await api.setBudgetAmount(month.key, category.primarySalary, 570000);
+        const after = month.phase === "after";
+        await api.setBudgetAmount(month.key, category.primarySalary, after ? 605000 : 570000);
         await api.setBudgetAmount(month.key, category.secondarySalary, 340000);
-        await api.setBudgetAmount(month.key, category.rentalIncome, 160000);
+        await api.setBudgetAmount(month.key, category.rentalIncome, after ? 168000 : 160000);
         await api.setBudgetAmount(month.key, category.interest, 950);
         await api.setBudgetAmount(month.key, category.reimbursements, 2100);
-        if (scenarioForMonth(month, months.indexOf(month)).event === "bonus") {
-          await api.setBudgetAmount(month.key, category.bonus, 180000);
+        const planned = scenarioForMonth(month, months.indexOf(month));
+        if (planned.event === "bonus") {
+          await api.setBudgetAmount(month.key, category.bonus, planned.bonusAmount);
         }
       }
     }

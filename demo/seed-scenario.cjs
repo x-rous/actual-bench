@@ -118,6 +118,7 @@ const CATEGORY_GROUPS = [
       ["vacationFund", "Vacation Fund"],
       ["homeImprovement", "Home Improvement"],
       ["annualBills", "Annual Bills"],
+      ["investing", "Investing"],
     ],
   },
   {
@@ -175,6 +176,7 @@ const BASE_BUDGETS = {
   vacationFund: 18000,
   homeImprovement: 12000,
   annualBills: 15000,
+  investing: 30000,
   studentLoan: 28000,
   creditInterest: 4000,
   rentalMortgage: 100000,
@@ -202,15 +204,29 @@ function pad(value) {
   return String(value).padStart(2, "0");
 }
 
+/**
+ * Two complete years and the running month. The household's story turns at
+ * the start of the second year (a raise, a cancelled cable plan, less takeaway,
+ * more invested), so Financial Insights can compare a year with the one before
+ * and the change reads as something that happened, not as noise.
+ */
+const HISTORY_MONTHS = 24;
+
+/** Months before this index are the first year ("before"); from it on, the second ("after"). */
+const TURNING_POINT = HISTORY_MONTHS - 12;
+
 function buildMonths(now = new Date()) {
   const months = [];
-  for (let offset = 12; offset >= 0; offset--) {
+  for (let offset = HISTORY_MONTHS; offset >= 0; offset--) {
     const date = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+    const index = HISTORY_MONTHS - offset;
     months.push({
       y: date.getFullYear(),
       mIdx: date.getMonth(),
       monthNumber: date.getMonth() + 1,
       key: `${date.getFullYear()}-${pad(date.getMonth() + 1)}`,
+      index,
+      phase: index < TURNING_POINT ? "before" : "after",
       isCurrent: offset === 0,
       dayLimit: offset === 0 ? Math.max(1, now.getDate()) : 28,
     });
@@ -221,6 +237,15 @@ function buildMonths(now = new Date()) {
 function budgetPlanForMonth(month) {
   const plan = { ...BASE_BUDGETS };
   const number = month.monthNumber;
+
+  // The second year, after the raise: dining planned a little lower, and the
+  // money freed up goes to investing.
+  if (month.phase === "after") {
+    plan.restaurants = 22000;
+    plan.investing = 90000;
+  }
+  // The cable plan is paid until it is cancelled in the first year's tenth month.
+  if (month.index !== undefined && month.index < 9) plan.legacyCable = 8900;
 
   if ([12, 1, 2].includes(number)) {
     plan.electric = 14500;
@@ -244,16 +269,20 @@ function budgetPlanForMonth(month) {
 }
 
 function scenarioForMonth(month, index) {
+  // The first year runs hot (takeaway, dining, impulse buys); the second is
+  // the same household after deciding to change that.
+  const before = index < TURNING_POINT;
   const scenario = {
     label: "typical",
-    discretionaryFactor: 1,
+    discretionaryFactor: before ? 1.12 : 0.94,
     groceryFactor: 1,
-    restaurantFactor: 1,
+    restaurantFactor: before ? 1.3 : 0.85,
     incomeAdjustment: 0,
+    bonusAmount: 0,
     event: null,
   };
 
-  if (index === 1 || index === 5 || index === 9) {
+  if ([13, 17, 20].includes(index)) {
     scenario.label = "good";
     scenario.discretionaryFactor = 0.72;
     scenario.groceryFactor = 0.9;
@@ -261,33 +290,34 @@ function scenarioForMonth(month, index) {
   }
   if (index === 3) {
     scenario.label = "bad-car-repair";
-    scenario.discretionaryFactor = 1.08;
+    scenario.discretionaryFactor = 1.18;
     scenario.event = "carRepair";
   }
-  if (index === 6) {
+  if (index === 15) {
     scenario.label = "bad-medical";
     scenario.restaurantFactor = 0.8;
     scenario.event = "medicalDeductible";
   }
   if (index === 8) {
     scenario.label = "lower-income";
-    scenario.discretionaryFactor = 0.8;
+    scenario.discretionaryFactor = 0.95;
     scenario.incomeAdjustment = -120000;
   }
-  if (index === 10) {
-    scenario.label = "bonus-recovery";
-    scenario.discretionaryFactor = 0.9;
+  if (index === 10 || index === 22) {
+    scenario.label = index === 10 ? "bonus" : "bonus-recovery";
+    scenario.discretionaryFactor = before ? 1 : 0.9;
     scenario.event = "bonus";
+    scenario.bonusAmount = index === 10 ? 120000 : 240000;
   }
   if (month.monthNumber === 12) {
     scenario.label = "bad-holiday";
-    scenario.discretionaryFactor = 1.22;
-    scenario.restaurantFactor = 1.3;
+    scenario.discretionaryFactor = before ? 1.3 : 1.12;
+    scenario.restaurantFactor = before ? 1.45 : 1.15;
     scenario.event = "holiday";
   }
   if (month.monthNumber === 7) {
     scenario.label = "planned-vacation";
-    scenario.discretionaryFactor = 1.08;
+    scenario.discretionaryFactor = before ? 1.15 : 1.02;
     scenario.event = "vacation";
   }
   if (month.isCurrent) {
@@ -297,11 +327,24 @@ function scenarioForMonth(month, index) {
   return scenario;
 }
 
+/**
+ * Monthly market moves for the brokerage, in percent: a rising market with
+ * real down months, so the Investments tab shows growth that was not a
+ * straight line. The retirement fund moves with it, a little more gently.
+ */
+const MARKET_RETURNS = [
+  1.2, 0.8, -1.6, 2.1, 0.9, 1.4, -3.8, -2.2, 2.9, 1.7, 0.6, 1.3,
+  1.9, -0.7, 1.1, 2.4, 0.5, -4.6, 3.1, 1.8, 0.9, 1.2, -0.9, 1.6, 0.4,
+];
+
 module.exports = {
   BASE_BUDGETS,
   CATEGORY_GROUPS,
   DEMO_BUDGETS,
+  HISTORY_MONTHS,
+  MARKET_RETURNS,
   TAGS,
+  TURNING_POINT,
   budgetPlanForMonth,
   buildMonths,
   pad,

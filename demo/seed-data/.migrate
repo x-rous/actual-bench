@@ -3,35 +3,35 @@
   "migrations": [
     {
       "title": "1694360000000-create-folders.js",
-      "timestamp": 1793952671827
+      "timestamp": 1795660612194
     },
     {
       "title": "1694360479680-create-account-db.js",
-      "timestamp": 1793952671851
+      "timestamp": 1795660612221
     },
     {
       "title": "1694362247011-create-secret-table.js",
-      "timestamp": 1793952671860
+      "timestamp": 1795660612226
     },
     {
       "title": "1702667624000-rename-nordigen-secrets.js",
-      "timestamp": 1793952671860
+      "timestamp": 1795660612227
     },
     {
       "title": "1718889148000-openid.js",
-      "timestamp": 1793952671866
+      "timestamp": 1795660612232
     },
     {
       "title": "1719409568000-multiuser.js",
-      "timestamp": 1793952671872
+      "timestamp": 1795660612237
     },
     {
       "title": "1763873568237-server-global-prefs.js",
-      "timestamp": 1793952671876
+      "timestamp": 1795660612241
     },
     {
       "title": "1763873600000-backfill-files-owner.js",
-      "timestamp": 1793952671877
+      "timestamp": 1795660612241
     }
   ]
 }
