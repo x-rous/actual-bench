@@ -171,8 +171,15 @@ for (const demo of manifest) {
   const currentRows = demo.transactions.checking.filter((row) => row.date.startsWith(current.key) && !row.is_child);
   const pendingRows = currentRows.filter((row) => !row.reconciled && !row.is_parent && !row.starting_balance_flag).sort((x, y) => x.date.localeCompare(y.date));
   const singletons = pendingRows.filter((row) => currentRows.filter((other) => other.date === row.date).length === 1);
-  for (const [index, status] of ['needs_review', 'ready'].entries()) {
-    const chosen = singletons[index] ?? pendingRows[index] ?? pendingRows[0];
+  // The ready example applies a match, so it must be a transaction that is
+  // neither reconciled nor cleared (the smoke check holds it to that). Choose it
+  // for that rather than by position: which dates have a single transaction
+  // changes whenever the seed's recurring days do.
+  const readyRow = singletons.find((row) => !row.cleared) ?? pendingRows.find((row) => !row.cleared);
+  if (!readyRow) throw new Error('No uncleared checking transaction for the ready reconciliation example');
+  const reviewRow = singletons.find((row) => row !== readyRow) ?? pendingRows.find((row) => row !== readyRow) ?? readyRow;
+  for (const status of ['needs_review', 'ready']) {
+    const chosen = status === 'ready' ? readyRow : reviewRow;
     if (!chosen) throw new Error('No unreconciled checking transaction for the demo');
     const selected = [chosen];
     const pending = createReconciliationSession(db, { budgetSyncId, accountId: a.checking, accountName: 'Household Checking', statementName: `Checking ${current.key} ${status}.csv` });
