@@ -76,6 +76,10 @@ jobs:
 
       # Keep the Space's own files and LFS rules, and track demo user-file
       # blobs with LFS before committing the mirrored seed files.
+      #
+      # docs-site/ is left out: the demo image never uses it, and its
+      # screenshots are plain binary files, which the Space refuses to accept
+      # outside LFS. rsync keeps excluded paths, so an older copy is removed.
       - name: Mirror main into the Space
         if: steps.changes.outputs.deploy == 'true'
         run: |
@@ -83,7 +87,9 @@ jobs:
           rsync -a --delete \
             --exclude='.git' --exclude='README.md' --exclude='.gitattributes' \
             --exclude='Dockerfile' --exclude='.deployed-from' \
+            --exclude='/docs-site' \
             ./ "$space/"
+          rm -rf "$space/docs-site"
           git -C "$space" add -u -- demo/seed-data/user-files
           git -C "$space" lfs track 'demo/seed-data/user-files/*.blob'
           cp demo/Dockerfile "$space/Dockerfile"
