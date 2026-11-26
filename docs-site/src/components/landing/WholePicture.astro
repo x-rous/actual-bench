@@ -219,12 +219,18 @@ const steps = [
 				else picture.classList.remove('is-playing');
 			};
 			show(1);
+			// isIntersecting is true for any sliver on screen, so the share itself
+			// decides: 40% of the picture, or most of what a short screen can show.
+			const inView = (entry: IntersectionObserverEntry) => {
+				const fits = window.innerHeight / Math.max(1, entry.boundingClientRect.height);
+				return entry.intersectionRatio >= Math.min(0.4, fits * 0.8);
+			};
 			observer = new IntersectionObserver((entries) => {
-				if (!entries.some((entry) => entry.isIntersecting)) return;
+				if (!entries.some(inView)) return;
 				observer?.disconnect();
 				picture.classList.add('is-playing');
 				timer = window.setTimeout(() => play(1), 600);
-			}, { threshold: 0.4 });
+			}, { threshold: [0.1, 0.2, 0.3, 0.4] });
 			observer.observe(picture);
 		}
 	}
