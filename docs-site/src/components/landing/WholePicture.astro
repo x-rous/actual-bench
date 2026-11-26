@@ -170,6 +170,9 @@ const steps = [
 		const panels = [...picture.querySelectorAll<HTMLElement>('[role="tabpanel"]')];
 		let timer: number | undefined;
 		let observer: IntersectionObserver | undefined;
+		// Set once playback starts or someone picks a step; nothing watches after that.
+		let settled = false;
+		let onResize: (() => void) | undefined;
 
 		const show = (step: number, focus = false) => {
 			picture.dataset.step = String(step);
@@ -189,8 +192,10 @@ const steps = [
 
 		// Once someone chooses a step, the picture never plays on its own again.
 		const stop = () => {
+			settled = true;
 			window.clearTimeout(timer);
 			observer?.disconnect();
+			if (onResize) window.removeEventListener('resize', onResize);
 			picture.classList.remove('is-playing');
 		};
 
@@ -221,17 +226,30 @@ const steps = [
 			show(1);
 			// isIntersecting is true for any sliver on screen, so the share itself
 			// decides: 40% of the picture, or most of what a short screen can show.
-			const inView = (entry: IntersectionObserverEntry) => {
-				const fits = window.innerHeight / Math.max(1, entry.boundingClientRect.height);
-				return entry.intersectionRatio >= Math.min(0.4, fits * 0.8);
-			};
-			observer = new IntersectionObserver((entries) => {
-				if (!entries.some(inView)) return;
+			// The observer only reports at its thresholds, so the cutoff is one of
+			// them, and it is worked out again when the window changes size.
+			const watch = () => {
 				observer?.disconnect();
-				picture.classList.add('is-playing');
-				timer = window.setTimeout(() => play(1), 600);
-			}, { threshold: [0.1, 0.2, 0.3, 0.4] });
-			observer.observe(picture);
+				if (settled) return;
+				const fits = window.innerHeight / Math.max(1, picture.getBoundingClientRect().height);
+				const need = Math.min(0.4, fits * 0.8);
+				const steps = [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35].filter((step) => step < need);
+				observer = new IntersectionObserver((entries) => {
+					if (!entries.some((entry) => entry.intersectionRatio >= need - 0.001)) return;
+					// Stop watching for good, then play once.
+					stop();
+					picture.classList.add('is-playing');
+					timer = window.setTimeout(() => play(1), 600);
+				}, { threshold: [...steps, need] });
+				observer.observe(picture);
+			};
+			let resizing: number | undefined;
+			onResize = () => {
+				window.clearTimeout(resizing);
+				resizing = window.setTimeout(watch, 150);
+			};
+			window.addEventListener('resize', onResize);
+			watch();
 		}
 	}
 </script>
