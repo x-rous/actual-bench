@@ -63,12 +63,12 @@ if [ -e /data/actual-bench.sqlite ]; then
   echo "/data already holds a Bench database; use a disposable machine or container" >&2
 elif ! port_free 5197 || ! port_free 3517; then
   echo "port 5197 or 3517 is already in use; stop that server first" >&2
-elif rm -rf /tmp/demo-actual && cp -R demo/seed-data/. /tmp/demo-actual \
+elif actual_dir=$(mktemp -d) && cp -R demo/seed-data/. "$actual_dir" \
     && mkdir -p /data/backups && cp demo/seed-bench.sqlite /data/actual-bench.sqlite; then
   seeded=true
   # Actual Server on a scratch copy of the seed (the copy includes the hidden .migrate)
-  ACTUAL_PORT=5197 ACTUAL_DATA_DIR=/tmp/demo-actual \
-    ACTUAL_SERVER_FILES=/tmp/demo-actual/server-files ACTUAL_USER_FILES=/tmp/demo-actual/user-files \
+  ACTUAL_PORT=5197 ACTUAL_DATA_DIR="$actual_dir" \
+    ACTUAL_SERVER_FILES="$actual_dir/server-files" ACTUAL_USER_FILES="$actual_dir/user-files" \
     node node_modules/@actual-app/sync-server/build/bin/actual-server.js &
   actual_pid=$!
   ACTUAL_BENCH_AUTH=none ACTUAL_BENCH_DB_PATH=/data/actual-bench.sqlite \
@@ -89,7 +89,14 @@ fi
 
 Start from a fresh copy of the seed database for every full run: the `recon` and
 `ops` groups expect the seed's state, and a second run on the same database finds
-the first run's session, flow and backups already there.
+the first run's session, flow and backups already there. When the capture ends,
+in the same shell, stop both servers and remove what the run made:
+
+```bash
+kill "$actual_pid" "$bench_pid"
+pkill -f "next dev -p 3517"   # next dev leaves its worker behind
+rm -rf "$actual_dir" .next-live-tmp /data/actual-bench.sqlite* /data/backups /data/secrets
+```
 
 `next dev` regenerates its agent notes in `AGENTS.md` and adds its build folder to
 `tsconfig.json`. Restore both with `git checkout -- AGENTS.md tsconfig.json`
