@@ -9,6 +9,7 @@
 import '@fontsource-variable/schibsted-grotesk';
 import { Image, getImage } from 'astro:assets';
 import WholePicture from '../components/landing/WholePicture.astro';
+import BudgetShowcase from '../components/landing/BudgetShowcase.astro';
 import { pictureAccounts, pictureAnswers } from '../components/landing/demo-household';
 
 import logo from '../assets/actual-bench-icon.png';
@@ -22,7 +23,6 @@ import cardOverview from '../assets/landing/card-overview.png';
 import assetHome from '../assets/landing/asset-home.png';
 import accounts from '../assets/landing/accounts.png';
 import cashflow from '../assets/landing/cashflow.png';
-import cockpit from '../assets/landing/cockpit.png';
 import progressNetWorth from '../assets/landing/progress-net-worth.png';
 import progressDebt from '../assets/landing/progress-debt-payoff.png';
 import progressSavings from '../assets/landing/progress-savings-rate.png';
@@ -232,6 +232,17 @@ const bench = [
 				</div>
 			</section>
 
+			<section class="budget" id="budget" aria-labelledby="budget-title">
+				<div class="wrap">
+					<h2 id="budget-title">Your budget year on one screen. Every number explains itself.</h2>
+					<p class="section-lead">
+						The Budget Cockpit puts twelve months side by side, for Envelope and Tracking budgets alike. Select any
+						figure and Bench shows you the transactions behind it, and what moved it.
+					</p>
+					<BudgetShowcase guide={docs('user-guide/budget-management/')} />
+				</div>
+			</section>
+
 			<section class="own" id="own-and-owe" aria-labelledby="own-title">
 				<div class="wrap">
 					<h2 id="own-title">Every loan, card and home, understood.</h2>
@@ -339,24 +350,8 @@ const bench = [
 
 			<section class="plan" aria-labelledby="plan-title">
 				<div class="wrap">
-					<h2 id="plan-title">Plan the year, and the years after.</h2>
+					<h2 id="plan-title">Plan the years ahead.</h2>
 				</div>
-				<article class="feature wrap">
-					<div class="feature-head">
-						<p class="feature-name">Budget Cockpit</p>
-						<h3>Twelve months on one screen.</h3>
-					</div>
-					<div class="feature-body">
-						<p>
-							Your whole year at once: budgeted, actuals and balance side by side. Edit it like a spreadsheet, with copy,
-							paste, fill across and bulk actions, then review every change before you save.
-						</p>
-						<a class="more" href={docs('user-guide/budget-management/')}>See the Budget Cockpit</a>
-					</div>
-					<div class="feature-shot">
-						<Image src={cockpit} alt="The Budget Cockpit showing a full year of an envelope budget with the details panel beside it." widths={[1280, 2560, 3840]} sizes="(min-width: 1340px) 1280px, 94vw" {...shot} />
-					</div>
-				</article>
 				<article class="feature wrap">
 					<div class="feature-head">
 						<p class="feature-name">Cashflow Planning</p>
@@ -894,6 +889,7 @@ const bench = [
 	}
 
 	.insights,
+	.budget,
 	.own,
 	.plan,
 	.progress,

@@ -48,8 +48,8 @@ export async function shrinkLossless(path) {
   await writeFile(path, buffer);
 }
 
-/** Open the demo's Envelope budget in a fresh 1920x1080 browser. */
-export async function openDemo() {
+/** Open one of the demo's budgets ("Envelope" or "Tracking") in a fresh 1920x1080 browser. */
+export async function openDemo(budget = "Envelope") {
   const browser = await chromium.launch();
   const context = await browser.newContext({
     viewport: VIEWPORT,
@@ -65,10 +65,10 @@ export async function openDemo() {
   });
   const page = await context.newPage();
   if (LOCAL) {
-    await connectLocal(page);
+    await connectLocal(page, budget);
   } else {
     await page.goto(DEMO, { waitUntil: "domcontentloaded", timeout: 60000 });
-    await page.getByText("Envelope demo").click({ timeout: 60000 });
+    await page.getByText(`${budget} demo`).click({ timeout: 60000 });
   }
   await page.waitForURL(/overview/, { timeout: 120000 });
   await page.waitForTimeout(8000);
@@ -79,7 +79,7 @@ export async function openDemo() {
  * A freshly generated seed, before it reaches the public demo: a local Actual
  * Server serving demo/seed-data and a local Bench whose database is a copy of
  * demo/seed-bench.sqlite (see docs/screenshots.md). Bench connects to it
- * Direct, with the seed's public password, and opens the Envelope budget.
+ * Direct, with the seed's public password, and opens the budget asked for.
  */
 const LOCAL = process.env.BENCH_URL
   ? {
@@ -89,13 +89,13 @@ const LOCAL = process.env.BENCH_URL
     }
   : null;
 
-async function connectLocal(page) {
+async function connectLocal(page, budget) {
   await page.goto(`${LOCAL.bench}/connect`, { waitUntil: "domcontentloaded", timeout: 120000 });
   await page.getByRole("tab", { name: /Direct Actual Server/ }).click({ timeout: 120000 });
   await page.locator("#baseUrl").fill(LOCAL.actual);
   await page.locator("#serverPassword").fill(LOCAL.password);
   await page.getByRole("button", { name: "Load budgets" }).click();
-  await page.getByRole("button", { name: /Live Demo - Envelope/ }).click({ timeout: 120000 });
+  await page.getByRole("button", { name: new RegExp(`Live Demo - ${budget}`) }).click({ timeout: 120000 });
   await page.getByRole("button", { name: "Connect", exact: true }).click();
 }
 
@@ -218,4 +218,48 @@ export async function withTemporaryCashPlan(page, work) {
     await page.waitForTimeout(4000);
     console.log("deleted the temporary cash plan");
   }
+}
+
+/**
+ * The month the demo budget explains best: the medical deductible month, nine
+ * months before the running one (demo/seed-scenario.cjs), when Health went far
+ * over plan. Labelled the way the Budget Cockpit heads its columns ("Feb 2026").
+ */
+export function storyMonth(now = new Date()) {
+  const date = new Date(now.getFullYear(), now.getMonth() - 9, 1);
+  return `${date.toLocaleString("en-US", { month: "short" })} ${date.getFullYear()}`;
+}
+
+/** Open the Budget Cockpit with a month's column selected, so its month summary is beside the grid. */
+export async function openCockpitMonth(page, month, { expand = false } = {}) {
+  await nav(page, "Budget Cockpit", 15000);
+  // Expanding clears the selection, so it comes first.
+  if (expand) {
+    await page.getByRole("button", { name: "Expand all groups" }).click();
+    await page.waitForTimeout(3000);
+  }
+  const header = page.getByText(month, { exact: true }).first();
+  if (!(await header.isVisible().catch(() => false))) {
+    await page.getByRole("button", { name: "Back 1 year" }).click();
+    await page.waitForTimeout(4000);
+  }
+  await header.click();
+  await page.waitForTimeout(3000);
+}
+
+/**
+ * The month's two drill-throughs: Spending Analysis (the expense transactions
+ * behind Spent) and Variance Drivers (balances in Envelope, plan in Tracking).
+ */
+export async function openMonthTransactions(page, month) {
+  await page.getByRole("button", { name: `View expense transactions for ${month}` }).first().click();
+  await page.waitForTimeout(6000);
+}
+
+export async function openMonthVariance(page, month, budget) {
+  const button = budget === "Envelope"
+    ? page.getByRole("button", { name: `View which envelopes drove the balance in ${month}` }).first()
+    : page.getByRole("button", { name: "View variance drivers" }).last();
+  await button.click();
+  await page.waitForTimeout(8000);
 }

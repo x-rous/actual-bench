@@ -5,7 +5,7 @@
  *   node docs-site/scripts/capture-guides.mjs              # everything
  *   node docs-site/scripts/capture-guides.mjs loans cards  # named groups
  *
- * Groups: insights, loans, cards, assets, cashflow, payee-cleanup.
+ * Groups: insights, budget, loans, cards, assets, cashflow, payee-cleanup.
  *
  * capture-screenshots.mjs points a private instance at the demo's budgets,
  * which is right for pages that only read Actual. Financial Insights, Loans,
@@ -30,10 +30,14 @@ import {
   closeDialog,
   groupsWanted,
   nav,
+  openCockpitMonth,
   openDemo,
+  openMonthTransactions,
+  openMonthVariance,
   openNewPlanDialog,
   scrollMain,
   shooter,
+  storyMonth,
   tab,
   withTemporaryCashPlan,
 } from "./demo-capture.mjs";
@@ -97,6 +101,35 @@ try {
         await scrollMain(page, 0);
         await shoot(page, name, belowChrome(height));
       });
+    }
+  }
+
+  if (want("budget")) {
+    // Budget Cockpit's drill-throughs, on the month with most to explain: the
+    // Envelope budget's Variance Drivers reads balances, the Tracking budget's
+    // reads the plan, and Spending Analysis is shown from Tracking.
+    const month = storyMonth();
+    await step("budget-variance-envelope", async () => {
+      await openCockpitMonth(page, month);
+      await openMonthVariance(page, month, "Envelope");
+      await element(dialog(), "budget-variance-envelope");
+      await closeDialog(page);
+    });
+    const tracking = await openDemo("Tracking");
+    const trackingDialog = () => tracking.page.locator('[role="dialog"]').first();
+    try {
+      await step("budget-spending-analysis", async () => {
+        await openCockpitMonth(tracking.page, month);
+        await openMonthTransactions(tracking.page, month);
+        await element(trackingDialog(), "budget-spending-analysis");
+        await closeDialog(tracking.page);
+      });
+      await step("budget-variance-tracking", async () => {
+        await openMonthVariance(tracking.page, month, "Tracking");
+        await element(trackingDialog(), "budget-variance-tracking");
+      });
+    } finally {
+      await tracking.browser.close();
     }
   }
 
