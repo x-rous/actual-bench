@@ -64,6 +64,10 @@ try {
       "cash-buffer.png": "progress-cash-buffer",
       "asset-composition": "progress-asset-composition",
     };
+    // The debt card shows the loans: a card paid in full each month draws a
+    // zigzag, while the loans fall steadily toward their debt-free date.
+    await page.getByRole("button", { name: "Loans", exact: true }).first().click();
+    await page.waitForTimeout(1500);
     const buttons = page.getByRole("button", { name: "Download PNG" });
     for (let i = 0; i < (await buttons.count()); i++) {
       const [download] = await Promise.all([page.waitForEvent("download"), buttons.nth(i).click()]);

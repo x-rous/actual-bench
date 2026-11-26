@@ -75,7 +75,8 @@ try {
       await closeDialog(page);
     });
     await step("fi-drilldown", async () => {
-      await page.getByText("86,041.03").first().click();
+      // The money spent under Money kept, whatever the demo's figure is today.
+      await page.getByRole("button", { name: /^Money spent .*Show the transactions$/ }).first().click();
       await page.waitForTimeout(4000);
       await element(dialog(), "fi-drilldown");
       await closeDialog(page);

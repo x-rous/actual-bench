@@ -64,11 +64,39 @@ export async function openDemo() {
     document.addEventListener("DOMContentLoaded", () => document.head.append(style));
   });
   const page = await context.newPage();
-  await page.goto(DEMO, { waitUntil: "domcontentloaded", timeout: 60000 });
-  await page.getByText("Envelope demo").click({ timeout: 60000 });
+  if (LOCAL) {
+    await connectLocal(page);
+  } else {
+    await page.goto(DEMO, { waitUntil: "domcontentloaded", timeout: 60000 });
+    await page.getByText("Envelope demo").click({ timeout: 60000 });
+  }
   await page.waitForURL(/overview/, { timeout: 120000 });
   await page.waitForTimeout(8000);
   return { browser, page };
+}
+
+/**
+ * A freshly generated seed, before it reaches the public demo: a local Actual
+ * Server serving demo/seed-data and a local Bench whose database is a copy of
+ * demo/seed-bench.sqlite (see docs/screenshots.md). Bench connects to it
+ * Direct, with the seed's public password, and opens the Envelope budget.
+ */
+const LOCAL = process.env.BENCH_URL
+  ? {
+      bench: process.env.BENCH_URL.replace(/\/+$/, ""),
+      actual: (process.env.ACTUAL_URL ?? "http://localhost:5006").replace(/\/+$/, ""),
+      password: process.env.SEED_PASSWORD ?? "demo-budget-public",
+    }
+  : null;
+
+async function connectLocal(page) {
+  await page.goto(`${LOCAL.bench}/connect`, { waitUntil: "domcontentloaded", timeout: 120000 });
+  await page.getByRole("tab", { name: /Direct Actual Server/ }).click({ timeout: 120000 });
+  await page.locator("#baseUrl").fill(LOCAL.actual);
+  await page.locator("#serverPassword").fill(LOCAL.password);
+  await page.getByRole("button", { name: "Load budgets" }).click();
+  await page.getByRole("button", { name: /Live Demo - Envelope/ }).click({ timeout: 120000 });
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
 }
 
 /** Screenshot helpers that write into one folder. */

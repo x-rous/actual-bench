@@ -1,0 +1,661 @@
+---
+// The front page's hero: what Bench does with the accounts you already keep in
+// Actual, in three steps a visitor can click through. It plays through once on
+// its own and stops on the whole picture; with reduced motion, or without
+// script, it simply shows the whole picture.
+//
+// Every figure is the demo household's, read from the seed (demo/), so what a
+// visitor sees here is what "Try the live demo" opens.
+
+export type PictureAccount = {
+	name: string;
+	balance: number;
+	onBudget: boolean;
+	cls: keyof typeof CLASSES;
+	note?: string;
+};
+
+export type PictureAnswer = { value: string; label: string; href: string; feature: string };
+
+interface Props {
+	accounts: PictureAccount[];
+	answers: PictureAnswer[];
+}
+
+const CLASSES = {
+	bank: { label: 'Checking', color: '#1d52d1', side: 'own', group: 'Cash & checking' },
+	cash: { label: 'Cash', color: '#1d52d1', side: 'own', group: 'Cash & checking' },
+	savings: { label: 'Savings', color: '#5b8def', side: 'own', group: 'Savings' },
+	investment: { label: 'Investment', color: '#0f8b74', side: 'own', group: 'Investments' },
+	retirement: { label: 'Retirement', color: '#56b8a0', side: 'own', group: 'Retirement' },
+	property: { label: 'Property', color: '#7b5bd6', side: 'own', group: 'Property' },
+	vehicle: { label: 'Vehicle', color: '#b49cf0', side: 'own', group: 'Vehicles' },
+	'credit-card': { label: 'Credit card', color: '#e8844a', side: 'owe', group: 'Credit cards' },
+	loan: { label: 'Loan', color: '#d6453d', side: 'owe', group: 'Loans' },
+} as const;
+
+const { accounts, answers } = Astro.props;
+
+const whole = (value: number) => Math.round(value).toLocaleString('en-US');
+const money = (value: number) =>
+	value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const onBudget = accounts.filter((account) => account.onBudget);
+const offBudget = accounts.filter((account) => !account.onBudget);
+
+// The balance sheet: each class group's total, on the side it belongs to.
+const groups = new Map<string, { group: string; color: string; side: string; total: number }>();
+for (const account of accounts) {
+	const info = CLASSES[account.cls];
+	const entry = groups.get(info.group) ?? { group: info.group, color: info.color, side: info.side, total: 0 };
+	entry.total += Math.abs(account.balance);
+	groups.set(info.group, entry);
+}
+const own = [...groups.values()].filter((entry) => entry.side === 'own' && entry.total > 0);
+const owe = [...groups.values()].filter((entry) => entry.side === 'owe' && entry.total > 0);
+const ownTotal = own.reduce((sum, entry) => sum + entry.total, 0);
+const oweTotal = owe.reduce((sum, entry) => sum + entry.total, 0);
+const share = (value: number) => `${((value / ownTotal) * 100).toFixed(2)}%`;
+
+const steps = [
+	{ id: 'actual', label: 'In Actual' },
+	{ id: 'classes', label: 'What each one is' },
+	{ id: 'picture', label: 'The whole picture' },
+];
+---
+
+<div class="picture" data-step="3">
+	<div class="picture-tabs" role="tablist" aria-label="From your Actual accounts to the whole picture">
+		{steps.map((step, index) => (
+			<button
+				type="button"
+				role="tab"
+				id={`picture-tab-${step.id}`}
+				aria-controls={`picture-panel-${step.id}`}
+				aria-selected={index === 2 ? 'true' : 'false'}
+				tabindex={index === 2 ? 0 : -1}
+				data-to={index + 1}
+			>
+				<span class="step-number" aria-hidden="true">{index + 1}</span>
+				<span>{step.label}</span>
+				<span class="step-timer" aria-hidden="true"></span>
+			</button>
+		))}
+	</div>
+
+	<div class="picture-stage">
+		<div class="picture-panel picture-ledger" role="tabpanel" id="picture-panel-actual" aria-labelledby="picture-tab-actual" data-panels="1 2">
+			{[
+				['On budget', onBudget],
+				['Off budget', offBudget],
+			].map(([heading, list]) => (
+				<div class="ledger-group">
+					<p class="ledger-heading">{heading as string}</p>
+					<ul role="list">
+						{(list as PictureAccount[]).map((account, index) => (
+							<li style={`--c: ${CLASSES[account.cls].color}; --i: ${index}`}>
+								<span class="swatch" aria-hidden="true"></span>
+								<span class="name">{account.name}</span>
+								<span class="chip">
+									{CLASSES[account.cls].label}
+									{account.note && <span class="chip-note">{account.note}</span>}
+								</span>
+								<span class:list={['amount', { negative: account.balance < 0 }]}>{money(account.balance)}</span>
+							</li>
+						))}
+					</ul>
+				</div>
+			))}
+			<p class="panel-caption caption-actual">Fourteen balances. Each one a number.</p>
+			<p class="panel-caption caption-classes">Set once, in a minute. Nothing in Actual changes.</p>
+		</div>
+
+		<div class="picture-panel picture-sheet" role="tabpanel" id="picture-panel-picture" aria-labelledby="picture-tab-picture" data-panels="3">
+			<div class="sheet-head">
+				<p class="sheet-label">Net worth</p>
+				<p class="sheet-total">{whole(ownTotal - oweTotal)}</p>
+				<p class="sheet-sub">You own {whole(ownTotal)} and owe {whole(oweTotal)}.</p>
+			</div>
+
+			<div class="bars">
+				{[
+					['You own', own],
+					['You owe', owe],
+				].map(([label, list]) => (
+					<div class="bar-row">
+						<p class="bar-label">{label as string}</p>
+						<div class="bar-track">
+							{(list as typeof own).map((entry, index) => (
+								<span
+									class="bar-seg"
+									style={`--w: ${share(entry.total)}; --c: ${entry.color}; --i: ${index}`}
+									title={`${entry.group}: ${whole(entry.total)}`}
+								></span>
+							))}
+						</div>
+					</div>
+				))}
+			</div>
+
+			<ul class="legend" role="list">
+				{[...own, ...owe].map((entry) => (
+					<li style={`--c: ${entry.color}`}>
+						<span class="swatch" aria-hidden="true"></span>
+						<span>{entry.group}</span>
+						<span class="legend-amount">{whole(entry.total)}</span>
+					</li>
+				))}
+			</ul>
+
+			<ul class="answers" role="list">
+				{answers.map((answer, index) => (
+					<li style={`--i: ${index}`}>
+						<a href={answer.href}>
+							<span class="answer-value">{answer.value}</span>
+							<span class="answer-label">{answer.label}</span>
+							<span class="answer-feature">{answer.feature}</span>
+						</a>
+					</li>
+				))}
+			</ul>
+		</div>
+	</div>
+</div>
+
+<script>
+	// Plays the three steps once, then rests on the whole picture. Any click or
+	// key press on the tabs takes over and stops it for good.
+	for (const picture of document.querySelectorAll<HTMLElement>('.picture')) {
+		const tabs = [...picture.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+		const panels = [...picture.querySelectorAll<HTMLElement>('[role="tabpanel"]')];
+		let timer: number | undefined;
+		let observer: IntersectionObserver | undefined;
+
+		const show = (step: number, focus = false) => {
+			picture.dataset.step = String(step);
+			tabs.forEach((tab, index) => {
+				const selected = index + 1 === step;
+				tab.setAttribute('aria-selected', String(selected));
+				tab.tabIndex = selected ? 0 : -1;
+				if (selected && focus) tab.focus();
+			});
+			for (const panel of panels) {
+				const visible = (panel.dataset.panels ?? '').split(' ').includes(String(step));
+				panel.hidden = !visible;
+				// Steps 1 and 2 share the account list; the tab that labels it follows the step.
+				if (visible) panel.setAttribute('aria-labelledby', tabs[step - 1].id);
+			}
+		};
+
+		// Once someone chooses a step, the picture never plays on its own again.
+		const stop = () => {
+			window.clearTimeout(timer);
+			observer?.disconnect();
+			picture.classList.remove('is-playing');
+		};
+
+		tabs.forEach((tab, index) => {
+			tab.addEventListener('click', () => {
+				stop();
+				show(index + 1);
+			});
+			tab.addEventListener('keydown', (event) => {
+				const move = { ArrowRight: 1, ArrowLeft: -1, Home: -index, End: tabs.length - 1 - index }[event.key];
+				if (move === undefined) return;
+				event.preventDefault();
+				stop();
+				show(Math.min(tabs.length, Math.max(1, index + 1 + move)), true);
+			});
+		});
+
+		const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+		if (still) {
+			show(3);
+		} else {
+			// Start when the picture is on screen, so nobody misses the first step.
+			const play = (step: number) => {
+				show(step);
+				if (step < 3) timer = window.setTimeout(() => play(step + 1), step === 1 ? 2400 : 3000);
+				else picture.classList.remove('is-playing');
+			};
+			show(1);
+			observer = new IntersectionObserver((entries) => {
+				if (!entries.some((entry) => entry.isIntersecting)) return;
+				observer?.disconnect();
+				picture.classList.add('is-playing');
+				timer = window.setTimeout(() => play(1), 600);
+			}, { threshold: 0.4 });
+			observer.observe(picture);
+		}
+	}
+</script>
+
+<style>
+	.picture {
+		--pad: clamp(1rem, 2.2vw, 1.6rem);
+		background: var(--surface);
+		border: 1px solid var(--line);
+		border-radius: var(--radius-window);
+		box-shadow:
+			0 1px 0 rgba(21, 24, 30, 0.04),
+			0 40px 80px -40px rgba(21, 40, 90, 0.4);
+		overflow: hidden;
+	}
+
+	/* Tabs: the three steps, numbered because they are a sequence. */
+	.picture-tabs {
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		border-bottom: 1px solid var(--line);
+		background: var(--paper);
+	}
+
+	.picture-tabs button {
+		position: relative;
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		min-height: 56px;
+		padding: 0.5rem var(--pad);
+		border: 0;
+		background: transparent;
+		color: var(--muted);
+		font: inherit;
+		font-size: 0.92rem;
+		font-weight: 600;
+		text-align: left;
+		cursor: pointer;
+	}
+
+	.picture-tabs button + button {
+		border-left: 1px solid var(--line);
+	}
+
+	.picture-tabs button[aria-selected='true'] {
+		background: var(--surface);
+		color: var(--ink);
+	}
+
+	.picture-tabs button:focus-visible {
+		outline: 2px solid var(--ledger);
+		outline-offset: -4px;
+	}
+
+	.step-number {
+		display: grid;
+		place-items: center;
+		flex: 0 0 auto;
+		width: 1.6rem;
+		height: 1.6rem;
+		border-radius: 50%;
+		border: 1.5px solid currentColor;
+		font-size: 0.8rem;
+	}
+
+	[aria-selected='true'] .step-number {
+		background: var(--ink);
+		border-color: var(--ink);
+		color: #fff;
+	}
+
+	/* While it plays, a thin line under the current step shows time running. */
+	.step-timer {
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: -1px;
+		height: 2px;
+		background: var(--ledger);
+		transform: scaleX(0);
+		transform-origin: left;
+	}
+
+	.is-playing [aria-selected='true'] .step-timer {
+		animation: timer 2.7s linear both;
+	}
+
+	@keyframes timer {
+		to {
+			transform: scaleX(1);
+		}
+	}
+
+	/* Stage: a fixed height, so moving between steps never moves the page. */
+	.picture-stage {
+		display: grid;
+		min-height: 36rem;
+	}
+
+	.picture-panel {
+		display: flex;
+		flex-direction: column;
+		padding: var(--pad);
+	}
+
+	.picture-panel[hidden] {
+		display: none;
+	}
+
+	/* Steps 1 and 2: the account list */
+	.ledger-group + .ledger-group {
+		margin-top: 0.9rem;
+	}
+
+	.ledger-heading {
+		margin: 0 0 0.3rem;
+		color: var(--muted);
+		font-size: 0.8rem;
+		font-weight: 600;
+	}
+
+	.picture-ledger ul {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.picture-ledger li {
+		display: grid;
+		grid-template-columns: 4px minmax(0, 1fr) auto 7.5rem;
+		align-items: center;
+		gap: 0.75rem;
+		min-height: 2.05rem;
+		border-bottom: 1px solid #eef0f4;
+		font-size: 0.95rem;
+	}
+
+	.picture-ledger .swatch {
+		align-self: stretch;
+		margin-block: 0.45rem;
+		border-radius: 2px;
+		background: var(--line);
+		transition: background-color 0.4s ease calc(var(--i) * 45ms);
+	}
+
+	.name {
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+	}
+
+	.amount {
+		text-align: right;
+	}
+
+	.amount.negative {
+		color: #b3261e;
+	}
+
+	.chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+		padding: 0.12rem 0.55rem;
+		border-radius: 999px;
+		background: color-mix(in srgb, var(--c) 13%, white);
+		color: color-mix(in srgb, var(--c) 75%, black);
+		font-size: 0.8rem;
+		font-weight: 600;
+		white-space: nowrap;
+		opacity: 0;
+		transform: translateX(8px);
+		transition:
+			opacity 0.35s ease calc(var(--i) * 45ms),
+			transform 0.35s ease calc(var(--i) * 45ms);
+	}
+
+	.chip-note {
+		font-weight: 500;
+		opacity: 0.8;
+	}
+
+	.chip-note::before {
+		content: '';
+		display: inline-block;
+		width: 1px;
+		height: 0.8em;
+		margin-right: 0.35rem;
+		background: currentColor;
+		opacity: 0.4;
+		vertical-align: -0.05em;
+	}
+
+	[data-step='2'] .picture-ledger .swatch {
+		background: var(--c);
+	}
+
+	[data-step='2'] .chip {
+		opacity: 1;
+		transform: none;
+	}
+
+	.panel-caption {
+		margin: auto 0 0;
+		padding-top: 1rem;
+		color: var(--ink-soft);
+		font-size: 0.95rem;
+		font-weight: 600;
+	}
+
+	[data-step='1'] .caption-classes,
+	[data-step='2'] .caption-actual {
+		display: none;
+	}
+
+	/* Step 3: the balance sheet and what it answers */
+	.sheet-label {
+		margin: 0;
+		color: var(--muted);
+		font-size: 0.85rem;
+		font-weight: 600;
+	}
+
+	.sheet-total {
+		margin: 0.1rem 0 0;
+		font-size: clamp(2.2rem, 3.6vw, 3rem);
+		font-weight: 700;
+		line-height: 1.05;
+		letter-spacing: -0.03em;
+	}
+
+	.sheet-sub {
+		margin: 0.35rem 0 0;
+		color: var(--ink-soft);
+		font-size: 0.95rem;
+	}
+
+	.bars {
+		display: grid;
+		gap: 0.55rem;
+		margin-top: 1.25rem;
+	}
+
+	.bar-row {
+		display: grid;
+		grid-template-columns: 4.6rem 1fr;
+		align-items: center;
+		gap: 0.75rem;
+	}
+
+	.bar-label {
+		margin: 0;
+		font-size: 0.85rem;
+		font-weight: 600;
+	}
+
+	.bar-track {
+		display: flex;
+		gap: 2px;
+		height: 1.6rem;
+	}
+
+	.bar-seg {
+		flex: 0 0 var(--w);
+		background: var(--c);
+		border-radius: 3px;
+		transform-origin: left;
+	}
+
+	[data-step='3'] .bar-seg {
+		animation: grow 0.6s cubic-bezier(0.3, 0.7, 0.2, 1) both;
+		animation-delay: calc(var(--i) * 70ms);
+	}
+
+	@keyframes grow {
+		from {
+			transform: scaleX(0);
+		}
+	}
+
+	.legend {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr));
+		gap: 0.3rem 1rem;
+		margin: 1rem 0 0;
+		padding: 0;
+		list-style: none;
+		font-size: 0.85rem;
+	}
+
+	.legend li {
+		display: flex;
+		align-items: center;
+		gap: 0.45rem;
+	}
+
+	.legend .swatch {
+		width: 0.65rem;
+		height: 0.65rem;
+		border-radius: 2px;
+		background: var(--c);
+	}
+
+	.legend-amount {
+		margin-left: auto;
+		color: var(--muted);
+	}
+
+	.answers {
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: 0.75rem;
+		margin: auto 0 0;
+		padding-top: 1.4rem;
+		padding: 0;
+		list-style: none;
+	}
+
+	.answers a {
+		display: flex;
+		flex-direction: column;
+		height: 100%;
+		padding: 0.9rem 1rem;
+		border: 1px solid var(--line);
+		border-radius: var(--radius-small);
+		background: var(--paper);
+		color: var(--ink);
+		text-decoration: none;
+	}
+
+	.answers a:hover {
+		border-color: var(--ink);
+	}
+
+	[data-step='3'] .answers li {
+		animation: rise 0.5s ease both;
+		animation-delay: calc(0.45s + var(--i) * 120ms);
+	}
+
+	@keyframes rise {
+		from {
+			opacity: 0;
+			transform: translateY(6px);
+		}
+	}
+
+	.answer-value {
+		font-size: 1.5rem;
+		font-weight: 700;
+		line-height: 1.15;
+		letter-spacing: -0.02em;
+		background-image: linear-gradient(var(--marker), var(--marker));
+		background-repeat: no-repeat;
+		background-size: 100% 0.42em;
+		background-position: 0 88%;
+		align-self: flex-start;
+	}
+
+	.answer-label {
+		margin-top: 0.35rem;
+		font-size: 0.9rem;
+		line-height: 1.35;
+	}
+
+	.answer-feature {
+		margin-top: auto;
+		padding-top: 0.6rem;
+		color: var(--ledger);
+		font-size: 0.82rem;
+		font-weight: 600;
+	}
+
+	@media (max-width: 640px) {
+		.picture-tabs button {
+			flex-direction: column;
+			align-items: flex-start;
+			gap: 0.3rem;
+			font-size: 0.8rem;
+		}
+
+		.picture-ledger li {
+			grid-template-columns: 4px minmax(0, 1fr) auto;
+			font-size: 0.9rem;
+		}
+
+		.chip {
+			display: none;
+		}
+
+		.picture-ledger .name,
+		.picture-ledger .amount {
+			grid-row: 1;
+		}
+
+		.picture-ledger .amount {
+			grid-column: 3;
+		}
+
+		.picture-ledger .swatch {
+			grid-row: 1 / span 2;
+		}
+
+		[data-step='2'] .chip {
+			display: inline-flex;
+			grid-column: 2 / span 2;
+			grid-row: 2;
+			justify-self: start;
+			margin-bottom: 0.4rem;
+		}
+
+		.answers {
+			grid-template-columns: 1fr;
+		}
+
+		.picture-stage {
+			min-height: 0;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.chip,
+		.picture-ledger .swatch {
+			transition: none;
+		}
+
+		[data-step='3'] .bar-seg,
+		[data-step='3'] .answers li,
+		.is-playing [aria-selected='true'] .step-timer {
+			animation: none;
+		}
+	}
+</style>
