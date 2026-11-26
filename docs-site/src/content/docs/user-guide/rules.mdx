@@ -113,8 +113,9 @@ The CSV has one row per condition or action, grouped by `rule_id`. The main colu
 - Formulas export with a leading `'` so your spreadsheet does not evaluate them. It is removed again
   on import.
 
-If a row uses an operator the importer does not recognise, that whole rule is skipped and the
-summary names the operator.
+If an action row uses an operator the importer does not recognise, that whole rule is skipped and
+the summary names the operator. Condition operators are not checked this way, so check a condition
+you typed by hand.
 
 ## Examples
 

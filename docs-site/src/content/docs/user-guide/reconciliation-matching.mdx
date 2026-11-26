@@ -42,7 +42,8 @@ scoring, no competition, confidence **exact**.
 
 The statement's own reference or authorisation number is tried the same way, after the OFX ID. A
 reference column can hold anything a bank chose to put there (a cheque number, a branch code), so a
-reference match counts only when the money moves the same way and the dates are within 31 days. If
+reference match counts only when the money moves the same way and the dates are within 31 days (or
+within your date tolerance, if you set it higher). If
 its amount differs, the pair is offered for review instead of being pinned.
 
 This is the only tier that bypasses scoring, because an identifier the bank issued is not evidence

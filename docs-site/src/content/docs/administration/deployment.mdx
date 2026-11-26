@@ -94,8 +94,10 @@ networking.
 Put a reverse proxy (Caddy, Traefik, Nginx) in front and terminate HTTPS there:
 
 - Forward the original **host** and **protocol** headers.
-- Serving the Actual Server through the same proxy makes it same-origin, which solves Direct mode's
-  CORS needs without opening CORS up.
+- Serving the Actual Server on the same scheme, hostname and port as Bench (for example under a path
+  such as `/actual`, routed by the proxy) makes it same-origin, which solves Direct mode's CORS needs
+  without opening CORS up. On its own hostname, such as `actual.example.com`, it is a different
+  origin even behind the same proxy, and still needs CORS.
 - Once the hostname is HTTPS-only, enable **HSTS** at the proxy. Bench does not send it itself,
   because it also runs over plain HTTP on a LAN.
 - Don't strip Bench's own security headers, and don't add a second `Content-Security-Policy` at the

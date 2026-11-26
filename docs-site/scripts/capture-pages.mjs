@@ -68,6 +68,8 @@ async function step(name, work) {
       await page.screenshot({ path: join(process.env.SHOT_DEBUG_DIR, `${name}-failed.png`) }).catch(() => {});
     }
     await closeDialog(page);
+    // A shot that failed after staging an edit must not leave it for the next one.
+    await discardDraft().catch(() => {});
   }
 }
 

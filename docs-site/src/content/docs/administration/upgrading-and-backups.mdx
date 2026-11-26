@@ -7,8 +7,10 @@ sidebar:
 
 Upgrading Actual Bench is usually two commands. This page covers the few things worth doing around
 them, so nothing is lost: back up `/data` first, pin the version you move to, and check App Health
-afterwards. `/data` holds Bench's own database (flows, sessions, cards, plans, loans, assets, saved
-queries and encrypted credentials) and the vault key.
+afterwards. By default `/data` holds Bench's own database (flows, sessions, cards, plans, loans,
+assets, saved queries and encrypted credentials) and the vault key. If you set
+`ACTUAL_BENCH_DB_PATH` somewhere else, back up the folder that holds that database instead: the
+generated vault key sits beside it, in `secrets/`.
 
 ## What needs to be backed up
 

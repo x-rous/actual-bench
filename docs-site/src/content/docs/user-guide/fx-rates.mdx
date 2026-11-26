@@ -85,7 +85,10 @@ rate.
 
 - **FX pending in a preview:** no rate was found for that date. Fill the range, set your rate or
   import one, or preview again if the provider was briefly unavailable.
-- **A future-dated transaction stays pending:** there is no rate for a future date yet.
+- **A future-dated transaction stays pending:** with **Daily** or **Monthly average**, a transaction
+  dated two or more days ahead has no rate yet and waits for one. One dated tomorrow uses the latest
+  stored rate on or before its date. **Fixed** applies its rate to every date, so future
+  transactions convert.
 - **The converted amount is slightly off:** only the final amount is rounded. Set the bank fee, or
   type the amount your bank charged.
 - **The pair is the wrong way round:** check the source and target currencies on the flow.

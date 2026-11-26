@@ -46,11 +46,14 @@ budget-bundle-<label>-<date>.zip
    that everything a rule refers to already exists.
 4. Read the summary of what was staged or skipped. Its links open each page so you can look at the
    rows.
-5. Select **Save** in the Changes panel. The whole import is one undo step.
+5. Until you save, the whole import is one undo step. Select **Save** in the Changes panel to write
+   it; after that, Undo no longer reaches it.
 
 :::tip[Export first]
 A bundle can stage hundreds of rows at once. Export the current budget before a large import, so you
-always have its structure to go back to.
+have a copy of its structure to compare against. An export is a reference, not a restore: importing
+it again adds rows rather than putting the budget back. To be able to go back, take a
+[backup](../../user-guide/backups/) first.
 :::
 
 ## Common problems

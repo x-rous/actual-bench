@@ -40,10 +40,15 @@ ACTUAL_PORT=5197 ACTUAL_DATA_DIR=/tmp/demo-actual \
 # A private Bench on a copy of the seed's Bench data, under /data as in Docker,
 # so App Health shows the paths a reader will see. The seed's backup destination
 # is /data/backups, which must exist and be empty.
-mkdir -p /data/backups
-cp demo/seed-bench.sqlite /data/actual-bench.sqlite
-ACTUAL_BENCH_AUTH=none ACTUAL_BENCH_DB_PATH=/data/actual-bench.sqlite \
-  ACTUAL_BENCH_DIST_DIR=.next-live-tmp npx next dev -p 3517 &
+# Only on a machine with no Bench of its own: it never overwrites one.
+if [ -e /data/actual-bench.sqlite ]; then
+  echo "/data already holds a Bench database; use a disposable machine or container" >&2
+else
+  mkdir -p /data/backups
+  cp demo/seed-bench.sqlite /data/actual-bench.sqlite
+  ACTUAL_BENCH_AUTH=none ACTUAL_BENCH_DB_PATH=/data/actual-bench.sqlite \
+    ACTUAL_BENCH_DIST_DIR=.next-live-tmp npx next dev -p 3517 &
+fi
 
 # Wait for each to answer (the first Bench page compiles), then capture
 wait_for() {
