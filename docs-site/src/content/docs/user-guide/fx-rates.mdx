@@ -85,11 +85,10 @@ rate.
 
 - **FX pending in a preview:** no rate was found for that date. Fill the range, set your rate or
   import one, or preview again if the provider was briefly unavailable.
-- **A future-dated transaction stays pending:** it depends on the rate mode. **Daily** waits for a
-  transaction dated two or more days ahead; one dated tomorrow uses the latest stored rate on or
-  before its date. **Monthly average** waits for any future-dated transaction, and for one whose
-  month is missing a day's rate so far. **Fixed** applies its rate to every date, so future
-  transactions convert.
+- **A future-dated transaction stays pending:** with **Daily** or **Monthly average**, it may wait
+  until its date, or a day of its month that the average needs, has a rate. A transaction dated
+  tomorrow can usually use the latest stored rate. **Fixed** applies its rate to every date, so
+  future transactions convert.
 - **The converted amount is slightly off:** only the final amount is rounded. Set the bank fee, or
   type the amount your bank charged.
 - **The pair is the wrong way round:** check the source and target currencies on the flow.
