@@ -54,13 +54,14 @@ wait_for() {   # wait_for <url> <pid>: the server we started must be the one ans
 }
 
 # Bench's data goes under /data as in Docker, so App Health shows the paths a
-# reader will see; the seed's backup destination is /data/backups, which must
-# exist and be empty. Use a disposable container, or a machine where you created
+# reader will see; the seed's backup destination is /data/backups, which this
+# creates empty. Use a disposable container, or a machine where you created
 # /data yourself and can write to it. Nothing starts if /data already holds a
-# Bench, if the seed cannot be copied, or if either port is taken.
+# Bench database, backups or vault key, if the seed cannot be copied, or if
+# either port is taken, so the cleanup below only removes what this run made.
 seeded=false
-if [ -e /data/actual-bench.sqlite ]; then
-  echo "/data already holds a Bench database; use a disposable machine or container" >&2
+if [ -e /data/actual-bench.sqlite ] || [ -e /data/backups ] || [ -e /data/secrets ]; then
+  echo "/data already holds Bench files; use a disposable machine or container" >&2
 elif ! port_free 5197 || ! port_free 3517; then
   echo "port 5197 or 3517 is already in use; stop that server first" >&2
 elif actual_dir=$(mktemp -d) && cp -R demo/seed-data/. "$actual_dir" \
@@ -90,7 +91,8 @@ fi
 Start from a fresh copy of the seed database for every full run: the `recon` and
 `ops` groups expect the seed's state, and a second run on the same database finds
 the first run's session, flow and backups already there. When the capture ends,
-in the same shell, stop both servers and remove what the run made:
+in the same shell, stop both servers and remove what the run made (setup refused
+to start if any of these already existed):
 
 ```bash
 kill "$actual_pid" "$bench_pid"
