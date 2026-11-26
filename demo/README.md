@@ -40,7 +40,7 @@ node demo/generate-seed.mjs
 ```
 
 The generator uses a temporary local Actual Server (port 5006 by default;
-`SEED_PORT` overrides it), produces twelve completed months and the current
+`SEED_PORT` overrides it), produces two completed years and the current
 partial month, validates equivalent transactions and expense plans, and keeps
 the two stable Sync IDs. `SEED_PASSWORD` changes the generated server password;
 its default is printed by the generator. Generation writes the Actual server
@@ -52,8 +52,15 @@ Opening transactions use the `Starting Balance` payee. In the Envelope seed,
 the current month stays fully assigned even early in the month: any shortfall
 after the hold is taken from the emergency-fund assignment.
 
-The household has a family home with six years of valuations, a car, and an
-investment property with linked rental income and expenses. Four loans include
+Every account opens in the month before the first one, so any period a visitor
+picks starts from real balances. The two years tell a story: in the first, the
+household runs hot (takeaway delivery, a cable plan, dining over plan); at the
+start of the second a raise arrives, the cable plan is cancelled, delivery is cut,
+monthly investing triples and the bonus pays down the mortgage. A brokerage and
+a locked 401(k) receive contributions, quarterly dividends and monthly market
+moves, including down months. The household has a family home with six years of
+valuations, a car, and an investment property with linked rental income and
+expenses, a month between tenants, a rent review and a water-heater repair. Four loans include
 the home and investment mortgages, a car loan, and a personal loan. Two cards
 show a missed minimum payment with interest and a fully paid instalment plan.
 The checking account has completed, in-review, and ready-to-apply reconciliation

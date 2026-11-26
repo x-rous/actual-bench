@@ -7,16 +7,19 @@ const scenario = require("./seed-scenario.cjs") as {
   }>;
   DEMO_BUDGETS: Array<{ name: string; mode: string; stableGroupId: string }>;
   TAGS: Array<[string, string, string]>;
+  MARKET_RETURNS: number[];
   buildMonths(now: Date): Array<{
     key: string;
     monthNumber: number;
+    index: number;
+    phase: "before" | "after";
     isCurrent: boolean;
   }>;
-  budgetPlanForMonth(month: { monthNumber: number }): Record<string, number>;
+  budgetPlanForMonth(month: { monthNumber: number; index?: number; phase?: string }): Record<string, number>;
   scenarioForMonth(
     month: { monthNumber: number; isCurrent: boolean },
     index: number
-  ): { label: string; incomeAdjustment: number; event: string | null };
+  ): { label: string; incomeAdjustment: number; bonusAmount: number; event: string | null; restaurantFactor: number };
 };
 
 describe("demo seed scenario", () => {
@@ -28,12 +31,26 @@ describe("demo seed scenario", () => {
     expect(new Set(scenario.DEMO_BUDGETS.map((budget) => budget.stableGroupId)).size).toBe(2);
   });
 
-  it("builds twelve completed months plus the current partial month", () => {
+  it("builds two completed years plus the current partial month", () => {
     const months = scenario.buildMonths(new Date(2026, 7, 14));
 
-    expect(months).toHaveLength(13);
-    expect(months[0].key).toBe("2025-08");
-    expect(months.at(-1)).toMatchObject({ key: "2026-08", isCurrent: true });
+    expect(months).toHaveLength(25);
+    expect(months[0]).toMatchObject({ key: "2024-08", index: 0, phase: "before" });
+    expect(months[12]).toMatchObject({ key: "2025-08", phase: "after" });
+    expect(months.at(-1)).toMatchObject({ key: "2026-08", isCurrent: true, phase: "after" });
+    expect(scenario.MARKET_RETURNS).toHaveLength(months.length);
+  });
+
+  it("tells a before-and-after story across the two years", () => {
+    const months = scenario.buildMonths(new Date(2026, 7, 14));
+    const before = scenario.budgetPlanForMonth(months[2]);
+    const after = scenario.budgetPlanForMonth(months[14]);
+    expect(after.investing).toBeGreaterThan(before.investing);
+    expect(before.legacyCable).toBeGreaterThan(0);
+    expect(after.legacyCable).toBe(0);
+    expect(scenario.scenarioForMonth(months[14], 14).restaurantFactor).toBeLessThan(
+      scenario.scenarioForMonth(months[2], 2).restaurantFactor
+    );
   });
 
   it("provides a broad household category and tag catalog", () => {
@@ -72,5 +89,14 @@ describe("demo seed scenario", () => {
 
     const bonus = scenario.scenarioForMonth(months[10], 10);
     expect(bonus).toMatchObject({ event: "bonus", incomeAdjustment: 0 });
+    expect(scenario.scenarioForMonth(months[22], 22).bonusAmount).toBeGreaterThan(bonus.bonusAmount);
+
+    // Generated in February 2027, the second bonus lands in December: the
+    // holiday event replaces "bonus", and the amount is what posts it.
+    const generatedInFebruary = scenario.buildMonths(new Date(2027, 1, 14));
+    const december = scenario.scenarioForMonth(generatedInFebruary[22], 22);
+    expect(generatedInFebruary[22].monthNumber).toBe(12);
+    expect(december).toMatchObject({ event: "holiday" });
+    expect(december.bonusAmount).toBeGreaterThan(0);
   });
 });

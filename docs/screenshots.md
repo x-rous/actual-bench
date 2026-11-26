@@ -119,3 +119,37 @@ page that shows the function, without the sidebar and top bar; a dialog is shot
 on its own. The `cashflow` group creates a plan in the shared demo and deletes it
 again. The front page's images come from `capture-landing.mjs` the same way, and
 both share `demo-capture.mjs`.
+
+A regenerated demo seed only reaches the public demo after it is merged and
+deployed. To photograph it before that, serve it locally and point both scripts
+at it with `BENCH_URL`; they then connect Direct instead of clicking the demo
+button:
+
+```bash
+# Actual Server on a scratch copy of the seed (include the hidden .migrate)
+cp -R demo/seed-data/. /tmp/demo-actual
+ACTUAL_PORT=5197 ACTUAL_DATA_DIR=/tmp/demo-actual \
+  ACTUAL_SERVER_FILES=/tmp/demo-actual/server-files ACTUAL_USER_FILES=/tmp/demo-actual/user-files \
+  node node_modules/@actual-app/sync-server/build/bin/actual-server.js &
+# A private Bench whose database is a copy of the seed's Bench data
+cp demo/seed-bench.sqlite /tmp/demo-bench.sqlite
+ACTUAL_BENCH_AUTH=none ACTUAL_BENCH_DB_PATH=/tmp/demo-bench.sqlite \
+  ACTUAL_BENCH_DIST_DIR=.next-live-tmp npx next dev -p 3517 &
+
+# Wait for each to answer (about three minutes at most; the first Bench page
+# compiles), and capture only if both do
+wait_for() {
+  for i in $(seq 1 60); do
+    curl -s -o /dev/null --max-time 2 "$1" && return 0
+    sleep 1
+  done
+  echo "$1 did not answer" >&2
+  return 1
+}
+wait_for http://localhost:5197 && wait_for http://localhost:3517 && \
+BENCH_URL=http://localhost:3517 ACTUAL_URL=http://localhost:5197 \
+  node docs-site/scripts/capture-landing.mjs
+```
+
+The front page's hero (`docs-site/src/components/landing/demo-household.ts`)
+quotes the demo's balances and a few of its figures; update it with the seed.

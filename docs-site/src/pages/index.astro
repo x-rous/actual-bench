@@ -8,6 +8,8 @@
 // lives behind it, unchanged, in Starlight.
 import '@fontsource-variable/schibsted-grotesk';
 import { Image, getImage } from 'astro:assets';
+import WholePicture from '../components/landing/WholePicture.astro';
+import { pictureAccounts, pictureAnswers } from '../components/landing/demo-household';
 
 import logo from '../assets/actual-bench-icon.png';
 import insightsSummary from '../assets/landing/insights-summary.png';
@@ -37,9 +39,9 @@ const docs = (path: string) => `${base}${path}`;
 const DEMO = 'https://actual-bench-demo.vercel.app';
 const GITHUB = 'https://github.com/x-rous/actual-bench';
 
-const title = 'Actual Bench: see the whole picture of your money';
+const title = 'Actual Bench: the whole picture of your money, from your Actual Budget';
 const description =
-	'Actual Bench connects to your Actual Budget and turns the data you already keep into net worth, loans, credit cards, cash runway and plans for the years ahead. Free, open source and self-hosted.';
+	'Actual Bench turns your Actual Budget data into a complete picture of your financial life: every loan, card, home and investment, what you own and owe, and insights you have never had about your money. Free, open source and self-hosted.';
 const social = await getImage({ src: insightsSummary, width: 1200, format: 'png' });
 const socialUrl = new URL(social.src, Astro.site).href;
 
@@ -64,7 +66,7 @@ const ownAndOwe = [
 			'Link the loan to the home or car it paid for',
 		],
 		image: loanTerms,
-		alt: 'A home mortgage in Actual Bench: the loan terms beside a balance-over-time chart running to 2045, with the interest and payoff time an extra payment saved.',
+		alt: 'A home mortgage in Actual Bench: the loan terms beside a balance-over-time chart running to its payoff in July 2044, with the 2,988 of interest and three months that two extra payments saved.',
 		link: docs('user-guide/assets-debt/'),
 	},
 	{
@@ -94,7 +96,7 @@ const ownAndOwe = [
 			'Depreciation schedules for cars and equipment',
 		],
 		image: assetHome,
-		alt: 'The family home in Actual Bench: current value, capital invested, value gain and total return, with its recorded value since 2019 against the capital put in and the mortgage against it.',
+		alt: 'The family home in Actual Bench: current value, capital invested, value gain and total return, with its recorded value since 2018 against the capital put in and the mortgage against it.',
 		link: docs('user-guide/asset-registry/'),
 	},
 	{
@@ -117,18 +119,18 @@ const ownAndOwe = [
 // What a first look at Financial Insights tells the demo household, pinned to
 // where each figure sits in the hero screenshot (fractions of its width and height).
 const notes = [
-	{ x: 0.86, y: 0.135, text: 'You kept a third of everything you earned.' },
-	{ x: 0.54, y: 0.29, text: 'Your cash would last 7.2 months.' },
-	{ x: 0.506, y: 0.428, text: 'Net worth went up every single month.' },
+	{ x: 0.975, y: 0.13, text: 'A savings rate 7 points higher than last year.' },
+	{ x: 0.885, y: 0.346, text: 'Their cash would last 9.2 months, loans and all.' },
+	{ x: 0.509, y: 0.775, text: 'Every change in net worth, explained to the cent.' },
 ];
 
 const progressCards = [
-	{ image: progressSavings, alt: 'Savings rate card: 33.5% over the period, best month September, twelve months in a row above zero.' },
-	{ image: progressBuffer, alt: 'Cash buffer card: 7.2 months of spending covered.' },
-	{ image: progressDebt, alt: 'Debt payoff card: credit card debt falling sharply from its highest month.' },
-	{ image: progressConsistency, alt: 'Savings consistency card: a square for each month that money was saved.' },
-	{ image: progressNetWorth, alt: 'Net worth journey card: a line that crossed zero and kept climbing.' },
-	{ image: progressAssets, alt: 'Asset composition card: what you own, split by share between cash, investments and property.' },
+	{ image: progressSavings, alt: 'Savings rate card: 38.5% over the period, best month September, twelve months in a row above zero.' },
+	{ image: progressBuffer, alt: 'Cash buffer card: 9.2 months of spending covered, more than twelve counting investments they can reach.' },
+	{ image: progressDebt, alt: 'Debt payoff card: loans lower eleven months in a row, debt-free in about 21 years.' },
+	{ image: progressConsistency, alt: 'Savings consistency card: money saved in 12 of the last 12 months.' },
+	{ image: progressNetWorth, alt: 'Net worth journey card: net worth up 20.1% over the year, highest in the latest month.' },
+	{ image: progressAssets, alt: 'Asset composition card: what they own, split by share between cash, investments and property.' },
 ];
 
 const bench = [
@@ -212,54 +214,83 @@ const bench = [
 
 		<main id="main">
 			<section class="hero">
-				<div class="wrap">
-					<h1>See the whole picture of your&nbsp;money.</h1>
-					<p class="lead">
-						Actual Bench connects to your Actual Budget and turns the data you already keep into net worth,
-						loans, credit cards, cash runway and plans for the years ahead. Nothing to re-enter.
-					</p>
-					<div class="actions">
-						<a class="btn" href={DEMO}>Try the live demo</a>
-						<a class="btn btn-quiet" href="#install">Install with Docker</a>
+				<div class="wrap hero-inner">
+					<div class="hero-text">
+						<h1>Everything you own and owe, in one picture.</h1>
+						<p class="lead">
+							Actual Bench turns your Actual Budget data into a complete picture of your financial life. Tell it once
+							what each account is, and your loans, cards, home and investments come together, with answers about your
+							money you have never had before.
+						</p>
+						<div class="actions">
+							<a class="btn" href={DEMO}>Try the live demo</a>
+							<a class="btn btn-quiet" href="#install">Install with Docker</a>
+						</div>
+						<p class="fine">Free and open source. Runs on your own server, right next to Actual. Nothing to re-enter.</p>
 					</div>
-					<p class="fine">Free and open source. Runs on your own server, right next to Actual.</p>
+					<WholePicture accounts={pictureAccounts} answers={pictureAnswers(docs)} />
+				</div>
+			</section>
+
+			<section class="own" id="own-and-owe" aria-labelledby="own-title">
+				<div class="wrap">
+					<h2 id="own-title">Every loan, card and home, understood.</h2>
+					<p class="section-lead">
+						Your loans, cards, home and car are already in your budget as balances. Bench learns what each one is,
+						and shows you where it is going.
+					</p>
 				</div>
 
-				<figure class="hero-shot wrap">
-					<div class="shot-area">
-						<div class="window">
-							<Image
-								src={insightsSummary}
-								alt="Financial Insights in Actual Bench for the demo household: net worth, money kept, savings rate, what they own and owe month by month, and a cash buffer of 7.2 months."
-								widths={[1040, 2080, 3120, 5136]}
-								sizes="(min-width: 1340px) 1040px, 94vw"
-								loading="eager"
-								fetchpriority="high"
-								{...shot}
-							/>
+				{ownAndOwe.map((feature) => (
+					<article class="feature wrap" id={feature.id}>
+						<div class="feature-head">
+							<p class="feature-name">{feature.name}</p>
+							<h3>{feature.title}</h3>
 						</div>
-						<ul class="notes" role="list">
-							{notes.map((note, index) => (
-								<li style={`--x: ${note.x}; --y: ${note.y}; --d: ${index * 0.45}s`}>
-									<span class="leader" aria-hidden="true"></span>
-									<span class="note-text"><span class="mark">{note.text}</span></span>
-								</li>
-							))}
-						</ul>
-					</div>
-					<figcaption>
-						The demo household’s Financial Insights. Every figure comes from the same Actual budget you already keep.
-					</figcaption>
-				</figure>
+						<div class="feature-body">
+							<p>{feature.body}</p>
+							<ul>
+								{feature.points.map((point) => <li>{point}</li>)}
+							</ul>
+							<a class="more" href={feature.link}>How {feature.name.toLowerCase()} work</a>
+						</div>
+						<div class="feature-shot">
+							<Image src={feature.image} alt={feature.alt} widths={[1280, 2560, 3840]} sizes="(min-width: 1340px) 1280px, 94vw" {...shot} />
+						</div>
+					</article>
+				))}
 			</section>
 
 			<section class="insights" aria-labelledby="insights-title">
 				<div class="wrap">
-					<h2 id="insights-title">Your budget already knows. Bench tells you.</h2>
+					<h2 id="insights-title">Then it tells you what you didn’t know.</h2>
 					<p class="section-lead">
-						Financial Insights reads every account and transaction and answers the questions a budget never asks.
-						Each answer opens the transactions behind it, so you can always see why.
+						Once Bench knows what each account is, Financial Insights reads every account and transaction and answers
+						the questions a budget never asks. Each answer opens the transactions behind it, so you can always see why.
 					</p>
+
+					<figure class="insights-shot">
+						<div class="shot-area">
+							<div class="window">
+								<Image
+									src={insightsSummary}
+									alt="Financial Insights in Actual Bench for the demo household: net worth, money kept, savings rate, what they own and owe month by month, the cash buffer and what changed their net worth."
+									widths={[1040, 2080, 3120, 5136]}
+									sizes="(min-width: 1340px) 1040px, 94vw"
+									{...shot}
+								/>
+							</div>
+							<ul class="notes" role="list">
+								{notes.map((note, index) => (
+									<li style={`--x: ${note.x}; --y: ${note.y}; --d: ${index * 0.45}s`}>
+										<span class="leader" aria-hidden="true"></span>
+										<span class="note-text"><span class="mark">{note.text}</span></span>
+									</li>
+								))}
+							</ul>
+						</div>
+						<figcaption>The demo household’s Financial Insights, from the same Actual budget it already keeps.</figcaption>
+					</figure>
 
 					<div class="finding">
 						<div class="finding-text">
@@ -270,7 +301,7 @@ const bench = [
 								a scenario and come back to it.
 							</p>
 						</div>
-						<Image src={cashBuffer} alt="The cash buffer card: 7.2 months of cover, with the monthly need laid out as spending plus each loan repayment." widths={[540, 1080, 1620, 2156]} sizes="(min-width: 960px) 540px, 92vw" {...shot} />
+						<Image src={cashBuffer} alt="The cash buffer card: 9.2 months of cover, with the monthly need laid out as spending plus each loan repayment." widths={[540, 1080, 1620, 2156]} sizes="(min-width: 960px) 540px, 92vw" {...shot} />
 					</div>
 
 					<div class="finding finding-flip">
@@ -304,35 +335,6 @@ const bench = [
 						</p>
 					</div>
 				</div>
-			</section>
-
-			<section class="own" id="own-and-owe" aria-labelledby="own-title">
-				<div class="wrap">
-					<h2 id="own-title">Everything you own and owe, in one place.</h2>
-					<p class="section-lead">
-						Your loans, cards, home and car are already in your budget as balances. Bench understands what they are,
-						and shows you where each one is going.
-					</p>
-				</div>
-
-				{ownAndOwe.map((feature) => (
-					<article class="feature wrap" id={feature.id}>
-						<div class="feature-head">
-							<p class="feature-name">{feature.name}</p>
-							<h3>{feature.title}</h3>
-						</div>
-						<div class="feature-body">
-							<p>{feature.body}</p>
-							<ul>
-								{feature.points.map((point) => <li>{point}</li>)}
-							</ul>
-							<a class="more" href={feature.link}>How {feature.name.toLowerCase()} work</a>
-						</div>
-						<div class="feature-shot">
-							<Image src={feature.image} alt={feature.alt} widths={[1280, 2560, 3840]} sizes="(min-width: 1340px) 1280px, 94vw" {...shot} />
-						</div>
-					</article>
-				))}
 			</section>
 
 			<section class="plan" aria-labelledby="plan-title">
@@ -377,8 +379,8 @@ const bench = [
 				<div class="wrap">
 					<h2 id="progress-title">Share the win. Keep the numbers private.</h2>
 					<p class="section-lead">
-						Progress cards turn your milestones into pictures you can post anywhere: a savings streak, a card paid off,
-						net worth crossing zero. They show shapes, percentages and months, and never a single amount.
+						Progress cards turn your milestones into pictures you can post anywhere: a savings streak, a loan paid down,
+						net worth at a new high. They show shapes, percentages and months, and never a single amount.
 					</p>
 				</div>
 				<ul class="cards wrap" role="list">
@@ -466,7 +468,7 @@ const bench = [
 			<section class="closing">
 				<div class="wrap">
 					<h2>See it with a real household first.</h2>
-					<p>The demo opens a full sample budget with loans, cards, a home, a rental and a year of history. No sign-up.</p>
+					<p>The demo opens a full sample household with loans, cards, a home, a rental, investments and two years of history. No sign-up.</p>
 					<div class="actions">
 						<a class="btn" href={DEMO}>Try the live demo</a>
 						<a class="btn btn-quiet" href={docs('getting-started/introduction/')}>Read the docs</a>
@@ -714,14 +716,27 @@ const bench = [
 		font-size: 0.95rem;
 	}
 
-	/* Hero */
+	/* Hero: the promise on the left, the picture it makes on the right. */
 	.hero {
-		padding-top: clamp(3.5rem, 8vw, 6.5rem);
+		padding-top: clamp(3rem, 6vw, 5rem);
+		padding-bottom: clamp(1rem, 3vw, 2rem);
+	}
+
+	.hero-inner {
+		display: grid;
+		gap: clamp(2.5rem, 5vw, 4rem);
+		align-items: center;
+	}
+
+	@media (min-width: 1100px) {
+		.hero-inner {
+			grid-template-columns: minmax(0, 0.82fr) minmax(0, 1fr);
+		}
 	}
 
 	.hero h1 {
-		max-width: 15ch;
-		font-size: clamp(2.6rem, 6.4vw, 5.25rem);
+		max-width: 13ch;
+		font-size: clamp(2.6rem, 5.2vw, 4.75rem);
 		line-height: 1.02;
 		letter-spacing: -0.035em;
 	}
@@ -734,9 +749,8 @@ const bench = [
 		color: var(--ink-soft);
 	}
 
-	.hero-shot {
-		margin-top: clamp(3rem, 6vw, 4.5rem);
-		margin-bottom: 0;
+	.insights-shot {
+		margin: clamp(2.5rem, 5vw, 3.5rem) 0 clamp(3rem, 6vw, 5rem);
 	}
 
 	.window {
@@ -753,7 +767,7 @@ const bench = [
 		border-radius: var(--radius-window);
 	}
 
-	.hero-shot figcaption {
+	.insights-shot figcaption {
 		margin-top: 1rem;
 		color: var(--muted);
 		font-size: 0.92rem;

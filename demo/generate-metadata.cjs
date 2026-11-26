@@ -75,10 +75,11 @@ for (const demo of manifest) {
   ] };
   const debts = {};
   for (const spec of [
-    // The seed pays 500.00 of extra principal in April 2026. A per-period loan takes each installment's interest from the
-    // contract, so every later installment differs from Actual by the interest that extra saved (about 2 a month, 12.50 by
-    // October). Bench would flag it as a mismatch and the cash buffer would be unavailable; the loan's own "ignore
-    // differences up to" setting is the way a user accepts that, so the demo sets it.
+    // The seed pays extra principal twice (500.00 in the first year, 1,500.00 from the second year's bonus). A per-period
+    // loan takes each installment's interest from the contract, so every later installment differs from Actual by the
+    // interest those extras saved (about 8.50 a month after both). Bench would flag it as a mismatch and the cash buffer
+    // would be unavailable; the loan's own "ignore differences up to" setting is the way a user accepts that, so the
+    // demo sets it.
     { key: 'mortgage', name: 'Home Mortgage', type: 'mortgage', category: c.mortgage, amount: 28000000, payment: 185000, rate: '0.05', term: 360, day: '01', tolerance: 2000 },
     { key: 'carLoan', name: 'Car Loan', type: 'other', category: c.carPayment, amount: 2200000, payment: 38000, rate: '0.06', term: 84, day: '05' },
     { key: 'personalLoan', name: 'Personal Loan', type: 'other', category: c.personalPayment, amount: 1200000, payment: 25000, rate: '0.09', term: 60, day: '05' },
@@ -110,12 +111,12 @@ for (const demo of manifest) {
     const projection = projectStoredDebt(db, debtId, { from: last, to: `${toYear}-${String(current.monthNumber).padStart(2, '0')}-28`, resolution: 'monthly' });
     if (!projection.ok || !projection.projection.ok || projection.projection.events.length === 0) throw new Error(`${spec.name} projection is blocked: ${JSON.stringify(projection)}`);
   }
-  applyAccountClassChanges(db, { budgetSyncId, changes: Object.entries({ checking: 'bank', savings: 'bank', cash: 'cash', credit: 'credit-card', installmentCard: 'credit-card', brokerage: 'investment', property: 'property', rentalProperty: 'property', vehicle: 'vehicle', mortgage: 'loan', carLoan: 'loan', personalLoan: 'loan', rentalLoan: 'loan' }).map(([key, accountClass]) => ({ scope: 'account', id: a[key], accountClass })) });
+  applyAccountClassChanges(db, { budgetSyncId, changes: Object.entries({ checking: 'bank', savings: 'savings', cash: 'cash', credit: 'credit-card', installmentCard: 'credit-card', brokerage: 'investment', retirement: 'retirement', property: 'property', rentalProperty: 'property', vehicle: 'vehicle', mortgage: 'loan', carLoan: 'loan', personalLoan: 'loan', rentalLoan: 'loan' }).map(([key, accountClass]) => ({ scope: 'account', id: a[key], accountClass })) });
   // An Investment account needs no Financial Reporting choice. The brokerage can be sold at any time, so it is marked accessible money (shown as the cash buffer's second figure).
   applyAccountFlagChanges(db, { budgetSyncId, changes: [{ scope: 'account', id: a.brokerage, flag: 'accessible', on: true }] });
   for (const spec of [{ key: 'property', name: 'Family Home', type: 'real-estate', debt: 'mortgage' }, { key: 'vehicle', name: 'Family Car', type: 'vehicle', debt: 'carLoan' }, { key: 'rentalProperty', name: 'Investment Property', type: 'real-estate', debt: 'rentalLoan' }]) {
     const id = `${budgetSyncId}-${spec.key}`;
-    saveAsset(db, { budgetSyncId, asset: { id, actualAccountId: a[spec.key], name: spec.name, assetType: spec.type, description: null, status: 'active', revision: 0, ownership: [{ effectiveFrom: spec.key === 'property' ? demo.homeOpeningDate : `${first.key}-01`, ownershipBps: 10000 }] }, accountDirectory: [{ id: a[spec.key], name: spec.name, offBudget: true, closed: false }] });
+    saveAsset(db, { budgetSyncId, asset: { id, actualAccountId: a[spec.key], name: spec.name, assetType: spec.type, description: null, status: 'active', revision: 0, ownership: [{ effectiveFrom: spec.key === 'property' ? demo.homeOpeningDate : openingDate, ownershipBps: 10000 }] }, accountDirectory: [{ id: a[spec.key], name: spec.name, offBudget: true, closed: false }] });
     saveBookMetadata(db, { budgetSyncId, changes: demo.transactions[spec.key].map((row) => ({ actualTransactionId: row.id, actualAccountId: a[spec.key], assetId: id, classification: row.starting_balance_flag ? 'opening-balance' : (spec.key === 'vehicle' ? 'depreciation' : 'revaluation'), revision: 0 })) });
     const links = readRegistry(db, budgetSyncId).debtLinks ?? [];
     saveAssetDebtAllocation(db, { budgetSyncId, assetId: id, debtId: debts[spec.debt], expectedFingerprint: loanFingerprint(links, debts[spec.debt]), operation: { kind: 'set', effectiveFrom: `${first.key}-01`, allocationBps: 10000 } });
@@ -149,7 +150,9 @@ for (const demo of manifest) {
     return { id: `${secondCardId}-statement-${index}`, cardId: secondCardId, revision: 1, periodStart, closingDate, dueDate: `${next.key}-26`, balanceMinor, minimumDueMinor: Math.min(balanceMinor, 5000), previousBalanceMinor: index === 0 ? -demo.transactions.installmentCard.filter((row) => !row.is_child && row.date < periodStart).reduce((sum, row) => sum + row.amount, 0) : null };
   });
   const planId = `${secondCardId}-laptop-plan`;
-  const plan = { id: planId, cardId: secondCardId, revision: 1, name: 'Laptop instalments', recordedAs: 'card-instalments', originalAmountMinor: 120000, startDate: `${first.key}-01`, scheduleKind: 'fixed', firstDueDate: `${demo.months[1].key}-12`, instalmentCount: 12, instalmentMinor: 10000 };
+  // The laptop was bought a year before the running month and paid off in twelve instalments.
+  const planStart = demo.months.at(-13), planFirstDue = demo.months.at(-12);
+  const plan = { id: planId, cardId: secondCardId, revision: 1, name: 'Laptop instalments', recordedAs: 'card-instalments', originalAmountMinor: 120000, startDate: `${planStart.key}-01`, scheduleKind: 'fixed', firstDueDate: `${planFirstDue.key}-12`, instalmentCount: 12, instalmentMinor: 10000 };
   const planRows = demo.transactions.installmentCard.filter((row) => row.notes === 'Laptop installment #home-project').sort((x, y) => x.date.localeCompare(y.date)).map((row, i) => {
     const evidence = { id: row.id, accountId: a.installmentCard, date: row.date, amountMinor: row.amount, transferKnown: true, transferId: row.transfer_id ?? null, parentId: null };
     return { planId, transactionId: row.id, role: 'instalment', instalmentNumber: i + 1, transferPairKey: null, identityHash: identityHash(evidence), sourceHash: financialFingerprint(evidence) };
@@ -168,8 +171,15 @@ for (const demo of manifest) {
   const currentRows = demo.transactions.checking.filter((row) => row.date.startsWith(current.key) && !row.is_child);
   const pendingRows = currentRows.filter((row) => !row.reconciled && !row.is_parent && !row.starting_balance_flag).sort((x, y) => x.date.localeCompare(y.date));
   const singletons = pendingRows.filter((row) => currentRows.filter((other) => other.date === row.date).length === 1);
-  for (const [index, status] of ['needs_review', 'ready'].entries()) {
-    const chosen = singletons[index] ?? pendingRows[index] ?? pendingRows[0];
+  // The ready example applies a match, so it must be a transaction that is
+  // neither reconciled nor cleared (the smoke check holds it to that). Choose it
+  // for that rather than by position: which dates have a single transaction
+  // changes whenever the seed's recurring days do.
+  const readyRow = singletons.find((row) => !row.cleared) ?? pendingRows.find((row) => !row.cleared);
+  if (!readyRow) throw new Error('No uncleared checking transaction for the ready reconciliation example');
+  const reviewRow = singletons.find((row) => row !== readyRow) ?? pendingRows.find((row) => row !== readyRow) ?? readyRow;
+  for (const status of ['needs_review', 'ready']) {
+    const chosen = status === 'ready' ? readyRow : reviewRow;
     if (!chosen) throw new Error('No unreconciled checking transaction for the demo');
     const selected = [chosen];
     const pending = createReconciliationSession(db, { budgetSyncId, accountId: a.checking, accountName: 'Household Checking', statementName: `Checking ${current.key} ${status}.csv` });
