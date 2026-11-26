@@ -5,8 +5,9 @@ sidebar:
   order: 1
 ---
 
-Use this page for common installation, connection, storage, and staged-change problems. Each feature
-guide also includes troubleshooting for feature-specific issues.
+Most problems come down to one of a few things: the network between the pieces, the `/data` volume,
+or an unsaved draft. This page covers those. Each feature guide also ends with its own common
+problems.
 
 :::caution[Don't start with destructive steps]
 Deleting the metadata database or clearing browser storage is where you end up, not where you start.
@@ -62,41 +63,28 @@ Redact secrets before you share a log with anyone.
 
 ## Browser state
 
-- **A recent connection still asks for the password** - correct. Recent details hold no secrets. Use
-  the remembered-server vault if you want the credential kept.
+- **A recent connection still asks for the password** - correct. Recent details hold no secrets.
+  Tick **Remember this budget** when you connect if you want it kept.
 - **Signed out after a restart** - also correct. Sign in again; your saved connections open with it.
-- **Remembered servers are gone** - the metadata database or the `/data` volume was replaced. Whoever
+- **Remembered budgets are gone** - the metadata database or the `/data` volume was replaced. Whoever
   runs the server needs to check the deployment and restore a backup.
 - **A refresh loses the connection** - memory-only connections do that by design.
-- **A stale worker or cache in Direct mode** - clearing this site's browser data fixes it, and costs
-  you your saved presets and a reconnect. Last resort.
+- **A stale worker or cache in Direct mode** - clearing this site's browser data fixes it, at the cost
+  of a reconnect. Treat it as a last resort.
 
 ## Staged changes and Save
 
 - **Changes did not persist** - either you did not press **Save**, or some items failed. Failures stay
   marked, with a retry.
 - **A note will not discard** - notes saved the moment you wrote them. See
-  [Work safely](../../getting-started/core-concepts/#immediate-budget-change-exceptions).
+  [Work safely](../../getting-started/core-concepts/#changes-that-save-immediately).
 - **A carryover toggle is not in the draft** - it never was. Carryover writes immediately.
 - **The wrong budget changed** - drafts are per connection. Check which one is active before you save.
 
-## Feature areas
+## A specific feature
 
-Each guide troubleshoots its own page:
-
-- [Budget](../../user-guide/budget-management/#troubleshooting)
-- [Editing, review and save](../../getting-started/editing-and-saving/) - and the per-entity pages
-  ([Accounts](../../user-guide/accounts/#common-problems),
-  [Payees](../../user-guide/payees/#common-problems),
-  [Categories](../../user-guide/categories/#common-problems),
-  [Tags](../../user-guide/tags/#common-problems))
-- [Schedules](../../user-guide/schedules/#common-problems)
-- [Rules](../../user-guide/rules/#troubleshooting)
-- [Rule Diagnostics](../../user-guide/rule-diagnostics/#troubleshooting)
-- [ActualQL Queries](../../user-guide/actualql/#troubleshooting)
-- [Budget File Health](../../user-guide/budget-file-health/#troubleshooting) · [Data Browser](../../user-guide/data-browser/#troubleshooting)
-- [Cross Budget Sync](../../user-guide/budget-sync/#troubleshooting)
-- [Exchange Rates](../../user-guide/fx-rates/#troubleshooting)
+Each feature guide ends with its own common problems. Start with the guide for the page you were on;
+the sidebar has them all.
 
 ## Performance
 
@@ -107,7 +95,8 @@ Slowness is nearly always size:
 - Big sync previews and diagnostics over a large rule set do real work.
 - A very large snapshot is limited by your browser's memory.
 
-### Loan Apply or Undo split is slow on a Direct connection
+<details>
+<summary>Loan Apply or Undo split is slow on a Direct connection</summary>
 
 To see where the time goes, turn on the console timing flags, reload, reconnect and repeat the action. Paste
 this in the browser console:
@@ -128,6 +117,8 @@ To turn it off, remove both flags, reload and reconnect:
 localStorage.removeItem("ab:debug-timing");
 localStorage.removeItem("ab:debug-sqlite-files");
 ```
+
+</details>
 
 ## Reporting a bug
 

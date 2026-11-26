@@ -1,47 +1,31 @@
 ---
 title: Bundle Export / Import
-description: Export or import a ZIP of budget structure data, including accounts, payees, categories, tags, schedules, and rules.
+description: Move a budget's whole structure - accounts, payees, categories, tags, schedules and rules - in or out as one ZIP.
 sidebar:
   order: 7
 ---
 
-Use Bundle Export / Import to move budget structure data in one ZIP. Export a template or backup
-before a large cleanup, or import a structure into another budget.
+A bundle is your budget's structure in one ZIP: accounts, payees, categories, tags, schedules and
+rules. Export one as a template or a safety copy before a big cleanup, or import one to set up a new
+budget in a single step.
 
-Open it from the **Export** and **Import** buttons in the [Overview](../budget-overview/) page header.
-
-**Budget impact:** Export does not modify budget data. Import stages the bundle for review and writes
-only when you **Save**.
-
+Open it from **Export** and **Import** in the [Overview](../budget-overview/) page header. Export only
+reads. Import stages everything for review, and nothing reaches Actual until you **Save**.
 
 ![The bundle export dialog listing what the ZIP will contain.](../../../assets/screenshots/dialogs/dialog-bundle-export.png)
 
-*One ZIP, and it says exactly what is going into it before you download.*
-
-## Why use a bundle?
-
-Bundle Export / Import provides these functions:
-
-- **Everything at once** - every entity type in one ZIP, each a CSV in the same format the per-page
-  exports use.
-- **Import in the right order** - by the time rules and schedules are read, the accounts, payees and
-  categories they name are already staged.
-- **One undo step** - the whole bundle stages together, and nothing is written until you Save.
+*The dialog says exactly what goes into the ZIP before you download it.*
 
 ## Export a bundle
 
-1. On the Budget Overview, select **Export**.
-2. The dialog lists all six entity types with **live counts** and checkboxes (pre-selected). Deselect
-   any you don't want.
-3. Watch for **dependency warnings** as you change the selection:
-   - Selecting **Rules** without Payees, Categories, or Accounts warns that the export may not be
-     portable.
-   - Selecting **Schedules** without Payees or Accounts warns the same way.
-4. Download to get a single ZIP, `budget-bundle-<label>-<YYYY-MM-DD>.zip`.
+1. On the Overview, select **Export**.
+2. Untick any types you don't want. Each shows its current count.
+3. Select **Download ZIP** to save `budget-bundle-<label>-<date>.zip`.
 
-The dialog fetches when it opens, so what you download is what the server holds right now.
+If you export rules or schedules without the payees, categories or accounts they name, the dialog
+warns you: the bundle will only import cleanly into a budget that already has those names.
 
-**ZIP contents:**
+The ZIP holds one CSV per type, in the same format as each page's own export:
 
 ```
 budget-bundle-<label>-<date>.zip
@@ -53,34 +37,28 @@ budget-bundle-<label>-<date>.zip
   └── rules.csv
 ```
 
-Each CSV carries the same columns as that entity's own export. The entity guides list them.
-
 ## Import a bundle
 
-1. On the Budget Overview, select **Import** and choose a `.zip` produced by Bundle Export. Partial
-   bundles (a subset of the CSVs) are valid.
-2. Review the **preview** - each detected entity type with its row count, before anything is staged.
-3. Confirm to stage. The order is fixed - categories, accounts, payees, tags, schedules, rules - so
-   that schedules and rules find what they refer to, staged moments earlier in the same operation.
-4. Read the **result summary**: staged, skipped, and any parse errors, broken down by type. The links
-   take you to each entity page to look at the staged rows.
-5. Click **Save** in the Changes panel header to write everything. The entire bundle import is a **single undo
-   step**.
+1. On the Overview, select **Import** and choose a bundle ZIP. A bundle with only some of the files
+   is fine.
+2. Check the preview: each type it found, with its row count.
+3. Confirm. Bench stages categories, accounts, payees and tags first, then schedules and rules, so
+   that everything a rule refers to already exists.
+4. Read the summary of what was staged or skipped. Its links open each page so you can look at the
+   rows.
+5. Select **Save** in the Changes panel. The whole import is one undo step.
 
-:::caution[Bundle import stages a lot at once]
-A bundle can stage hundreds of rows across six entity types in one go. Look at them before you Save.
-Export the current budget before a large import so you can restore its structure if needed.
+:::tip[Export first]
+A bundle can stage hundreds of rows at once. Export the current budget before a large import, so you
+always have its structure to go back to.
 :::
 
 ## Common problems
 
-- **A portability warning on export** - you picked Rules or Schedules without what they point at.
-  Include those types, or make sure the target budget already has matching names.
-- **Rows were skipped** - the per-type summary says whether it was a parse error or an unmatched
-  reference.
-- **Nothing changed** - the rows are staged, not saved. Press **Save**.
+- **Rows were skipped:** the summary says why, for each type: a row that could not be read, or a
+  reference to something that does not exist.
+- **Nothing changed in Actual:** the import is staged. Select **Save**.
 
 ## Related pages
 
-- [Overview](../budget-overview/) - where Export / Import live
-- [Editing, review and save](../editing-and-saving/) - per-entity CSV import and export
+- [Editing, review and save](../editing-and-saving/) - CSV import and export on each page

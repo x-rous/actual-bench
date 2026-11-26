@@ -1,49 +1,41 @@
 ---
 title: Deployment
-description: "Deploy Actual Bench for production with persistent storage, HTTPS, and the network requirements for each connection mode."
+description: Run Actual Bench for real - persistent storage, HTTPS, and what each connection mode needs from your network.
 sidebar:
   order: 1
 ---
 
-Use this page after completing [Installation](../../getting-started/installation/). It covers
-production networking, HTTPS, persistent storage, and hardening.
+This page picks up after [Installation](../../getting-started/installation/), for running Actual
+Bench properly: on HTTPS, with its data kept safe, and reachable from wherever you use it. A typical
+setup is one container, one persistent `/data` volume, and a reverse proxy in front.
 
-A typical deployment uses one container, a persistent `/data` volume, an HTTPS endpoint, and network
-access for the selected connection mode.
+## How it fits together
 
-## Deployment architecture
+- **Direct mode:** the browser talks to your Actual Server itself, running Actual's engine in a
+  background worker. Bench serves the app; your budget data does not pass through it.
+- **HTTP API mode:** the browser only talks to Bench, which forwards requests to `actual-http-api`
+  from the server. The browser never sees that address.
 
-It is a Next.js app. Where the traffic goes depends entirely on the connection mode:
+Either way, Bench keeps its own small database under `/data`.
 
-- **Direct mode** - the browser talks to your Actual Server itself, running Actual's engine in a worker.
-  Bench serves the app and nothing else. No budget data passes through it.
-- **HTTP API mode** - the browser only ever talks to Bench, which forwards to `actual-http-api`
-  server-side. The browser never sees that URL.
+## Pin an image
 
-Either way, Bench keeps its own **metadata database** - SQLite, under `/data`.
+Images are published for `linux/amd64` and `linux/arm64`:
 
-## Choose an image tag
+- `xrous/actual-bench:latest` - the current stable release.
+- `xrous/actual-bench:<version>` (for example `:1.4.0`) - one release, unchanging.
+- `xrous/actual-bench:edge` - rebuilt on every merge, for testing only.
 
-Multi-architecture images are published for `linux/amd64` and `linux/arm64`:
-
-- `xrous/actual-bench:latest` - stable, for normal production.
-- `xrous/actual-bench:<version>` (e.g. `:1.2.4`) - a pinned, unchanging version.
-- `xrous/actual-bench:edge` - unstable, rebuilt on every merge; for testing only.
-
-Pin a `:<version>` in production and upgrades happen when you decide, not when you restart.
-
-## Docker Compose deployment
+Pin a version in production, so upgrades happen when you decide, not whenever the container
+restarts.
 
 ```yaml
 services:
   actual-bench:
-    image: xrous/actual-bench:1.2.4   # pin a version in production
+    image: xrous/actual-bench:1.4.0   # pin a version in production
     container_name: actual-bench
     ports:
       - "3000:3000"
-    environment:
-      ACTUAL_BENCH_DB_PATH: /data/actual-bench.sqlite
-      # ACTUAL_BENCH_VAULT_KEY: "..."   # optional: hold the vault key yourself
     volumes:
       - actual-bench-data:/data
     restart: unless-stopped
@@ -52,160 +44,109 @@ volumes:
   actual-bench-data:
 ```
 
-See [Configuration](../configuration/) for the full environment-variable reference.
+[Configuration](../configuration/) lists every environment variable. None are required.
 
 ## Hosted platforms
 
-Docker Compose above is the universal method; these run the same image with a platform's own
-tooling instead. The single-instance/SQLite model below applies to all of them equally.
+These run the same image with a platform's own tooling.
 
-### Public demo: Vercel and Hugging Face
+- **Fly.io:** follow [Deploy on Fly.io](../fly-io/), a step-by-step guide that needs no prior
+  experience.
+- **PikaPods:** available once the official listing is approved, with one port (3000) and one
+  volume (`/data`).
 
-The public demo uses a split deployment: Vercel serves the UI and Web Analytics, while its
-`/api/*` requests are rewritten to the Hugging Face Space. The Space keeps the shared Actual
-budgets and Bench metadata together in its stateful container. Merges to `main` deploy the UI
-through Vercel's Git integration; backend, seed, or metadata-schema changes also require updating
-the Space. Visitors share disposable sample data, which resets when the Space restarts. Never use
-real financial data in the public demo. The current project-level redirect also catches Vercel
-preview URLs, so they continue to show the Space until that rule is changed.
+## Network
 
-See the [public demo deployment guide](https://github.com/x-rous/actual-bench/blob/main/docs/DEMO_DEPLOYMENT.md)
-for environment variables, routing, and cutover checks.
+Two different paths matter, and mixing them up is the most common deployment mistake:
 
-### Fly.io
+- **Direct mode:** the user's **browser** must reach the Actual Server.
+- **HTTP API mode:** the Actual Bench **container** must reach `actual-http-api`.
 
-Follow [Deploy on Fly.io](../fly-io/): a step-by-step guide from creating a Fly account to signing in,
-with the repository's `fly.toml` template (one always-on machine, a volume at `/data`, a health check
-on `/api/health`). Open the app and set your password as soon as it starts, since it is on the
-internet from that moment.
+### Direct mode
 
-### PikaPods
+- The browser must be able to open your Actual Server's address.
+- Scheduled runs on Direct budgets (backups, bank sync, sync flows) open the budget on the Bench
+  server, so **the Bench server** must reach the Actual Server too.
+- The Actual Server must allow the browser's requests (CORS), or sit behind the same reverse proxy as
+  Bench so the two share one origin.
+- Serve both over **HTTPS**. Direct mode sends your server password from the browser, so plain
+  `http://` puts it on the wire. Bench sets the cross-origin isolation headers Direct mode needs on
+  its own pages.
 
-Available once the official PikaPods listing is approved. It will run the same image with one
-port (3000) and one persistent volume (`/data`); no environment variables are required.
+If an environment cannot support Direct mode, there is nothing to switch off: Bench says so clearly
+when someone connects, and they can use HTTP API mode instead.
 
-## Network design
+### HTTP API mode
 
-There are two different reachability requirements here. Mixing them up is the single most common
-deployment mistake:
-
-- **Browser → service** (Direct mode): the user's browser must reach the Actual Server URL.
-- **Container → container** (HTTP API mode): the Actual Bench container must reach `actual-http-api`.
+- The Bench container must reach the `actual-http-api` address. The browser never uses it.
+- If both run in Docker, put them on one network and use the API's service name.
 
 :::caution[`localhost` inside a container is the container itself]
-In HTTP API mode, `localhost` means the Bench container. Point it at `localhost` and it will call
-itself. Use the API's Docker service name on a shared network, or any address that resolves.
+Point Bench at `localhost` and it will call itself. Use the API's service name on a shared Docker
+network, or an address that resolves from inside the container.
 :::
 
-### Direct-mode network requirements
-
-Direct mode runs Actual's engine in the browser. That has consequences:
-
-- The **browser** must be able to reach your Actual Server URL.
-- For **scheduled runs** on Direct budgets (backups, bank sync, Cross Budget Sync), Bench opens the
-  budget on its own server, so the **Bench server** must be able to reach the Actual Server URL too.
-- The response has to satisfy **CORS**, or come through your proxy as same-origin.
-- Actual Bench sets the cross-origin isolation headers it needs on its own assets
-  (`Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`).
-- Serve Actual Bench over **HTTPS**, and the Actual Server URL too. Direct mode sends authenticated
-  requests to that URL straight from the browser, so `http://` there puts the server password on the
-  wire. Plain HTTP is only acceptable on an internal hop behind a same-origin HTTPS proxy.
-
-If your environment genuinely can't support Direct mode, there's nothing to configure ahead of time:
-Bench reports the failure clearly the moment someone tries it, and they can use HTTP API Server mode
-instead.
-
-### HTTP API network requirements
-
-- The Actual Bench **container** must reach the `actual-http-api` base URL.
-- Only Bench needs that path. The browser never uses it.
-- If both run in Docker, attach them to a shared network and use the API's service name.
-
-`fetch failed` or `502 Bad Gateway` in HTTP mode is container-to-container networking, nine times out
-of ten.
+`fetch failed` or `502 Bad Gateway` in HTTP API mode is almost always container-to-container
+networking.
 
 ## Reverse proxy and HTTPS
 
-Put a reverse proxy in front and terminate HTTPS there:
+Put a reverse proxy (Caddy, Traefik, Nginx) in front and terminate HTTPS there:
 
-- Forward the correct **host** and **protocol** headers.
-- HTTPS end to end where you can. Direct mode needs a secure, isolated origin to work at all.
-- Serving Actual Server through the same proxy makes it same-origin, which solves Direct mode's CORS
-  and isolation requirements without opening CORS up.
+- Forward the original **host** and **protocol** headers.
+- Serving the Actual Server through the same proxy makes it same-origin, which solves Direct mode's
+  CORS needs without opening CORS up.
+- Once the hostname is HTTPS-only, enable **HSTS** at the proxy. Bench does not send it itself,
+  because it also runs over plain HTTP on a LAN.
+- Don't strip Bench's own security headers, and don't add a second `Content-Security-Policy` at the
+  proxy: it would block the app's scripts. CDN features that inject scripts into pages (such as
+  Cloudflare Rocket Loader) need switching off for this hostname.
 
-## App Health after deployment
+## Access
 
-Open **App Health** (sidebar footer) and confirm:
-
-- **Writable** is `Yes`.
-- **Schema** shows a version (migrations run on boot).
-- **Persistence** reads *Persistent when /data is mounted*.
-- The **Automations** section shows the credential vault's state and where its key comes from,
-  enrolled connections, and each automation's health.
-
-## Access control
-
-Actual Bench asks for a password before anything else (see [Sign-in](../configuration/#sign-in)).
-The first visitor to a new install sets it, so open Actual Bench right after deploying it, or set
+Bench asks for a password before anything else (see [Sign-in](../configuration/#sign-in)). The
+first visitor to a new install sets it, so open Bench right after deploying it, or set
 `ACTUAL_BENCH_PASSWORD` in advance.
 
-- For an internet-facing install, an extra layer in front (your identity provider, or a VPN such as
-  Tailscale) is still worth having. If that layer already controls access, you can turn Bench's own
-  sign-in off with `ACTUAL_BENCH_AUTH=none`.
-- When a proxy is the public entry point, don't also publish port `3000` on the host. Anyone could
-  reach it directly and bypass the proxy.
+- On the internet, an extra layer in front (your identity provider, or a VPN such as Tailscale) is
+  still worth having. If that layer already controls access, you can turn Bench's sign-in off with
+  `ACTUAL_BENCH_AUTH=none`.
+- When a proxy is the way in, don't also publish port `3000` on the host, or anyone could go around
+  the proxy.
 
-Actual Bench refuses state-changing API requests sent from other websites, so a page you visit can't
-act on a Bench instance it can reach through your browser, even one that is only on your LAN.
+Bench refuses requests that change data when they come from another website, so a page you visit
+cannot act on a Bench it can reach through your browser, even on your LAN. It also refuses to
+connect to cloud metadata addresses, and stops (showing the address) rather than follow a redirect
+to a different server or from `https` to `http`.
 
-## Production hardening
+## Keep it safe
 
-- Terminate **HTTPS** at the proxy. Plain HTTP stops at localhost.
-- Enable **HSTS** at the proxy (for example `Strict-Transport-Security: max-age=31536000`) once the
-  hostname is HTTPS-only, and use its modern TLS defaults. Actual Bench doesn't send HSTS itself,
-  because it also runs over plain HTTP on a LAN.
-- Actual Bench sends its own browser security headers (`X-Frame-Options`, `X-Content-Type-Options`,
-  `Referrer-Policy`, `Permissions-Policy`, and a `Content-Security-Policy` with a fresh nonce on every
-  page, so only Actual Bench's own scripts run). Don't strip or replace these headers at the proxy.
-  A proxy that adds its own `Content-Security-Policy` would block the app's scripts, because it can't
-  carry the app's per-page nonce. If a CDN in front of Actual Bench rewrites pages to add its own
-  scripts (Cloudflare's Rocket Loader, for example), switch that feature off for the Actual Bench
-  hostname in the CDN's settings; the policy would block those scripts. Plain reverse proxies
-  (Traefik, Caddy, Nginx) are not affected.
-- Actual Bench's server refuses to connect to the cloud metadata addresses (such as
-  `169.254.169.254`) when a connection or backup destination names one, or redirects to one. LAN
-  addresses, localhost and your container runtime's host address are fine.
-- When a server Actual Bench connects to redirects it to a *different* address, or from `https` to
-  `http`, Actual Bench stops there rather than send your API key on, and shows the address it was
-  sent to. Use that address in the connection instead. (`http://` to `https://` on the same address
-  is followed.)
-- If you set `ACTUAL_BENCH_VAULT_KEY`, keep it out of the image and out of git. Use your platform's
-  secret manager.
-- Persist `/data`, back it up, and lock down its permissions. It holds the generated vault key
-  (`secrets/vault.key`) as well as the database.
-- Pin a specific `:<version>` and upgrade deliberately (see [Upgrading and Backups](../upgrading-and-backups/)).
-- Don't publicly expose backend APIs (`actual-http-api`, Actual Server) more than necessary.
+- **Persist and back up `/data`.** It holds Bench's database and the generated vault key
+  (`secrets/vault.key`). Lock down its permissions.
+- If you set `ACTUAL_BENCH_VAULT_KEY`, keep it in your platform's secret manager, out of the image
+  and out of git.
+- Don't expose `actual-http-api` or the Actual Server more widely than you need to.
 - Redact secrets before sharing logs.
 
-## Scaling and the unattended scheduler
+## One instance
 
-The unattended sync scheduler runs **in-process** and ticks about once a minute; a **single instance is
-sufficient** and is the intended model. Do not assume distributed-lock behavior across multiple
-replicas.
+The scheduler that runs automations lives inside the Bench server and ticks about once a minute. Run
+**one** instance: two containers on one database would run every automation twice.
 
-## Deployment checklist
+## Checklist
 
-- [ ] Pinned image `:<version>` chosen.
-- [ ] `/data` volume mounted, writable, and backed up.
-- [ ] Password set (first visit or `ACTUAL_BENCH_PASSWORD`); port `3000` not published beside the proxy.
-- [ ] HTTPS terminated at the proxy; host/protocol headers forwarded.
-- [ ] Direct mode: browser can reach Actual Server; CORS / cross-origin isolation satisfied.
-- [ ] HTTP mode: Actual Bench container can reach `actual-http-api`.
-- [ ] `ACTUAL_BENCH_VAULT_KEY` stored securely, if you set one; otherwise `/data/secrets/vault.key` is backed up with the volume.
-- [ ] App Health shows Writable = Yes, a valid schema version, and the credential vault Ready.
+- [ ] A pinned `:<version>` image.
+- [ ] `/data` mounted, writable and backed up.
+- [ ] A password set (on first visit, or with `ACTUAL_BENCH_PASSWORD`), and port `3000` not published
+      beside the proxy.
+- [ ] HTTPS at the proxy, with host and protocol headers forwarded.
+- [ ] Direct mode: the browser (and, for automations, the Bench server) can reach the Actual Server.
+- [ ] HTTP API mode: the Bench container can reach `actual-http-api`.
+- [ ] [App Health](../app-health/) shows **Writable** `Yes`, a schema version, and the credential vault
+      ready.
 
 ## Related pages
 
 - [Configuration](../configuration/)
-- [Upgrading and Backups](../upgrading-and-backups/)
-- [Installation](../../getting-started/installation/)
+- [Upgrades & backups](../upgrading-and-backups/)
+- The repository's [public demo guide](https://github.com/x-rous/actual-bench/blob/main/docs/DEMO_DEPLOYMENT.md), if you want to run a demo of your own

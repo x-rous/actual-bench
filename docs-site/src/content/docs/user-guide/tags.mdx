@@ -1,64 +1,48 @@
 ---
 title: Tags
-description: "Create and manage tags, including names, colors, descriptions, CSV, and rule references."
+description: Keep your tag vocabulary tidy - names, colours, descriptions, and which tags your notes actually use.
 sidebar:
   order: 7
 ---
 
-Use Tags to create and manage tag names, colors, descriptions, and CSV data. Review rule references
-before deleting a tag.
+Tags lists the tags you use in transaction notes, with a colour and a description for each, so
+everyone in the household knows what `#reimburse` is for.
 
-Open it from **Budget Setup → Tags** (`/tags`). Tags require Actual Budget v26.3.0 or later.
+Open it from **Budget Setup → Tags**. Tags need Actual Budget 26.3.0 or later. Changes are staged and
+go to Actual when you select **Save**. It uses the shared
+[editing model](../../getting-started/editing-and-saving/).
 
-**Budget impact:** Tag changes remain staged for review until you **Save**.
+![The Tags page: thirteen tags with their colours and a description of what each is for.](../../../assets/screenshots/user-guide/tags.png)
 
-![The Tags page: ten tags with their colours and a description of what each is for.](../../../assets/screenshots/user-guide/tags.png)
+*The description sits beside the colour, rather than in someone's head.*
 
-*A tag vocabulary is only useful if everyone remembers what each one means, so the description sits
-beside the colour rather than in someone's head.*
+## Create and edit tags
 
-It shares the [editing model](../../getting-started/editing-and-saving/) every Budget Setup page
-uses.
+1. Add a tag and give it a **name**.
+2. Click the swatch to give it a **colour**, if you like.
+3. Add a **description**.
 
-## What you get beyond Actual Budget
+Edit any field inline: `Enter` confirms, `Escape` cancels. Tag names cannot contain spaces or `#`,
+because a note could never match them.
 
-- **CSV import and export** for bulk tag setup and backup.
-- **Colours and descriptions** edited inline, and a filter for tags that have no colour yet.
-- **Bulk delete**, staged like everything else.
-- **See which rules reference a tag** via the Usage Inspector.
+## Find what is used
 
-## Create and edit a tag
+- Filter by name, description, or whether a tag has a colour.
+- **Used** and **Unused** show whether any transaction's notes carry the tag. Bench reads tags the
+  way Actual does: `#name`, ending at a space or the next `#`.
+- **Info** on a row shows which rules use the tag. It does not count transactions, because tags live
+  in note text; use the **Used** filter for that.
 
-1. On the **Tags** page, create a tag and give it a **name**.
-2. Give it a **colour** if you want - click the swatch. Hovering the row reveals a clear button.
-3. Optionally add a **description**.
-4. Edit any name or description inline (`Enter` confirms, `Escape` cancels).
+## CSV
 
-## Filter, delete, and import/export
-
-- Filter by name, by description, or by whether a tag has a colour. Counts update as you type.
-- Filter by **Used** or **Unused**: whether any transaction's notes carry the tag. Bench reads the notes
-  that contain `#` (one query, only while the filter is on) and finds tags the way Actual does - `#name`,
-  ending at a space or the next `#`, with `##` as an escaped literal.
-- Tag names lose spaces and `#` signs wherever you name a tag, CSV import included, because a note
-  could never match them (`#food#rent` reads as two tags).
-- Select several and delete them together. Duplicate names get flagged.
-- Import and export tags as CSV. CSV columns:
-  - `name` (required), `color` (optional hex, e.g. `#FF5733`), `description` (optional).
-
-:::note[Tag usage data]
-The Usage Inspector shows which rules reference a tag. It does not count transactions for a tag - tags
-live in note text, not as a field - and the drawer says so rather than showing a misleading zero. Use
-the **Used / Unused** filter to see which tags notes actually carry.
-:::
+Columns: `name` (required), `color` (optional hex, such as `#FF5733`), `description` (optional).
 
 ## Common problems
 
-- **No tags anywhere** - your server is older than Actual Budget v26.3.0.
-- **A colour or description did not stick** - inline edits commit on `Enter`, and the page still needs
-  a **Save**.
+- **No Tags page:** your Actual Server is older than 26.3.0.
+- **A colour or description did not stick:** inline edits confirm on `Enter`, and the page still
+  needs **Save**.
 
 ## Related pages
 
-- [Editing, review and save](../../getting-started/editing-and-saving/) - the shared editing model
-- [Schedules](../schedules/)
+- [Rules](../rules/) - rules can match `has any tag` and `has all tags`

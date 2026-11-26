@@ -1,90 +1,52 @@
 ---
 title: Payees
-description: Create, rename, merge, import, export, and delete payees in bulk.
+description: Rename, merge, import and tidy payees in bulk, with the transactions and rules behind each one in view.
 sidebar:
   order: 4
 ---
 
-Use Payees to create, rename, merge, import, export, and delete payees. Review transaction and rule
-references before deleting or merging a payee.
+Payees lists every payee with the rules that use it, so you can rename, merge and delete in bulk
+without breaking anything. To have duplicates found for you, use
+[Payee Cleanup](../payee-cleanup/).
 
-Open it from **Budget Setup → Payees** (`/payees`).
-
-**Budget impact:** Payee changes remain staged for review until you **Save**.
+Open it from **Budget Setup → Payees**. Changes are staged and go to Actual when you select
+**Save**. It uses the shared [editing model](../../getting-started/editing-and-saving/).
 
 ![The Payees table showing Amazon, Amazon.com and AMZN Mktp as three separate payees, with a rule count beside each.](../../../assets/screenshots/user-guide/payees.png)
 
-*Three rows for one shop - `Amazon`, `Amazon.com`, `AMZN Mktp` - is what a few years of bank imports
-looks like. The rule column shows which payees something already depends on.*
-
-It shares the [editing model](../../getting-started/editing-and-saving/) every Budget Setup page
-uses.
-
-![The payee merge dialog: which payee survives, and what the merge would move.](../../../assets/screenshots/dialogs/dialog-payee-merge.png)
-
-*Merging asks the only question that matters - which name survives - and says what moves with it
-before anything is staged.*
-
-:::tip[Merging a lot of import duplicates?]
-[Payee Cleanup](../payee-cleanup/) finds the groups for you, shows what each merge would change, and
-can add a rule so the duplicates stop coming back.
-:::
-
-## What you get beyond Actual Budget
-
-- **Merge duplicates in bulk** - several payees into one, staged and undoable.
-- **[Payee Cleanup](../payee-cleanup/)** finds those duplicates for you, and - once a rename or merge
-  has moved a payee's name away from the text its bank sends - finds the payees whose imports will no
-  longer resolve to them.
-- **Create and import in bulk** - inline, or from CSV.
-- **See which rules reference a payee** and jump straight to them.
-- **Impact-aware deletion** - you see the transaction and rule counts before it goes.
-- **Transfer payees are marked and protected.** Actual manages them; you cannot break them here by
-  accident.
-
-## Regular and transfer payees
-
-Actual generates a transfer payee for every inter-account transfer. They show as their own filterable
-type, and they do not edit or bulk-delete like ordinary payees. Their checkbox is disabled so you can
-see that rather than discover it.
-
-## Create, rename, and delete
-
-- Create and rename payees inline.
-- Every delete confirms, with the transaction and rule counts. Transfer payees sit out of bulk delete
-  and are counted separately in the dialog.
-- Deleting a payee that has transactions offers **Merge into another payee instead**. Merging keeps
-  those transactions' payee by moving them, and its rules, to the payee you pick.
-- A saved payee always keeps a name: clearing it is refused, with a message.
+*Three rows for one shop is what a few years of bank imports looks like. The rule column shows which
+payees something already depends on.*
 
 ## Merge duplicate payees
 
-1. Select **two or more regular payees**.
-2. Choose **Merge**.
-3. The **first payee you tick** survives. Not the top row - the first one you ticked. The rest fold
-   into it.
-4. The merge is staged and shown in the Changes panel as "Merge Deleted" before you **Save**.
-   `Ctrl+Z` undoes it.
+1. Tick two or more payees. **The first one you tick is the one that survives**, not the top row.
+2. Choose **Merge**. The dialog shows which name is kept and what moves with it.
+3. Review the merge in **Changes**, then **Save**. `Ctrl+Z` undoes it before you save.
 
-## Filter
+Transactions and rules move to the surviving payee.
 
-Filter by name, type (regular / transfer / all), and whether a payee has associated rules.
-**Unused** lists regular payees with no rules and no transactions; select them all and delete to tidy
-up. It counts transactions with one query, only while the filter is on.
+![The payee merge dialog: which payee survives, and what the merge would move.](../../../assets/screenshots/dialogs/dialog-payee-merge.png)
 
-## Import and export
+## Create, rename and delete
 
-Export payees to CSV or import them (staged before saving). CSV columns:
+- Create and rename payees inline, or import them from CSV (one `name` column).
+- Every delete shows the transaction and rule counts first. Deleting a payee that has transactions
+  offers **Merge into another payee instead**, which keeps those transactions on a payee you choose.
+- **Unused** filters to payees with no transactions and no rules. Select them all and delete to tidy
+  up.
 
-- `name` (required).
+## Transfer payees
+
+Actual creates a transfer payee for every account. They are listed under their own type, and their
+checkbox is disabled, because Actual manages them.
 
 ## Common problems
 
-- **"Can't select a transfer payee"** - Actual manages those. Nothing here can edit them.
-- **The merge kept the wrong name** - the survivor is the *first* one you ticked, not the top row.
-  Clear the selection and tick them in the order you meant.
+- **The merge kept the wrong name:** the survivor is the first payee you ticked. Clear the selection
+  and tick them again in the order you mean.
+- **A payee cannot be selected:** it is a transfer payee.
 
 ## Related pages
 
-- [Editing, review and save](../../getting-started/editing-and-saving/) - the shared editing model
-- [Rules](../rules/) - how rules reference payees
+- [Payee Cleanup](../payee-cleanup/) - find duplicates and add rules that stop them coming back
+- [Rules](../rules/) - rules that use these payees

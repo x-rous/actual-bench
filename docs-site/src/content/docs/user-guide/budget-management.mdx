@@ -1,354 +1,186 @@
 ---
 title: Budget Cockpit
-description: View and edit twelve months of budget data in one grid, with Budget, Actuals, and Balance views.
+description: Plan and review twelve months of your budget in one grid, with spreadsheet-style editing and drill-downs into what moved each number.
 sidebar:
   order: 1
 ---
 
-Use Budget Cockpit to review and edit a full year of budget data. Switch the grid between
-**Budget**, **Actuals**, and **Balance**. Select cells, paste values, and use fill actions to update
-multiple months.
+Budget Cockpit puts a whole year of your budget in one grid: one row per category, one column per
+month. Switch every cell between **Budget**, **Actuals** and **Balance**, fill a year of amounts in
+a few keystrokes, and click any figure to see what is behind it.
 
-Actual Budget's compact view is designed for daily work, showing Budget, Spent, and Balance together.
-This workspace separates those measures across twelve months so you can review annual patterns. This
-is especially useful for Tracking budgets, where plan, activity, and variance answer different
-questions.
+Open it from **Financial Management → Budget Cockpit**. Budget amounts, holds and transfers are
+staged and go to Actual when you select **Save**. Notes and carryover save straight away.
 
-Open it from **Financial Management → Budget Cockpit** (`/budget-management`).
+![The Budget Cockpit showing twelve months of an Envelope budget with every group expanded, and the details panel beside it.](../../../assets/screenshots/user-guide/budget-envelope.png)
 
-**Budget impact:** Budget amounts, holds, and transfers remain staged until **Save**. Notes and carryover
-toggles are explicit immediate writes.
+*An Envelope budget, twelve months at once. With nothing selected, the panel on the right summarises
+the whole period.*
 
-![The Budget workspace showing twelve months of an Envelope budget, with the details panel open beside it.](../../../assets/screenshots/user-guide/budget-envelope.png)
+## Plan a year in five steps
 
-*An Envelope budget: twelve months at once, focused on one measure. The panel on the right explains
-where the current month's To Budget figure comes from, line by line.*
-
-![The same workspace connected to a Tracking budget, showing income, expenses and savings per month.](../../../assets/screenshots/user-guide/budget-tracking.png)
-
-*The same workspace on a Tracking budget. The two models answer different questions, so the grid asks
-different ones: envelope budgeting leads with what is left to assign, tracking with how the month is
-running against plan.*
-
-## Get the full-year view
-
-1. Check the **Envelope** or **Tracking** badge matches your budget.
-2. Pick **Budget**, **Actuals** or **Balance**. The whole grid follows.
-3. Read across the year. Select a row, group or month header to fill the details panel.
-4. Changing the plan? Edit a cell, paste a range, or use a fill action.
+1. Check the **Envelope** or **Tracking** badge at the top left matches your budget.
+2. Choose **Budget**, **Actuals** or **Balance** (or press `V`). Every cell follows.
+3. Select a row, group or month header to see its story in the details panel.
+4. Edit a cell, paste a range, or right-click for a bulk action such as "3-month average".
 5. Read the draft, then **Save**.
 
-Use the sections below for model-specific behavior, bulk actions, import/export, and shortcuts.
+## Envelope and Tracking
 
-## Understand the workspace
+Actual has two ways of budgeting, and the page changes its labels and totals to match yours.
 
-One row per category, gathered under its group. One column per month, twelve of them:
+- **Envelope** gives real money to categories. What you have not given out yet is **To Budget**.
+  Each category's **Balance** rolls forward, so an unspent envelope carries over and an overspent one
+  comes out of next month. Income is received, not budgeted, so income rows are not editable.
+- **Tracking** compares a plan with what happened. Its headline is **Savings**: income minus
+  expenses, shown as **Projected Savings** while a month runs and **Saved** or **Overspent** once it
+  closes.
 
-- A **budget mode badge** (`Envelope`, `Tracking`, or `Unknown`) sits at the top-left.
-- The **category name column** and the **month header row** stay pinned while you scroll.
-- **Group rows** total their categories per month. Collapse a group and the total stays.
-- The **Budget Details** panel on the right follows whatever you have selected, and carries a
-  **progress meter**. In envelope mode it fills toward what is available (`$X left`, red once you are
-  past it). In tracking mode it fills spent-to-date against budget-to-date (`Under/Over budget by $X`),
-  and for tracking income, received against planned. It is left out where it would mean nothing -
-  envelope income, and future months that have no activity yet.
+![The same workspace on a Tracking budget, with every group expanded.](../../../assets/screenshots/user-guide/budget-tracking.png)
 
-Each selection asks the panel a different question.
+*The same workspace on a Tracking budget leads with how each month is running against plan.*
+
+## Read the grid
+
+- **Budget** shows budgeted amounts, **Actuals** shows what was spent or received, and **Balance**
+  shows the running balance.
+- Group rows total their categories, even when collapsed.
+- In the Budget view, a thin **spending bar** under each expense cell fills green as you spend,
+  turns amber near the limit and red past it. **Spending Bars** in the toolbar turns them off.
+- The current month is highlighted, with a marker showing how far through it you are: 80% spent on
+  the 5th is different news from 80% on the 25th.
+- The month header and category label of the focused cell light up, so you always know where you
+  are.
+
+![The grid in the Actuals view, showing what each category actually spent in each month, with Restaurants selected.](../../../assets/screenshots/user-guide/budget-actuals.png)
+
+*The **Actuals** view: what was actually spent, month by month.*
+
+### The details panel
+
+The panel on the right follows whatever you select, with a progress meter for the selection.
+
+- A **month header** shows where the month's money came from and what it did.
+- A **group** or **category** label shows its year: assigned, spent and how its balance moved.
 
 ![The details panel showing an Envelope month summary: where To Budget comes from, then the month's activity.](../../../assets/screenshots/user-guide/budget-details-month.png)
 
-*Click a **month column header** for the month itself: where To Budget came from, line by line, then
-what the month has actually done.*
+*A month in an Envelope budget: where To Budget came from, then what the month did.*
 
 ![The same panel on a Tracking budget, showing income and expense variance against plan.](../../../assets/screenshots/user-guide/budget-details-month-tracking.png)
 
-*The same click on a Tracking budget reads differently - income and expenses against plan, a variance
-for each, and whether spending is ahead of the calendar.*
+*The same click on a Tracking budget: income and expenses against plan, with a variance for each.*
 
 ![The details panel showing one category group's balance, activity and trend.](../../../assets/screenshots/user-guide/budget-details-group.png)
 
-*Click a **group label** for that group across the year - assigned, spent, and how its balance has
-moved month to month.*
+*A group across the year: assigned, spent, and how its balance moved.*
 
 ![The details panel showing one category's balance, assigned and spent totals, and balance trend.](../../../assets/screenshots/user-guide/budget-details-category.png)
 
-*Click a **category label** for the same read on one category, down to whether its balance rolls
-over.*
+## Move around
 
-## Two budgeting models
+- `‹` and `›` (or `[` and `]`) move the window a month; `«` and `»` move a year.
+- Click the month range in the toolbar to jump to any month in the budget.
+- The calendar button returns to the current month.
+- `E` and `Shift+E` expand and collapse all groups; `Space` toggles one.
+- `H` shows or hides hidden categories.
 
-Actual has two budgeting models. This page reads the badge and changes its labels, totals and details
-panel to match.
+## Edit cells
 
-- **Envelope** budgeting hands real money to categories. What you have not handed out yet is
-  **To Budget**; hand out more than you have and it reads **Overbudget**. Every category keeps a
-  running **Balance** that rolls forward, so an unspent envelope carries and an overspent one comes
-  out of next month. Income is only ever **received**, never budgeted - which is why income rows
-  cannot be edited here.
-- **Tracking** budgeting compares a plan with what happened. Its headline is **Savings** - income minus
-  expenses - shown as **Projected Savings** while a month is still running and **Saved** or
-  **Overspent** once it closes. It also keeps two numbers envelope budgeting blends together: the
-  spreadsheet **Balance**, which includes carryover, and a **Variance** calculated on its own from this
-  period's budget and this period's activity. Hidden categories drop out of tracking's plan totals. In
-  envelope mode they stay financially live.
-
-The panel leads with whichever headline belongs to your model - To Budget for envelope, Savings for
-tracking - and never mixes them. Totals come from the budget's own summary, so hiding categories or
-collapsing groups does not move them.
-
-## Choose Budget, Actuals, or Balance
-
-The toolbar toggle - or the `V` key - changes what every cell in the grid shows:
-
-- **Budget** - the budgeted amount (expenses are shown signed-negative; envelope income has no budget).
-- **Actuals** - actual activity: **spent** for expenses, **received** for income.
-- **Balance** - the running balance.
-
-Labels follow the row. An income row's activity reads *Received*, and in envelope mode it reads that
-whatever the toggle says.
-
-![The grid in the Actuals view, showing what each category actually spent in each month.](../../../assets/screenshots/user-guide/budget-actuals.png)
-
-*The **Actuals** view: what was actually spent, month by month. A category is selected here, so the
-panel carries its history alongside.*
-
-### Use spending bars
-
-In the **Budget** view a thin **spending bar** sits under every editable expense cell, and under every
-group total. It fills green as you spend, turns amber near the limit, and grows a red segment past it.
-Spend from a category you never funded and the whole bar is red. The exact numbers stay in the hover
-tooltip and the details panel - the bar is for scanning, not reading. **Spending Bars** in the toolbar
-turns them off; income rows never have one.
-
-## Navigate months and years
-
-- It opens on the current calendar year, scrolled to the **current month** and highlighting it. A
-  marker on that column shows how far into the month you are - day 12 of 31. That matters: 80% spent
-  on the 5th and 80% spent on the 25th are not the same news.
-- The focused cell lights up its **month header and category label** - a crosshair on the axes - so
-  you can tell which cell you are in without counting columns.
-- Move the 12-month window back/forward by one month with `‹` / `›`, or by a year with `«` / `»`.
-- Use the calendar button to jump back to the current month at any time.
-- **Click the month range in the toolbar** to jump straight to any month - pick a year, then a month,
-  and the window starts there. A month the budget file has no data for is dimmed but still reachable,
-  so a gap in history can be looked at.
-- The `[` and `]` keys pan the window backward/forward by one month.
-
-## Expand, collapse, and hide
-
-- Expand or collapse all groups with the toolbar buttons, or `E` / `Shift+E`.
-- Toggle a single group with `Space` on its label.
-- Which groups are collapsed is remembered while the tab is open, so leaving the page and coming back
-  does not undo it.
-- Show or hide hidden categories with the toolbar toggle, or the `H` key.
-
-## Edit one budget cell
-
-1. Select a cell and press `Enter`, `F2`, or start typing (a digit, `+`, `-`, `.`, or `(`).
-2. Type an amount **or an arithmetic expression** - `+`, `-`, `*`, `/`, and parentheses are supported
-   (for example `1200/12`).
-3. Press `Enter` to commit (and move down), `Tab` to commit sideways, or `Escape` to cancel.
-
-Staged edits show amber. Type the original value back and the edit disappears from the draft.
-`Delete` or `Backspace` zeroes the focused cell.
-
-:::note[Income in envelope mode]
-In envelope mode, income categories are not editable in the grid.
-:::
-
-## Select multiple cells
-
-- Click a cell to select it; `Shift+click` or drag to extend a rectangular selection.
-- Extend with `Shift+Arrow`, `Shift+PageUp/Down`, and `Shift+Home/End`.
-- The first column - the category or group label - is selectable too. That is what fills the details
-  panel with the whole row.
-
-## Copy and paste
-
-- `Ctrl/Cmd+C` copies the selection as tab-delimited text that round-trips through Excel / Google
+- Select a cell and type, or press `Enter` or `F2`. You can type sums such as `1200/12`.
+- `Enter` confirms and moves down; `Tab` confirms and moves right; `Escape` cancels. `Delete` sets the
+  cell to zero.
+- Staged edits show amber. Type the original value back and the edit disappears.
+- `Shift+click`, drag, or `Shift+Arrow` select a range. Copy and paste work with Excel and Google
   Sheets.
-- `Ctrl/Cmd+V` fills the selection from a single value, or expands a multi-cell paste from the top-left
-  cell.
 
-## Fill values
+### Fill shortcuts
 
-With a range selected:
+| Keys | Fills each selected row with |
+|---|---|
+| `Ctrl/Cmd+Enter` | The first cell's value |
+| `Ctrl/Cmd+D` / `Ctrl/Cmd+R` | The value above / to the left |
+| `Alt+L` | Last month's value |
+| `Alt+Y` | The same month last year |
+| `Alt+A` / `Alt+Shift+A` / `Ctrl/Cmd+Alt+A` | The 3-, 6- or 12-month average |
 
-- `Ctrl/Cmd+Enter` - fill the whole selection with the anchor cell's value.
-- `Ctrl/Cmd+D` - fill down.
-- `Ctrl/Cmd+R` - fill right.
-- `Alt+L` - fill each row with its previous-month value.
-- `Alt+Y` - fill each row from the same month a year earlier.
-- `Alt+A` / `Alt+Shift+A` / `Ctrl/Cmd+Alt+A` - fill each row with its 3-, 6-, or 12-month average.
+Press `?` for every shortcut.
 
-## Right-click bulk actions
+## Bulk actions
 
-Right-click a **budget cell**, a **category group** (its month cell or its name), or a **month column
-header**. A group is a summarisation of the categories under it, so acting on one acts on all of
-them - and the group does not need to be expanded first. A month header acts on every category in
-that month, which is the quickest way to plan a whole month in one go.
+Right-click a cell, a group, or a month header. Acting on a group acts on all its categories, and a
+month header acts on the whole month, which is the quickest way to plan one.
 
-The menu names what it will change and how many cells, so a group or column action is never a guess.
+- **Copy from another month:** previous month, same month last year (optionally with a % uplift),
+  or any month you pick.
+- **Set a value:** zero, a fixed amount, or a % change.
+- **Average past budgets** or **Average past actuals** over 3, 6 or 12 months.
+- On a single cell in an Envelope budget: **Cover Overspending** or **Transfer to Another
+  Category**. In a Tracking budget: turn rollover on or off from that month on.
 
-- **Cell actions** (mode-aware, cells only): in tracking mode, enable/disable rollover from that month
-  forward; in envelope mode, **Cover Overspending** or **Transfer to Another Category**. These act on
-  one category-month, so they are not offered for a group or a column.
-- **Copy from another month**: Copy previous month, Copy prior year same month, Copy prior year
-  with %… (an uplift applied to the copied amount), Copy specific month… - the picker offers every
-  month in the budget file, not only the twelve on screen.
-- **Set a value**: Set to zero, Set to fixed amount…, Apply % change…
-- **Average past budgets**: 3-, 6-, or 12-month average of what was **budgeted**.
-- **Average past actuals**: 3-, 6-, or 12-month average of what was actually **spent or received** -
-  Use this when you want to budget from past spending instead of past budget amounts.
+Group, month and anything with a parameter shows a **preview** first: every category and month it
+will change, current and new amounts, and the totals. The new amounts are editable, so if an average
+lands on 97 and you wanted 100, type it. What you apply is what the table shows. Each action is one
+undo step.
 
-The result reports months, categories, and read-only cells it could not change.
+## Envelope extras
 
-Each budget-setting action stages as one undo step. Carryover is the exception - its toggle writes
-straight away and tells you what happened.
+- **Hold for next month:** each To Budget cell shows what is held; the toggle stages a hold or
+  clears it.
+- **Cover Overspending** and **Transfer to Another Category** move money between categories. Both
+  sides post together.
 
-### The preview
+## See what is behind a figure
 
-Group and column actions - and anything that needs a parameter - show a preview before staging
-anything. An action that needs no parameter opens straight onto it.
-
-The preview is a table of exactly what will be written: group, category, month, the current amount,
-the new one, and the change. **The new amounts are editable.** If a 6-month average lands on 97 and
-you wanted 100, type it - arithmetic like `50 * 2` works, `↑` and `↓` move between rows, `Enter`
-commits and steps down, `Esc` abandons an edit. Adjusted rows are marked and can be reverted one by
-one or all at once. What gets applied is what the table shows.
-
-Totals sit under the table, split into **Income** and **Expenses** when a run covers both, because one
-figure spanning a spending plan and an income plan answers neither. Above a dozen rows there is a
-filter - it finds rows, it never changes what **Apply** writes, and the totals cover every row either
-way.
-
-## Review staged changes and Save
-
-- The details panel shows an **"N changes"** badge. Open it for the list, grouped by month. A transfer
-  appears as one linked row, not two.
-- **Save** shows a summary first - how many changes, which months, the net difference - then a progress
-  dialog while it sends them one at a time. Both legs of a transfer post together or not at all.
-- If some fail, you get **Retry Failed**. Only what the server accepted leaves the draft.
-- Undo/redo works across staged edits (`Ctrl/Cmd+Z`, `Ctrl/Cmd+Shift+Z` / `Ctrl+Y`), up to 50 steps.
-
-## Use notes
-
-The details panel has a **Note** for whatever is selected: a category, a group, a single category ×
-month cell, or a whole month.
-
-:::caution[Notes save immediately]
-Notes go to the server the moment you confirm them. They have nothing to do with your staged edits or
-the **Save** button. See [Work safely](../../getting-started/core-concepts/#immediate-budget-change-exceptions).
-:::
-
-## Envelope budget actions
-
-- **Hold for next month** - every *To Budget* cell shows what is being held. The toggle opens a dialog
-  to stage a hold or clear one. Holds save with everything else.
-- **Cover Overspending / Transfer to Another Category** - move money between categories. Both legs are
-  one undo step, and they post together.
-
-Holds and transfers are envelope-mode only.
-
-## Tracking budget behavior
-
-### Look at the transactions behind a figure
-
-**Spent** and **Income received** in a month summary are links. Click either one for the transactions
-that produced it, plus where the money went and when during the month it left.
+**Spent** and **Income received** in a month summary open **Spending Analysis**: every transaction
+behind the figure, where the money went, and which week it left.
 
 ![Spending Analysis for a month: what was spent against the budget, where the money went by group, spending week by week, and the transactions behind it.](../../../assets/screenshots/user-guide/budget-spending-analysis.png)
 
-*Every transaction behind the month's Spent, what share each group took, and which week it landed in.
-Search, sort and export it like any other table.*
-
-### See what moved a month off plan
-
-The month summary tells you *how far* off plan a month is. **Variance Drivers** tells you what did it.
-Click a variance figure to open it - a month's variance, the period's, or a group's or category's - and
-it opens on exactly the categories and months of the number you clicked. The category and period
-pickers at the top are the same ones Spending Analysis uses, so you can widen or narrow it from there.
+Click a **variance** figure to open **Variance Drivers**, which explains what pushed a month, group
+or category off plan.
 
 ![Variance Drivers for a tracking budget: over budget as overspent less saved, a waterfall from budgeted to spent, recent months over and under plan, the groups that drove it and the largest transactions.](../../../assets/screenshots/user-guide/budget-variance-tracking.png)
 
-*A Tracking month that ended slightly over budget: what overspent, what was saved to offset it, and the
-months around it.*
-
-On a **Tracking** budget it answers five questions:
-
-- **How did budget become actual?** A waterfall from budgeted to spent, with the largest overspends, the
-  savings that offset them, and an "Other" bar for the rest. Click a bar to select it; an "Other" bar
-  selects everything it holds. The headline reads as an equation, such as *10,074 overspent - 3,648 saved
-  = 6,426 net over*.
-- **Which groups or categories did it?** A ranked driver list, one line per driver. The share column is
-  headed with what it is a share of ("% of overspend"), never of the net. Nothing is selected when the
-  dialog opens, so the analysis beside it describes everything; click a driver (or Ctrl/Cmd-click
-  several) to narrow it, and click again to clear. Use the chevron to drill from a group into its
-  categories.
-- **When did it develop?** For a period, a bar per month with a running total. For a single month, the
-  months around it, so you can tell a one-off from a pattern. Click a month to filter the rest.
-- **Is it unusual?** Facts for the selected driver (over in 6 of 8 months, its share, its peak month) and,
-  when there is enough history, what it typically costs per month.
-- **What is behind it?** The largest transactions in the driver, loaded when you ask for them, with a
-  link (beside Export) to open them all in Spending Analysis, which opens on top at the same size and
-  returns you here when closed. They are evidence: the figures above come from the
-  monthly budget, not from adding up these rows.
-
-On an **Envelope** budget the same dialog reads balances, because an overspend there is a funding
-question. It leads with how much is in deficit, shows how the closing balance is made up (carried in,
-allocated, spent, deficits cleared from To Budget), and for each month which deficits reduced the next
-month's To Budget and which rolled over. A category can spend more than it was allocated and still be
-fine if money carried in covers it, so each driver is tagged *Deficit*, *Covered by balance* or
-*Available*.
+- **Tracking:** a waterfall from budgeted to spent, written as an equation such as *10,074 overspent
+  − 3,648 saved = 6,426 net over*; the groups and categories that drove it; the months around it, so
+  you can tell a one-off from a pattern; and the largest transactions.
+- **Envelope:** the same dialog reads balances, because an overspend there is a funding question.
+  It shows how much is in deficit, how each closing balance is made up, and tags each driver as
+  *Deficit*, *Covered by balance* or *Available*.
 
 ![Variance Drivers for an envelope budget: the amount in deficit, a bridge from allocated to spent, balances month by month with deficits below zero, and the envelopes that drove it.](../../../assets/screenshots/user-guide/budget-variance-envelope.png)
 
-*The same month in an Envelope budget: the deficit, how the closing balance is made up, and which
-deficits reduced the next month's To Budget.*
- Hidden categories are included, because their money is still assigned. There is no income
-view, since Envelope budgets do not plan income. Export takes the drivers shown to CSV, and amounts
-follow the decimals setting in the grid toolbar.
+Select a driver to narrow everything else to it. Export takes the drivers to CSV.
 
-Tracking mode speaks in plans, not envelopes. Closed months report what happened, the current month is
-flagged as partial, and future months show what is budgeted rather than a misleading zero. Rollover is
-per category, from the right-click menu, and writes immediately - it is not part of the cell draft.
+## Save
+
+- The details panel shows an **N changes** badge; open it for the list by month.
+- **Save** shows a summary first, then sends the changes. Both sides of a transfer post together or
+  not at all.
+- If some fail, **Retry Failed** sends only those. Undo and redo cover up to 50 steps.
+
+**Notes** (on a category, group, cell or month) and **rollover** in a Tracking budget save as soon
+as you confirm them, outside the draft. See
+[Work safely](../../getting-started/core-concepts/#changes-that-save-immediately).
 
 ## Import and export
 
-- **Export** lets you choose months by quick range, date range, or by hand, and whether to include
-  hidden categories, income groups and staged values. There is a blank template too. Files are UTF-8
-  CSV with a BOM, so Excel opens them without mangling anything.
-- **Import** reads a CSV and sorts every row into exact, suggested or unmatched. You see before and
-  after values, and the whole import stages as one undo step. Category names that are nearly right get
-  suggestions; months outside the window can extend it.
-
-:::tip[Back up before large imports]
-One import can stage hundreds of changes. Export first. Then the worst case is re-importing a file you
-already have.
-:::
-
-## Keyboard shortcuts
-
-Press `?` - or `F1`, `Ctrl/Cmd+/`, or the toolbar **Shortcuts** button - for the full list, generated
-from the app's own keymap. The bare-letter ones (`V`, `F`, `H`, `E`, `[`, `]`) stay quiet while you are
-typing in a cell.
-
-## Safety and limitations
-
-- Rollover writes immediately, from the right-click menu, in tracking mode. It is not a staged edit.
-- Transfers need a source and a destination. You cannot move money to or from the pool.
-- The grid is not virtualised. A very long category list will scroll slowly.
+- **Export** chooses months, whether to include hidden categories, income and staged values, or a
+  blank template. Files are UTF-8 CSV.
+- **Import** sorts each row into exact, suggested or unmatched, shows before and after values, and
+  stages the whole file as one undo step.
 
 ## Troubleshooting
 
-- **Paste did nothing** - select a cell first. Paste fills from the top-left of the selection.
-- **A number is missing** - check the cell-view toggle, and whether that month is inside the visible
-  twelve.
-- **A category is missing** - it is probably hidden. Press `H`.
-- **Changes did not save** - the failed cells are still staged, marked red. **Retry Failed**.
-- **A note will not discard** - notes were saved the moment you wrote them. Discard cannot reach them.
+- **Paste did nothing:** select a cell first. Paste fills from the top left of the selection.
+- **A category is missing:** it is probably hidden. Press `H`.
+- **Changes did not save:** failed cells stay staged in red. Select **Retry Failed**.
+- **A note will not discard:** notes save as soon as you confirm them.
+- **Scrolling is slow:** a very long category list makes the grid work hard. Collapse groups you are
+  not using.
 
 ## Related pages
 
-- [Core Concepts](../../getting-started/core-concepts/)
-- [Categories](../categories/) - budget the categories you manage there
+- [Categories](../categories/) - set up the categories you budget here
+- [Financial Insights](../financial-insights/#my-budget) - your budget against what really happened, over any period

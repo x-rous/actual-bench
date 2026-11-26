@@ -63,21 +63,23 @@ npm run build
 
 When writing docs:
 
-- The **running app** is the source of truth. Use its exact labels, not approximations of them.
-- Start with one plain sentence that says what the feature does and when to use it.
-- State requirements and budget impact before the instructions. Do not classify read-only tools or exceptions as write models.
-- Put the shortest useful workflow first. Put options, implementation details, and rationale after it.
-- Use direct verbs and name the control a reader must select. Do not make readers infer an action from
-  a metaphor, product comparison, or rhetorical question.
-- Do not remove product, safety, or capability information just to shorten a page. Consolidate duplicated
-  information in the section that owns it, or move it to a clearly linked canonical page before removing
-  the duplicate.
-- Keep paragraphs focused on one idea. Use a table or list when readers need to compare choices.
+- The **running app** is the source of truth. Use its exact labels.
+- Write for someone who uses Actual every day and has never opened Bench. Plain words, short
+  sentences, no internal terms (schema versions, query keys, retry semantics, layout details).
+- Open every feature page the same way: two or three sentences on what it is for and why you would
+  use it, then where to find it and whether it changes Actual, in one sentence. Then a picture, then
+  the shortest path to a first result.
+- Say each thing once. What changes Actual and when lives on **Work safely**; the shared editing
+  model lives on **Editing, review and save**. Link to them instead of repeating them.
+- Describe what Bench does with your own data. Avoid "Actual can't, Bench can" comparisons.
+- Put deep reference (formulas, edge cases, matching constants) at the end, or in a collapsed
+  `<details>` block, so the page stays approachable without losing anything.
+- Use a table or list when readers compare choices. Keep paragraphs to one idea.
 - One task, one page. A smaller workflow is a section, not a new page.
 - Put images under `docs-site/src/assets/screenshots/` and reference them relatively.
 - No real secrets, credentials, private hostnames or personal budget data. Ever.
-- Keep links **relative**. They follow `DOCS_BASE` wherever the site is served; a hard-coded
-  `/actual-bench/` only works at the default base.
+- Keep links **relative** (`../accounts/`). A link starting with `/` skips the site's base path and
+  breaks on the published site.
 
 Every page has an **Edit** link that takes you straight to its source file on GitHub.
 

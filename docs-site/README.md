@@ -67,8 +67,11 @@ not separate pages. New pages appear in the sidebar automatically (groups use `a
 ## Authoring guidelines
 
 - Write for end users, not maintainers. Use exact in-app labels and current behavior as the source
-  of truth (see the docs brief in `agents/pr-specs/`).
-- Keep internal links base-safe: use relative links between pages, or prefix with `/actual-bench/`.
+  of truth. The full writing guidelines are on the site's **Contributing** page
+  (`src/content/docs/contributing.mdx`): one opening shape for every page, each topic said once,
+  deep reference at the end or in a collapsed `<details>` block.
+- Keep internal links relative (`../accounts/`). A link starting with `/` skips the base path and
+  404s on the published site.
 - Put images in `src/assets/screenshots/<area>/` and reference them relatively; never reference the
   application's `public/` directory at runtime.
 - Never include real secrets, credentials, private hostnames, or personal budget data.

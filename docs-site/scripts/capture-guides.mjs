@@ -7,11 +7,10 @@
  *
  * Groups: insights, budget, loans, cards, assets, cashflow, payee-cleanup.
  *
- * capture-screenshots.mjs points a private instance at the demo's budgets,
- * which is right for pages that only read Actual. Financial Insights, Loans,
- * Credit Cards and Assets also read what Bench itself stores about the demo
- * household (loan terms, card statements, registered assets), and only the
- * demo deployment has that - so these are photographed there. How and why is in
+ * capture-pages.mjs photographs the rest of the app. These pages read what
+ * Bench itself stores about the demo household (loan terms, card statements,
+ * registered assets), so they need the demo's Bench data: the public demo, or a
+ * local seed (BENCH_URL, see docs/screenshots.md). How and why is in
  * demo-capture.mjs.
  *
  * Each shot is cropped to the part of the page that shows the function: the

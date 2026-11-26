@@ -3,21 +3,19 @@ title: Credit Cards
 description: Check card statements against the bank, see what each bill still needs, and track instalment plans, all from your Actual transactions.
 ---
 
-Open **Financial Management → Credit Cards** after connecting your Actual budget. Bench reads your card transactions through Direct or HTTP API and saves its own records (cards, statements, your answers, plans) in its database. It never changes anything in Actual.
+Credit Cards checks each card the way your bank does: statement by statement. Enter the figures from
+the bank's statement and Bench shows whether your transactions explain them, what is still left to
+pay and by when, how instalment plans are going, and how fast you could be debt-free.
 
-**All cards** lists each card with its balance, credit used, next due date and anything needing attention. A card has six tabs: **Overview**, **Statements**, **Payments**, **Activity**, **Instalment Plans** and **Insights**. **Guide** opens the built-in guide, with section navigation and a searchable glossary.
+Open it from **Financial Management → Credit Cards**. It reads your card transactions and never
+changes anything in Actual; your cards, statements and answers are saved in Bench. It is marked
+experimental while it is shaped by feedback.
+
+**All cards** lists each card with its balance, credit used, next due date and anything needing attention. A card has six tabs: **Overview**, **Statements**, **Payments**, **Activity**, **Instalment Plans** and **Insights**. **Guide** opens the built-in guide, with a searchable glossary.
 
 ![All cards: total owed, left to pay, minimum left, available credit and interest and fees, then each card with its next payment, due date, statement balance, credit used and anything needing attention.](../../../assets/screenshots/user-guide/cards-all.png)
 
 *What every card owes, what is due next and when, and what needs a look.*
-
-Before opening this workspace, save or discard pending entity or budget edits from other pages.
-Bench shows an entry screen until those edits are resolved, with **Save**, **Discard**, **Undo** and
-**Redo** available in the temporarily expanded changes panel. The workspace's own review/save actions
-remain separate. Once the workspace opens, its global pending-changes panel is hidden again.
-If you then create a global draft through Quick Create or Redo, the relevant panel opens without
-closing your current editor. Resolve the global draft there; local work stays in place. Re-entering
-the page or switching budgets checks pending drafts again.
 
 ## Set up a card
 
@@ -127,4 +125,6 @@ If the bank includes plan balances in the statement balance, tick **Statement ba
 |---|---|
 | Accounts, transactions, categories, notes, cleared status | Card settings and limit changes, bank statement figures, your statement answers and moves, type corrections, plans and their links |
 
-Records are saved per budget and survive reloads. A change saved in another tab appears straight away, and one saved on another device appears when you return to the tab. If two tabs save the same record, the second save is refused rather than overwriting the first, and an edit of a record deleted elsewhere never brings it back. **Undo** reverses your last change. Records written by a newer version of Bench are kept unchanged, and a note says how many can't be shown.
+Records are saved for each budget as you work, and **Undo** reverses your last change. If you have
+the same card open in two tabs, a change made in one appears in the other, and Bench never lets one
+tab silently overwrite the other's work.

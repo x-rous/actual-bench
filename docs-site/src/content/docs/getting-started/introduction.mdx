@@ -1,6 +1,6 @@
 ---
 title: What Actual Bench adds
-description: Find out whether Actual Bench fits your work and what remains in Actual Budget.
+description: Find out what Actual Bench can do with the Actual Budget data you already keep.
 sidebar:
   order: 1
 ---
@@ -34,24 +34,32 @@ sample household with loans, cards, a home, a rental, investments and two years 
 | Keep two budget files in step, even in two currencies | Transaction, payee and category sync with previews, mappings and exchange rates | [Cross Budget Sync](../../user-guide/budget-sync/) |
 | Ask a question of my data that no screen answers | ActualQL queries, a data browser and a budget file health check | [ActualQL Queries](../../user-guide/actualql/) |
 
-## What it does not replace
+## Getting started
 
-It does not replace:
+1. [Install Actual Bench](../installation/) next to your Actual Server, or ask whoever runs your
+   server to.
+2. [Connect to a budget](../connecting/).
+3. Open [Accounts](../../user-guide/accounts/) and give each account a class. It takes a few
+   minutes, and it is what lets Financial Insights, Cashflow Planning, Credit Cards and Assets read
+   your money correctly.
+4. Read [Work safely](../core-concepts/) once, so you know which screens can change your budget and
+   which only read it.
 
-- Everyday transaction entry and mobile budgeting in Actual.
-- Actual's normal budget views and reports.
-- Actual's bank connections. Actual owns the link to your bank. Bench decides when the sync runs and
-  reports what came back, but never touches the connection itself.
-- Actual's day-to-day reconciliation. Bench adds a separate workbench for the times you want to
-  import a whole statement and audit it line by line.
-- The official Actual Budget documentation.
+## How it fits with Actual
+
+Actual Bench works alongside Actual Budget, on the same budget file:
+
+- You keep entering transactions, budgeting day to day and using Actual on your phone, exactly as
+  you do now. Bench picks up whatever you record.
+- Your bank connections stay in Actual. Bench can run Actual's bank sync on a schedule and report
+  what came back.
+- Actual's own reconciliation stays your everyday tool. Bench adds a statement workbench for the
+  times you want to import a whole statement and check it line by line.
 
 ## What you need
 
-- An Actual Server you already run, and a current browser.
-- Actual Bench itself - or the [live demo](https://actual-bench-demo.vercel.app), if you are still deciding.
-- For **Direct** mode: a browser that can reach the Actual Server URL, over HTTPS, with CORS allowed
-  or the server proxied same-origin.
-- For **HTTP API Server** mode: a running `actual-http-api`, its URL, and its `ACTUAL_API_KEY`.
+- An Actual Server you already run, and a current desktop browser.
+- For **Direct** mode: a browser that can reach the Actual Server over HTTPS.
+- For **HTTP API Server** mode: a running `actual-http-api`, its address and its API key.
 
 Ready for your own data? [Install it](../installation/), then [connect a budget](../connecting/).

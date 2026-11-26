@@ -1,303 +1,187 @@
 ---
 title: Cross Budget Sync
-description: Create one-way flows that preview and copy selected transactions, payees, or categories between budget files.
+description: Keep two budget files in step with one-way flows that preview every transaction, payee or category before copying it, even across currencies.
 sidebar:
   order: 12
 ---
 
-Use Cross Budget Sync when you need to copy selected transactions, payees, or categories from one
-budget file to another. Each saved one-way flow previews its changes before it writes.
+Cross Budget Sync copies transactions, payees or categories from one budget file to another: a
+foreign-currency budget into your main one, a shared household budget into your own, or a business
+account into a personal view. Each **flow** goes one way, previews every row before it writes, and
+remembers what it already copied, so running it again never duplicates anything.
 
-It copies between independent budget files; it does not merge them into one live database.
+Open it from **Sync & Automations → Cross Budget Sync**. A preview never writes. Actual changes when
+you select **Apply**, or on a schedule you opt in to, which applies only items it can prove are
+safe. It is marked experimental while it is shaped by feedback.
 
-Flows keep mappings and run history. Items that need a decision remain in the review queue.
+![A previewed sync flow from the Envelope budget's rewards card to the Tracking budget's: 2 new rows ready to sync and 32 flagged as possible duplicates, before anything is written.](../../../assets/screenshots/user-guide/budget-file-sync.png)
 
-Open it from **Sync & Automations → Cross Budget Sync** (`/sync`).
+*A preview sorts every row and writes nothing. Both demo budgets already hold this card's spending,
+so most rows are flagged as possible duplicates instead of being copied twice.*
 
-**Budget impact:** Preview never writes. Only an explicit **Apply**, or an opted-in safe-only automation
-policy, writes classified safe items. Uncertain rows remain for review.
+## Your first flow
 
-![A previewed sync flow: the two endpoints, the flow's settings, and 244 rows classified before anything is written.](../../../assets/screenshots/user-guide/budget-file-sync.png)
+1. Select **New flow** and choose **Transactions**, **Payees** or **Categories**.
+2. Pick the source and target. For transactions, pick an account on each side.
+3. Keep the default settings for the first run.
+4. Select **Preview** and read how each row is classified.
+5. Select the **New** rows and **Apply**.
+6. Preview again: those rows now say **Already synced**.
 
-*A preview classifies every row and writes nothing. Here the two demo budgets already hold the same
-household, so all 244 rows come back as duplicates and go to review rather than being copied again -
-which is the behaviour the preview exists to produce.*
+Once that works, add updates, deletion review, currency conversion or a schedule.
 
-![The flow editor: source and target endpoints, what to sync, and the safety options.](../../../assets/screenshots/dialogs/dialog-flow-editor.png)
+![The flow editor: what to sync, the source and target budget and account, the review policy and what a sync may do, the transform options and the source filters, here limited to this month.](../../../assets/screenshots/dialogs/dialog-flow-editor.png)
 
-The source and target pickers list the budgets connected in this session and, under **Saved**, your
-saved budgets. Choosing a saved budget connects it in the background without changing the budget you
-are working in. A flow whose budget is not connected shows its saved budget and account, with
-**Connect** when that budget is saved.
+*A flow is one direction, one pair of endpoints, and careful defaults: create only, same sign,
+create missing payees, and a note so synced rows are easy to recognise.*
 
-*A flow is one direction, one pair of endpoints, and a set of deliberately conservative defaults -
-create-only, same sign, create missing payees, and a notes marker so synced rows are recognisable.*
+The source and target pickers list the budgets connected in this session and your saved budgets.
+Choosing a saved budget connects it in the background, without changing the budget you are working
+in. Any mix of Direct and HTTP API connections works.
 
-## Get the first flow working
+## What a flow can copy
 
-1. Create a flow and choose Transactions, Payees, or Categories.
-2. Pick one source and one target; choose accounts for a transaction flow.
-3. Keep the conservative create-only defaults for the first run.
-4. Select **Preview** and read the row classifications.
-5. Select only safe **New** rows and **Apply**.
-6. Preview again to confirm they now appear as **Already synced**.
+- **Transactions**, from one account to another. The two accounts can be in the same budget.
+- **Payees**, budget to budget, matched by name. Missing ones are created.
+- **Categories**, budget to budget, matched by name within their group. Missing categories are
+  created under the matching group, or a **default group** you choose. If a category's group cannot
+  be placed, it is **Blocked** for review, unless you turn on **create missing groups**.
 
-Add updates, deletion review, currency conversion, or automation after you verify the basic flow.
+Payee and category flows only ever create: they never rename, delete or hide anything.
 
-## The safety model
+## Transaction settings
 
-Read this first - it explains why sync is safe to run:
+**Filters** choose which transactions take part: a date range, cleared and reconciled status, money
+in or out, an amount range, payees and categories to include or leave out, and text in the notes.
+Transactions that a sync created are always left out, so two flows can never loop.
 
-- **Preview is required** before any write. A dry-run produces a persisted run with classified rows and
-  no changes to Actual.
-- **Create-only** is the conservative baseline. Update, delete, grouped splits, and same-budget are
-  opt-in and previewed.
-- **Automation applies only provably safe items**; anything uncertain goes to the **review queue**.
-- **Mappings and markers** protect against duplicates, so reruns skip already-synced items.
+**Transforms** shape what is written:
 
-## Supported data types
+- **Amount direction:** the same sign, or reversed.
+- **Payee:** matched by name, creating missing payees by default.
+- **Category:** matched by name. A transaction flow never creates categories; a missing one is left
+  empty.
+- **Notes marker:** a visible note such as `[Synced from Household / Checking]`, on by default.
+- **Splits:** split lines become separate transactions by default, or stay one split with **Keep
+  splits grouped on the target**.
+- **Convert currency:** see [Exchange Rates](../fx-rates/).
 
-Choose a flow's **data type** in the editor:
+## Preview
 
-- **Transactions** - sync at the **account** level (source and target accounts).
-- **Payees** and **Categories** - sync at the **budget** level (no account).
-
-Every data type syncs in **both Direct and HTTP API Server mode**, in any combination
-(Direct→HTTP, HTTP→Direct, or same-mode).
-
-## Create a flow
-
-1. On the Cross Budget Sync page, create a flow.
-2. Give it a **name** and choose the **data type**.
-3. Choose the **source** and **target** connections (and accounts, for transaction flows).
-4. Configure filters and transforms (below).
-5. Save the flow.
-
-A source and target on the same budget is allowed for transaction flows (between two different
-accounts); entity flows require two different budgets. A true self-sync (same account on both sides) is
-blocked.
-
-## Transaction flow settings
-
-### Filters
-
-- Date range, cleared and reconciled status, amount sign, minimum and maximum amount, payee and
-  category include and exclude, and notes-contains. **Clear filters** clears all of them.
-- Sync-generated transactions are always excluded to prevent loops.
-
-### Transforms
-
-- **Amount direction** - same sign by default, or reverse sign.
-- **Payee match-by-name** - create missing payees by default, or leave empty.
-- **Category match-by-name** - missing categories are left empty (categories are never auto-created).
-- **Notes marker** - a clean visible marker such as `[Synced from <budget> / <account>]`, on by
-  default.
-- **Split handling** - eligible split lines are exploded into separate target transactions by default,
-  or kept **grouped as one target split** when you enable *Keep splits grouped on the target*.
-- **Convert currency** - for multi-currency consolidation; see [Exchange Rates](../fx-rates/).
-
-## Payee and category flows
-
-- Entities are matched to the target by **normalized name**.
-- **Payees:** missing payees are created on the target; existing ones are mapped without duplicating.
-- **Categories:** matched by name within a group; missing categories are created under the matching
-  target group or a chosen **default group**. A category whose group can't be placed is **blocked for
-  review** unless you enable **create missing groups**. Income and expense categories stay distinct.
-- **No renames, deletes, or hides** - create-only. Mappings let reruns skip already-synced entities.
-
-## Preview a flow
-
-Select **Preview** to produce a dry-run. Each row is classified. The exact labels you'll see:
-
-| Label | Meaning |
+| Label | Means |
 |---|---|
-| **New** | A safe new item to create on the target. |
-| **Already synced** | Already mapped from a previous run; skipped. |
-| **Duplicate** | A likely duplicate on the target; held for review. |
-| **Source changed** | The source changed since it was synced. |
-| **Source deleted** | The mapped source was deleted. |
-| **Deleted on target** | The mapped target was deleted; recreate it or stop syncing it. |
-| **Marker match** / **Name match** | The target already carries this item's marker or matches by name. |
-| **Blocked** | Can't be applied safely (for example, ambiguous category group placement). |
-| **FX pending** | A converting row has no available rate yet (see [Exchange Rates](../fx-rates/)). |
+| **New** | Safe to create on the target |
+| **Already synced** | Copied by an earlier run; skipped |
+| **Duplicate** | Looks like something already on the target; held for review |
+| **Source changed** | Changed in the source since it was copied |
+| **Source deleted** | Deleted in the source since it was copied |
+| **Deleted on target** | Someone deleted the copy in the target |
+| **Marker match** / **Name match** | The target already carries this item |
+| **Blocked** | Cannot be applied safely, for example a category with no group to go in |
+| **FX pending** | Waiting for an exchange rate |
 
-The preview shows source and transformed target amounts side by side, with no writes to Actual.
-Currency-converting flows also label amounts with their currency and show the applied rate.
+The preview shows source and target amounts side by side, with currencies and rates on a converting
+flow.
 
-## Apply a run
+## Apply
 
-Select the safe **New** rows and **Apply**:
+Select the rows you want and **Apply**. Only those rows are written. Each copy is recorded as soon
+as it succeeds, so a failure part-way never loses the rows before it, and **Retry failed items**
+retries only what failed.
 
-- Only the selected safe items are written; each create is stamped with a durable target-side marker
-  (`imported_id`), and an app-owned **mapping** is recorded immediately after each success.
-- Partial failures are reported and never lose earlier successes.
-- A run can only be applied once at a time. A preview is refused if the flow's settings changed after it
-  was made, or if it is more than a day old. Run a new preview in that case.
+A preview older than a day, or made before you changed the flow's settings, is refused: preview
+again. If a copy is on the target but Bench lost its record of it, select its **Marker match** row
+to reconnect them without creating a duplicate.
 
-### Mappings and idempotency
+## Updates and deletions
 
-App-owned mappings are the source of truth (the target marker is a secondary recovery aid), so
-re-previewing after apply shows items as **Already synced** instead of creating duplicates.
+Both are off until you turn them on.
 
-### Marker-match repair
+- **Update mapped targets:** when a source transaction changes, its copy follows. Sync owns the
+  amount, date, payee and notes. The category and cleared state belong to the target, so you can
+  categorise copies there. A copy you edited by hand is never overwritten.
+- **Delete when the source is removed:** a deleted source transaction appears under **Source
+  deleted** for you to select. Deletes are never automatic and never in bulk.
+- **Deleted on target:** a copy someone removed is reported. Recreate it, or choose **Stop
+  syncing**.
 
-If a target already carries a flow's marker but the mapping was lost, select the **Marker match** row to
-repair the mapping without creating a duplicate.
+## Transfers between the two budgets
 
-## Updates and deletion (opt-in)
+A transfer inside the source budget is copied without a transfer payee, with the other side named in
+its notes, so it cannot create a second transfer leg on the target.
 
-- **Update mapped targets** - when a source transaction changes after it was synced, push the change to
-  its mapped target. Sync owns the amount, date, payee and notes. The **category and cleared state belong
-  to the target budget**: you can categorise synced rows there and later corrections still arrive. A
-  target whose amount, date, payee or notes you edited by hand is never overwritten.
-- **Delete when the source is removed** - when a synced source is deleted, the mapped target surfaces
-  under **Source deleted** for you to select. Never automatic and never in bulk. The whole source account
-  is checked, so this works on flows with a date range, and a transaction that only stopped matching a
-  filter is not treated as deleted.
-- **Deleted on target** - a synced row removed from the target budget is reported. Select it to recreate
-  it, or choose **Stop syncing** to keep it deleted.
+To record money moving **between** the two budgets, enter it once, in the budget you sync from:
 
-Clearing or reconciling the source account is not a change and does not put rows in review.
+1. A **Payee** flow from your main budget brings each of its accounts across as a payee named
+   `Transfer: <account>`.
+2. In the other budget, record the movement with that payee.
+3. The preview says **Creates a transfer to** that account. Sync writes a real transfer in the main
+   budget, and Actual adds its other side.
 
-A grouped split is updated line by line while it still has the same number of lines; each line keeps
-its target category. If the number of lines changed, the split is left as it is and reported.
-
-A synced row keeps the exchange rate it was recorded with. Editing only its notes does not re-convert
-it. A new rate is used when its date changes, or when the flow follows rate changes.
-
-If you turn **Keep split transactions grouped** on or off after a split was synced, that split shows as
-**Split setting changed** and is held back, because creating it in the new shape would duplicate it.
-
-### Transfers
-
-A transfer inside the source budget is one leg of a pair. Sync writes it **without a transfer payee**,
-with the other side named in its notes, so it cannot create a second leg on the target. On a
-currency-converting flow you can then link it to its real other side from
+Because sync created both sides, it keeps them together: a later correction updates both, and
+deleting the source row removes both. If the other account already has a row that looks like the
+other side (within three days and 5%), the transfer is not selected, so the money is never counted
+twice. If you would rather record both sides yourself, link them from
 [Currency position](../fx-rates/#currency-position).
 
-### Moving money between the two budgets
+## Review, history and groups
 
-To record money moved between an account in the main budget and one in the other budget, enter it
-once, in the budget being synced from, and let sync make the transfer:
+- **Review queue:** duplicates, changed and deleted sources, and blocked rows are never applied
+  automatically. They wait for you.
+- **Run history** shows each run's counts and every item. **Export** saves a run's audit as CSV.
+- **Groups:** give flows the same **Group** name to list them together. **Run all** runs a group in
+  order, payees and categories before transactions.
+- The **bell** beside **Sync flows** counts flows whose latest run needs you.
+- **Reverse flow** creates the mirror of a flow (switched off, for you to check), so two one-way
+  flows make a two-way sync.
+- Flow definitions export and import as JSON. They carry no credentials.
 
-1. A **Payee** flow from the main budget brings each of its accounts across as a payee named
-   `Transfer: <account>`, for example `Transfer: AED Current`.
-2. In the other budget, record the money with that payee: money in when it left the main account,
-   money out when it went to it. Do not record the main budget's side yourself.
-3. The preview says **Creates a transfer to AED Current**. On a converting flow, type the amount that
-   account recorded, so both sides match what the bank did.
+## Automation
 
-Sync then writes one real transfer in the main budget, and Actual adds its other leg. Because sync
-created both legs, it keeps them together: a later correction updates both legs, including the date,
-and deleting the source row removes both. A transfer whose other leg is reconciled is left alone.
+Each flow has a review policy:
 
-A row cannot transfer to the account it is synced into; its payee is left empty. If the other account
-already has a row that looks like the other side (within three days and 5% of the amount), the transfer
-is not selected, and **Select all** and automatic runs skip it, so the move is not counted twice. Pick
-it by hand only if the two are different. The same check covers a split line with a transfer payee and
-a transfer being recreated after it was deleted from the main budget, and a correction that gives an already synced row a transfer payee. A split whose lines are transfers is changed or deleted only if sync created it, and not once one of those transfers is reconciled in its other account. If the other account cannot be
-read, the transfer is not selected either. A transfer keeps the rate it was recorded with, even on a
-flow that follows rate changes.
+- **Manual** (the default): you preview and apply.
+- **Auto-sync on a server schedule (unattended):** the server runs a safe-only sync on a schedule,
+  with the app closed. Routine runs read the last two months; once a day a run reads the whole
+  account and checks for deletions. Both budgets must be
+  [enrolled for unattended access](../automations/#unattended-access).
+- **Run safe sync now** runs the safe-only sync once, on demand.
 
-If you record both sides yourself instead, leave the synced row without a category and link the two from
-[Currency position](../fx-rates/#currency-position). A transfer linked that way keeps the amount your
-own row recorded: a later source change is reported once and left alone, and deleting the source row
-stops syncing it while both rows stay.
+Safe-only means only **New** rows (and marker repairs) are applied. Everything else stays in review.
+**Exact-duplicate auto-map** (off by default) also links a target transaction with the same date,
+amount, payee and category, without creating a new one.
 
-## Review queue
+After repeated failed runs, a flow **auto-pauses** and is badged, until you turn it back on. A flow
+that still has the old **Auto-sync on a schedule (while the app is open)** policy no longer runs, and
+says so: edit it and choose the server schedule.
 
-Items that are not provably safe - duplicates, source-changed, source-missing, and blocked - are never
-auto-applied. They collect in a review queue for you to handle. From there you can resolve duplicates,
-retry, and act on changes.
+## Your target's rules
 
-## Run history and retries
-
-- Run history per flow shows counts and item-level detail, including how many items were auto-applied
-  vs. left in the review queue vs. failed.
-- **Retry failed items** re-attempts just the failed items of a run; marker-based idempotency prevents
-  duplicates on retry.
-
-## Reverse flows and portability
-
-- The **reverse-flow** helper mirrors a flow (source/target swapped, created disabled for review) so two
-  one-way flows form a two-way sync.
-- **Export/import a flow definition** as JSON. Definitions carry no secrets or connections - re-select
-  connections on import.
-- **Export a run's audit** to CSV.
-
-## Automation (opt-in)
-
-Each flow has a **review policy**:
-
-1. **Manual** (default) - preview and apply yourself.
-2. **Auto-sync on a server schedule (unattended)** - the server runs a safe-only sync on a schedule,
-   **with the app closed**, for HTTP API and Direct budgets alike. It is opt-in and off by default and
-   requires operator setup (see the note below). Routine runs read the last two months, and one run a
-   day reads the whole account and checks for deletions.
-3. **Auto-sync on a schedule (while the app is open)** - turned off. A flow that still has this
-   policy no longer runs automatically and says so in the flow list; edit it and choose the server
-   schedule instead.
-4. **Run safe sync now** - a one-click safe-only run for any automated flow.
-
-Additional controls:
-
-- **Exact-duplicate auto-map** (opt-in, off by default) links a transaction that already exists on the
-  target with the same date, amount, payee, and category - mapping only, no new transaction. Fuzzy
-  duplicates always stay in the review queue.
-
-:::note[Unattended sync needs operator setup]
-Unattended server-side sync requires both budgets to be
-enrolled: their API key or Actual server password is saved encrypted on the server. For Direct
-budgets, the Bench server must be able to reach your Actual server. See
-[Configuration](../../administration/configuration/) and [Deployment](../../administration/deployment/).
-:::
-
-## Groups and the attention list
-
-Give flows the same **Group** name in the editor to list them together. **Run all** on a group runs its
-flows in order, payees and categories before transactions. Automated flows apply safe items only.
-Manual flows are previewed and write nothing, so you open them to apply.
-
-The bell beside **Sync flows** counts flows whose latest run needs you: failed rows, rows waiting for a
-rate, blocked rows, or rows to review. Open it to go straight to that run. While the page is open, a new
-problem also raises a notice.
-
-## Flow health and auto-pause
-
-After repeated failed or partial automated runs, a flow **auto-pauses** (and is badged) so it stops
-firing until you re-enable it. Auto-run outcomes that fail or leave items to review raise an in-app
-notice.
-
-## Target rules
-
-Because Actual Budget rules run when a transaction is created, an applied target transaction may differ
-from the preview (payee, category, notes, or cleared state). Actual Bench surfaces this as a **warning**,
-not an error.
-
-## Limitations
-
-Not in scope: automatic transfer linking, automatic (non-review) target deletes, transaction-flow
-category auto-creation, fuzzy duplicate auto-mapping, and multi-currency within a single budget file. A
-dedicated **Category** flow can create missing categories under an existing, selected, or explicitly
-created group. See
-[Known Limitations](../../help/known-limitations/).
+Actual runs the target budget's rules when a transaction is created, so a copy can end up with a
+different payee, category or notes than the preview showed. Bench shows this as a warning, not an
+error.
 
 ## Troubleshooting
 
-- **Preview is empty** - check the flow's filters (date range, status, sign) and that the source has
-  matching transactions.
-- **Source/target can't be selected** - a true self-sync is blocked; entity flows require two budgets.
-- **Duplicates appear** - resolve them in the review queue; enable exact-duplicate auto-map only if
-  appropriate.
-- **A category is Blocked** - its group can't be placed; choose a default group or enable create-missing
-  groups.
-- **A changed target wasn't overwritten** - the manual-edit fingerprint protected it.
-- **A mapping was lost** - use marker-match repair.
-- **Automation isn't running** - check the review policy, whether the flow is paused, and (for
-  unattended) the vault and App Health.
+- **The preview is empty:** check the flow's filters and that the source has matching transactions.
+- **A source or target cannot be chosen:** a flow cannot copy an account into itself, and payee and
+  category flows need two budgets.
+- **Duplicates appear:** handle them in the review queue.
+- **A category is Blocked:** choose a default group, or turn on create missing groups.
+- **A copy was not updated:** you edited it by hand in the target, so sync left it alone.
+- **Automation is not running:** check the review policy, whether the flow is paused, and the vault
+  in [App Health](../../administration/app-health/).
+
+## Limits
+
+- Rows you entered in **both** budgets are not linked automatically; link them one at a time from
+  [Currency position](../fx-rates/#currency-position).
+- Target deletes always go through review.
+- Transaction flows never create categories; use a Category flow.
+- Only exact duplicates can be auto-mapped.
+- One budget file holds one currency; conversion happens between budgets.
 
 ## Related pages
 
-- [Exchange Rates](../fx-rates/) - multi-currency conversion
-- [Connect to Actual Budget](../../getting-started/connecting/)
-- [Known Limitations](../../help/known-limitations/)
+- [Exchange Rates](../fx-rates/) - converting between currencies
+- [Automations](../automations/) - schedules and run history

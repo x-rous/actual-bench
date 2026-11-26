@@ -1,130 +1,87 @@
 ---
 title: Editing, review and save
-description: Learn the shared staged-editing workflow for Budget Setup pages, including bulk actions, CSV, review, and Save.
+description: How editing works on every Budget Setup page - inline edits, bulk actions, CSV, the Usage Inspector and the Changes panel.
 sidebar:
   order: 5
 ---
 
-Budget Cockpit and Budget Setup pages use staged editing: Rules, Accounts, Payees,
-Categories, Schedules, and Tags. Use this page to learn how to make bulk changes, review them, and
-save them.
+Accounts, Categories, Payees, Tags, Rules and Schedules all work the same way, so you only have to
+learn it once. You edit like a spreadsheet, see what depends on a record before you change it, and
+read the whole batch before you **Save**.
 
-**Budget impact:** Changes remain staged for review until you **Save**. Notes save immediately.
+## A typical cleanup pass
 
-## What the bulk model adds
+1. Open the page for what you want to change, for example **Payees**.
+2. Filter or search until the rows you care about are on screen.
+3. Select **Info** on a row to see what depends on it before you delete or merge anything.
+4. Make your edits, or select rows and choose a bulk action.
+5. Read the **Changes** panel, then select **Save**.
 
-- **Bulk everything** - select rows and delete, close, reopen, merge or hide them together. Or paste
-  straight out of a spreadsheet to create dozens at once.
-- **CSV in and out** - seed a new budget from a spreadsheet, or take one away to edit offline.
-- **Usage before damage** - see how many rules and transactions point at a record, and jump to them,
-  *before* you change or delete it.
-- **Staged review** - creates, edits and deletes pile up as a draft and go nowhere until you **Save**.
-  A whole cleanup pass gets read once, as a unit.
-- **Duplicate detection** - name clashes are flagged while you type, not after.
+Moving a whole budget structure? Use [Bundle Export / Import](../bundle-export-import/) instead of
+repeating this on six pages. Cleaning up payees that your bank imports keep duplicating? Start at
+[Payee Cleanup](../../user-guide/payee-cleanup/), which finds the groups for you.
 
-## Start with one cleanup pass
+## Edit rows
 
-1. Open the entity page that contains the problem.
-2. Filter or search until the affected rows are visible.
-3. Inspect usage before deleting or merging anything important.
-4. Stage the edits or bulk action.
-5. Review **Changes**, then **Save**.
+- **Edit a cell:** double-click it, press `Enter` or `F2`, or start typing. `Escape` cancels.
+- **Add many at once:** use **+ Add row** (or the row count beside it) at the bottom of the table, or paste rows straight from a spreadsheet.
+- **Select several:** tick the checkboxes, then choose an action such as delete, merge, close or
+  hide. Rows that Actual manages itself (transfer payees, schedule rules) have a disabled checkbox,
+  with a tooltip saying why.
+- **Filter and search:** each page keeps its filters while you work. They reset when you switch
+  budgets.
+- **Duplicate names:** a warning appears as you type a name that already exists.
 
-Moving an entire structure? Use [Bundle Export / Import](../bundle-export-import/) rather than
-repeating that loop on eight pages.
+New, edited and deleted rows stay marked until you save.
 
-One shop appearing five times because the import text carries a date or a card number is a different
-problem. Start at [Payee Cleanup](../../user-guide/payee-cleanup/). It finds the groups for you - and
-the payees whose imports will stop matching once the names are tidy.
+## See what depends on a record
 
-## The shared editing model
+Select **Info** on any row to open the Usage Inspector. It shows how many rules and transactions
+point at the record, its balance for an account, and its categories for a group, and what deleting
+it would affect. Select a rule count to open [Rules](../../user-guide/rules/) filtered to that
+record. Opening the inspector never starts a delete.
 
-Every master-data page behaves the same way:
+![The Usage Inspector for the payee Costco: 1 rule and 50 transactions, what deleting it would do to them, and a link to its rules.](../../../assets/screenshots/getting-started/usage-inspector.png)
 
-- **Inline editing** - double-click, `Enter`, or `F2` to edit a cell; `Escape` cancels.
-- **Staged rows** - new, edited and deleted rows are marked and written only on **Save**.
-  [Work safely](../core-concepts/) has the full model.
-- **Bulk selection** - checkboxes, then an action. Rows the system manages show a disabled checkbox
-  and a tooltip saying why.
-- **Filters and search** - per page, and they stick. Switching connection clears them.
-- **Duplicate warnings** - a visual warning appears when a name already exists.
-- **Impact-aware deletion** - destructive actions stop and show you the transaction counts, rule
-  references, balances and child counts they know about.
+Deletes and merges show the same numbers in their confirmation, so you always know what you are
+about to touch.
 
-## Quick Create
+## Quick Create and Search
 
-Create a supported entity without leaving the current page:
-
-- Press `N` (when no input or dialog is focused) or `Ctrl/Cmd+Shift+N` (from anywhere) to open the
-  Quick Create dialog.
-- Choose **Payee**, **Category**, **Account**, or **Tag**.
-- Category requires a group; Account has an on-budget / off-budget toggle; Tag has an optional color.
-- Submitting stages it as a single undo step. You do not move.
-
-## Global Search
-
-`Ctrl/Cmd+K`, or the top-bar **Search** button. It covers accounts, payees, categories, rules,
-schedules and tags, groups the results by type, and takes you to the row with it highlighted. It reads
-what is already in memory and writes nothing.
+- **Quick Create:** press `N` (or `Ctrl/Cmd+Shift+N` from anywhere) to add a payee, category,
+  account or tag without leaving the page. It is staged like any other edit.
+- **Search:** press `Ctrl/Cmd+K`, or select **Search** in the top bar, to jump to any account, payee,
+  category, rule, schedule or tag.
 
 ## CSV import and export
 
-Every master-data page supports CSV export and import:
+Every Budget Setup page exports and imports CSV:
 
-- **Exports** are UTF-8 with a BOM, so they open cleanly in Excel / Google Sheets.
-- **Imports** are staged with per-row validation (and a 5 MB limit), so you review everything before
-  **Save**.
+- Exports are UTF-8, so they open cleanly in Excel and Google Sheets.
+- Imports (up to 5 MB) are checked row by row and staged, so you read everything before you **Save**.
 
-Each entity's page lists its exact columns. Sample files live in the repository under
-`public/sample-csv/` if you want something to test against a fresh budget.
+Each page lists its columns. The repository has sample files under `public/sample-csv/` if you want
+something to try on a test budget.
 
-For **all** the types at once - a whole-budget snapshot, or a seed - use
-[Bundle Export / Import](../bundle-export-import/) rather than eight separate CSVs.
+## The Changes panel
 
-## The Usage Inspector
+Everything you stage collects in the **Changes** panel on the right, with **Save**, **Discard**,
+**Undo** and **Redo** in its header.
 
-The **Info** button on any row opens a drawer showing everything that references it. It does not start
-a delete:
+![The Payees table with two renamed payees marked as edited, and the Changes panel listing them under Updated, with Undo, Redo, Discard and Save above.](../../../assets/screenshots/getting-started/changes-panel.png)
 
-- A stats row: **Rules** (always), **Transactions** (except tags), **Balance** (accounts, amber when
-  non-zero), and **Categories** (groups only).
-- An **impact** section describing what a deletion would affect.
-- Quick links (for example **View rules →**) for entities with rule references.
-- An empty state ("No known references found.") when nothing references the entity.
+*Edited rows are marked in the table, and the panel lists every staged change until you save or discard it.*
 
-:::note[Rule counts are clickable]
-Accounts, payees, categories, and tags show how many rules reference them. Click the count to jump to
-the [Rules](../../user-guide/rules/) page filtered to that entity.
-:::
+- **Save** writes the whole batch. Anything that fails stays marked, ready to retry.
+- **Discard** throws the draft away and goes back to what Actual holds.
+- `Ctrl/Cmd+Z` and `Ctrl/Cmd+Shift+Z` undo and redo, a whole bulk action or import at a time.
+- **Minimize panel** tucks it into a narrow rail when you need room. The rail still shows how many
+  changes are waiting.
 
-## Review and Save
-
-Creates, edits, deletes and merges collect in the **Changes** panel. Its header holds **Save**, **Discard**, **Undo** and **Redo**. Your Actual
-Server sees none of it until you **Save**. **Discard** throws the draft away and goes back to the last
-saved state.
-
-:::caution[Notes are the exception]
-Notes on accounts, categories and category groups **save the moment you confirm them**. They are not
-part of the draft, and **Discard** will not take them back. See
-[Work safely](../core-concepts/#immediate-budget-change-exceptions).
-:::
+Notes are the exception: they save as soon as you confirm them. See
+[Work safely](../core-concepts/#changes-that-save-immediately).
 
 ## Related pages
 
-- [Accounts](../../user-guide/accounts/) · [Payees](../../user-guide/payees/) · [Payee Cleanup](../../user-guide/payee-cleanup/) · [Categories](../../user-guide/categories/) · [Tags](../../user-guide/tags/)
-- [Work safely](../core-concepts/)
-
-## Minimize the changes panel
-
-The right panel keeps its editing controls on one toolbar-aligned header row, with the numeric change badge beside the title. **Save** has a text label; the Undo,
-Redo and Discard icons have tooltips. Minimize the panel to get more working space, then use the
-restore button on the right rail to reopen it. Pending counts and save-error indicators remain
-visible on the rail. This preference follows you between pages and survives reloads in this browser;
-it stores no drafts or financial data. Saved-data entry screens temporarily show the relevant changes panel for review and Save/Discard.
-Minimization is temporarily unavailable during that review. This does not overwrite the remembered
-minimized preference, which resumes once the draft is resolved.
-
-Keyboard Undo/Redo follow the draft shown by the panel controls, including budget edits on a
-saved-data entry screen. Text fields keep native undo, and shortcuts already handled by the
-budget grid are not repeated. Quick Create or Redo after entry can reveal the panel without
-closing an open editor or discarding its local work.
+- [Work safely](../core-concepts/) - what changes Actual, and when
+- [Accounts](../../user-guide/accounts/) · [Categories](../../user-guide/categories/) · [Payees](../../user-guide/payees/) · [Tags](../../user-guide/tags/) · [Rules](../../user-guide/rules/) · [Schedules](../../user-guide/schedules/)

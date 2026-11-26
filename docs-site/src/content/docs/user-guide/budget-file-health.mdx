@@ -5,17 +5,17 @@ sidebar:
   order: 22
 ---
 
-Use Budget File Health to inspect an exported budget snapshot and run structural checks in your
-browser. It does not change your budget.
+Budget File Health opens a fresh export of your budget file in your browser and checks it from the
+inside: its structure, the links between its rows and SQLite's own health. Use it when something in
+Actual looks wrong, before a big change, or when you are asked for details in a bug report.
 
-Open it from **Analyze & Cleanup → Budget File Health** (`/budget-diagnostics`).
-
-**Budget impact:** Budget File Health does not change budget data. Everything happens in your browser.
+Open it from **Analyze & Cleanup → Budget File Health**. It only reads, and everything happens in
+your browser.
 
 ![Budget File Health's overview: counts for every object in the snapshot, its metadata, and the file it came from.](../../../assets/screenshots/user-guide/budget-file-health.png)
 
-*What the snapshot contains, down to the byte: 807 transactions, 74 payees, 42 rules, a 924 KB
-database - plus the sync ids and timestamps you need when reporting a problem.*
+*What the snapshot contains: 2,288 transactions, 93 payees, 42 rules and a 7.3 MB database. The
+metadata below it holds the ids and timestamps you need when reporting a problem.*
 
 ## When to use it
 
@@ -25,8 +25,6 @@ database - plus the sync ids and timestamps you need when reporting a problem.*
 | What does the snapshot contain, and how large is it? | **Overview** tab, below |
 | What rows and columns exist in a table? | [Data Browser](../data-browser/) |
 | I need a reusable query against live saved data | [ActualQL Queries](../actualql/) |
-
-Start here. Go to the [Data Browser](../data-browser/) when a finding needs the actual rows.
 
 :::caution[Snapshots contain your financial data]
 A snapshot is your finances. The processing is local, but a ZIP or CSV you download is out of the
@@ -56,9 +54,8 @@ health, then groups what it finds by severity. From there you can:
 
 Nothing here writes to your budget.
 
-## Safety and limitations
+## Limits
 
-- Read-only. It cannot change your budget.
 - A very large snapshot is limited by your browser's memory.
 - The full integrity check is slow on large files. That is SQLite, not the page.
 

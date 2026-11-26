@@ -1,84 +1,50 @@
 ---
 title: Categories
-description: Manage the full category hierarchy, including bulk edits, CSV, notes, and deletion impact.
+description: Manage your whole category hierarchy in one table, with bulk moves, CSV and a clear view of what each delete affects.
 sidebar:
   order: 5
 ---
 
-Use Categories to create and manage category groups and categories, import or export the hierarchy,
-hide categories, and review deletion impact.
+Categories shows every category group and category in one table, income and expense side by side.
+Rename, move, hide and delete them in bulk, or bring a whole structure in from a spreadsheet.
 
-Open it from **Budget Setup → Categories** (`/categories`).
-
-**Budget impact:** Category changes remain staged for review until you **Save**. Category and group notes save immediately.
+Open it from **Budget Setup → Categories**. Changes are staged and go to Actual when you select
+**Save**. It uses the shared [editing model](../../getting-started/editing-and-saving/).
 
 ![The Categories page with income and expense groups expanded, each category showing visibility and rule references.](../../../assets/screenshots/user-guide/categories.png)
 
-*Ten groups and fifty-two categories in one view, income and expense separated, with visibility and
-rule references on every row.*
-
-It shares the [editing model](../../getting-started/editing-and-saving/) every Budget Setup page
-uses.
-
-## What you get beyond Actual Budget
-
-- **The whole hierarchy as one CSV** - seed a budget's structure from a spreadsheet in a single pass,
-  or take a copy.
-- **Group deletion counts the cascade** - how many child categories, how many transactions across all
-  of them, warned about before anything stages.
-- **See which rules reference a category** and jump straight to them.
-- **Notes on category groups**, not just categories.
+*Groups and their categories in one list, with visibility and rule references on every row.*
 
 ## Groups and categories
 
-- Create category **groups** (income or expense type) and categories within them.
-- Rename groups and categories inline; collapse or expand group rows (or all groups at once).
-- Moving a category between groups opens an editor when you ask for it. Rendering fifty dropdowns up
-  front would make a big table crawl.
-- To move several at once, select the expense categories and choose **Move to group…**.
+- Create groups (income or expense) and the categories inside them.
+- Rename anything inline, and collapse or expand groups one at a time or all together.
+- To move a category, click its group cell and choose another group, or select several expense
+  categories and choose **Move to group…**. Income categories stay in the income group.
+- Add notes to categories and to groups. Notes save as soon as you confirm them.
 
-:::note[Income category constraints]
-Income categories belong to the one income group and stay there. Only expense categories move.
-:::
+## Hide and delete
 
-## Hide, show, and delete
+- Hide or show a single category or a whole group.
+- Deleting a category shows its transactions and rule references first. Deleting a group adds up
+  every child category and its transactions, so you see the whole effect before anything is staged.
+- When you delete saved categories, you can **Move transactions and budget amounts to** another
+  category on the same side, as Actual does. For income categories Actual moves the transactions
+  only. Leave it empty and the transactions become uncategorized.
 
-- Toggle visibility (hidden / visible) per category or per whole group.
-- Deleting a **category** confirms with its transaction count and rule references. Deleting a **group**
-  adds the child count and every child's transactions, plus a cascade warning. Bulk delete works out
-  what is already implied and totals it once.
-- When saved categories go, the dialog offers **Move transactions and budget amounts to** another
-  category on the same side, as Actual does. For income categories Actual moves only the
-  transactions, not their budget amounts, and the dialog says so. Leave it empty and their
-  transactions become uncategorized. Bulk delete offers it when everything selected is income, or everything is expense.
-- Save moves categories before it deletes groups, so a category you moved out of a group is never
-  deleted along with it.
+## Filter and CSV
 
-## Filter and sort
-
-Filter by name, type (income / expense / all), and visibility (visible / hidden / all). Sort by name.
-
-## Notes
-
-Each category and group row has a note button. Read, add, edit, or clear notes inline - they **save
-immediately**, independent of staged category edits.
-
-## Import and export
-
-Export or import the full group hierarchy as CSV (staged before saving). CSV columns:
-
-- `type` (`group` or `category`, required), `name` (required), `group`, `is_income`, `hidden`.
-- **Group rows must appear before** the categories that reference them.
+- Filter by name, type (income or expense) and visibility.
+- **CSV columns:** `type` (`group` or `category`, required), `name` (required), `group`,
+  `is_income`, `hidden`. Put each group's row above the categories that belong to it.
 
 ## Common problems
 
-- **"Can't move an income category"** - income categories are locked to the income group.
-- **A group delete warns loudly** - it cascades to child categories; read the aggregated impact first.
-- **Imported categories landed ungrouped** - check that each group row appears above its categories in
-  the CSV.
+- **An income category will not move:** income categories belong to the income group.
+- **Imported categories landed without a group:** check that each group row comes before its
+  categories in the CSV.
 
 ## Related pages
 
-- [Editing, review and save](../../getting-started/editing-and-saving/) - the shared editing model
-- [Budget](../budget-management/) - budget the categories you create here
-- [Rules](../rules/) - how rules reference categories
+- [Budget Cockpit](../budget-management/) - budget the categories you set up here
+- [Rules](../rules/) - rules that use these categories

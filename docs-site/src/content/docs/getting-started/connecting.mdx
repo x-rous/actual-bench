@@ -1,123 +1,105 @@
 ---
 title: Connect to a budget
-description: Choose a connection mode, open an Actual budget, and optionally save encrypted connection credentials.
+description: Open one of your Actual budgets in Actual Bench, and optionally remember it so you can reconnect in one click.
 sidebar:
   order: 3
 ---
 
-Use a connection to open an existing Actual budget. Choose **Direct Actual Server** for most
-installations. Choose **HTTP API Server** only when your installation already runs
-`actual-http-api`.
+Actual Bench works on the budgets you already have on your Actual Server. Connecting takes a
+minute: choose how to reach the server, sign in, and pick a budget.
 
-When Direct mode is enabled, it is selected by default.
-
-:::tip[If someone else runs Actual Bench]
-Ask them which mode and which URL. None of the networking below matters to you.
+:::tip[If someone else runs Actual Bench for you]
+Ask them which connection mode and which address to use. The networking notes on this page are for
+them, not for you.
 :::
-
 
 ![The connect screen on a first run: choose Direct or HTTP API, then enter the server details.](../../../assets/screenshots/getting-started/connect.png)
 
-*Two ways in. **Direct** talks to your Actual server the way Actual does; **HTTP API** goes through
-an `actual-http-api` server if your installation already has one.*
+*Two ways in. **Direct** talks to your Actual Server the way Actual does. **HTTP API** goes through
+an `actual-http-api` server, if your installation already has one.*
 
 ## Choose a mode
 
 | | Direct Actual Server | HTTP API Server |
 |---|---|---|
-| Best fit | Most new installations | Existing `actual-http-api` deployments and unattended sync |
-| You enter | Actual Server URL and server password | HTTP API URL and API key |
-| Actual runs | In your browser | On the API server |
-| Network path | Your browser must reach Actual Server | Actual Bench must reach `actual-http-api` |
-| Unattended server sync | No | Yes, when configured |
+| Best for | Most installations | Installations that already run `actual-http-api` |
+| You enter | Your Actual Server address and password | The HTTP API address and its API key |
+| How it reaches Actual | Your browser talks to the Actual Server | Actual Bench talks to `actual-http-api` for you |
 
-Both modes handle encrypted budgets and every workspace. Where a mode genuinely changes what a feature
-can do, that feature's guide says so.
+Both modes open encrypted budgets, work with every workspace and can run scheduled automations.
+Where a mode makes a difference to a feature, that feature's guide says so.
 
 ## Connect
 
 1. Choose **Direct Actual Server** or **HTTP API Server**.
-2. Enter the server URL and the requested credential.
+2. Enter the server address and the password or API key.
 3. Select **Load Budgets**.
-4. Choose a budget. If it is end-to-end encrypted, enter its separate **Encryption password**.
+4. Choose a budget. If it is end-to-end encrypted, also enter its **Encryption password**, which is
+   separate from the server password.
 5. Select **Connect**.
 
-Bench opens the [Budget Overview](../budget-overview/).
+You land on the [Overview](../budget-overview/).
 
-## Reconnect later
+## Remember a budget
 
-You can save non-secret recent details or optionally save encrypted server credentials:
+**Remember this budget** is ticked on the budget step whenever Bench can save it. With it ticked, Bench saves the
+server's password or API key, encrypted with your Actual Bench password, so next time you choose the
+budget and you are in. An encrypted budget's own password is saved the same way, for that budget.
 
-- **Recent connection details** keep labels and URLs for the current tab. No secrets. Close the tab and
-  you type your credentials again.
-- **Remember this budget** is an encrypted vault. The server credential goes into Bench's metadata
-  database, encrypted with your Actual Bench password.
+Remembered budgets appear in the **Connections** list and the budget switcher, marked with a lock.
+One server is stored once, however many budgets you open on it. Signing out, or restarting Actual
+Bench, locks them again until you next sign in.
 
-### Remember a server
+Untick **Remember this budget** for a budget you only want to open this once. Bench then keeps the
+password in browser memory only, and forgets it when the tab closes.
 
-1. On the budget step, keep **Remember this budget** ticked. It starts ticked whenever saving works
-   right away; untick it for a budget you only want this once.
-2. Connect. The server credential is encrypted and saved; an encrypted budget's password is saved
-   separately for that budget. Signing in already unlocked your saved connections, so there is
-   nothing else to enter.
+If whoever runs Bench turned sign-in off, remembered budgets still need a password: you set it and
+unlock them on the connect screen, which also has **Lock**, **Change password** and
+**Forgot password?**.
 
-Saved servers show up in the **Connections** list, and as a choice when you add a server - marked with a
-lock. Choosing one loads its budgets with the saved password or API key. One server is stored once,
-however many budgets live on it. Signing out, or a restart of Actual Bench, locks them again until
-you next sign in.
-
-:::caution[The password cannot be recovered]
-Neither your password nor the key derived from it is stored anywhere. If you forget it, set
-`ACTUAL_BENCH_PASSWORD` and restart (see [Sign-in](../../administration/configuration/#sign-in)). The
-saved servers were encrypted with the old password and are cleared. Your Actual budgets are untouched.
+:::caution[Your Actual Bench password cannot be recovered]
+Bench never stores your password or the key made from it. If you forget it, whoever runs Bench can
+set a new one (see [Sign-in](../../administration/configuration/#sign-in)). Remembered budgets were
+encrypted with the old password, so they are cleared, and you connect them again. Your Actual
+budgets are not touched.
 :::
-
-If sign-in is turned off (`ACTUAL_BENCH_AUTH=none`), the saved connections still use a password: you
-unlock them on the connect screen, with **Lock**, **Change password** and **Forgot password?** there.
-
-Remembered servers only survive if the volume holding Bench's metadata database is persisted - `/data`
-by default, or wherever `ACTUAL_BENCH_DB_PATH` points. If you run the installation, see
-[Upgrades and backups](../../administration/upgrading-and-backups/).
 
 ## Switch between budgets
 
-Use the top-bar switcher to change budgets. It lists the budgets connected in this session, and under
-**Saved**, the budgets you saved with **Remember** that are not connected yet. Choosing a saved budget
-connects to it and switches to it in one step. If the budget cannot be reached, you stay on the current one.
+Use the budget switcher in the top bar. It lists the budgets you have connected in this session and,
+under **Saved**, your remembered budgets. Choosing a saved one connects and switches in one step; if
+it cannot be reached, you stay where you are.
 
-Budgets are grouped by server, with each server's address and mode (**Direct** or **HTTP API**) on its
-heading, and a check marks the active budget. Saved budgets are listed most recently opened first. Point at a connected budget and select **✕** to disconnect it without
-switching to it. When you have many budgets, a filter box at the top narrows the list by budget or
-server name.
+Budgets are grouped by server, and a check marks the active one. Point at a connected budget and
+select **✕** to disconnect it. With many budgets, type in the filter box at the top.
 
-Each budget keeps a separate draft and cache. Confirm the active budget before you select **Save** or
-**Apply**.
+Each budget keeps its own draft. Check the active budget before you select **Save** or **Apply**.
 
-## How credentials are handled
+## How your credentials are kept
 
-- By default, server passwords, API keys and encryption passwords never leave browser memory.
-- Bench never shows a password, API key or encryption password it already has, not even hidden in a
-  field. Once one is saved, taken from an open connection, or typed and used to load the budgets, the
-  form says so, for example **Password saved for this server**, with an option to use a different one.
-- Recent connection details contain no secrets.
-- Remembered-server credentials are opt-in, and encrypted with your Actual Bench password.
-- Unattended-sync credentials are a different opt-in again, controlled by whoever runs the server.
+- Without **Remember this budget**, passwords and API keys stay in browser memory and are gone when
+  the tab closes.
+- Bench never shows a password or API key back to you, not even hidden in a field. The form says
+  **Password saved for this server** instead, with an option to use a different one.
+- Credentials for scheduled work (backups, bank sync, sync flows) are a separate opt-in. See
+  [Automations](../../user-guide/automations/#unattended-access).
 
-See [Work safely](../core-concepts/#where-data-and-credentials-are-stored) for the storage summary.
+[Work safely](../core-concepts/#where-data-and-credentials-are-stored) has the full list of what is
+stored where.
 
 ## If budgets do not load
 
-### Direct mode
+**Direct mode**
 
-- Open the Actual Server URL in the same browser. If that fails, nothing else will work.
-- Use HTTPS outside localhost.
-- CORS or a same-origin reverse proxy may need configuring, which is the administrator's job.
+- Open the Actual Server address in the same browser. If that fails, Bench cannot reach it either.
+- Outside your own computer, both Actual Bench and the Actual Server need HTTPS.
+- The server may need CORS allowed, or to sit behind the same reverse proxy as Bench. That is a job
+  for whoever runs the server: see [Deployment](../../administration/deployment/#direct-mode).
 
-### HTTP API mode
+**HTTP API mode**
 
-- Check the API URL and `ACTUAL_API_KEY`.
-- With both apps in containers, `localhost` means Bench itself, not the API. Use a service name on a
-  shared network, or any address that actually resolves.
+- Check the address and that the API key matches `ACTUAL_API_KEY` on the API server.
+- If both apps run in containers, `localhost` means Actual Bench itself. Use the API's service name
+  instead.
 
-Seeing only HTTP API mode means the administrator turned Direct mode off.
-[Troubleshooting](../../help/troubleshooting/) goes deeper.
+[Troubleshooting](../../help/troubleshooting/) has more.

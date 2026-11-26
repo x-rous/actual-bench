@@ -9,9 +9,14 @@
  *
  * The window is 1920x1080, the size people actually run Actual Bench at. A
  * narrower window squeezes the app: account names wrap, month headers shorten
- * to "Feb ...", panels crowd each other. Captured at 3x on top of that, so the
- * images stay sharp on a high-density screen. Crops are in CSS pixels of the
- * 1920x1080 window.
+ * to "Feb ...", panels crowd each other. Captured at 2x on top of that, so the
+ * images stay sharp on a high-density screen and when a reader zooms in. 3x and
+ * 5x were tried: they look no better at any size a page shows them, and they made
+ * one documentation page download over 7 MB of images. Crops are in CSS pixels
+ * of the 1920x1080 window.
+ *
+ * The documentation site shows each image at its width divided by SCALE
+ * (src/plugins/screenshot-size.mjs), so change both together.
  */
 
 import { mkdir, writeFile } from "node:fs/promises";
@@ -21,7 +26,7 @@ import sharp from "sharp";
 
 export const DEMO = (process.env.DEMO_UI_URL ?? "https://actual-bench-demo.vercel.app").replace(/\/+$/, "");
 export const VIEWPORT = { width: 1920, height: 1080 };
-export const SCALE = 3;
+export const SCALE = 2;
 
 /** The app's sidebar and top bar, cropped off shots that are about one page. */
 const CHROME = { left: 208, top: 48 };
@@ -48,6 +53,14 @@ export async function shrinkLossless(path) {
   await writeFile(path, buffer);
 }
 
+/**
+ * Shots that create things in Bench (reconciliation sessions, sync flows,
+ * backups) are only taken against a local seed: the public demo is shared, and
+ * a visitor should not find a half-finished reconciliation someone else's
+ * script left there.
+ */
+export const isLocal = () => Boolean(process.env.BENCH_URL);
+
 /** Open one of the demo's budgets ("Envelope" or "Tracking") in a fresh 1920x1080 browser. */
 export async function openDemo(budget = "Envelope") {
   const browser = await chromium.launch();
@@ -60,7 +73,9 @@ export async function openDemo(budget = "Envelope") {
   await context.addInitScript(() => {
     // A toast is a thing that was happening rather than a thing that is true.
     const style = document.createElement("style");
-    style.textContent = "[data-sonner-toaster] { display: none !important; }";
+    // The development overlay button (a local seed runs `next dev`) is not part
+    // of the product either.
+    style.textContent = "nextjs-portal, #__next-dev-overlay, [data-sonner-toaster] { display: none !important; }";
     document.addEventListener("DOMContentLoaded", () => document.head.append(style));
   });
   const page = await context.newPage();
@@ -97,6 +112,33 @@ async function connectLocal(page, budget) {
   await page.getByRole("button", { name: "Load budgets" }).click();
   await page.getByRole("button", { name: new RegExp(`Live Demo - ${budget}`) }).click({ timeout: 120000 });
   await page.getByRole("button", { name: "Connect", exact: true }).click();
+}
+
+/**
+ * Connect a second demo budget beside the open one, through the app, so both
+ * are live at once (Cross Budget Sync needs that). Ends with `active` budget
+ * selected again, so later shots name the same budget in the top bar.
+ */
+export async function connectSecond(page, budget, active) {
+  if (!LOCAL) throw new Error("connecting a second budget is only scripted for a local seed");
+  await page.getByRole("button", { name: new RegExp(`Live Demo - ${active}`) }).first().click();
+  await page.waitForTimeout(800);
+  await page.getByRole("menuitem", { name: /Add connection/ }).click();
+  await page.waitForTimeout(3000);
+  await page.getByRole("button", { name: "Add a server" }).click();
+  await page.waitForTimeout(1500);
+  await page.getByRole("tab", { name: /Direct Actual Server/ }).click();
+  await page.locator("#baseUrl").fill(LOCAL.actual);
+  await page.locator("#serverPassword").fill(LOCAL.password);
+  await page.getByRole("button", { name: "Load budgets" }).click();
+  await page.getByRole("button", { name: new RegExp(`Live Demo - ${budget}`) }).click({ timeout: 120000 });
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await page.waitForURL(/overview/, { timeout: 120000 });
+  await page.waitForTimeout(5000);
+  await page.getByRole("button", { name: new RegExp(`Live Demo - ${budget}`) }).first().click();
+  await page.waitForTimeout(800);
+  await page.getByRole("menuitem", { name: new RegExp(`Live Demo - ${active}`) }).click();
+  await page.waitForTimeout(5000);
 }
 
 /** Screenshot helpers that write into one folder. */
@@ -140,7 +182,23 @@ export async function shooter(outDir) {
     return element(found, name);
   }
 
-  return { shoot, element, card };
+  /**
+   * Photograph the page below the app chrome, down to where `last` ends, so a
+   * table of six rows is not a picture of a mostly empty pane.
+   */
+  async function shootTo(page, name, last, { right = VIEWPORT.width, pad = 12, max = 1032, left } = {}) {
+    const box = await last.boundingBox();
+    if (!box) throw new Error(`${name}: nothing to measure the crop against`);
+    const height = Math.min(max, Math.ceil(box.y + box.height + pad) - 48);
+    const crop = belowChrome(height, right);
+    if (left !== undefined) {
+      crop.width -= left - crop.x;
+      crop.x = left;
+    }
+    return shoot(page, name, crop);
+  }
+
+  return { shoot, element, card, shootTo };
 }
 
 /** Scroll the app's main pane, which scrolls on its own rather than the window. */

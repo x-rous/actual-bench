@@ -5,9 +5,9 @@ sidebar:
   order: 3
 ---
 
-Use this reference if you operate Actual Bench. A basic self-hosted configuration needs no environment
-variables; persist `/data` so Actual Bench metadata survives restarts. See [Installation](../../getting-started/installation/)
-for the complete prerequisites. Set an environment variable when you need the feature it enables.
+Actual Bench needs no environment variables: every feature, automations included, works with the
+defaults. The one requirement is a persistent `/data` volume. This page lists the settings you can
+change, for when you want to.
 
 ## How configuration is loaded
 
@@ -36,21 +36,9 @@ The table lists every environment variable supported by the current application.
 | `LOG_LEVEL` | `info` | Server log verbosity. | No | Yes |
 | `NEXT_DEV_ALLOWED_ORIGINS` | *(unset)* | Dev-only: allow the HMR WebSocket through a reverse proxy (comma-separated hostnames). | No | Yes |
 
-`DEMO_MODE=1` enables the demo connection flow and disables sign-in on any
-host; do not set it on a self-hosted instance. The other demo and analytics
-variables - `DEMO_BASE_URL`, `DEMO_API_KEY`, and the two budget Sync IDs - are
-for the public demo. `NEXT_PUBLIC_ANALYTICS` is a build-time flag with no host
-guard; leave it unset outside the Vercel demo, where `1` enables Web Analytics.
-The demo UI runs on Vercel; `/api/*` requests are rewritten to the Hugging Face
-Space, which holds the shared Actual budgets and Bench metadata. See the
-[deployment guide](../deployment/) for general hosting guidance and the
-[public demo deployment guide](https://github.com/x-rous/actual-bench/blob/main/docs/DEMO_DEPLOYMENT.md)
-for the architecture and cutover checks.
-
-## Minimum configuration
-
-A persistent `/data` volume. That is the whole requirement. Set `ACTUAL_BENCH_DB_PATH` only if you
-want the metadata database somewhere else.
+The demo variables (`DEMO_MODE`, `DEMO_BASE_URL`, `DEMO_API_KEY`, the demo budget IDs and
+`NEXT_PUBLIC_ANALYTICS`) exist only for the public demo. `DEMO_MODE=1` turns sign-in off, so never
+set any of them on your own install.
 
 ## Sign-in
 
@@ -73,15 +61,10 @@ so signing in opens them too. There is no separate vault password.
 - **Sign-in off:** `ACTUAL_BENCH_AUTH=none` lets anyone who can reach Actual Bench use it. Only do this
   behind your own authentication. App Health shows a warning while it is off.
 
-## Direct mode
+## Connection modes
 
-Direct Actual Server mode and HTTP API Server mode are both always offered; there is no setting to
-turn either one off. Actual Bench sets the cross-origin isolation headers Direct mode needs on every
-response, unconditionally. If your environment genuinely can't support Direct mode (the browser can't
-reach the Actual Server, or a proxy strips the isolation headers), Bench reports that clearly at the
-point of connecting so you can just use HTTP API Server mode instead. See
-[Deployment](../deployment/#direct-mode-network-requirements) for the browser reachability and
-cross-origin requirements Direct mode needs.
+Direct and HTTP API modes are both always offered; there is no setting to turn either off. See
+[Deployment](../deployment/#network) for what each needs from your network.
 
 ## Metadata database
 
@@ -92,17 +75,14 @@ cross-origin requirements Direct mode needs.
   explicit, encrypted opt-ins: **remembered-connection** secrets and **unattended-sync** credentials
   (below).
 
-### Remembered-server secrets (your password)
+### Remembered budgets
 
-When a user opts in to [remembering a server](../../getting-started/connecting/#remember-a-server),
-its secret is sealed **AES-256-GCM** in this database, encrypted with a key derived from **your
-Actual Bench password** (see [Sign-in](#sign-in)). Credentials are server-scoped (one saved server
-opens any of its budgets); budget encryption passwords are sealed separately, per budget. The password
-and derived key are never stored (only the ciphertext and a salt), so the server cannot decrypt on its
-own; signing in unlocks them for that session. This is **separate** from the credential vault
-below - the two never share ciphertext or a key. Back up and persist `/data` to preserve remembered
-servers across container replacement; a writable path by itself does not prove durability. A forgotten
-password is replaced with `ACTUAL_BENCH_PASSWORD`, which clears these saved servers.
+When someone ticks [Remember this budget](../../getting-started/connecting/#remember-a-budget), the
+server's password or API key is encrypted (AES-256-GCM) with a key derived from the Actual Bench
+password. The password and that key are never stored, so the server cannot open them on its own:
+signing in unlocks them for the session. This is separate from the credential vault below; the two
+never share a key. Resetting a forgotten password with `ACTUAL_BENCH_PASSWORD` clears remembered
+budgets.
 
 ## The credential vault
 
@@ -134,15 +114,14 @@ stored credentials pause, and **App Health** shows why. Put the old `vault.key` 
 **Reset vault** to start over and enrol again.
 :::
 
-See [Budget Sync → Automation](../../user-guide/budget-sync/#automation-opt-in) for how flows opt in, and
-the repository's `docs/UNATTENDED_SYNC.md` for the operator walkthrough.
+See [Automations](../../user-guide/automations/#unattended-access) for how budgets are enrolled.
 
 ## Automation workers
 
 By default, every automation run gets a worker thread of its own inside the Bench server, with its
 own memory limit. A run that hangs can be stopped, and a run that reaches its memory limit or crashes
 is normally ended alone while the rest of Bench carries on. The limit covers the run's own working memory, not
-everything the server process uses, so the container still needs enough memory overall. [Automations](../../user-guide/automations/#stopping-a-run) explains what
+everything the server process uses, so the container still needs enough memory overall. [Automations](../../user-guide/automations/#time-limits-and-stopping-a-run) explains what
 you see when that happens. The defaults suit most installs.
 
 - **`ACTUAL_BENCH_WORKERS_MAX`** *(default `2`)* - how many runs may be going at once. A scheduled run

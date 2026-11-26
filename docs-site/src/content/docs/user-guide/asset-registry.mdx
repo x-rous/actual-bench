@@ -1,114 +1,167 @@
 ---
-title: Asset Registry
-description: Register off-budget assets and manage their real Actual account transactions.
+title: Assets
+description: Track your home, car, gold and other things you own - value over time, the loan against them, the income they bring in and their real return.
 ---
 
-The **Assets** workspace registers fixed assets (property, vehicles, precious metals, collectibles and other tangible assets) against saved Actual accounts. Actual remains the ledger: Bench stores settings, ownership dates, classifications and transaction assignments, never a second balance. These assets are not added again to net worth.
+Assets keeps a record of the things you own: a home, a car, a rental property, gold, collectibles.
+Each asset follows an off-budget account in Actual, so its value is the balance Actual already
+holds. Bench adds what a balance alone cannot tell you: what you paid, what it earned, what you owe
+against it, how it depreciates, and what it has really returned.
 
-Each asset has five tabs: Overview, **Asset Ledger**, **Income & Expenses**, **Linked Loans** and **Depreciation Schedule**. Bench never posts anything on its own; every Actual write is a confirmed action. Actual is the truth: when you change or delete a transaction in Actual, Bench follows on the next read and drops what it had saved about that transaction, so there is nothing to resolve by hand.
+Open it from **Financial Management → Assets**. Actual stays the ledger. Bench never posts anything
+on its own: Actual changes only when you confirm an action such as **Update value**, a payment, a
+sale or a depreciation month. Everything else (types, links, schedules) is saved in Bench. It is
+marked experimental while it is shaped by feedback.
 
-## Registry and Overview
+## The registry
 
 ![The Assets registry: total value, net equity, value gain, net cash flow and assets needing attention, then each asset with its type, linked account, recorded value, equity, value gain and net cash flow.](../../../assets/screenshots/user-guide/assets-registry.png)
 
 *Everything you own on one screen: value, equity, gain and cash flow for each asset.*
 
-The registry strip shows the Total value (your share), Net equity (value less allocated debt, equal to the total value when no loan is linked), Value gain (revaluation and depreciation against the capital added), Net cash flow (linked income and expenses) and the assets needing attention, all measured over the whole history. The table adds each asset's equity and allocated debt, value gain and net cash flow. Its compact table shows sharing and attention badges, with Settings available on each row. The Credit Cards-style toolbar puts search first, followed by status, type and sort dropdowns, with counts and registered value on the right. Filters narrow the table. Registered value and attention count follow the active/archive scope; linked accounts and Unassigned include all registrations, including archived membership. The **Linked accounts** button next to Refresh opens the numerical reconciliation in a dialog.
+The tiles at the top add up all your assets: **Total value** (your share), **Net equity** (value
+less the debt allocated to them), **Value gain**, **Net cash flow** (linked income less expenses) and
+how many assets need attention. The table shows the same for each asset. Search and filter by
+status and type. **Linked accounts** shows how each account's balance is shared between its assets.
 
-Asset detail uses a compact identity header with its asset-class icon, All assets back button and five tabs immediately below the name, following the Credit Cards header.
+## Add an asset
 
-An asset’s Overview explains its whole life. The top strip always shows five tiles over the asset’s recorded history: the Current value, the Capital invested (opening balance, acquisitions and added capital), the Value gain (revaluation and depreciation, summed from your classified account transactions rather than inferred from the change in value; a disposal or other adjustment is noted beneath), the Net cash flow (linked income less expenses, which is negative for an asset that only costs money) and the Total return, with the total result and the yearly IRR beneath. Year-on-year comparisons are in the two charts and the breakdown tables below.
+1. Select **Add Asset**.
+2. Enter a name and choose a type. Say whether it pays you money (rent, dividends, interest), and
+   your ownership share if you own only part of it.
+3. Choose its account: an existing off-budget account of the right class, or a new account that
+   Bench creates for you, named after the asset.
+4. Optionally enter an **Opening value**. Bench adds it to the account in Actual as one Opening
+   Balance entry.
+5. Select **Create asset**.
+
+| Asset type | Account class it needs |
+|---|---|
+| Property | Property |
+| Vehicle | Vehicle |
+| Precious Metal, Collectible / Valuable, Other Asset | Other Fixed Asset |
+
+Every asset account is off budget. Investment and retirement accounts are not assets here:
+Financial Insights reads them as your portfolio. An **Other Asset** account (money owed to you, a
+deposit) is a holding rather than a thing you own, so give the account **Other Fixed Asset** if it
+is one.
+
+Adding an existing account adopts the transactions already in it. How you bought the asset is not
+asked up front, because it often happens over many payments: each one appears in the Asset Ledger.
+
+## An asset's Overview
 
 ![An investment property's Overview: current value, capital invested, value gain, net cash flow and total return, the recorded value over time with the debt against it, and the rental income and expenses by year.](../../../assets/screenshots/user-guide/asset-overview.png)
 
 *An investment property's whole life: what it is worth, what went in, what it earned and its total return.*
 
-Two synchronized timelines (one Monthly/Yearly toggle, Yearly by default, remembered while you switch tabs) show how it happened. The value chart also draws a dashed **Capital invested** line, so the gap to the value line is your gain; **Equity** and **Smooth value** are switches in its legend (the value is drawn as steps because it only changes when an entry is recorded), and the income chart can add a running **Net result so far**. The first plots the recorded value with the allocated debt on the same scale; the summary beside it follows the period you hover and shows value, debt and equity (or opening, change and closing when no loan is linked). It marks purchases and payments (Acquisition / Purchase and Added Capital), revaluations, write-downs and disposals with diamonds, posted depreciation with ticks, and loan allocation changes with a dot, so a drop in debt is not mistaken for a repayment. A dashed projection of unposted depreciation months (today’s value less the planned decreases, never rebased by revaluations) can be switched off from the legend. The second timeline, for income-generating assets and any asset with linked income or expenses, shows operating income and expenses as bars with a net operating line (also toggleable) and capital movements as markers, or bars with **Include capital movements**: real money paid into the asset (purchases and payments made with Add a payment) and disposal proceeds net of selling costs, counted once. Future periods are shaded as not recorded yet. Click a marker or bar to open the Asset Ledger or Income & Expenses filtered to that period; a chip says so and **Clear** removes it.
+Each asset has five tabs: **Overview**, **Asset Ledger**, **Income & Expenses**, **Linked Loans** and
+**Depreciation Schedule**. The Overview tells the asset's whole story:
 
-Below are income and expenses by Actual category for this year, last year and the recorded history (the same periods as the performance breakdown, so the history column matches the figures above; income and expenses follow the category type, so a refund nets into its income category) and a Performance breakdown for this year, last year and the recorded history, with an optional **Custom period** column. Anything that needs attention appears directly in an amber strip.
+- **Current value**, **Capital invested** (opening value, purchases and added capital), **Value
+  gain** (revaluations and depreciation), **Net cash flow** and **Total return**, with its yearly
+  return (IRR).
+- A value chart with the debt against the asset and a dashed **Capital invested** line, so the gap
+  is your gain. Purchases, revaluations and sales are marked on it.
+- For an asset that earns or costs money, an income chart with operating income and expenses by
+  month or year.
+- Income and expenses by category, and a performance breakdown for this year, last year and the
+  whole history.
 
-Valuations default to today. There is no global **As of** selector; dated ledger calculation support and explicit transaction effective dates remain available internally and in financial action editors. Permanent hashtags and detailed reconciliation explanations live in Settings, transaction details and tooltips.
+Click a marker or bar to open the ledger or income list for that period. Anything that needs
+attention appears in an amber strip.
 
-## Register an account
-
-Choose **Add Asset** to open one drawer. Only open, saved, off-budget accounts with the compatible effective class appear for an existing account; a new account is created for you, named after the asset. A group's class takes precedence over the account's own class.
-
-| Asset type | Required account class |
-| --- | --- |
-| Property | Property |
-| Vehicle | Vehicle |
-| Precious Metal, Collectible / Valuable or Other Asset | Other Fixed Asset |
-
-Investment, retirement and crypto accounts are not assets here: they are brokerage-style accounts with transfers in and out, and Financial Insights reads them as your portfolio. An **Other Asset** account (money owed to you, a deposit paid) is a holding, not a fixed asset, so it is not offered; give the account the **Other Fixed Asset** class on the Accounts page instead. A new account created from the drawer gets the right class for you. Every asset account must be off budget.
-
-Registering an existing account adopts its transactions. It does not create another opening balance or change the account's budget placement.
-
-**Create asset** saves the new account (if you chose one) and the asset together, verifies the account's permanent ID and class, then links the asset. Unrelated account and group drafts remain untouched. Cancelling discards an unsaved account draft. An account that was already created remains in Actual if a later metadata save fails; retries use its permanent ID. An unconfirmed create locks further creation until inspected.
-
-## Dedicated and shared accounts
-
-Choose **Dedicated Asset Account in Actual** or **Shared Asset Account with Hashtag Identifier** when registering. Dedicated accounts need no hashtag. For shared accounts, enter your own unique, lowercase identifier such as `#asset_family_car`; Bench does not generate GUID hashtags. Saved hashtags remain fixed, including any pre-existing tags. Compatible assets may share an account. Shared values derive from complete, real transaction rows:
-
-- One exact permanent `#asset_…` hashtag in Actual Notes identifies its asset.
-- An explicit Bench assignment can identify an untagged row, including a transfer. It does not change Actual Notes.
-- Multiple asset tags, unknown tags and tag/assignment conflicts leave the whole row **Unassigned / Needs Review**.
-
-In a dedicated account every row belongs to the asset, whatever hashtags its Notes carry: Actual is the truth.
-
-The Asset Ledger offers **All**, **Unclassified**, **Unassigned** and **Whole account** views, with the same small search, type dropdown and grouped filter pills used in Credit Cards Activity. Click an entry's type chip to open its popup, or select visible rows and choose **Classify…**. The types are Opening Balance (the opening value), Acquisition / Purchase (money or cost put in; there can be many), Revaluation, Depreciation, Impairment, Disposal and Other Adjustment; Purchases require an increase; depreciation and impairment require a decrease. Bulk choices must fit every selected row. A row nobody has classified shows a **suggested** type from what Actual says about it: a transfer in is a Acquisition / Purchase, a typed positive value a Revaluation, a typed negative one an Other Adjustment, and Actual's own Starting Balance row the Opening Balance. A suggestion counts in the figures but is never saved; choose a type to confirm or change it. Money moved out by transfer (a sale, a withdrawal) has no suggestion and stays **Unclassified** until you choose. Classification is Bench metadata and never changes an Actual category.
-
-The account total equals all attributed asset values plus Unassigned. Archived assets retain their membership and permanent tags. A combined opening representing several assets must be separated into real Actual rows with the same aggregate balance before it can be assigned separately. Bench does not fractionally allocate one row.
-
-## Financial actions
+## The Asset Ledger
 
 ![The Asset Ledger for the family home: entries shown, capital added, value change and last value update, then each valuation with its type, amount and running value.](../../../assets/screenshots/user-guide/asset-ledger.png)
 
-*The Asset Ledger: every valuation and payment with its type and the running value; Update value and Add Entry are top right.*
+*Every valuation and payment with its type and the running value; Update value and Add Entry are top right.*
 
-**Update value** creates the difference between the target and the asset's freshly read value at the selected date. In a shared account, it uses only that asset's attributable value. A zero difference creates no entry. **Add Entry** is a menu: **Add a payment** (a purchase, instalment or improvement), **Value adjustment** (type a signed amount straight into the asset's account) and **Sale or write-off**.
+The ledger is the asset's account in Actual, row by row, with a **type** for each entry:
 
-Click a row's pencil action to open the docked **Entry editor** beside the table. Eligible amounts, dates, Notes, payees and type are editable immediately. **Value adjustment** uses the same editor. For shared accounts, asset assignment is part of this form; dedicated accounts have no assignment control. Hashtag-defined assignment stays fixed while its tag is present. Untagged shared rows can be assigned without changing Actual Notes, including protected transfers. Use the row's delete action for eligible standalone transactions, including ordinary imported rows. Existing transfers, reconciled rows, split structures, scheduled rows and rows whose safety fields are unavailable are financially protected. Amend them in Actual; classification and assignment remain available here. Asset actions never edit either transfer counterpart or mirrored Notes.
+| Type | Means |
+|---|---|
+| Opening Balance | The value you started with |
+| Acquisition / Purchase | Money put into buying it (there can be many) |
+| Revaluation | A change in what it is worth |
+| Depreciation, Impairment | A planned or one-off fall in value |
+| Disposal | It was sold or written off |
+| Other Adjustment | Anything else |
 
-Financial actions keep the form and inline account/date/before/change/after review together in the right panel. Saving only classification or assignment changes Bench metadata, without a financial confirmation or Actual write. Financial fields on protected rows remain locked while their metadata stays editable. The asset entity continues to use its wider Settings drawer. Confirmation rereads the book and rejects stale data. Successful writes are read back and refreshed. Actual may return blank Notes as null; verification treats these as the same empty value while retaining exact checks for nonempty Notes. Other Actual clients can still write concurrently; this is not a cross-client atomic transaction.
+Bench suggests a type for each new entry: a transfer in is a purchase, a positive change a
+revaluation. A suggestion counts in the figures but is not saved until you confirm it. Click an
+entry's type to change it, or select several and choose **Classify…**. Types are saved in Bench and
+never change a category in Actual.
 
-If Actual succeeded but classification failed, use **Retry metadata only**. This does not repeat the financial write. If the Actual outcome is uncertain, the editor locks: close it, Refresh and inspect Actual before starting another action. Never blindly repeat a create.
+### Record a new value or entry
 
-Amounts use Actual's ledger representation, with 100 integer minor units per whole unit. Negative values remain negative. Missing or incomplete reads display **Unavailable**, never an assumed zero. Refresh explicitly after changes made in Actual; background focus/reconnect does not replace your work.
+- **Update value** sets the asset's value on a date. Bench adds the difference to the account in
+  Actual, so the balance becomes the value you typed.
+- **Add Entry → Add a payment** records a purchase, instalment or improvement (see below).
+- **Add Entry → Value adjustment** types a signed amount straight into the account.
+- **Add Entry → Sale or write-off** records a sale (see below).
 
-## Adding an asset
+Select an entry's pencil to edit it beside the table. Transfers, reconciled, split and scheduled
+transactions are protected here: change their amounts in Actual. You can still set their type.
 
-**Add Asset** opens a single drawer. It takes a name, a type, a description, whether it pays you money (rent, dividends, interest), your ownership as a percentage (100% unless you own only part; changes over time are recorded later in Settings) and its account: an existing off-budget account (only accounts that fit are listed) or a new one, which is named after the asset and needs no account form. Sharing one account between several assets is an advanced switch that asks for a hashtag. An optional **Opening value** adds one Opening Balance entry to the account in Actual. If that entry fails after the asset was created, the asset is kept and the drawer says so.
+Each action shows the value before and after and what will change in Actual, and asks you to confirm.
 
-How an asset was acquired is not asked up front, because it can happen over many transfers and purchases. Record each as an entry in the Asset Ledger: a transfer you made in Actual simply appears there (suggested as an Acquisition / Purchase), or use **Add Entry → Add a payment** to let Bench record it, including turning an expense you already entered into the transfer. The Asset Ledger views are **All** (this asset's entries plus unassigned ones), **Unclassified** and **Unassigned**; in a shared account, **Show other assets' entries** adds the rest.
+## Payments and sales
 
-## Income, expenses and returns
+**Add a payment** adds capital to the asset, and asks how it was paid:
+
+- **Already in Actual:** pick the expense you entered (paid from another account). Bench turns it
+  into a transfer into the asset, changing only its payee. Its amount, date, category and notes stay
+  as they are.
+- **Not in Actual yet:** Bench creates one transfer from the account you choose into the asset.
+
+A transfer you already made in Actual needs nothing: it appears in the ledger as a suggested
+purchase.
+
+**Sale or write-off** asks three things: what happened to the money (already in one of your
+accounts, moved out of the asset's account, or none), the sale itself (the payment and any selling
+costs), and how much value leaves the asset. Before you confirm, **How this will be recorded** shows
+exactly what changes: your deposit stays as it is, and one Disposal entry is added to the asset's
+account. Bench never invents cash or pays off a loan for you.
+
+## Income & Expenses
 
 ![Income & Expenses for an investment property: income, expenses, net cash flow and yields, and the linked rent and running-cost transactions from Actual.](../../../assets/screenshots/user-guide/asset-income-expenses.png)
 
 *Rent in, running costs out, and the yield they add up to.*
 
-The **Income & Expenses** tab lists existing Actual transactions you link to this asset from other accounts (usually on-budget). Use **Link rules** to save conditions written like a reconciliation transform: "if all (or any) of these match" with each condition a field (payee, category, account, Notes, amount), an operation (is, contains, has tag, is more than, is between…) and a value. **Apply** opens the list below with every match not yet linked already chosen so you can review it before linking. Choose **Link existing transactions** to open the transaction picker. Type in the wide search box to match a payee, Notes, category, account or an amount (65,300.00 finds that amount whatever its sign). The chips under it apply as you set them: **Date** (All time by default, or Last 30 / 90 days, This year, Last year, a custom range), **Amount**, **Account**, **Category**, **Payee** (each with "is" / "is not", and Uncategorized / No payee), **Tags** (every #word used in any Notes in the budget: **Any** = at least one chosen tag, **All** = every chosen tag, "No tags", "is not"), **Expenses / Income** and **Transfers**. **Advanced** adds Actual-style conditions (field, operation, value). Rules the screen sets, such as "Asset accounts excluded", appear as locked chips so you can see why a transaction is missing. The list loads 500 rows at a time as you scroll; the footer shows the matches and their total, the selection and its total, and "Show selected only". Shift-click selects a range; Space toggles a row; `/` jumps to the search. It queries Actual directly, so only the accounts you link are read. There is no type to choose: a linked row is income when its amount is positive and an expense when it is negative, and Actual's category says what it was for. Linking and unlinking only store Bench metadata; the source row's category, payee, amount, Notes and date are never changed. One row belongs to at most one asset; a split parent and its children cannot both be linked, and transfers belong in the Asset Ledger. A **Date** chip next to the search box (All time by default, or Last 30 / 90 days, This year, Last year, a custom range) narrows the table and the five tiles above it (Income, Expenses, Net cash flow, Yearly yield on cost, Net yield on value) together, so they always add up to the rows. The Asset Ledger has the same chip, plus **Type** (choose several, including Unclassified), **Payee** and **Amount** chips like the picker's, and Income & Expenses adds **Amount**, **Payee**, **Category** and **Account** chips; a **Clear filters** button resets them. The Asset Ledger tiles (Entries shown, Capital added, Value change, Last value update, Unclassified) follow the rows shown, except that the last two always look at every date. The table lists every linked row in groups with subtotals: **Income**, **Expenses** and a final **Operating result** (income + expenses). Rows from a sale (its proceeds and selling costs) form a separate **Sale proceeds & costs** group that is not part of the operating result. Sorting works inside each group, search narrows the rows and the subtotals follow what is shown.
+Link the transactions that belong to an asset, usually from your on-budget accounts: rent received,
+insurance, repairs, council tax.
 
-Results are calculated automatically from linked rows and dated Actual values; there is nothing to confirm. The Overview shows this year, last year, the recorded history and an optional custom period:
+- **Link existing transactions** opens a search. Type a payee, note, category or amount, narrow it
+  with chips for date, account, category, payee and tags, then tick the rows and link them.
+- **Link rules** save conditions (payee contains "Letting agent", say). **Apply** opens every new
+  match, ready for you to review and link.
 
-- **Operating Result** = linked operating income − linked operating expenses. Disposal proceeds, selling costs, transfers and loan principal are excluded.
-- **Total Result** = closing value − opening value − capital added + net proceeds withdrawn + Operating Result. Revaluation and depreciation are already in the closing-minus-opening change and are never counted again.
-- **Annualized return (IRR)** is the money-weighted yearly return: your capital, income, expenses and proceeds at their own dates against the closing value. It reflects instalments paid over years, and shows N/A for a period under about six months.
-- **Yearly yield on cost** (Income & Expenses tab) spreads the Operating Yield of the dates shown over their length (shown once there are six months of history). **Net yield on value** is a year of net cash flow divided by the recorded value at the end of the dates, so it shows what the asset earns against what it is worth; it is negative for an asset that costs more than it earns, and for fewer than three months it is shown as it is and marked as not scaled to a year. The Total return tile also shows the annualized IRR.
-- **Operating Yield** and **Simple Total Return** divide Operating Result and Total Result by Opening + Capital Added. They are shown only when that base is positive (otherwise N/A) and are non-annualized and non-time-weighted; neither is an IRR.
+A linked row is income when it is positive and an expense when it is negative; its category in Actual
+says what it was for. Linking stores a note in Bench only, and never changes the transaction. The
+tiles show **Income**, **Expenses**, **Net cash flow**, **Yearly yield on cost** and **Net yield on
+value**, and follow the date chip.
 
-Results are based on linked transactions: Bench cannot know about income you did not link. It lists only what it genuinely lacks: unassigned rows, entries still unclassified, a manually chosen Disposal with no sale recorded, or an unreadable linked account. Something deleted, moved or changed in Actual is not a gap: it is simply no longer counted. Totals that depend on missing inputs are withheld; independent amounts stay visible.
+<details>
+<summary>How results and returns are worked out</summary>
 
-## Payments and disposal
+- **Operating Result** = linked income − linked expenses. Sale proceeds, selling costs, transfers and
+  loan principal are left out.
+- **Total Result** = closing value − opening value − capital added + net sale proceeds + Operating
+  Result.
+- **Annualized return (IRR)** is the money-weighted yearly return, counting each payment, income and
+  expense on its own date. It shows N/A for under about six months.
+- **Yearly yield on cost** spreads the operating yield over the dates shown. **Net yield on value**
+  is a year of net cash flow over the value at the end; it is negative for an asset that costs more
+  than it earns.
+- **Operating Yield** and **Simple Total Return** divide the two results by opening value plus
+  capital added. They are not annualized.
 
-From the **Add Entry** menu in the Asset Ledger toolbar:
+Results only know about transactions you linked. Totals that depend on something missing, such as an
+unclassified entry, are held back, while the rest stay visible.
 
-- **Add a payment** adds to the asset's value as capital (an Acquisition / Purchase, or Added Capital for money put in afterwards such as an improvement; both are capital, so neither counts as a change in the asset's worth) and asks how it was paid. **Already in Actual** turns an expense you entered (paid from another account) into the transfer into the asset: only its payee changes to the asset's transfer payee, and Actual creates the matching entry in the asset's account. Its amount, date, category and Notes stay as they are, and a reconciled expense keeps its cleared status. A split expense cannot be converted, and an on-budget expense needs a category, because it keeps it on the transfer. **Not in Actual yet** makes Bench create one real cash-to-asset transfer through Actual, with the expense category on the on-budget side, only when you confirm the payment is not already recorded. Add as many payments as the purchase needs (instalments, several purchases). A transfer you already made in Actual needs nothing: it appears in the ledger as a suggested Acquisition / Purchase.
-- **Sale or write-off** removes carrying value. For an existing external receipt it adds a noncash −carrying row; for an existing asset-to-bank transfer it adds only the balancing difference (proceeds − carrying); for a write-off it adds −carrying. A partial sale removes only the carrying amount you enter. No cash is invented and no loan is paid off. Select the proceeds basis (gross, or already net) and link selling costs: net proceeds are gross proceeds less identified costs, or the net receipt unchanged, and the fee never enters Operating Result. A cost is reported with the disposal's date while keeping its own date.
-
-**Sale or write-off** opens a dialog with three short groups: **What happened?** (the money is already in one of your accounts, it was moved out of the asset's account, or you got no money), **The sale** (the payment you received and any selling costs, and whether the payment is before or after those costs) and **How much leaves the asset** (pre-filled with the whole recorded value, with the date and an always-visible note). Before you confirm, **How this will be recorded** lists what changes in Actual (your deposit or transfer stays exactly as it is; one noncash entry typed Disposal is added to the asset's own account) and what Bench records (money received after costs, and the gain or loss).
-
-Each action shows the before, change and after values and the exact cash movement left untouched. If Actual succeeded but saving the relationship failed, **Retry metadata only** never repeats the write; an uncertain write locks the editor until you Refresh and inspect.
+</details>
 
 ## Linked Loans
 
@@ -116,32 +169,72 @@ Each action shows the before, change and after values and the exact cash movemen
 
 *The mortgage against the home, and the equity built as it is paid down.*
 
-The **Linked Loans** tab links existing loans (from Loans, active and bound to an Actual liability account) with an explicit share of the loan's Actual debt. Ownership percentage does not decide the share. Use **Link loan** or a row's **Change** to set a share from a date, optionally with an end date, or to end it. A change closes the period containing its date and starts a new one; earlier and later saved periods are kept, and ending then relinking preserves the history. Periods are [from, to): a 100% share until 1 July and 60% from 1 July keeps June at 100%.
+Link a loan from [Loans](../assets-debt/) to see your equity: the asset's value less your share of
+what is owed.
 
-**Link loan** opens a wider dialog. Choosing a loan fills in what it implies: **Effective from** defaults to the day the loan opened (never before the asset\'s first ledger entry) and the share to the part of the loan no other asset holds, with the loan\'s original amount, opening date, rate and term beside it. A **What will happen** panel shows, before you save, the share and dates being set, any period that is closed, and the asset\'s recorded value, allocated debt and tracked equity now and after the change. The table adds the loan\'s original terms, its current Actual balance and how much is repaid, and each open allocation has **End**. Loan-to-value (allocated debt ÷ owned value) sits beside tracked equity. Amounts never show a currency.
+1. Select **Link loan** and choose the loan.
+2. Bench fills in the date it opened and the share no other asset holds yet. Change them if you need
+   to.
+3. **What will happen** shows the share, the dates, and your equity before and after. Save it.
 
-Bench refuses overlapping periods for the same asset and loan and any total above 100% on any date, counting archived assets and future periods, and shows the unallocated remainder. If another asset's allocation changed while you were editing, the save is rejected and your draft is kept. **As of** selects the report date. Equity is the asset's recorded value on that date minus its allocated share of the loan's Actual liability balance on that date. If the dated balance or value cannot be read it shows Unavailable; today's balance or the loan forecast is never substituted. Principal changes made in Actual flow into equity on refresh without changing the asset book. The loan page lists its linked assets read-only. Nothing here changes the loan's repayments, interest, offsets or anchors. Before permanently deleting a loan, remove its asset allocations here.
+Use **Change** to set a new share from a date, or **End** to stop it. Earlier periods are kept, so
+the history stays right. Shares on any date never add up to more than 100%. Equity uses the loan's
+balance in Actual on each date, so paying down the loan grows your equity on its own.
 
 ## Depreciation Schedule
 
-The **Depreciation Schedule** tab holds an optional monthly planning schedule per asset. **Set up schedule** chooses straight-line (basis, residual, start date, useful life in months) or declining balance (annual rate, applied monthly as balance × rate ÷ 12, never below the residual). Amounts use exact integer rounding; straight-line lands exactly on the residual. The first calendar month of the start date is a full period. Saving the schedule and viewing the forecast write nothing to Actual, and revaluation or ownership changes never rebase it; edit the schedule yourself to change it from now on.
+An optional monthly plan for how an asset loses value. **Set up schedule** chooses **straight-line**
+(a cost, a residual value, a start date and a useful life in months) or **declining balance** (an
+annual rate, never below the residual).
 
-A month is **Due** once its end date has arrived; the current unfinished month stays a **Forecast**. Select due months and choose **Post selected**: the confirmation lists each month with its own calendar end date (including 29 February) and amount. Months post one at a time as normal negative noncash row in the asset accounts and stop at the first failure, with a result on each row. The same month cannot be posted twice, even after the schedule is edited. If you edit a posted row in Actual or the Asset Ledger the tab shows its actual amount; if you delete it in Actual the month is simply due again (Actual is the truth) and can be posted again once you select it. Manual depreciation entries remain available in the Asset Ledger and are separate from schedule months. Methods are personal planning conventions, not tax depreciation.
+Saving the schedule writes nothing. Once a month has ended it is **Due**: select due months and choose
+**Post selected** to add them to the account in Actual, one entry per month. A month can only be
+posted once. If you delete a posted entry in Actual, the month becomes due again. These are personal
+planning methods, not tax depreciation.
 
-## Settings and archive
+## Shared accounts
 
-**Settings** changes the name, description and effective ownership list. Ownership is a percentage in metadata; account value already represents your owned portion and is never multiplied again. Before the earliest ownership date, ownership is unknown.
+Usually each asset has its own account. If you keep several in one account (all your gold in one
+"Valuables" account, say), choose **Shared Asset Account with Hashtag Identifier** when you add the
+asset, and give it a unique tag such as `#asset_family_car`.
 
-Settings cannot move account history to another account. Archiving preserves the asset's identity, tag and attribution without closing, deleting or zeroing Actual. Review any nonzero value before archiving. Use the registry's Archived or All statuses filter to reopen Settings and restore it.
+- A transaction whose notes carry exactly one asset tag belongs to that asset.
+- You can also assign an untagged row to an asset in Bench, without changing its notes.
+- A row with two asset tags, or a tag and an assignment that disagree, is shown as **Unassigned /
+  Needs Review**.
 
-### Deleting an asset
+The account's balance always equals its assets' values plus whatever is unassigned. **Show other
+assets' entries** in the ledger includes the rest of the account.
 
-Archive the asset first (turn off **Active** in Settings and save), then open Settings again and choose **Delete asset permanently**. Deleting removes the asset and everything Bench saved for it: entry types, linked income and expenses, link rules, the depreciation schedule and loan allocations. It never changes Actual: the account, every transaction in it and any transfer Bench created stay exactly as they are, so close or delete the account in Accounts if you no longer want it. The asset's hashtag and account are free to use again.
+## Settings, archive and delete
+
+**Settings** changes the name, description and ownership share over time. Your ownership share is
+for information: the account already holds your share of the value, so Bench never multiplies it
+again.
+
+Turning off **Active** archives an asset. It keeps its history and tag, and changes nothing in
+Actual. To delete one, archive it first, then choose **Delete asset permanently** in Settings. This
+removes everything Bench saved for it and leaves the account and its transactions in Actual exactly
+as they are.
+
+## What Bench writes in Actual
+
+Only entries Bench creates itself (a value update, a payment it records, a sale entry, a posted
+depreciation month) get a readable tag in their notes, such as `#revaluation` or `#depreciation`.
+Transactions made anywhere else are never edited by setting their type.
+
+If Actual saved an entry but Bench could not save its type, **Retry metadata only** finishes the job
+without writing to Actual again. If Bench cannot tell whether a write reached Actual, the editor
+locks: select **Refresh** and check the account in Actual before you try again.
 
 ## Keyboard
 
-Use arrow keys to move through the Asset Ledger, Space to select a row, Tab to the pencil or trash icon to edit or delete it (clicking a row does not open the editor) and **T** to open the type popup for one row, or classify several selected rows. The header checkbox selects visible rows. Tabs, searchable account/payee pickers and drawers use the shared Actual Bench keyboard and focus behavior. Switching transaction rows or closing the editor preserves unsaved work through discard confirmation. Escape closes the editor after any required discard confirmation.
+In the Asset Ledger, the arrow keys move between rows, `Space` selects one, `T` opens its type, and
+`Tab` reaches the edit and delete buttons. The **Guide** button opens a short version of this page in
+the app.
 
-## Tags in Actual
+## Related pages
 
-Bench writes a readable type tag to the Notes in Actual (such as `#revaluation`, `#acquisition`, `#disposal` or `#depreciation`) only on entries Bench creates itself, such as an Update value, a value adjustment, a transfer Bench records or a posted depreciation month. A transaction made anywhere else is never edited: choosing its type stores that in Bench only. Transfers, split, reconciled and scheduled rows are never edited either. A tagged row with no Bench record is shown with the type its tag names. The in-app **Guide** button opens a short version of this page on the tab you are using, with navigation between sections.
+- [Loans](../assets-debt/) - the loans you link to assets
+- [Financial Insights](../financial-insights/#property--assets) - equity and loan-to-value across everything you own
+- [Accounts](../accounts/) - give asset accounts the right class

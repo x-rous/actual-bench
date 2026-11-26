@@ -1,78 +1,59 @@
 ---
 title: Bank Sync
-description: Schedule Actual Budget bank syncs and review the result for each linked account.
+description: Have Actual pull from your banks on a schedule, even with the app closed, and see what each account brought back.
 sidebar:
   order: 14
 ---
 
-Actual Budget connects to your bank. Actual Bench can schedule the existing Actual bank sync and
-report its result for each account. It does not connect to your bank, store bank credentials, or add
-a bank provider.
+Your bank connections live in Actual. Bank Sync has Actual pull from them on a schedule you choose,
+even with Bench closed, and reports what came back for each account. Bench never connects to your
+bank or holds bank credentials itself.
 
-Set one up from **Sync & Automations → Automations → New automation → Bank sync** (`/automations`).
+For a one-off pull, select **Sync banks** on the [Accounts](../accounts/#sync-banks) page. To run it on
+a schedule, create a bank sync automation.
 
-**Budget impact:** Actual creates imported transactions. Actual Bench schedules the sync and saves its
-run record and per-account result.
-![The bank sync dialog, warning that no account in this budget is linked to a bank.](../../../assets/screenshots/dialogs/dialog-new-bank-sync.png)
+![The Schedule a bank sync dialog, asking for the budget to be enrolled so the sync can run with Bench closed.](../../../assets/screenshots/dialogs/dialog-new-bank-sync.png)
 
-*Set the schedule and Bench works out the rest - including telling you, before you save, that this
-budget has no bank-linked accounts and the sync would import nothing.*
-
+*A scheduled sync runs with your browser closed, so the dialog first asks you to enrol the budget.*
 
 ## What you need
 
-- Accounts **linked to a bank in Actual** (SimpleFIN or GoCardless). Bench cannot create those links.
-- The budget [enrolled for unattended access](../automations/#unattended-access), in HTTP API or
-  Direct mode - a scheduled sync runs with your browser closed, so the server needs credentials of its
-  own.
+- Accounts linked to a bank in Actual, through SimpleFIN or GoCardless, for example.
+- The budget [enrolled for unattended access](../automations/#unattended-access), so the server can
+  open it with your browser closed.
 
-## Create a bank-sync automation
+## Schedule a bank sync
 
-1. Open **Sync & Automations → Automations** and select **New automation → Bank sync**.
-2. Confirm that the budget is enrolled for unattended access.
-3. Choose a schedule and save the automation.
+1. Open **Sync & Automations → Automations** and choose **New automation → Bank sync**.
+2. Choose the budget, and enrol it if the dialog asks.
+3. Check the list of accounts: those linked to a bank show when each last synced, and the rest are
+   marked **not connected to a bank - skipped**.
+4. Choose how often, and save. Every few hours suits most people; the shortest interval is 15
+   minutes.
 
-Before you save, the dialog shows **which accounts will actually sync**:
-
-- Accounts linked to a bank are listed with when each last synced.
-- Accounts with no bank link are listed too, marked **not connected to a bank - skipped**.
-
-That list is the point. Without it, scheduling can only assert "every linked account is synced" and
-hope - and someone whose accounts are all unlinked would create an automation that does nothing,
-forever, without a hint as to why. If none are linked, Bench refuses to schedule the run rather than
-letting you create it.
-
-Then choose how often. Every few hours suits most people; the minimum interval is 15 minutes,
-because below that a run spends its time reopening the budget rather than syncing.
+If no account is linked to a bank, Bench will not save the automation, because it would never
+import anything.
 
 ## What a run reports
 
-Each account is synced **separately**, so one bank being down does not stop the others:
+Each account syncs on its own, so one bank being down does not stop the others.
 
-| Result | Meaning |
+| Result | Means |
 |---|---|
 | **Synced** | Actual accepted the pull for this account |
-| **Failed** | This account's provider or link failed - the reason is on the run |
+| **Failed** | This account's bank link failed; the reason is on the run |
 | **Skipped** | The account is closed, or not linked to a bank |
 
-A run where some accounts failed is reported as **partial**. It does not count against the
-automation's failure streak: one unreachable bank out of twelve is a normal Tuesday, and pausing the
-whole automation over it would be wrong. A run where *every* account failed does count.
+A run where only some accounts failed is **partial**, and does not count towards auto-pause: one
+unreachable bank out of twelve is normal. A run where every account failed does count.
 
-:::note[Transaction counts]
-Bench reports a number of imported transactions only where it could measure one. In Direct mode the
-pull finishes before the call returns, so a count is real. Over the HTTP API, the server answers that
-the sync has *started* - so Bench records the run as accepted and does not invent a figure it cannot
-observe.
-:::
+In Direct mode the run reports how many transactions came in. Over the HTTP API, the server only
+confirms that the sync started, so the run is recorded as accepted without a count.
 
-Full results, including per-account reasons and the redacted log, are in
-[Run history](../automations/#run-history).
+Full results are in [Run history](../automations/#run-history).
 
-## What this does not do
+## Good to know
 
-- It does not connect to your bank, or store bank credentials. Actual owns that.
-- It does not re-import a statement or reconcile anything. For a downloaded statement, use
+- A bank link that needs re-authorising is fixed in Actual. Bench reports the failure until it is.
+- Bank Sync does not import downloaded statements. For those, use
   [Bank Reconciliation](../bank-reconciliation/).
-- It does not fix a broken bank link. If a provider needs re-authorising, that is done in Actual;
-  Bench will keep reporting the failure until it is.

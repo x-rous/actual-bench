@@ -1,219 +1,164 @@
 ---
 title: Accounts
-description: Create, rename, close, reopen, import, export, group, and delete accounts in bulk.
+description: Create, close and organise accounts in bulk, and tell Actual Bench what kind of money each account holds.
 sidebar:
   order: 3
 ---
 
-Use Accounts to create, rename, close, reopen, import, export, and delete accounts. Review balances,
-transactions, and rule references before you remove an account.
+Accounts is where you manage your accounts in bulk, and where you tell Bench what each account
+*is*: a checking account, savings, a credit card, a house, a loan. That one label, the **class**,
+lets Financial Insights, Cashflow Planning, Credit Cards and Assets read your money correctly.
 
-Open it from **Budget Setup → Accounts** (`/accounts`).
+Open it from **Budget Setup → Accounts**. Account edits are staged and go to Actual when you select
+**Save**; classes and access settings are Bench's own and save straight away.
 
-**Budget impact:** Account changes remain staged for review until you **Save**. Account notes save immediately.
+![The Accounts table grouped by account group: credit cards, daily banking, investments, loans, and property and vehicles, each account with its group, class, whether its money is accessible, balance, budget placement, status and rule references, and a total.](../../../assets/screenshots/user-guide/accounts.png)
 
-![The Accounts table: five accounts with balances, on- or off-budget, open or closed, and how many rules reference each.](../../../assets/screenshots/user-guide/accounts.png)
+*Each account's class and whether its money counts as cash sit beside its balance, budget placement
+and rule references, grouped the way you group them in Actual.*
 
-*Balance, budget treatment, status and rule references on one row - so the question "what depends on
-this account?" is answered before you touch it.*
+## What you can do here
 
-It shares the [editing model](../../getting-started/editing-and-saving/) every Budget Setup page
-uses.
+- Create accounts one at a time, or paste dozens from a spreadsheet, each with a starting balance.
+- Close, reopen and delete several accounts at once, with the balance, transactions and rules in
+  front of you first.
+- Give each account a class, or set one on a whole account group.
+- Group the table by account group or by class, with subtotals.
+- Pull new transactions from your banks with **Sync banks**.
 
-## What you get beyond Actual Budget
-
-- **Create in bulk** - paste tab-separated rows straight from a spreadsheet, or import a CSV.
-- **Set a starting balance as you create it.** The Balance column stays editable while the row is
-  staged.
-- **Bulk close, reopen, and delete** with a single action across selected accounts.
-- **Organise accounts into groups** and move several accounts between them at once.
-- **See which rules reference an account** and jump straight to them.
-- **Impact-aware deletion** - every close and delete shows the balance, the transaction count and the
-  rule references first. A non-zero balance gets its own warning.
+Everything here uses the shared [editing model](../../getting-started/editing-and-saving/).
 
 ## Create an account
 
-1. Select **Add Account** to open the form drawer.
-2. Enter a **Name**.
-3. Optionally set an **Initial Balance** (seeds the account's starting balance on creation).
-4. Choose **on-budget** or **off-budget** with the toggle.
-5. Optionally choose an **Account Group**, where supported, including groups you have staged but not saved. Groups with an off-budget-only class are unavailable for on-budget accounts.
-6. Choose an **Account Class**, or leave it **Unclassified**. If the selected group has a class, the account inherits it. Off-budget-only classes are disabled for on-budget accounts.
-7. For an off-budget account, optionally change **Accessible** from the class default, and tick **Leave out of reports**.
-8. Select **Add Account** to stage the account, group assignment, class and these choices.
-9. Select the page’s **Save** to create it in Actual. Its class and choices are then saved in Bench against the returned account id; if only they fail, **Save** retries them without creating the account again.
+1. Select **Add Account**.
+2. Enter a **Name** and, if you like, an **Initial Balance**.
+3. Choose **on-budget** or **off-budget**. Actual does not let you change this later, so choose
+   carefully.
+4. Optionally choose an **Account Group** and an **Account Class** (see below).
+5. Select **Add Account** to stage it, then **Save** to create it in Actual.
 
-To create several at once, use the bottom **Add Rows** / paste flow - the **Balance** column is
-editable there so you can set each new account's initial balance inline.
+To create several at once, use **+ Add row** at the bottom of the table, or paste rows from a
+spreadsheet. The **Balance** column is editable on new rows.
 
-:::caution[Budget type is fixed after creation]
-Actual Budget will not let an account change between on-budget and off-budget once it exists. Bench
-shows it as a read-only badge afterwards. Get it right the first time.
-:::
+## Close, reopen and delete
 
-## Balances, closing, and deleting
-
-- **Current balance** is live - aggregated through ActualQL, refreshed roughly every 60 seconds or
-  when you press **Refresh**. Negative balances go red.
-- Open and close accounts individually or in bulk (close, reopen).
-- Deleting or closing always confirms first, with the balance, the transaction count and the rule
-  count in front of you.
-- Closing a saved account that still holds money offers **Move the balance to** another open account,
-  as Actual's own close does. Moving money from an on-budget account to an off-budget one leaves the
-  budget, so a category is required then. Leave it empty (or close in bulk) and the account closes with
-  its balance where it is. The balance cannot go to an account the same Save closes or deletes.
+- Closing or deleting always confirms first, showing the balance, transaction count and rule count.
+- Closing an account that still holds money offers **Move the balance to** another open account, as
+  Actual does. Moving money from an on-budget account to an off-budget one needs a category. Leave it
+  empty to close the account with its balance where it is.
+- Balances refresh about once a minute, or when you select **Refresh**. Negative balances show in
+  red.
 
 ## Account classes
 
-Each account can be given a class, so Bench features know what kind of account it is. The Class dropdown lists them under six headings:
+A class tells Bench what kind of account this is. It is a label in Bench only: it never changes
+anything in Actual, and it is separate from the type Actual keeps for bank sync.
 
-- **Everyday money:** Checking (checking, current, everyday and offset accounts), Cash.
-- **Savings:** Savings (savings, high-yield, money market and notice accounts), Fixed Deposit (term deposits, CDs, restricted or pledged deposits).
-- **Credit:** Credit Card.
-- **Investments:** Investment, Retirement (retirement accounts, pension funds and superannuation).
-- **Things you own:** Property, Vehicle, Other Fixed Asset (gold, collectibles, jewellery, equipment: things you value in [Assets](/user-guide/asset-registry/)), Other Asset (money owed to you, rental bonds, prepaid balances).
-- **Debts:** Loan (mortgages, personal, auto and student loans, lines of credit), Other Liability.
+| Heading | Classes | Budget placement |
+|---|---|---|
+| Everyday money | **Checking** (current, everyday and offset accounts), **Cash** | On or off budget |
+| Savings | **Savings** (high-yield, money market, notice accounts) | On or off budget |
+| | **Fixed Deposit** (term deposits, CDs, pledged deposits) | Off budget |
+| Credit | **Credit Card** | On budget, so purchases count as spending |
+| Investments | **Investment**, **Retirement** (pensions, superannuation) | Off budget |
+| Things you own | **Property**, **Vehicle**, **Other Fixed Asset** (gold, collectibles, equipment) | Off budget |
+| | **Other Asset** (money owed to you, rental bonds, prepaid balances) | On or off budget |
+| Debts | **Loan** (mortgages, personal, auto and student loans, lines of credit) | Off budget |
+| | **Other Liability** | On or off budget |
 
-There are thirteen classes. An account you want Financial Insights to ignore is not a class: leave it out of reports instead (see below).
+To set one, click an account's **Class** cell and choose. A class that needs the other placement is
+shown greyed out, so you cannot pick one that does not fit. To classify several accounts, select
+them and choose **Set class…**. The **Class** filter, including **Unclassified**, finds the accounts
+still waiting for one.
 
-Fixed Deposit, Investment, Retirement, Property, Vehicle, Other Fixed Asset and Loan require an **off-budget** account: locked money cannot be money you assign, and the Assets module accepts only off-budget accounts. For an on-budget account these choices remain visible but gray and unselectable under an **Off-budget accounts only** heading, and Financial Insights does not unlock while one is on budget. **Credit Card requires an on-budget account**, so its purchases count as spending: for an off-budget account it is gray under an **On-budget accounts only** heading. Checking, Cash, Savings, Other Asset and Other Liability allow either placement.
+The **Guide** button at the top of the page explains each class, why it matters, and the quickest
+way to get every account ready.
 
-Click an account's **Class** cell and choose a class, or **Unclassified** to clear it. A class is a label
-only. It is separate from the type and subtype Actual keeps on its own accounts, it never changes balances,
-transactions, budget mode or transfers, and it is never written to Actual. Classes on existing accounts are saved in Bench for the
-open budget straight away, so they do not wait for **Save** and are not part of **Undo**. A new account’s
-class stays with its draft, participates in undo/discard, and saves only after Actual returns its permanent
-id. If creation fails, the draft and chosen class remain. If only the class save fails, its selection and
-error stay on the real account; **Save** retries the class without creating the account again.
+### Classes on account groups
 
-**Set a class on a group.** In the **Manage Groups** dialog, choose a class for the group. Its accounts then show
-that class as **Inherited** and cannot change it; change the group instead. If some of those accounts already
-have their own class, Bench lists them and asks you to confirm, because the group class replaces theirs. An own
-class that is a narrower kind of the group's (Savings or Fixed Deposit in a Checking group, Savings in a Cash group,
-Other Fixed Asset in an Other Asset group) is kept and still applies.
-Moving an account out of the group does not bring a cleared class back.
+In **Manage Groups** you can give a whole account group a class. Its accounts then show it as
+**Inherited**, and you change it on the group. If some accounts already have a class of their own,
+Bench lists them and asks you to confirm. A narrower class is kept: Savings or Fixed Deposit inside a
+Checking group, Savings inside a Cash group, or Other Fixed Asset inside an Other Asset group still
+applies.
 
-A group containing any live on-budget account cannot be given an off-budget-only class, and a group containing any live off-budget account cannot be given Credit Card.
-An empty group can take any class. Groups with one of these restricted classes are visible but
-unselectable when moving on-budget accounts, including a mixed bulk selection. A new account
-inheriting a restricted class cannot be switched on-budget. CSV imports that would put an on-budget
-account into a restricted group are rejected before any accounts are staged; adjust the CSV and retry.
+If an account's own class is overridden by its group, a notice at the top of the table names it.
+**Keep the group's class** clears the account's own class; **Dismiss** hides the notice.
 
-Each class has an icon next to its name. New account classes can be edited in the drawer or staged table
-before **Save**; new groups must be saved before they can be given a class. Use the **Class** filter, including **Unclassified**, to find accounts that still need one.
+## What counts as cash
 
-**Classify several at once.** Select the accounts and choose **Set class…** in the selection bar. Accounts that
-inherit a group class are left unchanged; Bench tells you how many. New accounts’ choices stay staged
-until creation succeeds; existing-account choices save immediately to Bench. If any
-selected live account is on-budget, the off-budget-only choices are disabled for the selection, and Credit Card is disabled when any selected account is off-budget.
+Two more columns decide how Financial Insights and Cashflow Planning treat each account. You don't
+need to touch them: every class has a sensible default.
 
-Click the **Class** header to sort in the order of the class list, then unclassified accounts.
+**Accessible** answers "could I use this money now if I needed it?"
 
-## The guide
+- On-budget accounts are always **Available (on budget)**.
+- Off-budget Checking, Cash and Savings default to **Available now**. Fixed Deposit, Investment,
+  Retirement and Other Asset default to **Locked**. Change it for, say, a notice account you cannot
+  touch, or a no-penalty CD you can.
+- Credit cards, things you own and debts have no access setting.
 
-The **Guide** button at the top of the page opens a guide inside Bench: what each class means and whether you can use its money now, why it matters (the same balance reads differently as cash, savings, a locked deposit, an investment or a debt), where Bench uses them (Financial Insights, Assets, Cashflow Planning, Credit Cards and Bank Reconciliation), and how to get every account ready quickly with groups.
+Available money counts as cash. Locked money counts towards your net worth, never your cash.
 
-## Accessible
+**Reports** lets you leave an off-budget account out of every figure in Financial Insights and out of
+Cashflow's automatic rows. A left-out account needs no class. The **left out of reports** shortcut
+beside the class filter lists them. For a group whose accounts are all off budget, the same setting
+is in **Manage Groups**.
 
-The **Accessible** column answers one question: could you use this account's money now if you needed it? It drives what counts as cash in [Financial Insights](/user-guide/financial-insights/) and [Cashflow Planning](/user-guide/cashflow-planning/).
+To change several at once, select them and choose **Set access…**: **Available now**, **Locked**,
+**Leave out of reports** or **Include in reports**. Bench tells you how many it could not change and
+why.
 
-- **On budget**, an account is always **Available (on budget)**: Actual lets you assign its money.
-- **Off budget**, each class has a default you can change with the dropdown: Checking, Cash and Savings are **Available now**; Fixed Deposit, Investment, Retirement and Other Asset are **Locked**. Mark a notice account **Locked**, or a no-penalty CD or money market fund **Available now**.
-- Credit cards, things you own and debts have no access: a card's owed amount comes off cash, a thing you own is used by selling it, and a debt is not money you hold.
-
-| Rung | Accounts | Where it counts |
-| --- | --- | --- |
-| Cash | Checking and Cash you can use now | Cash in every view |
-| Savings you can use | Savings and Fixed Deposits you can use now | Cash in **Cash + savings** (the default); Statements' cash |
-| Other money you can reach | Investment, Retirement and Other Asset set to Available now | The cash buffer's second figure |
-| Locked money | Any of the above, locked | Never cash: net worth, and Cashflow's **Locked savings** line for savings and investments |
-
-**Nothing here is required.** Financial Insights unlocks when every account has a class and a placement that class accepts. In an off-budget **Savings** or **Fixed Deposit** account, money in with no category (interest, in practice) counts as income, in its own row "Interest & income in off-budget savings"; money out stays an unidentified movement.
-
-## Reports
-
-The **Reports** column says whether the account counts in reports. For an off-budget account, the button beside **Included** leaves it out of every figure in Financial Insights and out of Cashflow's automatic roles; it then needs no class. On a group, the same setting is in **Manage Groups** for groups whose accounts are all off budget; an account left out by its group says so and is changed on the group. An account that takes its group's class follows the group's setting. If a left-out account is on budget, Financial Insights blocks until you include it again, which the button still offers. A **left out of reports** shortcut beside the class filter counts these accounts and filters to them.
-
-**Several at once.** Select accounts and use **Set access…** in the selection bar: **Available now**, **Locked**, **Leave out of reports** or **Include in reports**. Accounts the choice cannot apply to (on budget, a class without access, or a group that decides) are left unchanged, and Bench says how many. A new account’s choices are staged with it and saved once it exists.
-
-**An own class the group overrides.** When an account has its own class but sits in a group with a different class, the group’s class applies, unless the account’s own class is a narrower kind of the group’s: Savings or Fixed Deposit in a Checking group, Savings in a Cash group, Other Fixed Asset in an Other Asset group. A notice at the top of the table names accounts whose own class is overridden (for example after moving an account into a group): **Keep the group’s class** clears their own class, and **Dismiss** hides the notice in this browser until the list changes.
-
-A saved choice counts only while it can apply. If you change an account's class or placement so a choice no longer fits, Bench keeps it but ignores it until it fits again. A new account’s choices are staged with it and saved once it exists. A closed account with no transactions and a zero balance needs nothing.
-
-Choices are saved in Bench, per budget, and apply at once. They are never written to Actual and do not change balances, transactions, budget placement or transfers.
-
-## Upgrading from earlier versions
-
-The app database upgrade (schema 68) carries every earlier choice over: a Bank account marked **Fixed / restricted deposit** becomes a **Fixed Deposit**, an Other Asset marked **Fixed asset** becomes an **Other Fixed Asset**, and an off-budget Cash or Bank account set to count uncategorized money in as income becomes **Savings**. "Accessible money" carries over as **Available now**. A choice saved on an account whose class came from its group gives the account its own class. It keeps applying inside a group of the broader class (a Fixed Deposit in a Checking group, an Other Fixed Asset in an Other Asset group), as the old choice did.
+Classes, access and reports settings are saved in Bench for this budget straight away, without
+**Save**, and are not part of undo. On a new account they wait with its draft, and are saved once
+Actual has created it.
 
 ## Grouped view
 
-Use the **No grouping / By group / By class** toggle in the toolbar to cluster the table by **account group** or by **class**. Each
-cluster has a heading with its name, how many accounts it holds, and the total of their balances under the
-**Balance** column. A **Total** row closes the table.
-
-- Select a heading to collapse or expand it. Collapsed accounts are left out of **select all**, paste, and
-  keyboard navigation, so a bulk action never touches rows you cannot see. A new, unsaved account is always
-  shown.
-- Groups are listed by name. Classes follow the class list: assets first, then liabilities. Accounts with no
-  group or class come last.
-- Filters and sorting still apply inside each cluster, and totals add only the accounts that match.
-- Debts are negative, so a heading that contains loans or cards can show a negative total. The balances come
-  from Actual and are added exactly, in minor units.
-
-Choose **No grouping** to return to the flat table. The choice is a display preference.
+Use the **No grouping / By group / By class** toggle to cluster the table. Each heading shows how
+many accounts it holds and their total balance, and a **Total** row closes the table. Select a
+heading to collapse it; collapsed rows are left out of select-all and paste, so a bulk action never
+touches rows you cannot see. Debts are negative, so a heading with loans or cards can total below
+zero.
 
 ## Account groups
 
-Account groups are named collections that Actual shows together in its sidebar. Bench supports them
-on Actual 26.9 or later; on an older server the Group column and controls do not appear.
+Account groups are the named groups Actual shows in its sidebar. They need Actual 26.9 or later (in
+HTTP API mode, an `actual-http-api` release for 26.9 or later).
 
-- **Assign an account:** click its **Group** cell and choose a group, **No group**, or **New group…**.
-- **Move several at once:** select the accounts, then use **Move to group…** in the selection bar.
-- **Manage groups:** select **Manage Groups** in the page toolbar to create, rename, or delete groups. Names
-  must be unique, ignoring case.
-- **Deleting a group** keeps its accounts - they become ungrouped. The dialog says how many are
-  affected first.
+- Click an account's **Group** cell to choose a group, **No group** or **New group…**.
+- Select several accounts and choose **Move to group…** to move them together.
+- **Manage Groups** creates, renames and deletes groups. Deleting a group keeps its accounts; they
+  become ungrouped.
 
-Like every other account edit, group changes are drafted and written only when you **Save**, and
-**Undo** reverses them. New groups are created first, then accounts, and deleted groups last.
+Group changes are staged like any other account edit. To reorder groups, use Actual itself.
 
-Groups cannot be reordered from Bench: Actual's API does not allow it. Reorder them in Actual itself.
+## Sync banks
 
-:::note[HTTP API mode]
-In HTTP API mode your `actual-http-api` must expose the `/accountgroups` endpoints (the release for
-Actual 26.9 or later does).
-:::
+**Sync banks** asks Actual to pull new transactions from the banks you linked in Actual (through
+SimpleFIN or GoCardless, for example), right now. It only appears when your connection can start a
+bank sync. To run it on a schedule instead, see [Bank Sync](../bank-sync/).
 
-## Filter and sort
+## Notes, filters and CSV
 
-Filter by name, status, budget type, whether any rules reference the account, and group. Sort by name,
-status, budget type, group or class. Staged rows ignore the sort and stay at the top until you Save.
-
-## Notes
-
-Every row has a note button beside the name. Notes render as Markdown, edit inline, and **save
-immediately** - nothing to do with your staged edits.
-
-## Import and export
-
-Export accounts to CSV or import them (staged before saving). CSV columns:
-
-- `name` (required), `offBudget`, `closed`.
-- `group` (optional, account groups only) - the group's name. A name that matches no existing group
-  stages a new one. On a server without account groups the column is ignored.
-
-Exported files include the `group` column when the server supports groups, and a trailing `class` column once
-account classes have loaded (an inherited class is exported too). Import treats the `class` column as informational and does not stage class changes.
-Set classes on imported drafts in the table before **Save**, or on saved accounts afterward.
+- **Notes:** every row has a note button. Notes render as Markdown and save as soon as you confirm
+  them.
+- **Filter and sort** by name, status, budget placement, group, class and whether any rules use the
+  account.
+- **CSV columns:** `name` (required), `offBudget`, `closed`, and `group` where groups are supported.
+  A group name that does not exist yet is created. Exports also include a `class` column; on import
+  it is for information only, so set classes in the table.
 
 ## Common problems
 
-- **"Can't change the account type"** - correct. It is fixed at creation.
-- **A delete warns you** - read the dialog. Money left in the account affects budget consistency.
-- **A new row stays highlighted** - it is staged, not saved. Press **Save**.
+- **The on-budget / off-budget switch is greyed out:** Actual fixes it when the account is created.
+- **A class is greyed out:** it needs the other budget placement (see the table above), or the
+  account inherits its class from its group.
+- **Financial Insights says an account needs attention:** give it a class that fits its placement,
+  or leave it out of reports.
+- **A new row stays highlighted:** it is staged. Select **Save**.
 
 ## Related pages
 
+- [Financial Insights](../financial-insights/) - where classes and access matter most
 - [Editing, review and save](../../getting-started/editing-and-saving/) - the shared editing model
-- [Rules](../rules/) - how rules reference accounts

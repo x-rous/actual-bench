@@ -145,7 +145,7 @@ Never claim "nothing writes until Save" in code comments or docs; the exceptions
 
 ## 10. Dev Server and Live Data
 
-- Use the existing dev server in this workspace. Never start `next dev`, `npm run dev` or another server unless the task explicitly requires it (`docs-site/scripts/capture-screenshots.mjs` intentionally starts its own isolated server).
+- Use the existing dev server in this workspace. Never start `next dev`, `npm run dev` or another server unless the task explicitly requires it (retaking documentation screenshots runs its own servers on a local demo seed; see `docs/screenshots.md`).
 - Manual checks run only against the test Actual server and budget in `agents/live-test-server.md`; connect with the details there. Never Save, Apply, run a sync or automation, enrol credentials or touch the vault on any other server or budget. If you can't tell which budget is active, stop and ask.
 - Never copy values from `agents/live-test-server.md` into code, tests, logs, commits, docs or PR text.
 
