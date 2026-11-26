@@ -136,6 +136,11 @@ cp demo/seed-bench.sqlite /tmp/demo-bench.sqlite
 ACTUAL_BENCH_AUTH=none ACTUAL_BENCH_DB_PATH=/tmp/demo-bench.sqlite \
   ACTUAL_BENCH_DIST_DIR=.next-live-tmp npx next dev -p 3517 &
 
+# Wait for both to answer (up to two minutes each; the first Bench page compiles)
+for url in http://localhost:5197 http://localhost:3517; do
+  for i in $(seq 1 120); do curl -s -o /dev/null "$url" && break; sleep 1; done
+done
+
 BENCH_URL=http://localhost:3517 ACTUAL_URL=http://localhost:5197 \
   node docs-site/scripts/capture-landing.mjs
 ```

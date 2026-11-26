@@ -90,5 +90,13 @@ describe("demo seed scenario", () => {
     const bonus = scenario.scenarioForMonth(months[10], 10);
     expect(bonus).toMatchObject({ event: "bonus", incomeAdjustment: 0 });
     expect(scenario.scenarioForMonth(months[22], 22).bonusAmount).toBeGreaterThan(bonus.bonusAmount);
+
+    // Generated in February 2027, the second bonus lands in December: the
+    // holiday event replaces "bonus", and the amount is what posts it.
+    const generatedInFebruary = scenario.buildMonths(new Date(2027, 1, 14));
+    const december = scenario.scenarioForMonth(generatedInFebruary[22], 22);
+    expect(generatedInFebruary[22].monthNumber).toBe(12);
+    expect(december).toMatchObject({ event: "holiday" });
+    expect(december.bonusAmount).toBeGreaterThan(0);
   });
 });

@@ -71,7 +71,7 @@ const steps = [
 				type="button"
 				role="tab"
 				id={`picture-tab-${step.id}`}
-				aria-controls={`picture-panel-${step.id}`}
+				aria-controls={index < 2 ? 'picture-panel-actual' : 'picture-panel-picture'}
 				aria-selected={index === 2 ? 'true' : 'false'}
 				tabindex={index === 2 ? 0 : -1}
 				data-to={index + 1}
@@ -84,7 +84,7 @@ const steps = [
 	</div>
 
 	<div class="picture-stage">
-		<div class="picture-panel picture-ledger" role="tabpanel" id="picture-panel-actual" aria-labelledby="picture-tab-actual" data-panels="1 2">
+		<div class="picture-panel picture-ledger" role="tabpanel" id="picture-panel-actual" aria-labelledby="picture-tab-actual" data-panels="1 2" hidden>
 			{[
 				['On budget', onBudget],
 				['Off budget', offBudget],

@@ -953,7 +953,8 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
     }
     await push("retirement", retirementTransactions);
 
-    if (scenario.event === "bonus" && canPost(month, 14)) {
+    // The amount, not the event: a December or July bonus month carries the holiday or vacation event.
+    if (scenario.bonusAmount > 0 && canPost(month, 14)) {
       await push("checking", [
         transaction(month, 14, "payrollBonus", scenario.bonusAmount, "bonus", { notes: "Annual performance bonus" }),
       ]);
@@ -989,7 +990,7 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
         await api.setBudgetAmount(month.key, category.interest, 950);
         await api.setBudgetAmount(month.key, category.reimbursements, 2100);
         const planned = scenarioForMonth(month, months.indexOf(month));
-        if (planned.event === "bonus") {
+        if (planned.bonusAmount > 0) {
           await api.setBudgetAmount(month.key, category.bonus, planned.bonusAmount);
         }
       }
