@@ -73,15 +73,19 @@ what you asked them to do, and they only run once you set them up. See
 |---|---|---|
 | Your budget | Your Actual Server | Managed by Actual |
 | Drafts and open connections | Browser memory | Until you refresh or close the tab |
+| Working copy of the open budget, in Direct mode | This site's browser storage, kept by Actual's own browser software | Until you clear this site's data in the browser |
 | Recent connection details (no secrets) | Browser session storage | Until the tab closes |
 | Bench's own records: flows, sessions, cards, plans, loans, assets, saved queries | Bench's database, `/data/actual-bench.sqlite` | Across restarts, when `/data` is kept |
 | Remembered server passwords and API keys, if you choose to remember a budget | Bench's database, encrypted with your Actual Bench password | Until you forget them, or the password is reset |
 | Credentials for scheduled work, if you enrol a budget | Bench's database, encrypted with the vault key | Until you withdraw them |
 
-By default, passwords and API keys stay in browser memory and are gone when the tab closes.
-Remembering a budget and enrolling a budget are both opt-in, and they use separate keys. See
+Passwords and API keys you do not save stay in browser memory and are gone when the tab closes.
+**Remember this budget** is ticked by default when saving is available, and you can untick it.
+Enrolling a budget for scheduled work is opt-in. The two use separate keys. See
 [Connect to a budget](../connecting/#remember-a-budget) and
 [Configuration](../../administration/configuration/#the-credential-vault).
+[Privacy & your data](../../privacy/) covers everything Bench stores and every outside service it
+contacts.
 
 ## App-wide controls
 
