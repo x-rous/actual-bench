@@ -15,33 +15,87 @@ const path = require("node:path");
 const { spawn } = require("node:child_process");
 
 /**
- * The port Bench tries first. Fixed rather than random because the browser
+ * The port Bench tries first. A stable port matters because the browser
  * keeps Bench's local settings (theme, layout) per origin, and the port is
- * part of the origin: a new port each launch would forget them.
+ * part of the origin: a new port each launch would forget them. The port that
+ * worked is remembered (see `main.cjs`) and tried first next time.
  */
 const PREFERRED_PORT = 47806;
 const PORT_ATTEMPTS = 20;
 const HEALTH_TIMEOUT_MS = 90_000;
 const LOG_ROTATE_BYTES = 5 * 1024 * 1024;
 
-function isPortFree(port, host) {
+/**
+ * Binds and releases a port. Resolves `{ port }` with the port actually bound
+ * (port 0 asks the OS for a free one), or `{ error }` with the error code.
+ * On Windows, Hyper-V, WSL2 and Docker reserve ranges of ports; binding one
+ * fails with EACCES even though nothing is listening on it.
+ */
+function tryPort(port, host) {
   return new Promise((resolve) => {
     const server = net.createServer();
     server.unref();
-    server.once("error", () => resolve(false));
+    server.once("error", (error) => resolve({ error: error.code || error.message }));
     server.listen({ port, host, exclusive: true }, () => {
-      server.close(() => resolve(true));
+      const bound = server.address().port;
+      server.close(() => resolve({ port: bound }));
     });
   });
 }
 
-/** The preferred port, or the next free one after it. */
-async function findFreePort({ host = "127.0.0.1", preferred = PREFERRED_PORT, attempts = PORT_ATTEMPTS, isFree = isPortFree } = {}) {
+function validPort(value) {
+  return Number.isInteger(value) && value > 0 && value <= 65535 ? value : null;
+}
+
+/**
+ * The port for Bench's server: the one that worked last time, else the
+ * preferred range, else any free port the OS picks. Throws only when even
+ * the OS can't provide one.
+ */
+async function findFreePort({
+  host = "127.0.0.1",
+  remembered = null,
+  preferred = PREFERRED_PORT,
+  attempts = PORT_ATTEMPTS,
+  probe = tryPort,
+} = {}) {
+  const candidates = [];
+  if (validPort(remembered)) candidates.push(remembered);
   for (let offset = 0; offset < attempts; offset += 1) {
-    const port = preferred + offset;
-    if (await isFree(port, host)) return port;
+    if (!candidates.includes(preferred + offset)) candidates.push(preferred + offset);
   }
-  throw new Error(`No free port between ${preferred} and ${preferred + attempts - 1} on ${host}.`);
+  const failures = new Map();
+  for (const port of candidates) {
+    const result = await probe(port, host);
+    if (result.port) return result.port;
+    failures.set(result.error, (failures.get(result.error) || 0) + 1);
+  }
+  const fallback = await probe(0, host);
+  if (fallback.port) return fallback.port;
+  const summary = [...failures].map(([code, count]) => `${code} x${count}`).join(", ");
+  throw new Error(
+    `Could not open a port on ${host}: ports ${preferred}-${preferred + attempts - 1} failed (${summary}), ` +
+      `and the system gave no free port (${fallback.error}).`
+  );
+}
+
+/** The port remembered in `file`, or null. */
+function readRememberedPort(file) {
+  try {
+    return validPort(JSON.parse(fs.readFileSync(file, "utf8")).port);
+  } catch {
+    return null;
+  }
+}
+
+/** Remembers the port Bench used; a failure only costs the next launch a new port. */
+function rememberPort(file, port) {
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, `${JSON.stringify({ port })}\n`);
+  } catch {
+    // Not critical.
+  }
 }
 
 /**
@@ -176,6 +230,8 @@ function stopServer(child, graceMs = 5_000) {
 module.exports = {
   PREFERRED_PORT,
   findFreePort,
+  readRememberedPort,
+  rememberPort,
   openServerLog,
   serverEnv,
   startServer,

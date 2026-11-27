@@ -13,6 +13,8 @@ const { findActualDesktopServer } = require("./actualDesktop.cjs");
 const { packageFamilyName } = require("./storeIdentity.cjs");
 const {
   findFreePort,
+  readRememberedPort,
+  rememberPort,
   openServerLog,
   serverEnv,
   startServer,
@@ -198,7 +200,8 @@ async function startBench() {
 
   fs.mkdirSync(dataDir(), { recursive: true });
   const { stream } = openServerLog(logDir());
-  const port = await findFreePort();
+  const portFile = path.join(app.getPath("userData"), "server-port.json");
+  const port = await findFreePort({ remembered: readRememberedPort(portFile) });
   const actualDesktop = findActualDesktopServer();
 
   serverChild = startServer({
@@ -219,6 +222,7 @@ async function startBench() {
   const baseUrl = `http://127.0.0.1:${port}`;
   await waitForHealth({ baseUrl, child: serverChild });
   appUrl = `${baseUrl}/`;
+  rememberPort(portFile, port);
 
   serverChild.on("exit", (code) => {
     if (quitting) return;

@@ -7,7 +7,14 @@ const { EventEmitter } = require("node:events");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { findFreePort, openServerLog, serverEnv, waitForHealth } = require("./serverProcess.cjs");
+const {
+  findFreePort,
+  openServerLog,
+  readRememberedPort,
+  rememberPort,
+  serverEnv,
+  waitForHealth,
+} = require("./serverProcess.cjs");
 
 test("findFreePort skips a busy port", async () => {
   const busy = net.createServer();
@@ -21,8 +28,49 @@ test("findFreePort skips a busy port", async () => {
   }
 });
 
-test("findFreePort gives up after its attempts", async () => {
-  await assert.rejects(findFreePort({ preferred: 6000, attempts: 3, isFree: async () => false }), /No free port/);
+test("findFreePort lets the OS pick a port when the whole range is reserved", async () => {
+  // Windows reserves port ranges for Hyper-V and WSL2: binding fails with EACCES.
+  const tried = [];
+  const probe = async (port) => {
+    tried.push(port);
+    return port === 0 ? { port: 52111 } : { error: "EACCES" };
+  };
+  assert.equal(await findFreePort({ preferred: 47806, attempts: 3, probe }), 52111);
+  assert.deepEqual(tried, [47806, 47807, 47808, 0]);
+});
+
+test("findFreePort tries the remembered port first", async () => {
+  const tried = [];
+  const probe = async (port) => {
+    tried.push(port);
+    return { port };
+  };
+  assert.equal(await findFreePort({ remembered: 52111, preferred: 47806, attempts: 3, probe }), 52111);
+  assert.deepEqual(tried, [52111]);
+});
+
+test("findFreePort explains why it failed when even the OS has no port", async () => {
+  const probe = async () => ({ error: "EACCES" });
+  await assert.rejects(findFreePort({ preferred: 6000, attempts: 3, probe }), /6000-6002 failed \(EACCES x3\)/);
+});
+
+test("findFreePort gets a real port from the OS", async () => {
+  const port = await findFreePort({ preferred: 1, attempts: 1 }); // port 1 needs privileges
+  assert.ok(port > 0 && port <= 65535);
+});
+
+test("rememberPort and readRememberedPort round-trip, and ignore bad files", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bench-port-"));
+  try {
+    const file = path.join(dir, "server-port.json");
+    assert.equal(readRememberedPort(file), null);
+    rememberPort(file, 52111);
+    assert.equal(readRememberedPort(file), 52111);
+    fs.writeFileSync(file, "{not json");
+    assert.equal(readRememberedPort(file), null);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("serverEnv binds to loopback, sets the database path and drops Electron variables", () => {

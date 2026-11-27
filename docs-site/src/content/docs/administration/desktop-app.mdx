@@ -132,9 +132,10 @@ in `secrets`, so restoring it brings back your settings without your saved autom
   [report a problem](https://github.com/x-rous/actual-bench/issues).
 - **Can't connect to `http://localhost:5007`.** Check that the Actual desktop app is open and its
   server is started (**Set up sync** shows it running).
-- **Actual Bench uses a different port than before.** It runs its own server on port 47806, or the
-  next free port if another app uses it. Settings kept in the window, like the theme, are tied to
-  that port.
+- **Actual Bench uses a different port than before.** It runs its own server on port 47806 or one
+  just after it. If those are taken or reserved (on Windows, Hyper-V, WSL and Docker reserve ranges
+  of ports), it uses any free port the system offers. It remembers the port that worked and uses it
+  again next time. Settings kept in the window, like the theme, are tied to that port.
 
 ## Updates
 
