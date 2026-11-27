@@ -27,10 +27,12 @@ module.exports = {
   files: ["src/**/*", "!src/**/*.test.cjs", "package.json"],
   // The Bench server and its Node runtime sit beside the app, unpacked, so
   // the bundled Node can run them.
-  extraResources: [
-    { from: ".stage/server", to: "server", filter: ["**/*"] },
-    { from: ".stage/runtime", to: "runtime", filter: ["**/*"] },
-  ],
+  //
+  // One entry for the whole of .stage, not one per folder: electron-builder
+  // always drops a `node_modules` directly under an extra resource's `from`
+  // (app-builder-lib util/filter.js), which would remove server/node_modules
+  // (Next.js, React, better-sqlite3). One level down, it is kept.
+  extraResources: [{ from: ".stage", to: ".", filter: ["server/**/*", "runtime/**/*"] }],
   asar: true,
   artifactName: "Actual-Bench-${version}-${os}-${arch}.${ext}",
 

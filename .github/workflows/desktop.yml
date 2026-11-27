@@ -111,6 +111,19 @@ jobs:
           # No signing identity: never pick up one from the runner's keychain.
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
+      # electron-builder silently drops a node_modules folder at the top of an
+      # extra resource. Without server/node_modules the app can't start, and a
+      # test run inside the repo still works (Node finds the repo's own
+      # node_modules), so check the packaged app itself.
+      - name: Check the packaged server has its dependencies
+        run: |
+          found=$(find dist -path "*/resources/server/node_modules/next/package.json" -print -quit)
+          if [ -z "$found" ]; then
+            echo "::error::The packaged app has no server/node_modules/next."
+            exit 1
+          fi
+          echo "ok: $found"
+
       - name: Upload installers
         uses: actions/upload-artifact@v7
         with:

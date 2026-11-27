@@ -115,8 +115,15 @@ automation credentials.
 
 Uninstalling the **installer** version leaves this folder in place, so reinstalling picks up where
 you left off. Uninstalling the **Microsoft Store** version deletes its folder, because Windows removes
-a Store app's data with the app. Before you uninstall it, back up with **Bench data** to a folder
-outside the app (or copy the `data` folder somewhere else), and restore it after you reinstall.
+a Store app's data with the app. Before you uninstall it:
+
+1. Quit Actual Bench.
+2. Copy the whole `data` folder, including its `secrets` folder, somewhere outside the app folder.
+3. After you reinstall, open and quit Actual Bench once, then put the copy back in place of the new
+   `data` folder.
+
+A **Bench data** backup alone isn't enough here. It holds Bench's database but not the vault key
+in `secrets`, so restoring it brings back your settings without your saved automation credentials.
 
 ## Troubleshooting
 
