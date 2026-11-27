@@ -60,12 +60,14 @@ wait_for() {   # wait_for <url> <pid>: the server we started must be the one ans
 # Bench database, backups or vault key, if the seed cannot be copied, or if
 # either port is taken, so the cleanup below only removes what this run made.
 seeded=false
-if [ -e /data/actual-bench.sqlite ] || [ -e /data/backups ] || [ -e /data/secrets ]; then
+if [ ! -f demo/seed-bench.sqlite ]; then
+  echo "build demo/seed-bench.sqlite first (node demo/generate-metadata.cjs)" >&2
+elif [ -e /data/actual-bench.sqlite ] || [ -e /data/backups ] || [ -e /data/secrets ]; then
   echo "/data already holds Bench files; use a disposable machine or container" >&2
 elif ! port_free 5197 || ! port_free 3517; then
   echo "port 5197 or 3517 is already in use; stop that server first" >&2
 elif actual_dir=$(mktemp -d) && cp -R demo/seed-data/. "$actual_dir" \
-    && mkdir -p /data/backups && cp demo/seed-bench.sqlite /data/actual-bench.sqlite; then
+    && cp demo/seed-bench.sqlite /data/actual-bench.sqlite && mkdir /data/backups; then
   seeded=true
   # Actual Server on a scratch copy of the seed (the copy includes the hidden .migrate)
   ACTUAL_PORT=5197 ACTUAL_DATA_DIR="$actual_dir" \
@@ -95,8 +97,9 @@ in the same shell, stop both servers and remove what the run made (setup refused
 to start if any of these already existed):
 
 ```bash
-kill "$actual_pid" "$bench_pid"
-pkill -f "next dev -p 3517"   # next dev leaves its worker behind
+# An interactive shell starts each background job in its own process group, so
+# this stops next dev's workers too, and nothing else.
+kill -- -"$actual_pid" -"$bench_pid"
 rm -rf "$actual_dir" .next-live-tmp /data/actual-bench.sqlite* /data/backups /data/secrets
 ```
 
