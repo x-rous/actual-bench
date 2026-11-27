@@ -39,7 +39,7 @@ import {
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, "..", "src", "assets", "landing");
 const want = groupsWanted();
-const { shoot, card, element } = await shooter(outDir);
+const { shoot, card, element, shootTo } = await shooter(outDir);
 const { browser, page } = await openDemo();
 
 /**
@@ -109,33 +109,55 @@ try {
     }
   }
 
-  // The loan showcase: the mortgage's tabs at full window height, so the
-  // Terms & Schedule shot reaches down into the amortization schedule, and
-  // the calculation drawer on its own (the page lays it over the schedule).
+  // The loan showcase: the mortgage at full window height, so Terms &
+  // Schedule reaches down into the amortization schedule. Dialogs are
+  // photographed on their own; the page lays them over their tab. Opening
+  // a dialog here never saves anything: each is closed with Escape.
   if (want("loans")) {
     await nav(page, "Loans", 7000);
     await page.getByText("Home Mortgage", { exact: true }).first().click();
     await page.waitForTimeout(9000);
-    const tabs = {
-      "Link to Actual": "loan-link",
-      Repayments: "loan-repayments",
-      "Loan Ledger": "loan-ledger",
-      "Terms & Schedule": "loan-terms",
-    };
-    for (const [label, name] of Object.entries(tabs)) {
+    const dialog = page.locator('[role="dialog"]').first();
+    // Start each dialog from its title, whatever it focused on opening.
+    const toTop = () =>
+      dialog.evaluate((el) => {
+        for (const node of [el, ...el.querySelectorAll("*")]) node.scrollTop = 0;
+      });
+
+    for (const [label, name] of [
+      ["Link to Actual", "loan-link"],
+      ["Repayments", "loan-repayments"],
+    ]) {
       await tab(page, label, 6000);
       await shoot(page, name, belowChrome(1032));
     }
-    await page.getByText("How this loan is calculated", { exact: true }).first().click();
-    await page.waitForTimeout(3000);
-    const drawer = page.locator('[role="dialog"]').first();
-    // Opening it focuses a control further down; start from its title.
-    await drawer.evaluate((el) => {
-      for (const node of [el, ...el.querySelectorAll("*")]) node.scrollTop = 0;
-    });
+
+    // Linked Assets is one row, so the page shows it together with the same
+    // link seen from the home, each cropped to its table.
+    await tab(page, "Linked Assets", 6000);
+    await shootTo(page, "loan-assets", page.getByRole("row").last(), { pad: 16 });
+
+    // The chart's tooltip on the year that is part Actual, part projection.
+    await tab(page, "Terms & Schedule", 6000);
+    const chart = page.locator('[aria-label^="Loan balance chart"]').first();
+    const box = await chart.boundingBox();
+    await page.mouse.move(box.x + box.width * 0.12, box.y + box.height * 0.5);
+    await page.waitForTimeout(1500);
+    await shoot(page, "loan-terms", belowChrome(1032));
+    await page.mouse.move(5, 1075);
+
+    await page.getByText("Set calculation method", { exact: true }).first().click();
+    await page.waitForTimeout(2500);
+    await toTop();
     await page.waitForTimeout(500);
-    await element(drawer, "loan-calculation");
+    await element(dialog, "loan-method");
     await closeDialog(page);
+
+    await nav(page, "Assets", 7000);
+    await page.getByText("Family Home", { exact: true }).first().click();
+    await page.waitForTimeout(9000);
+    await tab(page, "Linked Loans", 6000);
+    await shootTo(page, "loan-assets-home", page.getByRole("row").last(), { pad: 16 });
   }
 
   if (want("cards")) {
