@@ -22,6 +22,7 @@ and diagnostics for your Actual Budget.
   <a href="https://actual-bench-demo.vercel.app"><img src="https://img.shields.io/badge/Demo-live-40a829?style=flat-square&amp;logo=rocket&amp;logoColor=white" alt="Live demo" /></a>
   <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-releases-orange?style=flat-square" alt="Changelog" /></a>
   <a href="SECURITY.md"><img src="https://img.shields.io/badge/Security-Policy-red?style=flat-square" alt="Security Policy" /></a>
+  <a href="PRIVACY.md"><img src="https://img.shields.io/badge/Privacy-No%20telemetry-2ea44f?style=flat-square" alt="Privacy Policy: no telemetry" /></a>
 </p>
 
 ![A full year of an envelope budget on one screen](docs/readme-images/budget-envelope.png)
@@ -41,6 +42,27 @@ No setup, no account: explore sample household Envelope and Tracking budgets. Th
 sandbox, so use sample data only; other visitors may see your changes. The demo resets when its
 backend restarts. Vercel serves the interface and analytics; its demo API requests use the
 Hugging Face backend, where the shared sample data lives.
+
+## Privacy & Data Ownership
+
+**Your financial data stays yours.** Actual Bench runs on your own server and reads your budget from
+your own Actual server. There is no Actual Bench account and no central service. A self-hosted
+installation sends nothing to the Actual Bench project: no financial data, no usage statistics and
+no error reports. It has no telemetry, analytics or tracking.
+
+Bench keeps its own settings, plus what you create in it (loans, assets, card details,
+reconciliation sessions and so on), in a database on your server. It does not keep a copy of your
+budget. Bank statements you import are read in your browser, and the file is never uploaded.
+Credentials are held in memory, or encrypted when you choose to save them. Deleting the `/data`
+volume removes everything Bench has stored.
+
+Apart from your Actual server, Bench makes only two outside requests on its own: an update check to
+GitHub, and exchange-rate lookups when you convert between currencies. Neither contains your
+financial data. Backups to cloud storage and scheduled syncs happen only if you set them up. The
+public demo is different: it is a shared sandbox with sample data and uses Vercel Web Analytics.
+
+Read the full **[Privacy Policy](PRIVACY.md)**, or the **[Security Policy](SECURITY.md)** for how
+credentials are protected and how to report a vulnerability.
 
 ## What Actual Bench adds to Actual Budget
 
@@ -168,6 +190,7 @@ Full documentation is at **[x-rous.github.io/actual-bench](https://x-rous.github
 | [Administration](https://x-rous.github.io/actual-bench/administration/deployment/) | Deployment, configuration, upgrades and backups |
 | [Troubleshooting](https://x-rous.github.io/actual-bench/help/troubleshooting/) | When something does not work |
 | [Known limitations](https://x-rous.github.io/actual-bench/help/known-limitations/) | What it deliberately does not do |
+| [Privacy & your data](https://x-rous.github.io/actual-bench/privacy/) | What Bench stores, what it connects to, and how to delete it |
 
 ## Contributing
 

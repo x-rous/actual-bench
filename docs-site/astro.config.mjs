@@ -82,6 +82,7 @@ export default defineConfig({
 						{ label: 'Install Actual Bench', link: '/getting-started/installation/' },
 						{ label: 'Connect to a budget', link: '/getting-started/connecting/' },
 						{ label: 'Work safely', link: '/getting-started/core-concepts/' },
+						{ label: 'Privacy & your data', link: '/privacy/' },
 						{ label: 'Editing, review and save', link: '/getting-started/editing-and-saving/' },
 						{ label: 'Overview', link: '/getting-started/budget-overview/' },
 						{ label: 'Bundle Export / Import', link: '/getting-started/bundle-export-import/' },

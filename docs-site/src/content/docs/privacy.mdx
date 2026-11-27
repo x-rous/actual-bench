@@ -1,0 +1,150 @@
+---
+title: Privacy & your data
+description: What Actual Bench reads, what it stores, which outside services it contacts, and how to delete your data.
+---
+
+Actual Bench runs on your own server and reads your budget from your own Actual server. Your
+financial data stays with you. There is no Actual Bench account and no central service, and a
+self-hosted installation sends nothing to the Actual Bench project: no financial data, no usage
+statistics, no error reports.
+
+This page is the readable summary. The full policy is
+[PRIVACY.md](https://github.com/x-rous/actual-bench/blob/main/PRIVACY.md) in the repository, and
+[SECURITY.md](https://github.com/x-rous/actual-bench/blob/main/SECURITY.md) explains how credentials
+are protected and how to report a vulnerability.
+
+## Your installation, the demo and this website
+
+| | Who runs it | Analytics |
+|---|---|---|
+| **Your installation** | You | None |
+| **The [public demo](https://actual-bench-demo.vercel.app)** | The maintainer, on Vercel and Hugging Face | Vercel Web Analytics (page visits) |
+| **This documentation website** | The maintainer, on GitHub Pages | None |
+
+## What Actual Bench reads
+
+To show and edit a budget, Bench reads what Actual holds for it: accounts and balances,
+transactions, payees, categories, budget amounts, rules, schedules, tags and notes.
+
+- **Direct Actual Server:** your browser connects straight to Actual. The budget does not pass
+  through the Bench server.
+- **HTTP API Server:** requests pass through the Bench server to your actual-http-api bridge. The
+  Bench server passes them on and does not keep them.
+
+Every calculation, from Financial Insights to loan schedules and reconciliation matching, runs
+inside your own installation. Bench writes to Actual only when you **Save**, **Apply**, confirm one
+of the few immediate actions, or set up an automation. See [Work safely](../getting-started/core-concepts/).
+
+## What Actual Bench stores
+
+**In your browser:** the data on screen and your unsaved edits, in memory, until you close the tab.
+In Direct mode, Actual's own browser software also keeps a working copy of the open budget in this
+site's browser storage, as Actual's web app does. Small display preferences are kept too. Passwords,
+API keys and encryption keys are never written to browser storage.
+
+**In Bench's database on your server** (`/data/actual-bench.sqlite`): what you create in Bench and
+the settings it needs, **not a copy of your budget**. That includes account types, loans, assets,
+credit card details and statement figures, cashflow plans, reconciliation sessions with their
+imported statement rows, sync flows and exchange rates, automations, backup rules, run history,
+saved queries, and remembered servers. Some of this is financial information, so keep the `/data`
+volume private.
+
+Your items stay until you delete them. Run history is trimmed to the latest 100 runs per automation
+and per sync flow.
+
+**Temporary copies:** an automation that runs on the server downloads the budget into a temporary
+folder and deletes it when the run ends.
+
+## Bank statements
+
+Statement files (CSV, TSV, OFX, QFX, QIF, pasted text or PDF) are **read in your browser**. The file
+is never uploaded, never sent to a third party and never stored. The rows you import (date, amount,
+the bank's description, memo and reference, and the original cells) are saved with the
+reconciliation session so you can return to it, and are deleted with the session. Saved PDF layouts
+record only the bank name and column positions. See [Bank Reconciliation](../user-guide/bank-reconciliation/).
+
+## No telemetry
+
+Self-hosted Actual Bench has **no telemetry, analytics, tracking or automatic error reporting**. The
+demo's analytics code is removed from every other build, including the published Docker image.
+Next.js build telemetry is off in the official images. Errors appear on screen and in your own
+server log. The only cookie keeps you signed in.
+
+## Outside connections
+
+| Connection | When | What is sent |
+|---|---|---|
+| Your Actual server or actual-http-api bridge | When you use a budget | What that budget needs, with your credentials |
+| GitHub (`api.github.com`) | When the app is opened, at most hourly | A request for the latest release number; nothing about you or your budget |
+| Frankfurter (`api.frankfurter.dev`) | Only when a currency conversion needs a rate that is not stored | Two currency codes and dates; no amounts or accounts |
+| Your bank, through Actual | When you run or schedule [bank sync](../user-guide/bank-sync/) | Bench asks Actual to sync. Actual contacts the provider, not Bench |
+| S3-compatible storage | Only if you add it as a [backup](../user-guide/backups/) destination | Your backup files |
+| Other Actual servers or budgets | Only if you add them to a flow, backup or automation | What those budgets need |
+
+The update check cannot be switched off. If your server cannot reach GitHub, the app simply shows no
+update notice. App fonts and files are served by your own installation, never from a third-party site.
+
+## Credentials
+
+- In the browser, credentials are held in memory only.
+- Your Actual Bench password is not stored; Bench keeps only a value it can check it against.
+- **Remember this budget** (ticked by default when available) encrypts the credentials on the server
+  with a key made from your Actual Bench password. The key exists only in server memory while you are
+  signed in.
+- Credentials for automations and backups are encrypted with a separate vault key, stored at
+  `/data/secrets/vault.key` or set with `ACTUAL_BENCH_VAULT_KEY`, so that scheduled work can run
+  while nobody is signed in. They are never sent to the browser. See
+  [Configuration](../administration/configuration/#the-credential-vault).
+
+## Backups
+
+Backups are **off until you set them up**. A budget backup is a full copy of your budget; a Bench
+backup is a copy of Bench's database, with credentials still encrypted and without the vault key. You
+choose the destination and retention. Encryption is optional and worth switching on for any copy that
+leaves your own hardware. See [Backups](../user-guide/backups/).
+
+## Logs
+
+Logs go to your server's output (`docker logs`) and stay there unless you forward them. They contain
+start-up and health messages, automation and backup summaries, and, in HTTP API mode, one line per
+request with the method, path (including budget and account IDs), status and timing. They never
+contain request contents, passwords, API keys or encryption keys. Redact logs before sharing them.
+`LOG_LEVEL=warn` makes them quieter.
+
+## Deleting your data
+
+Deleting data in Bench never deletes anything in Actual.
+
+- **Single items:** delete loans, assets, cards, plans, reconciliation sessions, flows, automations,
+  backup rules and saved queries in the app.
+- **Credentials:** forget a remembered server on the connection screen, remove an automation
+  credential from the **Connections** tab in [Automations](../user-guide/automations/), and forget a
+  stored passphrase in [Backups](../user-guide/backups/).
+- **Everything on your server:** stop Bench and delete its `/data` volume. Delete backups stored
+  elsewhere at their destination.
+- **Your browser:** clear this site's data in your browser's settings.
+
+## The public demo
+
+The [demo](https://actual-bench-demo.vercel.app) is a shared sandbox with made-up data and no
+sign-in. Other visitors can see and change what you enter until it resets. **Do not enter real
+financial information, and do not connect your own Actual server to it.** Its pages are served by
+Vercel, which counts visits with Vercel Web Analytics; its server runs on Hugging Face. Both process
+visit data such as IP addresses under their own privacy policies.
+
+## This website
+
+These pages are static and hosted on GitHub Pages. There are no analytics, no tracking and no forms.
+Search runs in your browser, and your theme choice is remembered in your browser. GitHub receives
+visit data such as IP addresses, as its privacy statement describes.
+
+## Questions and concerns
+
+- A possible leak of data or credentials: report it privately through
+  [GitHub's vulnerability reporting](https://github.com/x-rous/actual-bench/security/advisories/new).
+- A question, or something here that seems wrong: open an
+  [issue](https://github.com/x-rous/actual-bench/issues), without real financial data, unredacted logs
+  or credentials.
+
+Actual Bench is open source, so everything on this page can be checked against the
+[source code](https://github.com/x-rous/actual-bench).
