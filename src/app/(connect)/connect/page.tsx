@@ -3,6 +3,7 @@ import { ConnectForm } from "@/components/connect/ConnectForm";
 import { DemoButton } from "@/components/connect/DemoButton";
 import { VaultLockedBanner } from "@/components/connect/VaultLockedBanner";
 import { AccountMenu } from "@/components/auth/AccountMenu";
+import { actualDesktopServerUrl } from "@/lib/desktop/desktopMode";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +37,7 @@ export default function ConnectPage() {
       </div>
       <VaultLockedBanner />
       {isDemoConfigured() && <DemoButton />}
-      <ConnectForm />
+      <ConnectForm actualDesktopServerUrl={actualDesktopServerUrl()} />
     </div>
   );
 }

@@ -1,0 +1,132 @@
+---
+title: Desktop app
+description: "Install Actual Bench as an app on Windows or macOS, with no Docker and no server of your own, and use it with the Actual desktop app."
+sidebar:
+  order: 2
+---
+
+The Actual Bench desktop app is the whole of Actual Bench in one installable app for Windows and
+macOS. You don't need Docker or a server. Install it, open it, and it runs on your own computer.
+
+It works well with the **Actual desktop app**: turn on Actual's built-in server, and Actual Bench
+connects to it on the same computer.
+
+## What you need
+
+- Windows 10 or 11 (64-bit), or macOS 12 or later (Apple silicon or Intel).
+- An Actual server to connect to. Either:
+  - the **Actual desktop app's own server**, on the same computer (see [below](#use-it-with-the-actual-desktop-app)), or
+  - any Actual server you already use, at home or online.
+
+## Install
+
+### Windows: Microsoft Store (recommended)
+
+Get Actual Bench from the
+[Microsoft Store](https://apps.microsoft.com/detail/9PGMWV3VLQ09). The Store installs it without
+any security warning and keeps it up to date for you.
+
+### Windows and macOS: installer
+
+Download the installer for your computer from the
+[latest release](https://github.com/x-rous/actual-bench/releases/latest):
+
+| Computer | File |
+|---|---|
+| Windows | `Actual-Bench-<version>-win-x64.exe` |
+| Mac with Apple silicon (M1 or later) | `Actual-Bench-<version>-mac-arm64.dmg` |
+| Mac with an Intel processor | `Actual-Bench-<version>-mac-x64.dmg` |
+
+Not sure which Mac you have? Open the Apple menu → **About This Mac**. "Chip: Apple M…" means Apple
+silicon; "Processor: Intel" means Intel.
+
+#### Windows installer
+
+1. Open the downloaded `.exe`.
+2. Windows may show **"Windows protected your PC"**, because the installer isn't signed yet.
+   Choose **More info**, then **Run anyway**.
+3. Follow the installer. It adds Actual Bench to the Start menu and the desktop.
+
+#### macOS
+
+1. Open the downloaded `.dmg` and drag **Actual Bench** into **Applications**.
+2. Open Actual Bench from Applications. Because the app isn't notarized by Apple yet, macOS stops it
+   the first time:
+   - Open **System Settings → Privacy & Security**, scroll down, and choose **Open Anyway** next to
+     the message about Actual Bench. Confirm with your password.
+3. If macOS says the app **"is damaged and can't be opened"**, that is the same check. Open
+   **Terminal** and run:
+
+   ```bash
+   xattr -dr com.apple.quarantine "/Applications/Actual Bench.app"
+   ```
+
+   Then open the app again.
+
+## First start
+
+Actual Bench opens its own window. The first time, it asks you to set an **Actual Bench password**.
+It protects your saved connections, and you use it to sign in each time you open the app. It is
+separate from your Actual server's password.
+
+## Use it with the Actual desktop app
+
+The Actual desktop app has a built-in server. While it is on, Actual Bench can reach your budgets
+on the same computer. Nothing is sent anywhere else.
+
+1. **Turn on Actual's server.** In the Actual desktop app, choose **Set up sync** in the server area
+   at the bottom of the budget list, then **Start**. Create a server password when Actual asks. See
+   Actual's guide: [Desktop app](https://actualbudget.org/docs/install/desktop-app).
+2. **Put your budget on the server.** Budgets you made before the server existed only live in
+   Actual on your computer. Open each one in Actual and register it with the server when Actual
+   asks (see Actual's [sync guide](https://actualbudget.org/docs/getting-started/sync/)). Actual
+   Bench can only see budgets that are on a server.
+3. **Connect Actual Bench.** On the connect screen, keep **Direct Actual Server** selected and choose
+   **Use http://localhost:5007** under the server address. Actual Bench reads the address from
+   Actual's own settings, so it shows a different port if you changed it. Enter the server password
+   from step 1, choose **Load budgets**, pick your budget and choose **Connect**.
+
+Good to know:
+
+- **Keep Actual open.** Actual's server only runs while the Actual desktop app is open. Turn on its
+  option to start the server automatically so it is always there when Actual is.
+- **Automations need both apps open.** Scheduled backups, bank sync and budget sync run while
+  Actual Bench is open and Actual's server is reachable. On a Mac, closing the Actual Bench window
+  keeps it running; quit it from the menu to stop it.
+- **Keep Actual up to date.** Actual Bench includes a recent version of Actual's budget engine. A
+  budget it opens may be updated to that version, and a much older Actual desktop app may then ask
+  you to update before it opens the budget again.
+
+## Where your data is
+
+Actual Bench keeps its own data (saved connections, sync flows, backups history, plans and the vault
+key for automations) in its app folder. Your budgets stay in Actual.
+
+| Computer | Folder |
+|---|---|
+| Windows (installer) | `%APPDATA%\Actual Bench\data` |
+| Windows (Microsoft Store) | `%LOCALAPPDATA%\Packages\Manaf.ActualBench_svtwfgcd1hjve\LocalCache\Roaming\Actual Bench\data` |
+| macOS | `~/Library/Application Support/Actual Bench/data` |
+
+**Help → Open Data Folder** opens it. To back it up, use Actual Bench's
+[Backups](/actual-bench/user-guide/backups/) with the **Bench data** source, or copy the folder
+while the app is closed. Keep the `secrets` folder with it: it holds the key that opens saved
+automation credentials.
+
+Uninstalling the app leaves this folder in place, so reinstalling picks up where you left off.
+
+## Troubleshooting
+
+- **"Actual Bench could not start".** The message names the log file. **Help → Open Logs Folder**
+  opens it; `server.log` has the details. Include it when you
+  [report a problem](https://github.com/x-rous/actual-bench/issues).
+- **Can't connect to `http://localhost:5007`.** Check that the Actual desktop app is open and its
+  server is started (**Set up sync** shows it running).
+- **Actual Bench uses a different port than before.** It runs its own server on port 47806, or the
+  next free port if another app uses it. Settings kept in the window, like the theme, are tied to
+  that port.
+
+## Updates
+
+The Microsoft Store version updates itself. The installer versions don't yet: Actual Bench tells you when a new version is out; download it from the [releases page](https://github.com/x-rous/actual-bench/releases) and install it over the
+old one. Your data is kept.

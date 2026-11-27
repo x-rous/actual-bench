@@ -1,0 +1,24 @@
+{
+  "name": "actual-bench-desktop",
+  "productName": "Actual Bench",
+  "version": "1.4.0",
+  "description": "Actual Bench as a desktop app: runs the Bench server on this computer and opens it in its own window",
+  "author": "Manaf Abu Rous",
+  "license": "MIT",
+  "private": true,
+  "main": "src/main.cjs",
+  "scripts": {
+    "stage": "node scripts/stage.mjs",
+    "start": "electron .",
+    "test": "node --test \"src/**/*.test.cjs\"",
+    "dist": "electron-builder --config electron-builder.config.cjs --publish never",
+    "dist:dir": "electron-builder --config electron-builder.config.cjs --dir --publish never"
+  },
+  "devDependencies": {
+    "electron": "45.5.0",
+    "electron-builder": "26.18.0"
+  },
+  "allowScripts": {
+    "electron-winstaller": false
+  }
+}
