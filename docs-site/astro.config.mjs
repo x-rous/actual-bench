@@ -3,6 +3,7 @@ import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 import starlightImageZoom from 'starlight-image-zoom';
 import { unified } from '@astrojs/markdown-remark';
+import { remarkScreenshotSize } from './src/plugins/screenshot-size.mjs';
 
 // Actual Bench documentation site.
 // Published as a GitHub Pages project site, so it is served under a base path.
@@ -20,6 +21,7 @@ export default defineConfig({
 		// yet, and fails the build outright. This is the processor Astro used
 		// before, and the one the plugin supports.
 		processor: unified(),
+		remarkPlugins: [remarkScreenshotSize],
 	},
 	image: {
 		// Astro re-encodes every image it processes, and its default for WebP is
@@ -52,7 +54,7 @@ export default defineConfig({
 			plugins: [starlightImageZoom()],
 			title: 'Actual Bench',
 			description:
-				'End-user documentation for Actual Bench — the advanced admin, budgeting, diagnostics, and ActualQL workbench for Actual Budget.',
+				'Documentation for Actual Bench, which turns your Actual Budget data into a complete picture of your financial life.',
 			logo: {
 				src: './src/assets/actual-bench-logo.png',
 				alt: 'Actual Bench',
@@ -102,11 +104,11 @@ export default defineConfig({
 						{ label: 'Financial Insights', link: '/user-guide/financial-insights/' },
 						{ label: 'Budget Cockpit', link: '/user-guide/budget-management/' },
 						{ label: 'Cashflow Planning', link: '/user-guide/cashflow-planning/' },
+						{ label: 'Bank Reconciliation', link: '/user-guide/bank-reconciliation/' },
+						{ label: 'How Matching Works', link: '/user-guide/reconciliation-matching/' },
 						{ label: 'Credit Cards', link: '/user-guide/credit-cards/' },
 						{ label: 'Assets', link: '/user-guide/asset-registry/' },
 						{ label: 'Loans', link: '/user-guide/assets-debt/' },
-						{ label: 'Bank Reconciliation', link: '/user-guide/bank-reconciliation/' },
-						{ label: 'How Matching Works', link: '/user-guide/reconciliation-matching/' },
 					],
 				},
 				{

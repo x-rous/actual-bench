@@ -1,169 +1,105 @@
 ---
 title: Exchange Rates
-description: Manage the dated exchange rates used by currency-converting Cross Budget Sync flows.
+description: The dated exchange rates behind currency-converting Cross Budget Sync flows, and the tools to see what a foreign-currency budget is worth.
 sidebar:
   order: 13
 ---
 
-Use Exchange Rates when a [Cross Budget Sync](../budget-sync/) transaction flow converts between currencies.
-Manage one rate per date, fill coverage gaps, import rates, or set manual overrides. Rates used by a
-synced transaction remain locked unless you use the previewed update workflow.
+If you keep a budget in another currency, a converting [Cross Budget Sync](../budget-sync/) flow
+can copy it into your main budget at the right rate for each day. Exchange Rates holds those rates:
+one per day, fetched for you, with gaps shown and your own rate wherever you need it.
 
-Exchange Rates does not add multi-currency accounts to a single Actual budget.
+Open it from **Sync & Automations → Exchange Rates**. Changing a rate is saved in Bench. Transactions
+you already synced keep the rate they were copied with, unless you choose to update them through a
+reviewed sync.
 
-Open it from **Sync & Automations → Exchange Rates** (`/fx-rates`), once a converting flow is configured.
+![The Exchange Rates page for USD to AUD: the current rate with its recent trend, the range filled from Frankfurter, and the daily table with each rate's source.](../../../assets/screenshots/user-guide/fx-rates.png)
 
-**Budget impact:** Changing rates saves Actual Bench metadata. Budget transactions change only through
-a separately reviewed and applied sync update.
+*Both directions of the rate, how much of the range is covered, and where each day's rate came
+from.*
 
-![The Exchange Rates page for EUR to USD: the current rate, coverage for the range, and the daily table with each rate's source.](../../../assets/screenshots/user-guide/fx-rates.png)
+## Set up a foreign-currency budget
 
-*Both directions of the rate, how much of the range is covered, and where every day's rate came from -
-`Frankfurter` for the ones fetched, `Manual · yours` for the one that was set by hand.*
+The quickest way is **Add currency** on the Cross Budget Sync page. Choose your main and foreign
+budgets and their currencies, then confirm the account pairs (matched by name). Bench creates the
+payee and category flows plus one converting transaction flow per account, grouped under the
+currency. Every flow starts manual, so nothing runs until you have previewed it.
 
-## Get a converting flow ready
+To convert in a flow you built yourself:
 
-1. Enable **Convert currency** on a transaction flow and choose its source and target currencies.
-2. Open **Exchange Rates** and inspect coverage for that pair and date range.
-3. Fill gaps from Frankfurter, import rates, or set a deliberate override.
-4. Preview the flow and verify the original amount, rate, and converted amount before Apply.
+1. Turn on **Convert currency** in the transaction flow and choose the two currencies.
+2. Open **Exchange Rates** and check the coverage for that pair and date range.
+3. Fill any gaps (see below).
+4. Preview the flow, and check each row's original amount, rate and converted amount before **Apply**.
 
-## When currency conversion is used
+## Where rates come from
 
-Turn on **Convert currency** in a transaction flow and give it a source and a target currency. Only
-transaction flows convert. Payee and category flows have no amounts to convert.
+Rates are fetched automatically from [Frankfurter](https://frankfurter.dev), which is free and needs
+no API key. For each transaction Bench uses the rate for its exact date, or the latest earlier rate
+up to 10 days back (for weekends and holidays). If no rate can be found, the row waits as **FX
+pending** instead of taking an older one.
 
-## How rates are sourced
+- **Fill range from Frankfurter** backfills every missing day in the range, and says how many it
+  added.
+- **Set your rate** enters a rate for a date by hand. It takes priority for that date.
+- **Import** reads a CSV of rates for a pair.
 
-Rates come from a database-backed registry, filled automatically from the free
-[Frankfurter](https://frankfurter.dev) provider:
+Each day in the coverage list is labelled with its source: **Frankfurter**, **Uploaded**,
+**Manual** or **Derived**.
 
-- **No API key** is required.
-- Rates are **date-specific**.
-- Actual Bench uses the rate for the **exact date**, and asks the provider for it before considering an
-  earlier one.
-- For a date the provider has no rate for, it falls back to the **latest prior rate**, up to 10 days back.
-- If the provider is unavailable, affected rows wait as **FX pending** instead of taking an older rate
-  (see [Cross Budget Sync](../budget-sync/#preview-a-flow)). Scheduled runs convert the same way as a
-  manual preview.
+## How a flow converts
 
-You can also override any date manually or import rates from a CSV.
+- **Rate:** **Daily** uses each transaction's own date, **Monthly average** the mean of its month,
+  and **Fixed** one rate you enter, which suits pegged currencies.
+- **Bank fee %** is added to the rate on spending and taken off on money received, to get closer to
+  what your bank charges.
+- **The amount your bank charged:** in a preview, type the real amount into a new row's target
+  amount. The row keeps the rate that amount implies.
 
-## Choose how a flow converts
+## Rates are locked once used
 
-Each converting flow has its own settings:
-
-- **Rate** - **Daily** uses the transaction's own date, **Monthly average** uses the mean of that month,
-  and **Fixed** uses one rate you enter, which suits pegged currencies.
-- **Bank fee %** - added to the rate on spending and taken off it on money received, to get closer to what
-  your bank charges.
-- **The amount your bank charged** - in a preview, type the real amount into a new row's target amount.
-  The row keeps the rate that amount implies, and later rate changes leave it alone.
+Each converted transaction keeps a record of the exact rate and amounts it was copied with, plus a
+short note on the transaction. Changing a rate later never rewrites those on its own. When you set a
+rate that affects synced transactions, an **impact preview** shows their old and new amounts. To
+apply it, turn on **Update synced transactions when the rate changes** in the flow, and the change
+goes through a normal previewed sync.
 
 ## Currency position
 
-Open **Currency position** from a converting flow's header. For the synced rows it shows the foreign
-balance, what the main budget holds, what that balance is worth today, and the unrealised difference. It
-also warns about unsynced rows, rows deleted on either side, and rows converted with an earlier date's
+Open **Currency position** from a converting flow's header. It shows the foreign balance, what your
+main budget holds for it, what it is worth at today's rate, and the unrealised difference. It also
+warns about unsynced rows, rows deleted on either side, and rows converted with an earlier date's
 rate.
 
 - **Revalue to today's rate** adds one transaction, in a category you choose, so the synced balance
-  matches today's value. You confirm it first, and an account can be revalued once a day.
-- **Transfers to link** lists synced transfers, and synced rows without a category, with a likely other
-  side in the main budget. **Link** gives
-  the synced row that side's exact amount, records the real rate, and makes the pair a true Actual
-  transfer, so reports stop counting it as spending and income. The linked pair shares the other row's
-  notes; the original amount and rate stay in the FX snapshot.
-
-The **Conversions** tab lists every synced row's original amount, rate, rate date, rate source and
-converted amount. Filter it by payee, rate, date or source, and export it to CSV.
-
-**Send categories back** copies categories you set in the main budget to the matching rows in the foreign
-budget, matched by category name. It only fills empty categories, and you confirm it first.
-
-## Add a currency
-
-**Add currency** on the Cross Budget Sync page sets up a foreign-currency budget in one step. Choose the
-main and foreign budgets and their currencies, then confirm the account pairs, which are matched by name.
-It creates the payee and category flows plus one converting transaction flow per account, in a group
-named after the currency. Every flow starts manual, and flows that already exist are left as they are.
-
-## Open the Exchange Rates page
-
-The page is organized per **currency pair**:
-
-- A hero card shows the **latest rate**, a **trend** sparkline, and **coverage** for the selected date
-  range.
-- Currency pairs are seeded from your FX-enabled flows, and you can **add your own**.
-
-## View rate history and coverage
-
-Below the hero, a **coverage ledger** lists every day in the range, calling out gaps, and labels each
-rate's source (**Frankfurter**, **Uploaded**, **Manual**, or **Derived**).
-
-## Fill missing rates
-
-Select **Fill range from Frankfurter** to backfill every missing day in the range in one click. Actual
-Bench reports how many days were **inserted** versus **already set**.
-
-## Override a rate
-
-Use **Set your rate** to enter a rate for a specific date manually.
-
-- Manual rates take precedence for that date and pair.
-- When your override affects **already-synced transactions**, an **impact preview** lists them with their
-  old → new converted amounts, so you can see the effect before deciding to update.
-
-:::note[Overrides don't silently rewrite the past]
-Setting a rate does not retroactively change already-synced transactions on its own. Past conversions
-keep their locked rate unless you explicitly update them through the previewed sync update path (the
-*Update synced transactions when the rate changes* flow option). See
-[Cross Budget Sync](../budget-sync/#updates-and-deletion-opt-in).
-:::
-
-## Import rates from CSV
-
-Import a CSV of rates for a pair from the Exchange Rates page. Uploaded rows are labeled with the
-**Uploaded** source in the coverage ledger.
-
-## Preview a converted transaction
-
-In a converting flow's [sync preview](../budget-sync/#preview-a-flow), each row shows the **original
-amount**, the **applied rate**, and the **converted amount**, each labeled with its currency. A missing
-or future-dated rate is sent to the review queue as **FX pending** rather than failing the run.
-
-## Immutable snapshots and rate locking
-
-- Every converted transaction stores an **immutable snapshot** - the exact rate, source/target amounts,
-  provider, and dates - plus a compact **audit note** on the target transaction.
-- Rates **lock at first sync**, so a later rate change never silently rewrites past conversions.
-- To apply a corrected rate to already-synced transactions, use the opt-in *Update synced transactions
-  when the rate changes* flow option, which goes through the normal previewed, safety-checked update
-  path.
-
-## Limitations
-
-- Revaluation posts one adjustment per account. It is not full realised and unrealised gain/loss accounting.
-- No silent recalculation of past conversions.
-- No multi-currency within a single Actual budget file.
-- Rate availability depends on the provider and on the coverage you've filled or imported.
-
-See [Known Limitations](../../help/known-limitations/) for the full list.
+  matches today's value. You confirm it first; an account can be revalued once a day.
+- **Transfers to link** lists synced transfers, and synced rows without a category, that have a
+  likely other side in your main budget. **Link** turns the pair into a real Actual transfer at the
+  real rate, so reports stop counting it as spending and income.
+- **Conversions** lists every synced row's original amount, rate, rate date, source and converted
+  amount, with filters and a CSV.
+- **Send categories back** copies categories you set in the main budget to the matching rows in the
+  foreign budget. It only fills empty categories, and asks first.
 
 ## Troubleshooting
 
-- **"FX pending" in a preview** - no *usable* rate was found for that date and pair. Either none has
-  been recorded yet, in which case **Fill range from Frankfurter**, add an override, or import a CSV;
-  or the provider was briefly unavailable, in which case previewing again once it recovers is enough.
-- **A weekend or holiday date** - Actual Bench falls back to the latest prior rate; fill the range if you
-  want explicit coverage.
-- **A future-dated transaction** - a future rate isn't available; it stays FX pending until a rate
-  exists.
-- **CSV rejected** - check the columns and values against the in-app import guidance.
-- **Wrong pair direction** - confirm the source and target currencies on the flow.
-- **Converted amount differs slightly** - rounding is applied to the final converted amount.
+- **FX pending in a preview:** no rate was found for that date. Fill the range, set your rate or
+  import one, or preview again if the provider was briefly unavailable.
+- **A future-dated transaction stays pending:** with **Daily** or **Monthly average**, it may wait
+  until its date, or a day of its month that the average needs, has a rate. A transaction dated
+  tomorrow can usually use the latest stored rate. **Fixed** applies its rate to every date, so
+  future transactions convert.
+- **The converted amount is slightly off:** only the final amount is rounded. Set the bank fee, or
+  type the amount your bank charged.
+- **The pair is the wrong way round:** check the source and target currencies on the flow.
+
+## Limits
+
+- One Actual budget holds one currency; conversion happens between budgets.
+- Revaluation posts one adjustment per account. It is not full realised and unrealised gain
+  accounting.
+- Rates depend on the provider, and on what you have filled or imported.
 
 ## Related pages
 
-- [Cross Budget Sync](../budget-sync/)
-- [Connect to Actual Budget](../../getting-started/connecting/)
+- [Cross Budget Sync](../budget-sync/) - the flows these rates convert

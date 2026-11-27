@@ -1,141 +1,62 @@
 ---
-title: Known Limitations
-description: Current Actual Bench limitations and alternatives where available.
+title: Known limitations
+description: Things Actual Bench does not do today, and the way around each where there is one.
 sidebar:
   order: 2
 ---
 
-This page lists confirmed limitations. Where an alternative exists, the entry explains it. This page
-does not describe planned work.
+This page collects the limits that cut across features, with a way around each where there is one.
+Limits that belong to one feature are listed on its own page. This page does not describe planned
+work.
 
-## Product scope
+## Scope
 
-- **It does not replace everyday budgeting.** Administration, cleanup, statement reconciliation,
-  diagnostics, queries, cross-budget sync - yes. Entering transactions, budgeting on your phone,
-  Actual's normal bank-sync workflow - no.
+- **Desktop browsers.** Actual Bench is built for a laptop or desktop screen. Use Actual itself on
+  your phone.
+- **Day-to-day entry stays in Actual.** Bench reads what you record; it is not a place to enter
+  everyday transactions.
+- **One currency per budget file**, as in Actual. Use [Cross Budget Sync](../../user-guide/budget-sync/)
+  with [Exchange Rates](../../user-guide/fx-rates/) to bring a second currency together.
 
-## Connection modes
+## Actual Server versions
 
-### The first budget on a server has to be connected to be enrolled
+- **Tags** need Actual Budget 26.3.0 or later.
+- **Account groups** need Actual Budget 26.9.0 or later, and cannot be reordered from Bench because
+  Actual's API offers no way to do it.
 
-**Applies to:** enrolling budgets for scheduled runs.
+## Rules set by Actual
 
-Bench needs a server's password or API key to enrol its first budget, and the browser only holds that
-for a budget you have connected to. After that, the server's other budgets can be enrolled from the
-Connections tab without connecting to them.
+- An account's **on-budget / off-budget** placement is fixed when it is created.
+- **Transfer payees** and the rules that belong to **schedules** are managed by Actual, so they are
+  read-only in Bench.
+- **Income categories** stay in the income group.
 
-**Alternative:** connect to one budget on the server, enrol it, then enrol the rest from Connections.
+## Connections and credentials
 
-### ActualQL cURL is HTTP API Server-only
+- **A forgotten Actual Bench password cannot be recovered.** Setting a new one with
+  `ACTUAL_BENCH_PASSWORD` clears remembered budgets, so you connect them again. Automations and
+  backups are kept.
+- **Remembered budgets belong to one Bench install.** They are not shared between installs, and
+  only survive restarts when `/data` is kept.
+- **Enrolling the first budget on a server needs a live connection to it,** because that is when
+  the browser holds its password. The server's other budgets can then be enrolled without
+  connecting to each.
+- **ActualQL's cURL export** is only offered in HTTP API mode.
 
-**Applies to:** the ActualQL workspace.
+## Running Bench
 
-The generated cURL calls `actual-http-api`'s `/run-query`. In Direct mode there is no such endpoint to
-call.
+- **One instance.** The automation scheduler runs inside the server and does not coordinate between
+  several copies of Bench on one database.
+- **Large budget snapshots** in Budget File Health and the Data Browser are opened in your browser,
+  so a very large file is limited by its memory.
+- **Very long category lists** scroll slowly in Budget Cockpit.
 
-## Remembered servers
+## Asking for more
 
-### Remembering requires durable storage
-
-**Applies to:** the "Remember this budget" option.
-
-Remembered secrets are stored in the server's metadata database and survive only when `/data` is
-persistent. The public demo disables remembering. Self-hosters must verify their volume mount; a
-writable container directory is not enough to survive container replacement.
-
-### A forgotten password can't be recovered
-
-**Applies to:** remembered servers.
-
-The password and its derived key are never stored, so a lost password means the saved servers
-**cannot be decrypted** - by design.
-
-**Alternative:** set `ACTUAL_BENCH_PASSWORD` to a new password and restart Actual Bench, then re-save
-your servers. Automations and backups are kept. Changing the password (when you still know it)
-re-encrypts all saved servers instead.
-
-### Remembered servers are per-instance, not synced across devices
-
-**Applies to:** remembered servers.
-
-They live in one Actual Bench instance's database; there is no cross-device sync of remembered
-credentials.
-
-## Browser and deployment
-
-- **Large budget snapshots depend on browser memory.** Budget File Health and the Data Browser process the exported snapshot
-  locally in the browser; very large files may be constrained by available memory.
-- **The unattended scheduler is single-instance.** It runs in-process and is designed for one instance;
-  it does not coordinate across multiple replicas.
-
-## Staged editing
-
-- **Notes save immediately.** Note edits are not part of the staged **Save** and are not reverted by
-  **Discard**. See [Core Concepts](../../getting-started/core-concepts/#immediate-budget-change-exceptions).
-- **Query results reflect saved state.** ActualQL results do not include unsaved staged edits.
-
-## Master data
-
-- **Account budget type is fixed after creation.** On-budget / off-budget can't be changed later
-  (an Actual Budget constraint).
-- **Transfer payees are restricted.** They are system-managed and can't be edited or bulk-deleted like
-  regular payees.
-- **Income categories can't move groups.** They stay locked to the single income parent group.
-
-## Schedules and rules
-
-- **Schedule-generated rules are read-only** on the Rules page and can't be merged; manage them from the
-  Schedules page.
-- **The schedule `completed` flag is not a status.** It's retained for round-tripping but isn't shown as a
-  reliable paid/completed state.
-
-## Budget Cockpit
-
-- **Carryover is toggled via the right-click menu**, not edited directly as a grid cell.
-- **Category-to-pool transfers are not supported** (transfers require both a source and destination
-  category).
-- **The grid is not virtualized**, so very large category lists may scroll slowly.
-
-## Budget File tools
-
-- **Read-only.** Budget File Health and the Data Browser never write back to your budget; they inspect an
-  exported snapshot.
-
-## Budget Sync
-
-Not currently in scope:
-
-- **Automatic** linking of rows recorded on both sides. A row entered with a `Transfer: <account>`
-  payee syncs as a real transfer; rows entered in both budgets are linked one at a time from
-  **Currency position**. A transfer linked to your own row keeps that row's amount, so sync does not
-  update or delete it.
-- **Automatic (non-review) target deletes** - deletion is always review-first.
-- Transaction-flow **category auto-create**. Dedicated Category flows can create missing categories
-  under a placeable target group.
-- **Fuzzy duplicate auto-mapping** - only exact duplicates can be auto-mapped (opt-in); fuzzy duplicates
-  always go to the review queue.
-
-## FX / multi-currency
-
-- **No full FX gain/loss accounting.** **Currency position** can post a revaluation entry per account.
-- **No silent recalculation** of past conversions - rates lock at first sync.
-- **No multi-currency within a single budget file** - conversion applies to cross-currency sync between
-  budgets.
-- **Rate availability** depends on the provider and the coverage you've filled or imported.
-
-## Version compatibility
-
-- Some features depend on your **Actual Budget server version** (for example, tags require Actual Budget
-  v26.3.0 or later, and account groups require v26.9.0 or later).
-- **Account groups cannot be reordered** from Bench, because Actual's API has no way to do it.
-
-## Requesting an enhancement
-
-If a limitation is blocking you, open a feature request on
-[GitHub Issues](https://github.com/x-rous/actual-bench/issues) describing your use case.
+If a limit is in your way, open a feature request on
+[GitHub](https://github.com/x-rous/actual-bench/issues) describing what you are trying to do.
 
 ## Related pages
 
 - [Troubleshooting](../troubleshooting/)
-- [Cross Budget Sync](../../user-guide/budget-sync/)
-- [Exchange Rates](../../user-guide/fx-rates/)
+- [Work safely](../../getting-started/core-concepts/)

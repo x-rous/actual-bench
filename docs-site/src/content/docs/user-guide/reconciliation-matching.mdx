@@ -8,7 +8,8 @@ sidebar:
 [Bank Reconciliation](../bank-reconciliation/) compares statement rows with transactions in one
 account. This reference explains automatic-match requirements, scores, safeguards, and settings.
 
-Read it when a match needs explaining or before you change a matching setting.
+You don't need it to reconcile. Read it when a match needs explaining, or before you change a
+matching setting.
 
 ## Automatic-match requirement
 
@@ -39,12 +40,14 @@ If your statement carries a bank transaction ID - OFX files do, as `FITID` - and
 Actual was imported with that same ID, the two are pinned together before anything else runs. No
 scoring, no competition, confidence **exact**.
 
-The statement's own reference or authorisation number is tried the same way. Both are attempted, in
-that order: an OFX ID your account has never seen does not stop the row's reference from being
-looked up.
+The statement's own reference or authorisation number is tried the same way, after the OFX ID. A
+reference column can hold anything a bank chose to put there (a cheque number, a branch code), so a
+reference match counts only when the money moves the same way and the dates are within 31 days (or
+within your date tolerance, if you set it higher). If
+its amount differs, the pair is offered for review instead of being pinned.
 
-This is the only tier that bypasses scoring entirely, because an identifier the bank issued is not
-evidence *about* a pairing - it *is* the pairing.
+This is the only tier that bypasses scoring, because an identifier the bank issued is not evidence
+*about* a pairing - it *is* the pairing.
 
 ### 3. Finding candidates
 
@@ -82,7 +85,12 @@ Every candidate gets a score out of 100:
 
 A statement reference found verbatim in the transaction's notes takes the **full 25 text points**
 rather than competing for them. For accounts built by automation the bank's reference often sits in
-the notes, which makes it near-identity evidence.
+the notes, which makes it near-identity evidence, and it also settles a close race between two
+candidates on its own.
+
+When both sides have text and it shares next to nothing, **8 points are taken off**. That is not a
+refusal, since Actual itself matches on amount and date, but it sends a pair several days apart to
+review instead of matching it silently. A generic one-word note does not count as agreement.
 
 An original-currency match has **12 points withheld**, so a posted-amount match always outranks one.
 
@@ -163,8 +171,9 @@ row took was simply another real transaction.
 ### Nothing confident enough
 
 When a row's best candidate falls below the auto-match floor, the plausible few are offered so you
-can choose - at most five, and none scoring below 60. Below that a candidate carries nothing but a
-coincidence of amount and a date in the window, and offering it would waste your attention.
+can choose - at most five, and none more than 10 points below the floor (50, with the default
+floor). Below that a candidate carries nothing but a coincidence of amount and a date in the window,
+and offering it would waste your attention.
 
 If nothing clears even that, the row is left alone and offered as **Not in Actual**, which is a
 better answer than a bad guess.
@@ -222,12 +231,15 @@ true pairing ranked no higher than a row five times further away.
 
 ## What you can change
 
-Five controls, under **Matching** on the Reconcile screen. They are saved per account as a
-reconciliation profile, and changing one takes effect when you choose **Re-run**.
+Five controls, in the **Matching** section of the import screen and of **Re-run** on the Reconcile
+screen. They are saved per account as a reconciliation profile, and changing one takes effect when
+you select **Re-run matching**.
+
+![The Re-run panel: Matching, with what to compare the statement text against, the match window and how far beyond the statement period to look, then what to do when a row isn't in Actual, and the Re-run matching button.](../../../assets/screenshots/user-guide/recon-matching.png)
 
 | Control | Default | What it does |
 |---|---|---|
-| **Where the merchant text is** | All, best match | Which Actual field is compared - the payee you curate, the imported payee, the notes, or whichever of them agrees best. |
+| **Compare statement text against** | All fields, best match wins | Which Actual field is compared - the payee you curate, the imported payee, the notes, or whichever of them agrees best. |
 | **Match transactions within (days)** | 7 | How far apart a statement row and a transaction may be posted and still pair. Actual's own importer uses the same 7 days. |
 | **Look beyond the statement period (days)** | 3 | How far outside the statement's dates transactions are loaded. They are shown separately and never counted as missing. |
 | **Ignore `#tags` in notes** | On | Workflow tags such as `#API` are not the bank's text, so comparing them weakens every score. |
@@ -247,7 +259,9 @@ row rather than a setting to change.
 | Ambiguity margin - how close a runner-up must be for the matcher to refuse to choose | 8 points |
 | Text separation margin - how much better the winner's text must be to settle a close score | 0.15 |
 | Duplicate margin - how near-identical a rival must be to be called a duplicate | 3 points |
-| Candidates offered when nothing clears the floor | at most 5, none below 60 |
+| Candidates offered when nothing clears the floor | at most 5, none more than 10 points below the floor |
+| Text that clearly disagrees - points taken off | 8 |
+| Bank reference pin - widest date gap | 31 days, or your date tolerance if higher |
 | Amount mismatch review - text floor | 0.75 |
 | Amount mismatch review - widest gap offered | 25% |
 | Either review tier - widest date gap offered | your date tolerance |
@@ -260,13 +274,7 @@ Loosening any of these would widen what you are *offered*, never what is decided
 exact-amount rule and the auto-match floor govern that, and neither leftover tier can match anything
 on its own.
 
-## Resolving connected candidates
+## Related pages
 
-**Resolve group** compares connected bank rows and their existing Actual candidates in one matrix.
-Select a cell to compare, then confirm **Use this match**. The chosen transaction is withdrawn from
-competing rows, and the last remaining pair still needs confirmation. **Undo last pairing** restores
-the previous relationships during the current visit. This view does not widen matching rules.
-
-**Use statement date** explicitly stages the bank date on an accepted pair. A date gap never changes
-Actual automatically. Resumed sessions fetch current data before edits while keeping saved choices
-and their original values for the pre-Apply conflict check.
+- [Bank Reconciliation](../bank-reconciliation/) - the workflow these rules serve, including
+  **Resolve group** for competing rows

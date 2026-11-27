@@ -1,225 +1,145 @@
 ---
 title: Rules
-description: Create, edit, review, merge, import, and export budget rules with named references and advanced actions.
+description: Build, edit, merge and bulk-edit Actual rules, with names instead of ids, templates, formulas and split rules.
 sidebar:
   order: 8
 ---
 
-Use Rules to create, edit, review, merge, import, and export your full rule set. References show the
-payee, category, or account name instead of its ID.
+Rules shows your whole rule set as readable sentences, with every payee, category and account named
+rather than shown as an id. Build rules with a guided editor, split transactions across categories,
+compute values with templates and formulas, and edit fifty rules at once in a spreadsheet.
 
-Open it from **Budget Setup → Rules** (`/rules`).
-
-**Budget impact:** Rule changes remain staged until you review and **Save**. Rule Diagnostics is a
-separate workspace; any fix you start follows the same staged Save workflow.
+Open it from **Budget Setup → Rules**. Changes are staged and go to Actual when you select **Save**.
+To audit the rule set for problems, use [Rule Diagnostics](../rule-diagnostics/).
 
 ![The Rules table showing conditions and actions with payees and categories named rather than shown as ids.](../../../assets/screenshots/user-guide/rules.png)
 
 *The whole rule set, with every reference resolved to the payee, category or account it names.*
 
-## Start with the job you have
-
-- **Create or edit automation:** use the rule builder below.
-- **Find broken, overlapping, or duplicate rules:** run [Rule Diagnostics](../rule-diagnostics/).
-- **Move or bulk-edit a rule set:** export it to CSV, edit it, then import and review the staged result.
-
-## What the Rules page supports
-
-Use this page to review the complete rule set and manage rules in bulk.
-
-- Payees, categories and accounts appear as **names** - in the table and in the search box. Nothing to
-  decode.
-- **Handlebars templates** and **Excel-style formulas**, for actions that work something out instead of
-  setting a constant.
-- **Split rules** - one transaction divided across several categories, by fixed amount, percentage,
-  formula or an equal share of what is left.
-- **Merge duplicates** into one rule, from here or straight from a diagnostics finding.
-- **CSV in and out** for the whole set - edit fifty rules in a spreadsheet, or keep a copy before you
-  try.
-- [Rule Diagnostics](../rule-diagnostics/) audits the set as a whole: broken references, rules that
-  shadow each other, rules that cannot match the next import.
-
 ## How a rule works
 
-A rule has **conditions** - when it applies - and **actions** - what it does. Actual runs rules as a
-transaction arrives. It never goes back over transactions you already have.
+A rule has **conditions** (when it applies) and **actions** (what it does). Actual runs rules as a
+transaction arrives, not over transactions you already have. A rule needs at least one condition: a
+rule with none never matches.
 
-Every rule sits in one of three **stages**, run in order: `pre`, `default`, `post`. That is how you
-control which rule goes first. Clean up the imported payee text in `pre`, categorise it in `default`,
-let `post` handle what is left over.
+Every rule sits in one of three **stages**, run in order: `pre`, `default`, `post`. A common pattern
+is to clean up imported text in `pre`, categorise in `default`, and catch what is left in `post`.
 
 ## Create a rule
 
-1. On the **Rules** page, create a rule to open the editor.
-2. A new rule starts with a guided default condition (`Payee is`) and a default action row.
-3. Set the condition field, operator, and value.
-4. Add an action.
-5. Select **Add Rule** to stage the rule.
-6. Review the staged rule in **Changes**, then select the **Save** in the Changes panel header to write it to Actual.
+1. Select **Add Rule**. A new rule starts with a `Payee is` condition and an empty action.
+2. Set the condition's field, operator and value. Add more, and choose **AND** (all must match) or
+   **OR** (any can match).
+3. Add actions, such as **set category**.
+4. Select **Add Rule** to stage it, then **Save**.
 
-Nothing is flagged red while you are still typing. Validation waits until you edit a row or try to
-save, then marks what is missing and warns about destructive combinations and about a rule with no
-conditions, which never matches. Close the
-drawer with unsaved edits and it asks first.
+The editor only offers fields and operators Actual accepts, so a rule you build here is one Actual
+will run. It waits until you edit a row or save before marking anything missing.
 
-## Add conditions
+### Conditions
 
-Bench offers exactly the fields and operators Actual's engine accepts, derived from the engine
-itself - so a rule you build here is a rule Actual will run.
+- **Fields:** imported payee, payee, account, category, category group, date, notes, amount,
+  **amount (inflow)**, **amount (outflow)**, cleared.
+- **Text:** `is`, `is not`, `contains`, `does not contain`, `is one of`, `is not one of`, `matches`
+  (a regular expression), and on notes, **`has all tags`** and **`has any tag`**.
+- **Dates:** `is`, `is approx.`, `is after`, `is after or equals`, `is before`, `is before or equals`.
+- **Amounts:** `is`, `is approx.`, `is between` and the four comparisons. **amount (outflow)**
+  compares money going out as a positive number, so "amount (outflow) is greater than 100" reads the
+  way you would say it.
 
-- **Fields:** imported payee, account, category, category group, date, payee, notes, amount,
-  **amount (inflow)**, **amount (outflow)**, and cleared.
-- **Combine** them with **AND** / **OR** logic (`conditions_op`).
-- **Text operators:** `is`, `is not`, `contains`, `does not contain`, `is one of`, `is not one of`,
-  `matches` (regex, with a syntax hint), and on notes, **`has all tags`** / **`has any tag`**.
-- **Date operators:** `is`, `is approx.`, `is after`, `is after or equals`, `is before`,
-  `is before or equals`.
-- **Amount operators:** `is`, `is approx.`, `is between`, and the four comparisons. Pick
-  **amount (inflow)** or **amount (outflow)** to match only money coming in or only money going out -
-  outflows compare as positive numbers, so "amount (outflow) is greater than 100" reads the way you
-  would say it.
-- **References** to a payee, category or account are blue chips. Literal text is green. One glance
-  tells you which you are looking at.
+Payees, categories and accounts appear as blue chips; typed text is green.
 
-Not every operator applies to every field, and Bench only offers the ones that do. Notes has no
-`is one of`; imported payee has no tag operators; only account has `is on budget` / `is off budget`.
+### Templates and formulas
 
-## Add actions
+On most **set** actions you can compute the value instead of typing it:
 
-Common actions include **set payee**, **set category**, **set account**, **set amount**, **set notes**,
-and **link schedule**.
+- `{}` switches the action to a **Handlebars template**, for example
+  `{{regex imported_payee 'SQ \*' ''}}`.
+- `ƒ` switches it to an **Excel-style formula**, starting with `=`, for example
+  `=IF(ISBLANK(notes), imported_payee, notes)`.
 
-### Templates
-
-The `{}` button on an action switches it to **Handlebars**, for example
-`{{regex imported_payee 'foo' 'bar'}}`. Templates show as amber monospace chips in the table.
-
-### Formulas
-
-The `ƒ` button switches an action to an **Excel-style formula**, run by HyperFormula -
-`=IF(ISBLANK(notes), imported_payee, notes)`. It has to start with `=`. One row can be a template or
-a formula, never both.
-
-Both modes are available on every **set** action except **payee**, **category** and **account** -
-those hold ids rather than text, so computing one would not help. Prepend/append notes, delete
-transaction, link schedule and the split **Allocate** row have their own inputs and no mode toggle.
+An action is a template or a formula, not both. Payee, category and account actions hold a choice
+rather than text, so they have neither.
 
 ## Split a transaction across categories
 
-A split rule turns one incoming transaction into a parent plus several children, each with its own
-category. Use it for the shop where half the receipt is groceries and half is household, or to put a
-fixed service charge on its own line.
+A split rule turns one transaction into several lines, each with its own category: half a
+warehouse shop to groceries and half to household, say.
 
-1. In the rule editor, choose **Add split**. The actions section grows a **Split 1** group.
-2. Each split starts with an **Allocate** row saying how much of the transaction it takes:
-   - **a fixed amount** - a literal figure.
-   - **a fixed percent of the remainder** - a percentage of what is left after the fixed amounts
-     and the formulas.
-   - **based on a formula** - an `=` expression, as above.
-   - **an equal portion of the remainder** - whatever is left, shared equally between the splits
-     that ask for it.
-3. Add the actions for that split - typically **set category**, and optionally payee or notes.
-4. **Add split** again for as many children as you need.
+1. In the editor, choose **Add split**.
+2. In its **Allocate** row, choose how much it takes: **a fixed amount**, **a fixed percent of the
+   remainder**, **based on a formula**, or **an equal portion of the remainder**.
+3. Add its actions, usually **set category**.
+4. **Add split** again for each further line.
 
-Actual works them out in three passes: **fixed amounts and formulas** first, then **percentages** of
-whatever remains after those, then the **equal shares** of what is still left, with any rounding
-difference going to the last one. So a percentage is a percentage of the remainder *after* both the
-fixed amounts and the formulas have taken theirs.
+Actual works out fixed amounts and formulas first, then percentages of what is left, then equal
+shares of the rest, with any rounding on the last split. Amount, account, date and cleared belong to
+the whole transaction, so they appear only under **Apply to the whole transaction**.
 
-Amount, cleared, account and date belong to the transaction as a whole, so they are only offered in
-the **Apply to the whole transaction** group at the top, never inside a split. Splits are numbered
-from 1, and removing one renumbers the rest.
+## Find and tidy rules
 
-Split rules cannot be merged - flattening two of them into one would produce a rule nobody wrote, so
-Bench asks you to edit them individually instead.
-
-## Edit, duplicate, filter, and search
-
-- Duplicate a rule with one click.
-- Filter the list by stage, payee, category, **Splits** to find every rule that divides a
-  transaction, or **Linked to Schedule** for the rules a schedule owns - the ones carrying the
-  calendar badge, which the Schedules page maintains and this page will not delete.
-- **Search knows the names.** Type "Groceries" and it finds the rules whose `oneOf` condition holds
-  that category's id. You never see a raw id.
-- Arriving from the Payees or Categories page filters the list to that entity for you.
-- **Needs attention** appears when any rule needs a look, with a count: rules naming a deleted or
-  unknown payee, category, account or category group; rules identical to another (same stage and
-  operator, the same conditions in any order, the same actions in the same order - Actual runs actions
-  in sequence); and rules with no conditions, which never run. The
-  row says what is wrong. To fix a deleted reference, open the rule: the missing item shows as a
-  "[deleted account]" (or payee, category, group) chip - remove it with its ×, or pick a replacement. Text operators (`contains`, `matches`) compare raw text, so they do not count
-  as references.
-- Long lists stay quick: only the rules on screen are drawn.
+- **Search knows names:** type "Groceries" and it finds rules that use that category.
+- **Filter** by stage, payee, category, **Splits**, or **Linked to Schedule**.
+- **Needs attention** appears with a count when rules name something that was deleted, duplicate
+  another rule exactly, or have no conditions. Open a rule to fix a deleted reference: it shows as a
+  "[deleted payee]" chip you can remove or replace.
+- **Duplicate** copies a rule in one click.
+- Arriving from a rule count on Payees, Categories or Accounts filters the list for you.
 
 ## Merge rules
 
-1. Select the rules to combine.
-2. Choose **Merge** to open the merge dialog (it shares the main editor's sections and validation).
-3. Review the merged result; the **Delete originals** checkbox is pre-ticked for full duplicates and
-   unticked for near-duplicates.
-4. Confirm to stage the merge.
+1. Select the rules to combine and choose **Merge**.
+2. Check the merged rule. **Delete originals** is ticked for exact duplicates and unticked for near
+   ones.
+3. Confirm to stage it.
 
-Merge from a [Rule Diagnostics](../rule-diagnostics/) finding and you land back in the report, ready
-for the next one.
+Split rules cannot be merged, because combining two would produce a rule nobody wrote.
 
-## Schedule-generated rules
+## Rules that belong to schedules
 
-A schedule writes its own rule, with a `link-schedule` action. Those are **read-only** here, and left
-out of bulk selection and merge. Change them from [Schedules](../schedules/).
+Every schedule keeps a rule behind it, with a calendar badge here. These are read-only on this page;
+change them from [Schedules](../schedules/).
 
 ## Import and export
 
-The CSV is long-format: one condition or action per row, grouped by `rule_id`. The columns that matter
-are `rule_id`, `stage`, `conditions_op`, `row_type` (`condition` or `action`), `field`, `op`,
-`value`, `split_index` and `options` - separate multiple `oneOf` values with `|`. Formulas export
-with a leading `'` so your spreadsheet does not try to evaluate them. The prefix comes off again on
-import.
+The CSV has one row per condition or action, grouped by `rule_id`. The main columns are `rule_id`,
+`stage`, `conditions_op`, `row_type` (`condition` or `action`), `field`, `op`, `value`,
+`split_index` and `options`.
 
-`split_index` is blank for anything applying to the whole transaction, and `1`, `2`, … for the
-splits. `options` carries the rest as `key=value;key=value` - the allocation `method` on an
-**Allocate** row, and `inflow=true` / `outflow=true` on an amount condition. A file exported before
-those two columns existed still imports; the importer matches columns by name.
+- Separate several `is one of` values with `|`.
+- `split_index` is blank for the whole transaction, and `1`, `2`, … for each split.
+- `options` holds extra settings as `key=value;key=value`, such as the allocation `method` or
+  `outflow=true`.
+- Formulas export with a leading `'` so your spreadsheet does not evaluate them. It is removed again
+  on import.
 
-An action with an operator the importer does not recognise skips its whole rule and tells you which
-operator it was, rather than quietly importing it as something else.
+If an action row uses an operator the importer does not recognise, that whole rule is skipped and
+the summary names the operator. Condition operators are not checked this way, so check a condition
+you typed by hand.
 
 ## Examples
 
-Substitute your own payees and categories:
-
-- **Categorize by payee** - condition `Payee is "Fresh Market"`, action `set category "Groceries"`.
-- **Normalize imported text** - a `pre`-stage template action on `payee_name`:
+- **Categorise by payee:** `Payee is "Fresh Market"` → `set category "Groceries"`.
+- **Clean up imported text:** in `pre`, a template on payee name:
   `{{regex imported_payee 'SQ \*' ''}}`.
-- **Fall back to imported payee** - a formula on `notes`: `=IF(ISBLANK(notes), imported_payee, notes)`.
-- **Route by amount** - condition `amount is greater than 1000.00`, action
+- **Only large payments out:** `amount (outflow) is greater than 500.00` →
   `set category "Large Purchases"`.
-- **Only large payments out** - condition `amount (outflow) is greater than 500.00`, so incoming
-  money of the same size is left alone.
-- **Tagged notes** - condition `notes has any tag "#reimburse"`, action `set category "Owed to me"`.
-- **Split a warehouse shop** - condition `Payee is "Costco"`, then **Split 1** allocating
-  a fixed percent of 60% to `Groceries` and **Split 2** taking an equal portion of the remainder to
-  `Household`.
-
-## Safety and limitations
-
-- Rules run when a transaction is created, and several can hit the same transaction. If the result
-  surprises you, the answer is almost always stage order.
-- **A rule with no conditions never runs.** Actual treats an empty condition list as "no match", not
-  as "match everything", so a rule with only actions is inert. The editor says so.
+- **Tagged notes:** `notes has any tag "#reimburse"` → `set category "Owed to me"`.
+- **Split a warehouse shop:** `Payee is "Costco"`, then **Split 1** at 60% of the remainder to
+  `Groceries` and **Split 2** taking an equal portion of the remainder to `Household`.
 
 ## Troubleshooting
 
-- **A rule never fires** - check that it has at least one condition (a rule without one never
-  matches), then check its stage, and whether an earlier stage already changed the field it tests.
-- **A split will not save** - each split needs exactly one **Allocate** row, and a percentage has to
-  be between 0 and 100.
-- **AND/OR confusion** - check `conditions_op`. AND needs every condition; OR needs one.
-- **A regex will not match** - read the syntax hint on the `matches` operator.
-- **A template or formula will not save** - formulas start with `=`, and one row cannot be both.
-- **A schedule-linked rule will not edit** - that is deliberate. Go to Schedules.
+- **A rule never fires:** check it has at least one condition, then its stage, and whether an
+  earlier rule already changed the field it tests.
+- **AND/OR confusion:** AND needs every condition to match; OR needs one.
+- **A split will not save:** each split needs one **Allocate** row, and a percentage between 0 and
+  100.
+- **A formula will not save:** it must start with `=`.
+- **A rule is read-only:** it belongs to a schedule.
 
 ## Related pages
 
-- [Rule Diagnostics](../rule-diagnostics/) - lint your rule set for problems
+- [Rule Diagnostics](../rule-diagnostics/) - find broken, overlapping and duplicate rules
 - [Schedules](../schedules/)
-- [ActualQL Queries](../actualql/)
+- [Payee Cleanup](../payee-cleanup/) - rules that stop duplicate payees

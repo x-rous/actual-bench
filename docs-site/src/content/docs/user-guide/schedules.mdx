@@ -1,108 +1,69 @@
 ---
 title: Schedules
-description: "Create and manage recurring schedules, including recurrence, linked rules, CSV, and deletion impact."
+description: Set up and review recurring bills and income in bulk, with plain-English recurrence and CSV.
 sidebar:
   order: 6
 ---
 
-Use Schedules to create, edit, import, export, and delete recurring plans. Review each schedule's
-linked rule and transaction count before deleting it.
+Schedules lists your recurring bills and income with the next date, amount and recurrence in plain
+English, so you can set up a dozen at once and spot the ones that were missed.
 
-Open it from **Budget Setup → Schedules** (`/schedules`).
+Open it from **Budget Setup → Schedules**. Changes are staged and go to Actual when you select
+**Save**. It uses the shared [editing model](../../getting-started/editing-and-saving/).
 
-**Budget impact:** Schedule changes remain staged for review until you **Save**.
+![The Schedules table: twelve active schedules, each with its next date, amount, recurrence, payee and account.](../../../assets/screenshots/user-guide/schedules.png)
 
-![The Schedules table: twelve recurring plans with their next date, amount, recurrence, payee and account - two flagged as missed.](../../../assets/screenshots/user-guide/schedules.png)
-
-*Next date, amount, recurrence, payee and account together - and the two marked **Missed** are the
-ones worth looking at first.*
-
-It shares the [editing model](../../getting-started/editing-and-saving/) every Budget Setup page
-uses.
-
-## What you get beyond Actual Budget
-
-- **CSV import and export** of schedules for bulk setup and backup.
-- **Impact-aware deletion** - every delete shows the schedule's linked-rule status, auto-post flag, and
-  transaction count first.
-- **A recurrence summary that reads like English**, worked out from the start date.
-- **Edit as Rule** - open the schedule's server-managed rule directly in the Rules editor.
-- **Staged review** - set up a dozen schedules, read them once, then Save.
+*What is due next across all your schedules, with the amount and account of each.*
 
 ## Create a schedule
 
-1. On the **Schedules** page, open the schedule drawer to add a schedule.
-2. Set the **name** (optional), **date** (or recurrence), and amount.
-3. Optionally assign a **payee** and **account**.
-4. Save to stage the schedule.
+1. Select **Add Schedule** to open the drawer.
+2. Give it a name (optional), a date or recurrence, and an amount.
+3. Choose a payee and account, if you like.
+4. Save it to the draft, then select **Save** on the page.
 
-Save a schedule you did not change and the drawer just closes - no empty draft. Close it with unsaved
-edits and it asks first.
+A schedule can use a payee or account you created in the same draft.
 
-## Choose an amount mode
+### Amount
 
-Schedule amounts always use one of three modes:
+- **Exact** (`is`), **Approximate** (`is approx.`), or **Range** (`is between`, with a low and high
+  amount).
 
-- **Exact** (`is`)
-- **Approximate** (`is approx.`)
-- **Range** (`is between`) - with a low and high amount
+### Recurrence
 
-A missing amount on the server is read as an approximate zero.
+- **Daily**, **weekly**, **monthly** or **yearly**, every so many periods.
+- Monthly schedules can fall on a day of the month (including the last day) or a position such as
+  "2nd Friday".
+- **Weekend adjustment** moves a date that lands on a weekend to the Friday before or the Monday
+  after.
+- **End** never, after a number of occurrences, or on a date.
 
-## Configure recurrence
+The **Repeats** column reads it back, such as `Every 2 weeks on Wednesday`.
 
-- Frequencies: **daily**, **weekly**, **monthly**, **yearly**, each with a configurable interval.
-- Monthly schedules support a **specific day of the month** (including "last day") or a
-  **weekday-of-week position** (for example "2nd Friday").
-- The table's **Repeats** summary infers weekday/day anchors from the start date (for example
-  `Every 2 weeks on Wednesday`), and a **Recurring** column marks repeating schedules.
+### Auto-add and the schedule's rule
 
-## Weekend adjustment and end conditions
+- **Auto-add** lets Actual post the transaction when it falls due.
+- Every schedule has a rule behind it, which Actual manages. **Edit as Rule** opens it. On the
+  [Rules](../rules/) page these rules are read-only.
 
-- **Weekend adjustment** - a date landing on a Saturday or Sunday moves to the **Friday before** or the
-  **Monday after**, your choice.
-- **End conditions** - run forever, end after **N occurrences**, or end **on a date**.
+## Edit, delete and filter
 
-## Auto-add and linked rules
+- Deleting shows the schedule's rule, its auto-add setting and how many transactions it has first.
+- Filter by name, payee, account, frequency and auto-add.
+- Actual needs schedule names to be unique. A duplicate is flagged beside its name. **Duplicate**
+  names the copy "Name (copy)".
 
-- **Auto-add** - Actual posts the transaction itself when the schedule falls due.
-- Every schedule has a **linked rule** behind it, managed by the server. **Edit as Rule** in the drawer
-  opens it.
+## CSV
 
-:::note[Schedule-generated rules are managed here]
-Schedule-linked rules are read-only on the [Rules](../rules/) page. The `link-schedule` action shows
-the schedule's name and cannot be written by hand. Change the behaviour here instead.
-:::
-
-## Edit, delete, and filter
-
-- Edit in the drawer. A saved edit stays on screen while the background refresh catches up with the
-  server.
-- Deleting confirms first, showing the linked rule, the auto-post flag and the transaction count.
-- Filter by name, payee, account, frequency, and auto-add state.
-- Actual needs every schedule name to be unique. A duplicate gets a warning beside its name and is
-  reported on its row at Save; **Duplicate** names the copy "Name (copy)".
-- A schedule can use a payee or account you created in the same draft: Save writes those first and
-  hands the schedule their new ids.
-
-## Import and export
-
-Import and export schedules as CSV (staged before saving).
-
-:::note[No "completed" status column]
-The `completed` flag survives a CSV round-trip but is not shown as a status, because it does not
-reliably mean paid or finished. Imported schedules start active.
-:::
+Schedules import and export as CSV. Imported schedules start active.
 
 ## Common problems
 
-- **The rule is read-only** - it belongs to the schedule. **Edit as Rule** opens the parts you can
-  change.
-- **The recurrence summary looks wrong** - it is derived from the start date. Check the day or weekday
-  anchor and the interval.
+- **The rule is read-only:** it belongs to the schedule. Use **Edit as Rule**.
+- **The recurrence summary looks wrong:** it is read from the start date. Check the day or weekday
+  and the interval.
 
 ## Related pages
 
-- [Rules](../rules/) - schedule-linked rules
-- [Tags](../tags/)
-- [Core Concepts](../../getting-started/core-concepts/)
+- [Rules](../rules/) - the rules behind schedules
+- [Cashflow Planning](../cashflow-planning/) - forecast from your schedules

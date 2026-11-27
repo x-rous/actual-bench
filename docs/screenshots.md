@@ -2,46 +2,158 @@
 
 The images in the documentation site are generated, not collected. A screenshot
 that no longer matches the product teaches a reader a UI that is not there, so
-retaking them has to cost one command rather than an afternoon.
+retaking them has to cost a couple of commands rather than an afternoon.
+
+Two scripts take them, and both write into `docs-site/src/assets/screenshots/`:
+
+| Script | Photographs | Groups |
+|---|---|---|
+| `docs-site/scripts/capture-pages.mjs` | Getting started, Budget Setup, the Budget Cockpit grid, Analyze & Cleanup, Bank Reconciliation, Sync & Automations, App Health | `start`, `setup`, `cockpit`, `tools`, `recon`, `ops` |
+| `docs-site/scripts/capture-guides.mjs` | Financial Insights, the Cockpit drill-throughs, Loans, Credit Cards, Assets, Cashflow Planning, Payee Cleanup | `insights`, `budget`, `loans`, `cards`, `assets`, `cashflow`, `payee-cleanup` |
+
+Name groups on the command line to take only those; name none to take them all.
+The front page's images come from `capture-landing.mjs`. All three share
+`demo-capture.mjs`.
+
+## The data is the demo household
+
+Every image shows the fictional household from the public demo, so no real
+person's finances can reach the documentation. That includes the bank statement
+in the reconciliation shots: `demo-statement.mjs` prints a PDF for the demo's
+checking account from the seed's own transactions, under a bank that says on the
+page that it is fictional. Never photograph a real statement, budget or install.
+
+## Take them from a local seed
+
+Run both scripts against a private copy of the demo seed. The `recon` and `ops`
+groups create things (a reconciliation session, backups, a sync flow), so they
+refuse to run against the shared public demo; the other groups can, but a local
+seed is also how you photograph a regenerated seed before it is deployed.
+
+First build the seed's Bench database, `demo/seed-bench.sqlite`. It is not
+committed; this builds it from the committed `demo/seed-manifest.json`, as the
+demo image does, without touching the seed itself (`demo/README.md` covers
+regenerating the whole seed):
 
 ```bash
-node docs-site/scripts/capture-screenshots.mjs --serve --include-instance
+node demo/generate-metadata.cjs
 ```
 
-That starts an Actual Bench instance of its own, seeds it, photographs every
-page in the shot list, and throws the instance away. Images land in
-`docs-site/src/assets/screenshots/`.
+Then start an Actual Server and a Bench of your own on the seed, and capture:
 
-## What it photographs, and why it is safe
+```bash
+port_free() { ! curl -s -o /dev/null --max-time 2 "http://localhost:$1"; }
+wait_for() {   # wait_for <url> <pid>: the server we started must be the one answering
+  for i in $(seq 1 90); do
+    kill -0 "$2" 2>/dev/null || { echo "the server for $1 exited" >&2; return 1; }
+    curl -s -o /dev/null --max-time 2 "$1" && return 0
+    sleep 2
+  done
+  echo "$1 did not answer" >&2
+  return 1
+}
 
-**The budget data is the public demo.** The script connects the instance to the
-demo backend through the normal connect form, so every page shows the same
-household a visitor sees when they click "Try the live demo" - and no real
-person's finances can reach the documentation.
+# Bench's data goes under /data as in Docker, so App Health shows the paths a
+# reader will see; the seed's backup destination is /data/backups, which this
+# creates empty. Use a disposable container, or a machine where you created
+# /data yourself and can write to it. Nothing starts if /data already holds a
+# Bench database, backups or vault key, if the seed cannot be copied, or if
+# either port is taken, so the cleanup below only removes what this run made.
+seeded=false
+if [ ! -f demo/seed-bench.sqlite ]; then
+  echo "build demo/seed-bench.sqlite first (node demo/generate-metadata.cjs)" >&2
+elif [ -e /data/actual-bench.sqlite ] || [ -e /data/backups ] || [ -e /data/secrets ]; then
+  echo "/data already holds Bench files; use a disposable machine or container" >&2
+elif ! port_free 5197 || ! port_free 3517; then
+  echo "port 5197 or 3517 is already in use; stop that server first" >&2
+elif actual_dir=$(mktemp -d) && cp -R demo/seed-data/. "$actual_dir" \
+    && cp demo/seed-bench.sqlite /data/actual-bench.sqlite && mkdir /data/backups; then
+  seeded=true
+  # Actual Server on a scratch copy of the seed (the copy includes the hidden .migrate)
+  ACTUAL_PORT=5197 ACTUAL_DATA_DIR="$actual_dir" \
+    ACTUAL_SERVER_FILES="$actual_dir/server-files" ACTUAL_USER_FILES="$actual_dir/user-files" \
+    node node_modules/@actual-app/sync-server/build/bin/actual-server.js &
+  actual_pid=$!
+  ACTUAL_BENCH_AUTH=none ACTUAL_BENCH_DB_PATH=/data/actual-bench.sqlite \
+    ACTUAL_BENCH_DIST_DIR=.next-live-tmp npx next dev -p 3517 &
+  bench_pid=$!
+else
+  echo "could not copy the seed" >&2
+fi
 
-**The instance is disposable.** Some pages draw the *instance's own* metadata
-rather than the connected budget - its backup destinations, automations, sync
-flows, exchange rates, reconciliation sessions, the health of its own database,
-and the dialogs that configure any of them. Pointing the script at a working
-install photographs that install's schedule and where its backups go; an early
-run did exactly that and the images had to be destroyed.
+# The first Bench page compiles, so the wait can take a minute.
+[ "$seeded" = true ] && wait_for http://localhost:5197 "$actual_pid" \
+  && wait_for http://localhost:3517/connect "$bench_pid" && {
+  export BENCH_URL=http://localhost:3517 ACTUAL_URL=http://localhost:5197
+  node docs-site/scripts/capture-pages.mjs
+  node docs-site/scripts/capture-guides.mjs
+}
+```
 
-Those shots carry `instance: true`, which is the list - reading it in
-`SHOTS` beats trusting an enumeration here to stay current - and they are
-skipped unless `--include-instance` is passed, which is only ever correct for an
-instance stood up for the purpose.
+Start from a fresh copy of the seed database for every full run: the `recon` and
+`ops` groups expect the seed's state, and a second run on the same database finds
+the first run's session, flow and backups already there. When the capture ends,
+in the same shell, stop both servers and remove what the run made (setup refused
+to start if any of these already existed):
 
-`docs-site/scripts/seed-screenshot-fixtures.mjs` gives that instance something
-to show: a destination, a backup rule, and one real backup run so the inventory
-holds a verified copy - the seeder fails rather than continuing if that run does
-not report a result, because a Backups tab with nothing in it is a screenshot of
-an explanation rather than of the feature. It works through the dialogs rather than by writing rows,
-because the payload shapes are internal and will drift while the dialogs are the
-contract - and because a seeder that breaks when a flow breaks is worth having.
+```bash
+# An interactive shell starts each background job in its own process group, so
+# this stops next dev's workers too, and nothing else.
+kill -- -"$actual_pid" -"$bench_pid"
+rm -rf "$actual_dir" .next-live-tmp /data/actual-bench.sqlite* /data/backups /data/secrets
+```
+
+`next dev` regenerates its agent notes in `AGENTS.md` and adds its build folder to
+`tsconfig.json`. Restore both with `git checkout -- AGENTS.md tsconfig.json`
+before committing.
+
+Set `SHOT_DEBUG_DIR` to a folder to get a full-window picture of the page
+whenever a shot fails.
+
+## What a good shot looks like
+
+- **Cropped to what the page is for.** The sidebar and top bar stay out: a whole
+  window shrinks to unreadable in a text column, and its sidebar dates the image
+  the next time a page is renamed. Tables are cut where their rows end, panels and
+  dialogs are photographed on their own, and a page with a wide empty area is cut
+  before it.
+- **A state worth seeing.** A reconciliation with a difference to explain, a
+  backup list with verified copies, a sync preview that found duplicates. An empty
+  list is a picture of an explanation, not of the feature.
+- **Nothing that was only happening.** Toasts and the development overlay are
+  hidden; a staged edit is discarded once its shot is taken.
+
+A screenshot earns its place when the screen carries evidence or a judgement that
+prose cannot: the reasoning behind a merge, a match confidence, what a rule would
+change, what a backup protects. A form with two labelled fields is better
+described in a sentence.
+
+## Size
+
+The window is 1920x1080 (1440x900 for the Budget Setup tables, so their text is
+not lost in a wide, sparse row), captured at 2x. The documentation site shows each
+image at its width divided by two (`docs-site/src/plugins/screenshot-size.mjs`),
+so a dialog appears at its real size instead of stretched to the column, and a
+wide page shrinks to fit and opens full size on click. `SCALE` in
+`demo-capture.mjs` and the plugin must agree.
+
+## Adding a shot
+
+Add a `step` to the right group in `capture-pages.mjs` or `capture-guides.mjs`.
+The helpers from `shooter()` do the cropping:
+
+| Helper | For |
+|---|---|
+| `shoot(page, name, crop)` | A region in CSS pixels; `belowChrome(height, right)` gives one below the sidebar and top bar |
+| `shootTo(page, name, locator, options)` | Below the chrome, down to where `locator` ends: the way to cut a table at its last row |
+| `element(locator, name)` | One element, such as a dialog or a panel |
+
+Write the image's alt text from what it shows, numbers included, so it reads
+correctly to someone who cannot see it.
 
 ## Requirements
 
-- `npx playwright install chromium`.
+- `npx playwright install chromium-headless-shell`.
 - A machine with the usual desktop libraries. Without root, fetch them into a
   directory and point `LD_LIBRARY_PATH` at it:
 
@@ -55,43 +167,14 @@ contract - and because a seeder that breaks when a flow breaks is worth having.
   Pin `libasound2` to the release matching the host's glibc; the newest build
   wants a newer one than Ubuntu 24.04 provides.
 
-## Two traps worth knowing
-
-- **Reach the instance as `localhost`, never `127.0.0.1`.** Next 16 blocks
-  dev-server infrastructure from other origins, and the page then renders
-  perfectly without ever hydrating: every button is inert and nothing says why.
-- **The demo host challenges automated browsers.** The script navigates by
-  clicking the sidebar rather than loading each URL, which is also what a reader
-  does; a first version produced eighteen identical pictures of a bot checkpoint.
-
-## Adding a shot
-
-Add an entry to `SHOTS` in the capture script. Beyond the name, the sidebar entry
-to click and the URL it should land on:
-
-| Field | For |
-|---|---|
-| `instance: true` | The page draws the instance's own metadata, so it is skipped unless `--include-instance` |
-| `prepare(page)` | Drive the page into the state worth photographing - run the query, open the session, add the pair |
-| `element` | Photograph one element rather than the page, which is how the dialogs are shot |
-| `alsoConnect` | Connect a second budget for this shot, and switch back afterwards |
-| `preConnect: true` | Photograph before any budget is opened - the only way to catch a first run |
-
-A screenshot earns its place when the screen carries evidence or a judgement that
-prose cannot: the reasoning behind a merge, a backtest, a match confidence, what
-retention would delete. A form with two labelled fields is better described in a
-sentence, and a page with a dozen images is a slideshow nobody reads.
+**Reach the instance as `localhost`, never `127.0.0.1`.** Next 16 blocks
+dev-server infrastructure from other origins, and the page then renders
+perfectly without ever hydrating: every button is inert and nothing says why.
 
 ## The README's copies
 
-The README does not use these files directly. They are captured at 5x so they
-hold up when a reader zooms into them on the documentation site, and a page of
-seven of those comes to well over a gigabyte of decoded bitmap - past what a
-browser will paint, so it paints nothing at all. The files were being served
-correctly; the page simply could not draw them.
-
-So the README has its own copies at a size suited to a page that shows them a few
-hundred pixels wide:
+The README does not use these files directly. It has its own smaller copies, sized
+for a page that shows them a few hundred pixels wide:
 
 ```bash
 node docs-site/scripts/readme-images.mjs
@@ -99,57 +182,8 @@ node docs-site/scripts/readme-images.mjs
 
 That reads from `docs-site/src/assets/screenshots/` and writes to
 `docs/readme-images/`. Run it after retaking screenshots, or the README keeps
-showing the previous ones. The list of which images the README uses lives at the
-top of that script.
-
-## Pages that need the demo's own Bench data
-
-Financial Insights, Loans, Credit Cards, Assets, Cashflow Planning and Payee
-Cleanup read what Bench stores about the demo household (loan terms, card
-statements, registered assets), and a private instance does not have that. Their
-guide screenshots are taken from the demo deployment itself:
-
-```bash
-node docs-site/scripts/capture-guides.mjs              # everything
-node docs-site/scripts/capture-guides.mjs loans cards  # named groups
-```
-
-It photographs a 1920x1080 window at 3x and crops each shot to the part of the
-page that shows the function, without the sidebar and top bar; a dialog is shot
-on its own. The `cashflow` group creates a plan in the shared demo and deletes it
-again. The front page's images come from `capture-landing.mjs` the same way, and
-both share `demo-capture.mjs`.
-
-A regenerated demo seed only reaches the public demo after it is merged and
-deployed. To photograph it before that, serve it locally and point both scripts
-at it with `BENCH_URL`; they then connect Direct instead of clicking the demo
-button:
-
-```bash
-# Actual Server on a scratch copy of the seed (include the hidden .migrate)
-cp -R demo/seed-data/. /tmp/demo-actual
-ACTUAL_PORT=5197 ACTUAL_DATA_DIR=/tmp/demo-actual \
-  ACTUAL_SERVER_FILES=/tmp/demo-actual/server-files ACTUAL_USER_FILES=/tmp/demo-actual/user-files \
-  node node_modules/@actual-app/sync-server/build/bin/actual-server.js &
-# A private Bench whose database is a copy of the seed's Bench data
-cp demo/seed-bench.sqlite /tmp/demo-bench.sqlite
-ACTUAL_BENCH_AUTH=none ACTUAL_BENCH_DB_PATH=/tmp/demo-bench.sqlite \
-  ACTUAL_BENCH_DIST_DIR=.next-live-tmp npx next dev -p 3517 &
-
-# Wait for each to answer (about three minutes at most; the first Bench page
-# compiles), and capture only if both do
-wait_for() {
-  for i in $(seq 1 60); do
-    curl -s -o /dev/null --max-time 2 "$1" && return 0
-    sleep 1
-  done
-  echo "$1 did not answer" >&2
-  return 1
-}
-wait_for http://localhost:5197 && wait_for http://localhost:3517 && \
-BENCH_URL=http://localhost:3517 ACTUAL_URL=http://localhost:5197 \
-  node docs-site/scripts/capture-landing.mjs
-```
+showing the previous ones. The list of images the README uses is at the top of
+that script.
 
 The front page's hero (`docs-site/src/components/landing/demo-household.ts`)
 quotes the demo's balances and a few of its figures; update it with the seed.

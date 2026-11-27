@@ -1,85 +1,98 @@
 ---
 title: Glossary
-description: Definitions for Actual Bench, Actual Budget, connection, sync, and reconciliation terms.
+description: Plain definitions of the words used in Actual Bench and these docs.
 sidebar:
   order: 3
 ---
 
-Use this glossary when a term in the documentation is unfamiliar. Terms with a dedicated guide link to it.
+Plain definitions of the words you will meet in Actual Bench. Where a term has its own guide, it
+links there.
 
-## Products and connections
+## Actual and connections
 
-- **Actual Bench** - the independent companion app this documentation describes.
-- **Actual Budget** - the budgeting application Actual Bench works with.
-- **Actual Server** - the server that hosts your Actual Budget data.
-- **actual-http-api** - a separate API server that Actual Bench can connect through in HTTP API Server
-  mode.
-- **Direct Actual Server mode** - connecting to your Actual Server and running Actual's engine in the
-  browser. See [Connecting](../../getting-started/connecting/).
-- **HTTP API Server mode** - connecting through `actual-http-api`. See
-  [Connecting](../../getting-started/connecting/).
-- **Browser worker** - the in-browser process that runs the Actual engine in Direct mode.
-- **CORS** - the browser rule set governing cross-origin requests; relevant to Direct mode.
-- **Cross-origin isolation** - the secure browsing context (COOP/COEP headers) Direct mode requires.
+- **Actual Budget** - the budgeting app Actual Bench works with. Your budget lives there.
+- **Actual Server** - the server that holds your Actual budgets.
+- **actual-http-api** - a separate server that gives other tools access to Actual. Bench can connect
+  through it.
+- **Direct mode** - connecting straight to your Actual Server, the way Actual's own app does. See
+  [Connect to a budget](../../getting-started/connecting/).
+- **HTTP API mode** - connecting through `actual-http-api`.
+- **Encryption password** - the extra password on an end-to-end encrypted budget. It is not your
+  server password.
+- **Remember this budget** - saving a budget's server password, encrypted with your Actual Bench
+  password, so you can reconnect in one click.
+- **Enrolled budget** - a budget whose credentials are saved for scheduled work, so automations can
+  open it with the app closed. See [Automations](../../user-guide/automations/#unattended-access).
+- **Credential vault** / **vault key** - where enrolled credentials are kept, encrypted, and the key
+  that opens them. The vault is **locked** when Bench cannot find the key that sealed them.
 
-## Budget concepts
+## Your budget
 
-- **Account** - a place transactions live (for example a checking account).
-- **On-budget account** - an account included in budgeting.
-- **Off-budget account** - an account tracked but excluded from budgeting.
-- **Payee** - who a transaction is with.
-- **Transfer payee** - a system-managed payee representing an inter-account transfer.
-- **Category** - a budgeting bucket for transactions.
-- **Category group** - a group of categories (income or expense).
-- **Schedule** - a planned one-time or recurring transaction.
-- **Tag** - a label attached to transactions.
-- **Rule** - automation that changes transactions based on conditions.
-- **Rule stage** - when a rule runs: `pre`, `default`, or `post`.
-- **Condition / Action** - the "when" and the "what changes" parts of a rule.
-- **Template / Formula** - advanced action modes (Handlebars templates; Excel-style formulas).
-- **Budget mode** - **Envelope** or **Tracking**, the two Actual Budget budgeting styles.
-- **Budget cell** - a single category × month value in the budget grid.
+- **On-budget / off-budget account** - whether an account's money takes part in your budget.
+- **Account class** - what kind of account it is (Checking, Savings, Credit Card, Property, Loan…).
+  A label in Bench only. See [Accounts](../../user-guide/accounts/#account-classes).
+- **Accessible** - whether you could use an account's money now (**Available now**) or not
+  (**Locked**). Available money is cash; locked money only counts towards net worth.
+- **Left out of reports** - an off-budget account that Financial Insights ignores completely.
+- **Budget mode** - **Envelope** (give real money to categories) or **Tracking** (compare a plan with
+  what happened), the two ways Actual budgets.
+- **Transfer payee** - the payee Actual keeps for each account, used for transfers.
+- **Rule**, **condition**, **action**, **stage** - a rule's conditions say when it applies, its
+  actions say what it does, and its stage (`pre`, `default`, `post`) says when it runs.
+- **Schedule** - a planned one-off or recurring transaction.
+- **Tag** - a `#word` in a transaction's notes.
 
-## Working in Actual Bench
+## Working in Bench
 
-- **Staged change** - a local edit not yet written to the server.
-- **Changes** - the panel/summary of pending staged changes.
-- **Save** - write staged changes to the server.
-- **Discard** - revert staged changes to the last saved state.
-- **Preview** - a dry-run that classifies items without writing (Budget Sync).
-- **Apply** - write the selected safe items from a sync preview.
-- **App Health** - the diagnostics page for Actual Bench's metadata database and scheduler.
-- **Metadata database** - the server-side SQLite store (under `/data`) for Actual Bench workflow data.
-- **ActualQL** - Actual Budget's JSON query language, used in the query workspace.
-- **Budget snapshot** - an exported copy of a budget, inspected read-only by Budget File Health and the Data Browser.
-- **SQLite** - the database format budgets and metadata use.
-- **Integrity check** - a deep SQLite validation in Budget File Health.
+- **Draft** / **staged change** - an edit waiting in the **Changes** panel. It reaches Actual when
+  you select **Save**. See [Work safely](../../getting-started/core-concepts/).
+- **Save** / **Discard** - write the draft to Actual, or throw it away.
+- **Preview** / **Apply** - see what a sync or reconciliation would change, then write the rows you
+  chose.
+- **Usage Inspector** - the **Info** drawer showing what depends on a record.
+- **ActualQL** - Actual's JSON query language. See [ActualQL Queries](../../user-guide/actualql/).
+- **Snapshot** - a fresh export of your budget file, opened read-only in your browser by Budget File
+  Health and the Data Browser.
+- **Metadata database** - Bench's own database under `/data`. It holds Bench's records, never a copy
+  of your budget.
+- **App Health** - the page where Bench checks its own storage, vault and workers.
 
-## Budget Sync and FX
+## Money and reports
 
-- **Flow** - a saved one-way sync definition between a source and target.
-- **Source / Target** - the origin and destination of a flow.
-- **Mapping** - the app-owned link between a source item and its synced target item.
-- **Marker** - a durable target-side stamp (`imported_id`) recording that an item was synced.
-- **Duplicate candidate** - a possible duplicate on the target, held for review.
-- **Review queue** - where uncertain items collect for manual handling.
-- **Run history** - the record of a flow's past runs.
-- **Safe item** - an item safe to apply automatically (a new create or marker-match repair).
-- **FX rate** - an exchange rate used to convert amounts during cross-currency sync.
-- **Currency pair** - a source/target currency combination on the Exchange Rates page.
-- **Rate override** - a manually entered rate for a specific date.
-- **Locked rate** - a rate captured at first sync that won't silently change.
-- **Immutable rate snapshot** - the stored rate and amounts kept with a converted transaction.
-- **Remembered-server vault** - optional saved server credentials encrypted with your Actual Bench password.
-- **Credential vault** - where credentials enrolled for automations are kept, encrypted, so they can
-  run with the app closed. Always present; **locked** when Bench can't find the key that sealed them.
-- **Vault key** - the key the credential vault is encrypted with: generated on first start into
-  `secrets/vault.key`, or supplied as `ACTUAL_BENCH_VAULT_KEY` (formerly `SYNC_VAULT_KEY`). Unrelated
-  to the remembered-server passphrase.
-- **Unattended sync** - safe-only server-side sync that runs with the app closed (HTTP API or Direct mode).
-- **Auto-pause** - a flow automatically pausing after repeated failed automated runs.
+- **Net worth** - everything you own less everything you owe.
+- **Money kept** - money received less money spent.
+- **Savings rate** - money kept as a share of money received.
+- **Cash buffer** - how many months your cash would cover a typical month.
+- **In transit** - a transfer whose other side is missing, or falls in another period.
+- **Investment activity** - uncategorized entries inside an investment account: price changes,
+  dividends, fees.
+- **Equity** - what an asset is worth less your share of the loan against it.
+- **Loan-to-value (LTV)** - the loan against an asset as a share of its value.
 
-## Related pages
+## Loans, cards and assets
 
-- [Introduction](../../getting-started/introduction/)
-- [Core Concepts](../../getting-started/core-concepts/)
+- **Tracked loan** - a loan linked to its account in Actual, so each repayment is matched and split.
+  See [Loans](../../user-guide/assets-debt/).
+- **Principal** / **interest** - the part of a repayment that lowers what you owe, and the part that
+  pays the lender.
+- **Statement** - one bank statement for a card: its balance, minimum and due date. See
+  [Credit Cards](../../user-guide/credit-cards/).
+- **Instalment plan** - a purchase the bank lets you repay in instalments.
+- **Asset Ledger** - an asset's account in Actual, row by row, with a type for each entry. See
+  [Assets](../../user-guide/asset-registry/).
+
+## Reconciliation and sync
+
+- **Session** - one reconciliation of one account against one statement, saved so you can come
+  back to it. See [Bank Reconciliation](../../user-guide/bank-reconciliation/).
+- **Statement layout** - how to read one bank's PDF table, saved for next month.
+- **Imported payee** - the bank's own text for a transaction, kept beside your tidy payee name.
+- **Flow** - a saved one-way sync from a source to a target. See
+  [Cross Budget Sync](../../user-guide/budget-sync/).
+- **Mapping** - Bench's record that a source item was copied to a target item, so it is never copied
+  twice.
+- **Safe item** - a row a sync can apply without review, such as a new transaction.
+- **Review queue** - rows a sync could not prove safe, waiting for you.
+- **Locked rate** - the exchange rate a synced transaction was copied with. It does not change unless
+  you choose to update it.
+- **Auto-pause** - an automation or flow pausing itself after several failed runs.

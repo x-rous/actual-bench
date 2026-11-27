@@ -5,22 +5,18 @@ sidebar:
   order: 5
 ---
 
-Use Payee Cleanup to improve your payee list and automate future imports.
+Bank imports leave a trail of near-identical payees: `AMAZON MKTPLACE 1234`, `Amazon.com*AB12`,
+`AMZN Mktp`. Payee Cleanup finds them for you, merges them into one, and adds the rules that stop
+new duplicates appearing. It has three tabs, each usable on its own:
 
-It has three separate workflows:
+- **Duplicate payees:** payees that are probably the same merchant, ready to merge or rename.
+- **Payees needing rules:** payees whose bank text will not find them automatically next time, with
+  a rule that fixes it.
+- **Unused payees:** payees with no transactions and no rules, ready to delete.
 
-- **Duplicate payees:** find payees that likely represent the same merchant, then review and stage
-  merges or renames.
-- **Payees needing rules:** find payees whose bank text will not resolve automatically, then review and stage
-  rules that set the correct payee on future imports.
-- **Unused payees:** find payees with no transactions or rule references, then review and stage
-  deletions.
-
-You can use each workflow on its own. Open it from **Analyze & Cleanup → Payee Cleanup** (`/payees/cleanup`).
-
-**Writing to Actual:** Scanning, accepting, and dismissing suggestions do not write to Actual.
-**Stage cleanup** adds selected changes to Changes. Use the app-wide **Save** action only after
-reviewing those changes.
+Open it from **Analyze & Cleanup → Payee Cleanup**. Scanning, accepting and dismissing never change
+Actual. **Stage cleanup** adds what you accepted to the **Changes** panel, and it reaches Actual
+when you select **Save**.
 
 ## Before you start
 
@@ -165,10 +161,8 @@ rule is safe.
 
 The **Unused payees** tab identifies regular payees with no transactions and no rule references.
 
-Use the checkbox in the **Payee** header to choose every unused payee currently shown.
-Select a payee's checkbox to include its deletion in Changes. Then select **Stage cleanup**,
-review the Changes, and use **Save** to write the deletion to Actual. Nothing is deleted when
-you select it.
+Tick the payees you want to delete, or use the checkbox in the **Payee** header to choose every one
+shown.
 
 Cleanup is deliberately cautious: a payee that a rule sets or checks is not shown as unused. Before
 staging, Cleanup checks the payee again so a new transaction or rule reference prevents deletion.
@@ -178,8 +172,7 @@ staging, Cleanup checks the payee again so a new transaction or rule reference p
 When you are ready, select **Stage cleanup**. Accepted merges, renames, rules, and selected unused
 payee deletions appear in Changes.
 
-Review the staged changes, then use the app-wide **Save** action to write them to Actual. Payee
-changes are saved before dependent rules.
+Review them, then select **Save**. Payee changes are saved before the rules that depend on them.
 
 ## Limits
 

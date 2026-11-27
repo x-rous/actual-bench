@@ -1,207 +1,152 @@
 ---
 title: Automations
-description: Schedule bank syncs, backups, and safe budget-file syncs, then review every run in one place.
+description: Schedule bank syncs, backups and safe budget syncs to run with the app closed, and see every run in one place.
 sidebar:
   order: 13
 ---
 
-Use Automations to schedule bank syncs, backups, backup verification, and safe budget-file syncs.
-The page also shows each run, its outcome, duration, retries, and redacted log.
+Automations runs work for you on a schedule, even with Actual Bench closed: pulling from your banks,
+taking backups, and running safe syncs between budgets. Every run is recorded with its outcome,
+duration and a log, so you can see at a glance what happened overnight.
 
-Open it from **Sync & Automations → Automations** (`/automations`).
+Open it from **Sync & Automations → Automations**. Each automation changes only what its job does
+(a bank sync imports transactions; a safe sync applies safe items), and Bench keeps the run history.
+It is marked experimental while it is shaped by feedback.
 
-**Budget impact:** An automation follows the budget-impact rules of its job. It also saves run history,
-duration, outcome, and a redacted log in Actual Bench.
+![The Automations table: two server automations, a weekly check of stored backups and a monthly backup of Bench's data, each with its status, schedule, last run and next run.](../../../assets/screenshots/user-guide/automations.png)
 
-![The Automations table listing two scheduled jobs with their status, schedule and last result.](../../../assets/screenshots/user-guide/automations.png)
+*Each row shows the job, where and when it runs, and how its last run went.*
 
-*Each row shows the job, schedule, next run, and most recent result.*
-
-:::note[Not Actual's Budget Automations]
-Actual Budget has an experimental feature of its own called Budget Automations. This is a different
-thing: Bench's own scheduled jobs, which Bench runs. It does not drive Actual's feature.
+:::note[Not Actual's own Budget Automations]
+Actual has an experimental feature called Budget Automations. This page is different: these are
+Bench's own scheduled jobs.
 :::
 
 ## What can run on a schedule
 
 | Kind | What it does | Set up in |
 |---|---|---|
-| **Bank sync** | Asks Actual to pull new transactions from the banks you connected to it | [Bank Sync](../bank-sync/) |
-| **Backup** | Takes a verified copy of your budget and of Bench's own settings | [Backups](../backups/) |
-| **Cross Budget Sync** | Runs a saved sync flow, safe items only | [Cross Budget Sync](../budget-sync/) |
-| **Verify backups** | Re-reads stored copies to check they are still readable | created with your first backup rule |
+| **Bank sync** | Asks Actual to pull new transactions from your linked banks | [Bank Sync](../bank-sync/) |
+| **Backup** | Takes a verified copy of your budget and of Bench's data | [Backups](../backups/) |
+| **Cross Budget Sync** | Runs a sync flow, safe items only | [Cross Budget Sync](../budget-sync/#automation) |
+| **Verify backups** | Re-reads stored copies to check they still open | Created with your first backup rule |
 
-**New automation** on the Automations page lists all of them and takes you to where each is
-configured. A backup and a sync flow are set up in their own screens because that is where the
-decisions live; what they share is the engine that runs them.
+**New automation** lists them all and takes you to where each is set up.
 
-## Check where an automation runs
-
-Every automation says **where it runs**, on its own row:
-
-| | |
-|---|---|
-| **Runs on the server** | Runs on schedule even with Actual Bench closed. Works with HTTP API and Direct connections, once the budget is enrolled for unattended access. |
-| **Runs in your browser** | Runs only while Bench is open in a tab. Close it and nothing happens. This is a convenience, not automation. |
-
-For a Direct connection, a scheduled run opens the budget on the Bench server, so the Bench server
-must be able to reach your Actual server (see
-[Deployment](../../administration/deployment/#direct-mode-network-requirements)).
-
-**One instance only.** The engine runs inside the Bench server process. Running two containers
-against one database would run your automations twice; Bench does not coordinate across instances.
+Each row says where it runs. **Runs on the server** keeps going with Bench closed. **Runs in your
+browser** only runs while a Bench tab is open, so it is a convenience rather than true automation.
 
 ## Unattended access
 
-Anything that runs with the browser closed needs credentials the server can use, so the budget itself
-has to be **enrolled**. There is nothing to set up on the server first: Bench's credential vault is
-always there.
+Anything that runs with the browser closed needs credentials the server can use, so its budget has
+to be **enrolled**. You can enrol from the **Connections** tab, or right where you need it, in the
+bank sync, backup or sync flow dialogs.
 
-The **Connections** tab lists the budgets Bench may act on, when each was enrolled, and - the column
-worth the tab - **what depends on it**. Withdrawing a credential stops those automations, so the
-confirmation names them before it happens.
+- **Bench checks before it saves.** It tries the password or API key against your server first. For
+  a Direct budget that means opening the budget, which usually takes seconds but can take a few
+  minutes the first time. If the check fails, you see why and nothing is saved.
+- **Enrolment is per budget.** Bench saves one password or API key per server, though, so once one
+  budget on a server is enrolled, **Enrol budgets on this server** enrols the others without
+  connecting to each. An encrypted budget asks for its own password.
+- **Direct is recommended.** It needs no extra service and reports bank sync results in full. A
+  budget enrolled through HTTP API that Bench can also reach directly offers **Switch to Direct**,
+  which moves its automations, flows and backup rules across.
 
-Three things to expect:
-
-- **Bench checks before it saves.** When you enrol, Bench checks the password or API key with the
-  server. For a Direct connection this means opening the budget, which usually takes a few seconds
-  but can take a few minutes the first time. If the check fails, Bench shows the reason and nothing
-  is saved.
-- Enrolment is **per budget, not per server**. Three budgets on one server are three entries.
-- Bench can enrol any budget you have connected to in this browser session. After that, the other
-  budgets on the same server can be enrolled without connecting to them (see below).
-
-### Other budgets on your servers
-
-Bench saves one password or API key per server. Once one budget on a server is enrolled, the
-**Connections** tab lists that server's other budgets on its own, and **Enrol budgets on this server**
-enrols the ones you choose, with nothing more from you. An encrypted budget asks for its encryption
-password. Each budget is checked with the server first, and one that fails shows why on its own row
-without holding up the others. **Refresh** re-reads each server's list.
-
-A budget can be reached through HTTP API or Direct, but it is enrolled only one way at a time. Direct
-is recommended: it needs no extra service and reports bank sync results in full. A budget enrolled
-through HTTP API that Bench can also reach through Direct offers **Switch to Direct**. Switching checks
-the new way first, then moves the budget's automations, flows and backup rules over. Each row on this
-tab shows which way it is enrolled.
-
-:::note[Why some budgets take longer to open]
-Actual's server keeps a saved copy of each budget, and anything that opens the budget replays every
-change made since that copy. Actual's own app refreshes the copy about once a week. Bench and
-actual-http-api do not, so a budget you use mostly through them opens more slowly over time. Bench
-refreshes it once a week for budgets it runs automations on. If enrolling a budget takes too long,
-open it once in Actual's own app, then enrol it again.
-:::
-
-You can enrol from Connections, from the bank sync or backup dialogs, or from a Cross Budget Sync
-flow - all four write the same list. This works the same for HTTP API and Direct connections.
+The **Connections** tab lists every enrolled budget and what depends on it, so withdrawing a
+credential names the automations it will stop.
 
 :::caution[What gets saved]
-- **HTTP API connection:** the budget's API key is encrypted with Bench's vault key and saved.
-- **Direct connection:** your Actual server password is encrypted with Bench's vault key and saved.
-- The vault key is kept beside Bench's database (`secrets/vault.key`) or in `ACTUAL_BENCH_VAULT_KEY`,
-  never in the database, so someone with a copy of the database alone cannot read the password or
-  API key. Keep the vault key private, and keep it with your data: without it the saved credentials
-  cannot be opened.
-- Bench only unlocks the password or API key on the server when an automation runs. It is never shown
-  again or sent to your browser.
-- If your budget has an encryption password, it is saved the same way. No budget data is saved.
-- If you change your Actual server password or API key, automations for budgets on that server stop
-  running. Enrol one of those budgets again to save the new one for all of them.
-- You can remove it in **Connections** at any time. Automations that use it will stop running until
-  you enrol again.
+- For an HTTP API budget, its API key. For a Direct budget, your Actual server password. An
+  encrypted budget's own password is saved too. No budget data is saved.
+- They are encrypted with Bench's vault key, which is kept outside the database (in
+  `secrets/vault.key` or `ACTUAL_BENCH_VAULT_KEY`), so a copy of the database alone cannot open
+  them. Keep the key private, and keep it with your data.
+- They are only unlocked on the server when an automation runs, and are never shown again or sent to
+  your browser.
+- If you change your Actual password or API key, automations on that server stop. Enrol one budget
+  again to save the new one for all of them.
+- Remove a credential from **Connections** at any time.
 :::
+
+:::note[Why some budgets take longer to open]
+Actual's server keeps a saved copy of each budget, and opening a budget replays every change since
+that copy. Actual's own app refreshes the copy about once a week; tools like Bench do not, so a
+budget used mostly through them opens more slowly over time. Bench refreshes it weekly for budgets
+it runs automations on. If enrolling takes too long, open the budget once in Actual's own app, then
+enrol again.
+:::
+
+For a Direct budget, the Bench server opens the budget itself, so it must be able to reach your
+Actual Server (see [Deployment](../../administration/deployment/#direct-mode)).
 
 ## Schedules
 
-Every scheduled thing in Bench (bank sync, backups, Cross Budget Sync) uses the same schedule picker,
-with two ways in:
+Every schedule in Bench uses the same picker:
 
-- **Simple** - *Repeating* every so many minutes or hours (at least 15 minutes apart), *Daily* at a
+- **Simple:** *Repeating* every so many minutes or hours (at least 15 minutes apart), *Daily* at a
   time, *Weekly* on the days you tick, or *Monthly* on a day from the 1st to the 28th.
-- **Cron** - a five-field expression (`minute hour day month weekday`), with presets to start from.
-  Each field is read back underneath on its own (`*/15` → *every 15 minutes*, `1-5` → *Mon–Fri*), so
-  a mistake shows which field it is in.
+- **Cron:** a five-field expression, with presets. Each field is read back on its own, so a mistake
+  shows which field it is in.
 
-Switching carries the schedule across: a simple schedule becomes its cron expression, and a cron
-expression the simple modes can express opens in them. Cross Budget Sync runs on an interval only,
-so its picker shows just that.
-
-Whatever you pick, the picker says back **what it understood** and **when the next runs land**. That
-second line is the one that catches mistakes: `0 0 * * *` reads like a fair guess at midnight until
-the preview shows the next run is fourteen hours away.
-
-Clock-based schedules carry an explicit **time zone**. Daylight saving is handled deliberately: a
-time that does not exist on a spring-forward day runs as the gap closes, and a time that happens
-twice on a fall-back day runs **once**.
+The picker always says what it understood and when the next runs land. That catches mistakes:
+`0 0 * * *` reads like a fair guess at midnight until the preview shows the next run is fourteen
+hours away. Clock-based schedules have a time zone, and
+daylight saving is handled: a time skipped in spring runs as the gap closes, and a time repeated in
+autumn runs once. Cross Budget Sync runs on an interval only.
 
 ## Run history
 
-**Run history** shows every run across every automation, filtered by outcome first - *what failed?*
-in one click - then by automation and kind, and searchable by the line a run reported. Each run
-expands to its result, its duration, any retries, and a redacted log.
+**Run history** shows every run of every automation. Filter by outcome first ("what failed?"),
+then by automation and kind, or search the line a run reported. Each run expands to its result,
+duration, retries and a log with secrets removed. An automation's own drawer keeps its newest ten
+runs.
 
-An automation's own drawer keeps the newest ten runs, which is enough to answer "is this healthy".
+## When something goes wrong
 
-## Stopping a run
+- **Backoff:** after a failure, attempts space out, so a broken job stops hammering what it cannot
+  reach.
+- **Auto-pause:** after several failures in a row an automation pauses itself and says why.
+  **Resume** clears the pause.
+- **Overdue** is flagged when an automation is well past its next run, even if nothing failed.
+- **Busy is not failure:** if the most runs allowed are already going, a scheduled run waits for the
+  next minute.
+- **Missing credentials:** an automation whose credential cannot be opened (the vault is locked, or
+  the enrolment was withdrawn) does not run, and pauses with the reason.
 
-By default, each run happens in a worker thread of its own, with its own memory limit. A run that
-hangs can be stopped, and a run that reaches its memory limit is normally ended on its own.
-(If your operator set Bench to run automations in the server's own thread, time limits can only ask a
-run to stop. See [Configuration](../../administration/configuration/#automation-workers).)
+A backup that reached one of two destinations is reported as partial, and does not count towards
+auto-pause, so the copies that still work keep coming. A bank sync where some accounts failed is
+treated the same way.
 
-- **Every kind of automation has a time limit:** Cross Budget Sync 20 minutes, bank sync 10, backup 60,
-  verify backups 30. At the limit the run is asked to stop. If it has not stopped 10 seconds later,
-  its thread is ended.
-- **Cancel** appears on an automation's row while it is running, and stops it the same way.
-- **A run that reaches its memory limit is ended.** It reports "Ran out of memory", and normally the
-  server and any other runs carry on. The limit covers the run's working memory, not everything it
-  uses, so it is not a guarantee: if the container itself runs out of memory, the whole of Bench can
-  stop. Your operator can raise the limit, or give the container more memory (see
-  [Configuration](../../administration/configuration/#automation-workers)).
+### Time limits and stopping a run
 
-What a stopped run is called depends on how far it got:
+Each run happens in its own worker, with a memory limit and a time limit: Cross Budget Sync 20
+minutes, bank sync 10, backup 60, verify backups 30. **Cancel** on a running automation stops it. A
+run that reaches its memory limit stops with "Ran out of memory", and the rest of Bench carries on;
+whoever runs the server can raise the limit (see
+[Configuration](../../administration/configuration/#automation-workers)).
 
-| Stopped while... | Shown as |
+| Stopped while… | Shown as |
 |---|---|
 | Only reading | **Failed**, or **Cancelled** if you pressed Cancel |
-| It may already have changed something: applying a sync, pulling from a bank, writing a backup | **Stopped, may have made changes** |
+| It may already have changed something (applying a sync, pulling from a bank, writing a backup) | **Stopped, may have made changes** |
 
 **Stopped, may have made changes** is never retried automatically, because repeating a write could
-duplicate it, and it does not count toward auto-pause. Check the budget or backup destination before
-relying on what that run did. The next scheduled run goes ahead as normal.
+duplicate it. Check the budget or backup destination before relying on that run. The next scheduled
+run goes ahead as normal.
 
-A run that finishes its work just as the time limit passes is recorded as finished.
+## Pause and delete
 
-## When something fails
+**Pause** stops an automation and keeps its schedule, history and credentials. **Delete** removes the
+automation and its run history; what it produced (backups, synced transactions) stays. Deleting a
+backup rule whose automation has history pauses the automation instead, so the record of real backups
+survives until you delete it yourself.
 
-Bench treats a failure as information, not an emergency:
+## Run one Bench only
 
-- **Backoff.** Attempts space out after a failure, up to a ceiling, so a broken job stops hammering
-  whatever it cannot reach.
-- **Auto-pause.** After a run of consecutive failures the automation pauses itself and says why.
-  **Resume** clears both the pause and the streak. Editing a schedule does not clear a pause.
-- **Overdue is a warning.** An automation well past its next run is flagged even when nothing failed.
-- **Busy is not failure.** If the maximum number of runs is already going, a scheduled run waits for
-  the next minute and does not count toward the streak.
-- **Fail closed on credentials.** An automation that names a credential it cannot resolve - vault off,
-  key rotated, enrolment withdrawn - does not run at all, and pauses with that reason.
+The scheduler runs inside the Bench server. Two containers on one database would run every
+automation twice, so run a single instance.
 
-What counts as a failure is the job's own judgement, and the two answers differ on purpose. A backup
-that reached one of two destinations is reported as partial but does **not** count against the
-streak: pausing it would stop the copies that were still working. A scrub that finds a damaged copy
-**does** count - repeating it will not improve matters, and someone should look.
+## Related pages
 
-## Pausing and deleting
-
-**Pause** stops an automation running and keeps everything else - its schedule, its history, its
-credentials.
-
-**Delete** removes the automation *and its run history*. What the automation produced is untouched:
-backups stay in their destinations, synced transactions stay in the budget. Only the record of the
-runs goes.
-
-That is why deleting a **backup rule** does not always delete its automation. If the automation has
-never run, it is removed with the rule. If it has history, it is paused with an explanation instead,
-so the record of backups that actually happened survives the rule that made them. Delete it yourself
-from this page when you no longer want that record.
+- [Bank Sync](../bank-sync/) · [Backups](../backups/) · [Cross Budget Sync](../budget-sync/)
+- [App Health](../../administration/app-health/) - the vault and worker status

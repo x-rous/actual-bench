@@ -1,86 +1,96 @@
 ---
 title: Work safely
-description: "Manual changes to budget data remain available for review until you confirm them."
+description: What Actual Bench changes in your budget, when it changes it, and where it keeps its own data.
 sidebar:
   order: 4
 ---
 
-## Review before budget data changes
+Most of Actual Bench only reads your budget. Where it does change something, you see the change
+first and confirm it yourself. This page is the one place that lists what changes Actual and when,
+so the feature guides can stay short.
 
-Manual changes to budget data do not reach Actual until you review and confirm them. The interface
-uses **Save** for staged edits and **Apply** for a reviewed workflow, but both follow the same rule.
+## What changes Actual, and when
 
-| Where you work | Review step | Confirmation |
-|---|---|---|
-| Budget Setup and Budget Cockpit | Edits collect in **Changes** | **Save** |
-| Bank Reconciliation and Cross Budget Sync | A session or preview lists planned changes | **Apply** |
+| Where you work | What happens in Actual |
+|---|---|
+| Budget Setup pages (Accounts, Categories, Payees, Tags, Rules, Schedules), Budget Cockpit, Payee Cleanup, Bundle Import | Your edits collect as a draft in **Changes**. Nothing is written until you select **Save**. |
+| Notes, and the carryover toggle in Budget Cockpit | Saved the moment you confirm them. See [below](#changes-that-save-immediately). |
+| Bank Reconciliation | Your decisions are kept in a session. Actual changes only when you select **Apply**. |
+| Cross Budget Sync | A preview first. Actual changes on **Apply**, or on a schedule you opted in to, which applies only items it can prove are safe. |
+| Loans | Only when you select **Apply**, **Undo split**, **Edit split** or **Save Notes**. |
+| Assets | Only when you confirm an action such as **Update value**, an entry, a sale or **Post selected** depreciation months. |
+| Financial Insights, Cashflow Planning, Credit Cards | Never. They read your budget and keep their own records in Bench. |
+| Account classes, access and report settings | Never. They are saved in Bench, not in Actual. |
+| ActualQL, Rule Diagnostics, Budget File Health, Data Browser | Never. They only read. |
+| Bank sync (the **Sync banks** button, or a schedule) | Actual pulls new transactions from your banks, as it does in Actual itself. |
 
-Check the active budget and review the listed changes before you confirm either action.
+Before you select **Save** or **Apply**, check two things: that the active budget in the top bar is
+the one you mean, and that the listed changes are the ones you expect.
 
-### Reviewed Apply workflows
+Each page says the same for itself: the **About** button (ⓘ) in the top bar describes the page, and its
+**Actual data** line says what it can change.
 
-Cross Budget Sync classifies items in a preview before you apply them. Bank Reconciliation keeps your
-decisions in a resumable session and re-reads affected transactions immediately before it writes. Both
-workflows report partial failures and keep failed items available for retry.
+![The About panel for Bank Reconciliation: what the page does, and under Actual data, "Create, edit and delete transactions on Apply."](../../../assets/screenshots/getting-started/about-feature.png)
 
-The re-read reduces the risk of overwriting a concurrent change, but it cannot make the write
-version-locked. Avoid changing the same transactions in Actual while reconciliation is applying.
+## Drafts, undo and discard
 
-## Staged work
+New, edited and deleted rows are marked as you go, and the **Changes** panel counts what is waiting.
 
-New, edited and deleted rows are marked as you go. The **Changes** panel counts
-what is waiting. **Save** writes the draft. **Discard** throws it away and re-reads the server. Undo
-and redo work on the draft only - once something is saved, undo cannot reach it.
+- **Save** writes the draft to Actual. If some items fail, they stay in the draft, marked, so you can
+  retry them. Only what Actual accepted leaves the draft.
+- **Discard** throws the draft away and re-reads the budget.
+- **Undo** and **Redo** work on the draft. Once something is saved, undo cannot reach it.
 
-A draft belongs to one budget. With several open, check which one is active before you save.
+A draft belongs to one budget. If you have several budgets open, each keeps its own.
 
-## Immediate budget-change exceptions
+### Changes that save immediately
 
-- **Notes** save the moment you confirm the editor. Discarding the rest of your draft will not take
-  them back.
-- **Carryover** writes directly, through its own action in Budget Cockpit. It was never part of
-  the cell draft.
+Two kinds of edit skip the draft, so **Discard** cannot take them back:
 
-These actions are not part of **Changes**. They write when you confirm them.
+- **Notes** on accounts, categories, category groups and budget months save when you confirm the
+  note editor.
+- **Carryover** (rollover) in Budget Cockpit writes as soon as you change it, and tells you what it
+  changed.
 
-## Automated budget changes
+### Workspaces that need a clean draft
 
-Scheduled bank sync and opted-in safe sync can write later without a per-run review. They are explicit
-automation policies, not manual editing. See [Automations](../../user-guide/automations/) and
-[Cross Budget Sync](../../user-guide/budget-sync/#automation-opt-in).
+Financial Insights, Budget Cockpit, Cashflow Planning, Credit Cards, Assets, Loans and Bank
+Reconciliation read your saved budget. If you have unsaved edits from another page, the workspace
+first shows them in the **Changes** panel and asks you to **Save** or **Discard** them. It opens as
+soon as the draft is resolved. If you start a new draft while you are inside (with Quick Create, for
+example), the panel appears again without closing what you are working on.
 
-## Tools that do not change budget data
+## Automations
 
-ActualQL, Rule Diagnostics, Budget File Health, and Data Browser do not change budget data. Some of
-these tools can save Actual Bench workflow metadata, such as a dismissed diagnostic finding or a saved
-query.
+Scheduled bank syncs and opted-in safe syncs change your budget without a review each time. That is
+what you asked them to do, and they only run once you set them up. See
+[Automations](../../user-guide/automations/) and
+[Cross Budget Sync](../../user-guide/budget-sync/#automation).
 
 ## Where data and credentials are stored
 
-| Information | Location | How long it lasts |
+| Information | Where it lives | How long it lasts |
 |---|---|---|
-| Actual budget data | Your Actual Server | Managed by Actual |
-| Staged edits and active connections | Browser memory | Until refresh or tab close |
-| Non-secret recent connection details | Browser session storage | Until the tab closes |
-| Actual Bench workflow metadata, including credit-card setup, statements and plans | `/data/actual-bench.sqlite` | Across restarts when `/data` is persisted |
-| Remembered server secrets, when enabled | Metadata database, encrypted with your Actual Bench password | Until you forget them, or the password is replaced |
-| Unattended-sync credentials, when enabled | Metadata database, encrypted with the vault key (`/data/secrets/vault.key` or `ACTUAL_BENCH_VAULT_KEY`) | Until withdrawn or the database is removed |
-| Exported budget snapshot | Browser memory; downloadable by you | Current session or your downloaded file |
+| Your budget | Your Actual Server | Managed by Actual |
+| Drafts and open connections | Browser memory | Until you refresh or close the tab |
+| Recent connection details (no secrets) | Browser session storage | Until the tab closes |
+| Bench's own records: flows, sessions, cards, plans, loans, assets, saved queries | Bench's database, `/data/actual-bench.sqlite` | Across restarts, when `/data` is kept |
+| Remembered server passwords and API keys, if you choose to remember a budget | Bench's database, encrypted with your Actual Bench password | Until you forget them, or the password is reset |
+| Credentials for scheduled work, if you enrol a budget | Bench's database, encrypted with the vault key | Until you withdraw them |
 
-Remembering credentials is opt-in. By default they live in memory and end when the tab closes. The two
-encrypted options use separate keys. See [Connect to a budget](../connecting/#how-credentials-are-handled)
-and [Configuration](../../administration/configuration/#metadata-database) for setup details.
-
-## Before confirming a manual change
-
-1. Check which budget is active before you **Save** or **Apply**.
-2. Review the listed changes before you select **Save** or **Apply**.
-
-Go to the workflow that brought you here.
+By default, passwords and API keys stay in browser memory and are gone when the tab closes.
+Remembering a budget and enrolling a budget are both opt-in, and they use separate keys. See
+[Connect to a budget](../connecting/#remember-a-budget) and
+[Configuration](../../administration/configuration/#the-credential-vault).
 
 ## App-wide controls
 
-**Help & feedback** and the theme switcher are in the top-right bar beside the account menu. Help
-includes documentation, feedback, the repository, changelog and keyboard shortcuts. The theme
-button cycles through **System**, **Light** and **Dark**; its tooltip names the current setting and
-the next choice. App Health stays in the sidebar footer.
+- **Search** (`Ctrl/Cmd+K`) finds any account, payee, category, rule, schedule or tag.
+- **Quick Create** (`N`, or `Ctrl/Cmd+Shift+N`) adds a payee, category, account or tag without
+  leaving the page.
+- **Help & feedback**, beside the account menu in the top bar, has these docs, the changelog and the
+  keyboard shortcuts. The theme button beside it switches between **System**, **Light** and **Dark**.
+- **About** (the information button in a feature's top bar) shows what that feature can change and
+  whether it is experimental.
+- **App Health**, in the sidebar footer, checks Bench's own storage. See
+  [App Health](../../administration/app-health/).

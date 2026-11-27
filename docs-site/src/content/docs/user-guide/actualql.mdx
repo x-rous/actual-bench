@@ -1,123 +1,70 @@
 ---
 title: ActualQL Queries
-description: Run read-only ActualQL queries and view results as a table, JSON, scalar value, or tree.
+description: Ask your budget questions no screen answers, with read-only ActualQL queries, ready-made examples and results as a table, number or tree.
 sidebar:
   order: 10
 ---
 
-Use ActualQL Queries to answer questions that standard screens do not cover. Queries use JSON and are
-read-only; start with an example and adapt it to your data.
+ActualQL is Actual Budget's own query language. This workspace lets you ask your budget any
+question its screens don't answer ("what did we spend at each supermarket last year?") and see
+the answer as a table, a single number or a tree. You don't need to know ActualQL to start: pick an
+example and change it.
 
-Open it from **Analyze & Cleanup → ActualQL Queries** (`/query`). It works in both connection modes.
-
-**Budget impact:** Queries do not change budget data. Results show saved server state, not unsaved drafts.
+Open it from **Analyze & Cleanup → ActualQL Queries**. Queries only read. Results show what is saved
+in Actual, not unsaved drafts.
 
 ![The ActualQL workspace with a query in the editor and its twenty result rows in the table below.](../../../assets/screenshots/user-guide/actualql.png)
 
-*Examples on the left, the query in the middle, the answer underneath - with how long it took, how
-much came back, and a button for each way you might want to take it away.*
+*Examples on the left, the query in the middle, the answer underneath, with how long it took and how
+much came back.*
 
-## Get an answer quickly
+## Get an answer
 
 1. Open **Examples** and choose the closest question.
-2. Adjust its table, fields, filters, or dates.
-3. Select **Explain** to check your intent without running it.
-4. Select **Run**, then choose Table, Raw JSON, Scalar, or Tree.
-5. Save a useful query or export the result.
+2. Change its table, fields, filters or dates.
+3. Select **Explain** to read back what it will do, without running it.
+4. Select **Run** (or press `Ctrl/Cmd+Enter`).
+5. Choose **Table**, **Raw JSON**, **Scalar** or **Tree**, then save the query or export the result.
 
-## What ActualQL is
+## Write and check a query
 
-ActualQL is Actual Budget's query language. It is **JSON**, not SQL. Here it only ever reads.
+Queries are JSON, not SQL. The editor highlights syntax and points at the character where the JSON
+breaks. Both a bare query and the `{ "ActualQLquery": ... }` wrapper used by `actual-http-api` work.
+**Format JSON** tidies it.
 
-## Open the workspace and understand the editor
+Warnings catch common mistakes before you run: a `transactions` query with no `limit`, `groupBy` or
+`calculate`; an empty `$oneof`; a `groupBy` with nothing to add up. **ActualQL Reference** is a
+quick guide to filters, joined fields, aggregates and copyable snippets.
 
-- A syntax-highlighted JSON editor with line numbers. It does not autocorrect anything you type.
-- Both shapes work: a bare query object, or the `{ "ActualQLquery": ... }` wrapper `actual-http-api`
-  uses.
-- Drag the divider between editor and results. It stays where you put it.
+## Read the results
 
-## Run and format a query
+- **Table:** one column per field, up to 500 rows. Amounts show as decimals, with the stored integer
+  on hover.
+- **Raw JSON:** the full result.
+- **Scalar:** one large number, for `calculate` queries.
+- **Tree:** a collapsible view, chosen automatically for a single object.
 
-1. Type or paste a query.
-2. Select **Run** (or press `Ctrl/Cmd+Enter`).
-3. Use **Format JSON** to tidy the query.
+The bar above the result shows whether it succeeded, how long it took, and how many rows and bytes
+came back.
 
-Parse errors appear inline, before anything is sent. **Lint warnings** catch the shapes that usually
-mean a mistake: a wide-open `transactions` query with no `limit`, `groupBy` or `calculate`; an empty
-`$oneof`; a `groupBy` with nothing to aggregate.
+## Save and reuse
 
-## Use built-in examples and reference
-
-- **ActualQL Reference** - a six-section quick reference (basics, filter operators, joined fields,
-  aggregates, transactions options, and copyable snippets).
-- **Example packs** - one-click inserts grouped into Data inspection, Cleanup & validation, Aggregation,
-  and Targeted subset.
-
-## Understand result views
-
-Select a result view via tabs:
-
-- **Table** - one column per key found anywhere in the rows, nested values stringified, capped at 500
-  rows with a banner saying so. Dates read as dates. `amount` and `balance` show as decimals, with the
-  raw integer on hover.
-- **Raw JSON** - the full syntax-highlighted payload.
-- **Scalar** - a large value card for `calculate` aggregate results.
-- **Tree** - a collapsible JSON tree, auto-selected for plain-object results.
-
-An execution metadata bar shows an OK / Error chip, elapsed time, row count, and payload size.
-
-## Explain a query
-
-**Explain** describes the query back to you in English - which table, which filters, the grouping, the
-aggregation, the order, and whether you will get a table or one number. It does not run anything.
-
-## Save, pin, and reuse queries
-
-- **Save** a query under a name. Saved queries live in the Bench database and follow you to **every
-  budget** on the instance - not one browser, not one budget. Load, rerun, duplicate, rename, delete,
-  pin. Queries from an older version, which lived per-budget in your browser, are imported the first
-  time you open the page.
-- **History** keeps the last 10 queries you ran, per budget. Run one again and it moves to the top
-  instead of appearing twice.
-
-## Export and copy results
-
-- **Copy result JSON** and **Copy query JSON** are available in all modes.
-- In **HTTP API Server** mode you can also copy **sanitised cURL**, with placeholders where the secrets
-  were, or **full cURL**, which is opt-in and labelled. Either is built from the last request you
-  actually sent, not from whatever is in the editor now.
-
-:::caution[Full cURL contains real credentials]
-Full cURL contains your API key. Copy it when you need it, and do not paste it anywhere public.
-:::
-
-## Staged changes and query results
-
-With a draft open, a banner reminds you that results come from **saved** server state. Your pending
-edits are not in them.
-
-## Practical examples
-
-Use the example packs. They cover transactions, accounts, payees, categories, monthly spending, budget
-status and rules, and they are kept current with the app.
-
-## Mode differences
-
-- ActualQL runs in both Direct and HTTP API Server mode.
-- **cURL generation is HTTP API Server-only**, because it targets `actual-http-api`'s `/run-query`
-  endpoint.
+- **Save** a query by name. Saved queries are kept in Bench and are available for every budget.
+  Load, rerun, duplicate, rename, delete and pin them.
+- **History** keeps the last 10 queries you ran on each budget.
+- **Copy result JSON** and **Copy query JSON** copy either one. In HTTP API mode you can also copy the
+  request as cURL. The sanitised version has placeholders instead of secrets. **Full cURL** includes
+  your real API key, so never paste it anywhere public.
 
 ## Troubleshooting
 
-- **Invalid JSON** - the inline error points at the character. Fix it and run.
-- **Unsupported query** - check the lint warnings and the ActualQL Reference.
-- **Empty result** - check your filters and your date range.
-- **The table view is useless** - try Tree or Raw JSON.
-- **Results look stale** - they show saved state. Save your draft first.
-- **No cURL button** - you are in Direct mode. cURL only exists for HTTP API Server.
+- **Invalid JSON:** the error points at the character. Fix it and run again.
+- **Empty result:** check the filters and date range.
+- **The table is hard to read:** try **Tree** or **Raw JSON**.
+- **Results look out of date:** they show saved data. Save your draft first.
+- **No cURL option:** cURL is only offered in HTTP API mode.
 
 ## Related pages
 
-- [Rules](../rules/)
 - [Budget File Health](../budget-file-health/) · [Data Browser](../data-browser/) - the same data from an exported snapshot
-- [Connect to Actual Budget](../../getting-started/connecting/)
+- [Rules](../rules/)
