@@ -10,6 +10,7 @@ import '@fontsource-variable/schibsted-grotesk';
 import { Image, getImage } from 'astro:assets';
 import WholePicture from '../components/landing/WholePicture.astro';
 import BudgetShowcase from '../components/landing/BudgetShowcase.astro';
+import LoanShowcase from '../components/landing/LoanShowcase.astro';
 import { pictureAccounts, pictureAnswers } from '../components/landing/demo-household';
 
 import logo from '../assets/actual-bench-icon.png';
@@ -18,7 +19,6 @@ import cashBuffer from '../assets/landing/insights-cash-buffer.png';
 import waterfall from '../assets/landing/insights-waterfall.png';
 import moneyFlow from '../assets/landing/insights-money-flow.png';
 import spending from '../assets/landing/insights-spending.png';
-import loanTerms from '../assets/landing/loan-terms.png';
 import cardOverview from '../assets/landing/card-overview.png';
 import assetHome from '../assets/landing/asset-home.png';
 import accounts from '../assets/landing/accounts.png';
@@ -65,8 +65,8 @@ const ownAndOwe = [
 			'See what an extra payment saves before you make it',
 			'Link the loan to the home or car it paid for',
 		],
-		image: loanTerms,
-		alt: 'A home mortgage in Actual Bench: the loan terms beside a balance-over-time chart running to its payoff in July 2044, with the 2,988 of interest and three months that two extra payments saved.',
+		// Loans get a tabbed tour of the app's loan page instead of one picture.
+		showcase: true,
 		link: docs('user-guide/assets-debt/'),
 	},
 	{
@@ -266,7 +266,11 @@ const bench = [
 							<a class="more" href={feature.link}>How {feature.name.toLowerCase()} work</a>
 						</div>
 						<div class="feature-shot">
-							<Image src={feature.image} alt={feature.alt} widths={[1280, 2560, 3840]} sizes="(min-width: 1340px) 1280px, 94vw" {...shot} />
+							{feature.showcase ? (
+								<LoanShowcase />
+							) : (
+								<Image src={feature.image!} alt={feature.alt!} widths={[1280, 2560, 3840]} sizes="(min-width: 1340px) 1280px, 94vw" {...shot} />
+							)}
 						</div>
 					</article>
 				))}
@@ -1008,6 +1012,7 @@ const bench = [
 
 	.feature-shot {
 		grid-column: 1 / -1;
+		min-width: 0;
 		margin-top: 1.25rem;
 	}
 

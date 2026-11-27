@@ -1,0 +1,311 @@
+---
+// The loan showcase in "Every loan, card and home": the demo's home mortgage,
+// tab by tab, the way it opens in the app. Terms & Schedule comes first and
+// reaches down into the amortization schedule; "How it is calculated" lays the
+// app's calculation drawer over it.
+//
+// Images come from docs-site/scripts/capture-landing.mjs ("loans" group).
+import { Image } from 'astro:assets';
+
+import terms from '../../assets/landing/loan-terms.png';
+import link from '../../assets/landing/loan-link.png';
+import repayments from '../../assets/landing/loan-repayments.png';
+import ledger from '../../assets/landing/loan-ledger.png';
+import calculation from '../../assets/landing/loan-calculation.png';
+
+const views = [
+	{
+		id: 'terms',
+		label: 'Terms & Schedule',
+		image: terms,
+		alt: 'A home mortgage in Actual Bench: the loan terms beside its payoff in July 2044 and 160,138 of total interest, the balance over time, the two extra payments made in Actual with the 2,988 of interest and three months they saved, and the amortization schedule splitting each payment into principal and interest.',
+		text: 'The loan as the contract reads, and where it is heading: payoff date, interest paid and still to come, the balance year by year, and every installment split into principal and interest. Extra payments you made in Actual show exactly what they saved.',
+	},
+	{
+		id: 'link',
+		label: 'Link to Actual',
+		image: link,
+		alt: 'Linking the mortgage to its account in Actual: Bench found 28 transactions, the opening balance and 27 repayments, and its starting balance matches Actual’s to the cent.',
+		text: 'Point Bench at the loan’s account in Actual. It reads the history, finds the opening balance and every repayment, and checks its starting balance against Actual’s before tracking a single installment.',
+	},
+	{
+		id: 'repayments',
+		label: 'Repayments',
+		image: repayments,
+		alt: 'The Repayments tab: what is owed in Actual agrees with what Bench expects, the next payment and its due date, and every installment beside the payment that settled it, with its principal, interest and balance after.',
+		text: 'Every installment beside the payment that settled it in Actual: when it was paid, from which account, and how much of it was interest. What Actual owes and what Bench expects are compared every day, and a late or missing payment is flagged.',
+	},
+	{
+		id: 'ledger',
+		label: 'Loan Ledger',
+		image: ledger,
+		alt: 'The Loan Ledger: every entry in the loan account classified as a repayment or extra principal, with its installment and the running balance.',
+		text: 'Every entry in the loan account, classified as a repayment, extra principal, a draw or a fee. Pay a little extra in Actual and it counts in the calculation on its own.',
+	},
+	{
+		id: 'calculation',
+		label: 'How it is calculated',
+		image: terms,
+		alt: '',
+		text: 'No black box. Every convention behind the figures, from how interest accrues to how it is rounded, is laid out so you can check it against your lender’s statement.',
+	},
+];
+
+// Shown at the full width of the page: offer widths up to 3x.
+const shot = { format: 'webp' as const, widths: [1280, 2560, 3840], sizes: '(min-width: 1340px) 1280px, 94vw' };
+---
+
+<div class="loan-showcase" data-view="terms">
+	<div class="views" role="tablist" aria-label="Loan views">
+		{views.map((view, index) => (
+			<button
+				type="button"
+				role="tab"
+				id={`loan-tab-${view.id}`}
+				aria-controls="loan-stage"
+				aria-selected={index === 0 ? 'true' : 'false'}
+				tabindex={index === 0 ? 0 : -1}
+				data-view-to={view.id}
+			>
+				{view.label}
+			</button>
+		))}
+	</div>
+
+	<div class="explain" aria-live="polite">
+		{views.map((view) => <p data-for-view={view.id}>{view.text}</p>)}
+	</div>
+
+	<div class="stage" id="loan-stage" role="tabpanel" aria-labelledby="loan-tab-terms">
+		{views
+			.filter((view) => view.id !== 'calculation')
+			.map((view) => (
+				<Image class="page" data-for-view={view.id} src={view.image} alt={view.alt} {...shot} />
+			))}
+		<div class="backdrop" aria-hidden="true"></div>
+		<Image
+			class="drawer"
+			src={calculation}
+			alt="How this loan is calculated: the engine, the results, every convention and assumption behind them, what was tracked in Actual, and diagnostics to copy if a lender’s figures differ."
+			widths={[540, 1080, 1612]}
+			sizes="(min-width: 1340px) 600px, 94vw"
+			format="webp"
+		/>
+	</div>
+</div>
+
+<script>
+	for (const showcase of document.querySelectorAll<HTMLElement>('.loan-showcase')) {
+		const tabs = [...showcase.querySelectorAll<HTMLButtonElement>('[data-view-to]')];
+		const stage = showcase.querySelector<HTMLElement>('.stage');
+
+		const setView = (view: string, focus = false) => {
+			showcase.dataset.view = view;
+			for (const tab of tabs) {
+				const selected = tab.dataset.viewTo === view;
+				tab.setAttribute('aria-selected', String(selected));
+				tab.tabIndex = selected ? 0 : -1;
+				if (selected) {
+					stage?.setAttribute('aria-labelledby', tab.id);
+					if (focus) tab.focus();
+				}
+			}
+		};
+
+		tabs.forEach((tab, index) => {
+			tab.addEventListener('click', () => setView(tab.dataset.viewTo ?? 'terms'));
+			tab.addEventListener('keydown', (event) => {
+				const move = { ArrowRight: 1, ArrowLeft: -1 }[event.key];
+				if (move === undefined) return;
+				event.preventDefault();
+				const next = tabs[(index + move + tabs.length) % tabs.length];
+				setView(next.dataset.viewTo ?? 'terms', true);
+			});
+		});
+	}
+</script>
+
+<style>
+	/* The app's own tab bar, so the picture below reads as the page it opens. */
+	.views {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.25rem;
+		border-bottom: 1px solid var(--line);
+	}
+
+	.views button {
+		min-height: 44px;
+		margin-bottom: -1px;
+		padding: 0 1rem;
+		border: 0;
+		border-bottom: 2px solid transparent;
+		background: transparent;
+		color: var(--muted);
+		font: inherit;
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	.views button:hover {
+		color: var(--ink-soft);
+	}
+
+	.views button[aria-selected='true'] {
+		color: var(--ink);
+		border-bottom-color: var(--ledger);
+	}
+
+	.views button:focus-visible {
+		outline: 2px solid var(--ledger);
+		outline-offset: 2px;
+	}
+
+	.explain {
+		min-height: calc(3 * 1.6em);
+		margin-top: 1.25rem;
+		max-width: 72ch;
+		color: var(--ink-soft);
+		font-size: 1.05rem;
+	}
+
+	.explain p {
+		display: none;
+		margin: 0;
+	}
+
+	[data-view='terms'] .explain [data-for-view='terms'],
+	[data-view='link'] .explain [data-for-view='link'],
+	[data-view='repayments'] .explain [data-for-view='repayments'],
+	[data-view='ledger'] .explain [data-for-view='ledger'],
+	[data-view='calculation'] .explain [data-for-view='calculation'] {
+		display: block;
+	}
+
+	/* The stage: one page of the loan at the shape of the app's window. */
+	.stage {
+		position: relative;
+		margin-top: 1.5rem;
+		aspect-ratio: 1712 / 1032;
+		border-radius: var(--radius-window);
+		border: 1px solid var(--line);
+		background: var(--surface);
+		overflow: hidden;
+		box-shadow:
+			0 1px 0 rgba(21, 24, 30, 0.04),
+			0 30px 60px -30px rgba(21, 40, 90, 0.35);
+	}
+
+	.stage :global(img.page) {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		object-position: top left;
+		opacity: 0;
+		visibility: hidden;
+		transition:
+			opacity 0.2s ease,
+			visibility 0s linear 0.2s;
+	}
+
+	[data-view='terms'] .stage :global(img.page[data-for-view='terms']),
+	[data-view='link'] .stage :global(img.page[data-for-view='link']),
+	[data-view='repayments'] .stage :global(img.page[data-for-view='repayments']),
+	[data-view='ledger'] .stage :global(img.page[data-for-view='ledger']),
+	[data-view='calculation'] .stage :global(img.page[data-for-view='terms']) {
+		opacity: 1;
+		visibility: visible;
+		transition: opacity 0.2s ease;
+	}
+
+	/* The calculation drawer slides in over the schedule, as it does in the app. */
+	.backdrop {
+		position: absolute;
+		inset: 0;
+		background: rgba(21, 24, 30, 0.42);
+		opacity: 0;
+		transition: opacity 0.25s ease;
+	}
+
+	.stage :global(img.drawer) {
+		position: absolute;
+		top: 0;
+		right: 0;
+		width: auto;
+		height: 100%;
+		object-fit: cover;
+		object-position: top;
+		box-shadow: -20px 0 60px -20px rgba(0, 0, 0, 0.45);
+		opacity: 0;
+		visibility: hidden;
+		transform: translateX(6%);
+		transition:
+			opacity 0.25s ease,
+			transform 0.25s ease,
+			visibility 0s linear 0.25s;
+	}
+
+	[data-view='calculation'] .backdrop {
+		opacity: 1;
+	}
+
+	[data-view='calculation'] .stage :global(img.drawer) {
+		opacity: 1;
+		visibility: visible;
+		transform: none;
+		transition:
+			opacity 0.25s ease,
+			transform 0.25s ease;
+	}
+
+	@media (max-width: 760px) {
+		/* One row of tabs that scrolls sideways, like the app's own. */
+		.views {
+			flex-wrap: nowrap;
+			overflow-x: auto;
+			scrollbar-width: none;
+		}
+
+		.views button {
+			flex: none;
+			padding: 0 0.75rem;
+		}
+
+		/* On a phone the picture alone, at full width and its own height. */
+		.stage {
+			aspect-ratio: auto;
+		}
+
+		.stage :global(img.page),
+		.stage :global(img.drawer) {
+			display: none;
+			position: static;
+			height: auto;
+			transform: none;
+			box-shadow: none;
+		}
+
+		.backdrop {
+			display: none;
+		}
+
+		[data-view='terms'] .stage :global(img.page[data-for-view='terms']),
+		[data-view='link'] .stage :global(img.page[data-for-view='link']),
+		[data-view='repayments'] .stage :global(img.page[data-for-view='repayments']),
+		[data-view='ledger'] .stage :global(img.page[data-for-view='ledger']),
+		[data-view='calculation'] .stage :global(img.drawer) {
+			display: block;
+			width: 100%;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.stage :global(img.page),
+		.backdrop,
+		.stage :global(img.drawer) {
+			transition: none;
+		}
+	}
+</style>

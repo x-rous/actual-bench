@@ -32,6 +32,7 @@ import {
   shooter,
   shrinkLossless,
   storyMonth,
+  tab,
   withTemporaryCashPlan,
 } from "./demo-capture.mjs";
 
@@ -108,13 +109,33 @@ try {
     }
   }
 
+  // The loan showcase: the mortgage's tabs at full window height, so the
+  // Terms & Schedule shot reaches down into the amortization schedule, and
+  // the calculation drawer on its own (the page lays it over the schedule).
   if (want("loans")) {
     await nav(page, "Loans", 7000);
     await page.getByText("Home Mortgage", { exact: true }).first().click();
     await page.waitForTimeout(9000);
-    await page.getByText("Terms & Schedule", { exact: true }).first().click();
-    await page.waitForTimeout(6000);
-    await shoot(page, "loan-terms", belowChrome(712));
+    const tabs = {
+      "Link to Actual": "loan-link",
+      Repayments: "loan-repayments",
+      "Loan Ledger": "loan-ledger",
+      "Terms & Schedule": "loan-terms",
+    };
+    for (const [label, name] of Object.entries(tabs)) {
+      await tab(page, label, 6000);
+      await shoot(page, name, belowChrome(1032));
+    }
+    await page.getByText("How this loan is calculated", { exact: true }).first().click();
+    await page.waitForTimeout(3000);
+    const drawer = page.locator('[role="dialog"]').first();
+    // Opening it focuses a control further down; start from its title.
+    await drawer.evaluate((el) => {
+      for (const node of [el, ...el.querySelectorAll("*")]) node.scrollTop = 0;
+    });
+    await page.waitForTimeout(500);
+    await element(drawer, "loan-calculation");
+    await closeDialog(page);
   }
 
   if (want("cards")) {
