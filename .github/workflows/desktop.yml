@@ -116,10 +116,12 @@ jobs:
       # test run inside the repo still works (Node finds the repo's own
       # node_modules), so check the packaged app itself.
       - name: Check the packaged server has its dependencies
+        # -ipath: the folder is `resources` on Windows, `Contents/Resources` on macOS.
         run: |
-          found=$(find dist -path "*/resources/server/node_modules/next/package.json" -print -quit)
+          found=$(find dist -ipath "*/resources/server/node_modules/next/package.json" -print -quit)
           if [ -z "$found" ]; then
             echo "::error::The packaged app has no server/node_modules/next."
+            find dist -maxdepth 6 -ipath "*/resources/server" -type d -exec ls -la {} \; || true
             exit 1
           fi
           echo "ok: $found"
