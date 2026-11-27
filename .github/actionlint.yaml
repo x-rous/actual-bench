@@ -1,0 +1,9 @@
+# actionlint configuration, read automatically by the actionlint workflow.
+#
+# The pinned actionlint release predates some GitHub-hosted runner labels;
+# list them here so they aren't reported as unknown. Remove an entry once the
+# pinned actionlint knows the label.
+self-hosted-runner:
+  labels:
+    # GitHub-hosted macOS 15 on Intel, used by the Desktop workflow's x64 build.
+    - macos-15-intel
