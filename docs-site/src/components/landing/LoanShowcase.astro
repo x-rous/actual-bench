@@ -1,8 +1,10 @@
 ---
 // The loan showcase in "Every loan, card and home": the demo's home mortgage,
-// tab by tab, the way it opens in the app. Terms & Schedule comes first and
-// reaches down into the amortization schedule; "How it is calculated" lays the
-// app's calculation drawer over it.
+// view by view. Terms & Schedule comes first, at full window height so it
+// reaches the amortization schedule, with the chart's tooltip open on the year
+// that is part Actual, part projection. Linked Assets shows the same link from
+// the loan and from the home. Calculation method puts the app's settings panel
+// beside the list of what Bench can calculate.
 //
 // Images come from docs-site/scripts/capture-landing.mjs ("loans" group).
 import { Image } from 'astro:assets';
@@ -10,44 +12,75 @@ import { Image } from 'astro:assets';
 import terms from '../../assets/landing/loan-terms.png';
 import link from '../../assets/landing/loan-link.png';
 import repayments from '../../assets/landing/loan-repayments.png';
-import ledger from '../../assets/landing/loan-ledger.png';
-import calculation from '../../assets/landing/loan-calculation.png';
+import assetsLoan from '../../assets/landing/loan-assets.png';
+import assetsHome from '../../assets/landing/loan-assets-home.png';
+import method from '../../assets/landing/loan-method.png';
 
 const views = [
 	{
 		id: 'terms',
 		label: 'Terms & Schedule',
-		image: terms,
-		alt: 'A home mortgage in Actual Bench: the loan terms beside its payoff in July 2044 and 160,138 of total interest, the balance over time, the two extra payments made in Actual with the 2,988 of interest and three months they saved, and the amortization schedule splitting each payment into principal and interest.',
-		text: 'The loan as the contract reads, and where it is heading: payoff date, interest paid and still to come, the balance year by year, and every installment split into principal and interest. Extra payments you made in Actual show exactly what they saved.',
+		text: 'The loan as the contract reads, and where it is heading: payoff date, total interest, the balance year by year and every installment split into principal and interest. Point at any year to see what you repaid, how much of it was interest, and Actual’s balance beside Bench’s.',
 	},
 	{
 		id: 'link',
 		label: 'Link to Actual',
-		image: link,
-		alt: 'Linking the mortgage to its account in Actual: Bench found 28 transactions, the opening balance and 27 repayments, and its starting balance matches Actual’s to the cent.',
 		text: 'Point Bench at the loan’s account in Actual. It reads the history, finds the opening balance and every repayment, and checks its starting balance against Actual’s before tracking a single installment.',
 	},
 	{
 		id: 'repayments',
 		label: 'Repayments',
-		image: repayments,
-		alt: 'The Repayments tab: what is owed in Actual agrees with what Bench expects, the next payment and its due date, and every installment beside the payment that settled it, with its principal, interest and balance after.',
-		text: 'Every installment beside the payment that settled it in Actual: when it was paid, from which account, and how much of it was interest. What Actual owes and what Bench expects are compared every day, and a late or missing payment is flagged.',
+		text: 'Every installment beside the payment that settled it in Actual: when it was paid, from which account, and how much of it was interest. What Actual owes and what Bench expects are compared, and a late or missing payment is flagged.',
 	},
 	{
-		id: 'ledger',
-		label: 'Loan Ledger',
-		image: ledger,
-		alt: 'The Loan Ledger: every entry in the loan account classified as a repayment or extra principal, with its installment and the running balance.',
-		text: 'Every entry in the loan account, classified as a repayment, extra principal, a draw or a fee. Pay a little extra in Actual and it counts in the calculation on its own.',
+		id: 'assets',
+		label: 'Linked Assets',
+		text: 'Link the loan to the home or car it paid for, in full or in part. The loan shows the equity it leaves in each asset, and the home shows the loan against its value, with loan-to-value and the equity your repayments have built.',
 	},
 	{
-		id: 'calculation',
-		label: 'How it is calculated',
-		image: terms,
-		alt: '',
-		text: 'No black box. Every convention behind the figures, from how interest accrues to how it is rounded, is laid out so you can check it against your lender’s statement.',
+		id: 'method',
+		label: 'Calculation method',
+		text: 'Match your lender, not a textbook. Start from a preset or set every convention yourself, from how the rate is quoted to how each cent is rounded.',
+	},
+];
+
+// What the calculation method can describe, in the app's own terms.
+const capabilities = [
+	{
+		title: 'Loans',
+		items: ['Mortgages, car, personal and student loans', 'Lines of credit and HELOCs', 'Loans you made to someone else'],
+	},
+	{
+		title: 'Repayments',
+		items: [
+			'Level payment, constant principal or progressive principal',
+			'Interest-only periods and a balloon at maturity',
+			'Weekly, fortnightly, twice a month, monthly, quarterly or yearly',
+		],
+	},
+	{
+		title: 'Interest',
+		items: [
+			'Worked out daily or per payment period',
+			'Nominal, compounded or effective annual rates',
+			'Actual/365, Actual/360, Actual/Actual and 30/360',
+		],
+	},
+	{
+		title: 'Events',
+		items: [
+			'Extra payments, redraws and fees, once or repeating',
+			'Rate changes and repayment changes',
+			'An offset account that cuts the interest',
+		],
+	},
+	{
+		title: 'Your lender’s rules',
+		items: [
+			'Recasts and negative amortization',
+			'Business-day due dates and rounding to the cent',
+			'Continue from a lender statement',
+		],
 	},
 ];
 
@@ -76,21 +109,74 @@ const shot = { format: 'webp' as const, widths: [1280, 2560, 3840], sizes: '(min
 		{views.map((view) => <p data-for-view={view.id}>{view.text}</p>)}
 	</div>
 
-	<div class="stage" id="loan-stage" role="tabpanel" aria-labelledby="loan-tab-terms">
-		{views
-			.filter((view) => view.id !== 'calculation')
-			.map((view) => (
-				<Image class="page" data-for-view={view.id} src={view.image} alt={view.alt} {...shot} />
-			))}
-		<div class="backdrop" aria-hidden="true"></div>
-		<Image
-			class="drawer"
-			src={calculation}
-			alt="How this loan is calculated: the engine, the results, every convention and assumption behind them, what was tracked in Actual, and diagnostics to copy if a lender’s figures differ."
-			widths={[540, 1080, 1612]}
-			sizes="(min-width: 1340px) 600px, 94vw"
-			format="webp"
-		/>
+	<div class="stage" id="loan-stage" role="tabpanel" aria-labelledby="loan-tab-terms" tabindex="0">
+		<div class="layer" data-for-view="terms">
+			<Image
+				class="page"
+				src={terms}
+				alt="A home mortgage on Terms & Schedule: the loan terms beside its payoff in July 2044 and 160,138 of total interest, the balance over time with the tooltip open on 2026 (22,200 repaid, 8,938 of it principal and 13,261 interest, a 1,500 extra payment, and Actual's balance beside Bench's), the extra payments with the 2,988 of interest they saved, and the amortization schedule."
+				{...shot}
+			/>
+		</div>
+
+		<div class="layer" data-for-view="link">
+			<Image
+				class="page"
+				src={link}
+				alt="Linking the mortgage to its account in Actual: Bench found 28 transactions, the opening balance and 27 repayments, and its starting balance matches Actual's to the cent."
+				{...shot}
+			/>
+		</div>
+
+		<div class="layer" data-for-view="repayments">
+			<Image
+				class="page"
+				src={repayments}
+				alt="The Repayments tab: what is owed in Actual agrees with what Bench expects, the next payment and its due date, and every installment beside the payment that settled it, with its principal, interest and balance after."
+				{...shot}
+			/>
+		</div>
+
+		<div class="layer both-sides" data-for-view="assets">
+			<figure>
+				<figcaption>On the loan</figcaption>
+				<Image
+					src={assetsLoan}
+					alt="The mortgage's Linked Assets: all of its 259,983 debt allocated to the family home, a combined loan-to-value of 58.5% and 184,516 of equity."
+					{...shot}
+				/>
+			</figure>
+			<figure>
+				<figcaption>On the home</figcaption>
+				<Image
+					src={assetsHome}
+					alt="The family home's Linked Loans: the mortgage against it, 58.5% loan-to-value, 19,333 of equity built by repayments since November 2024, and the 1,850 monthly payment."
+					{...shot}
+				/>
+			</figure>
+		</div>
+
+		<div class="layer method" data-for-view="method">
+			<Image
+				class="sheet"
+				src={method}
+				alt="The Calculation method panel: how the rate is quoted, how interest accrues, is charged and capitalizes, the amortization and repayment amount, when the repayment is recalculated, the final repayment, and precision and rounding."
+				widths={[440, 880, 1230]}
+				sizes="(min-width: 1340px) 440px, 94vw"
+				format="webp"
+			/>
+			<div class="capabilities">
+				<p class="capabilities-title">What Bench can calculate</p>
+				<dl>
+					{capabilities.map((group) => (
+						<div>
+							<dt>{group.title}</dt>
+							{group.items.map((item) => <dd>{item}</dd>)}
+						</div>
+					))}
+				</dl>
+			</div>
+		</div>
 	</div>
 </div>
 
@@ -156,7 +242,8 @@ const shot = { format: 'webp' as const, widths: [1280, 2560, 3840], sizes: '(min
 		border-bottom-color: var(--ledger);
 	}
 
-	.views button:focus-visible {
+	.views button:focus-visible,
+	.stage:focus-visible {
 		outline: 2px solid var(--ledger);
 		outline-offset: 2px;
 	}
@@ -177,12 +264,12 @@ const shot = { format: 'webp' as const, widths: [1280, 2560, 3840], sizes: '(min
 	[data-view='terms'] .explain [data-for-view='terms'],
 	[data-view='link'] .explain [data-for-view='link'],
 	[data-view='repayments'] .explain [data-for-view='repayments'],
-	[data-view='ledger'] .explain [data-for-view='ledger'],
-	[data-view='calculation'] .explain [data-for-view='calculation'] {
+	[data-view='assets'] .explain [data-for-view='assets'],
+	[data-view='method'] .explain [data-for-view='method'] {
 		display: block;
 	}
 
-	/* The stage: one page of the loan at the shape of the app's window. */
+	/* The stage: one view at a time, at the shape of the app's window. */
 	.stage {
 		position: relative;
 		margin-top: 1.5rem;
@@ -196,13 +283,9 @@ const shot = { format: 'webp' as const, widths: [1280, 2560, 3840], sizes: '(min
 			0 30px 60px -30px rgba(21, 40, 90, 0.35);
 	}
 
-	.stage :global(img.page) {
+	.layer {
 		position: absolute;
 		inset: 0;
-		width: 100%;
-		height: 100%;
-		object-fit: cover;
-		object-position: top left;
 		opacity: 0;
 		visibility: hidden;
 		transition:
@@ -210,54 +293,116 @@ const shot = { format: 'webp' as const, widths: [1280, 2560, 3840], sizes: '(min
 			visibility 0s linear 0.2s;
 	}
 
-	[data-view='terms'] .stage :global(img.page[data-for-view='terms']),
-	[data-view='link'] .stage :global(img.page[data-for-view='link']),
-	[data-view='repayments'] .stage :global(img.page[data-for-view='repayments']),
-	[data-view='ledger'] .stage :global(img.page[data-for-view='ledger']),
-	[data-view='calculation'] .stage :global(img.page[data-for-view='terms']) {
+	[data-view='terms'] .layer[data-for-view='terms'],
+	[data-view='link'] .layer[data-for-view='link'],
+	[data-view='repayments'] .layer[data-for-view='repayments'],
+	[data-view='assets'] .layer[data-for-view='assets'],
+	[data-view='method'] .layer[data-for-view='method'] {
 		opacity: 1;
 		visibility: visible;
 		transition: opacity 0.2s ease;
 	}
 
-	/* The calculation drawer slides in over the schedule, as it does in the app. */
-	.backdrop {
-		position: absolute;
-		inset: 0;
-		background: rgba(21, 24, 30, 0.42);
-		opacity: 0;
-		transition: opacity 0.25s ease;
+	.layer :global(img.page) {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		object-position: top left;
 	}
 
-	.stage :global(img.drawer) {
-		position: absolute;
-		top: 0;
-		right: 0;
+	/* Linked Assets: each side of the link is one row, so both are shown. */
+	.both-sides {
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+		gap: clamp(1rem, 3vw, 2.5rem);
+		padding: clamp(1rem, 3vw, 2.5rem);
+		background: var(--paper);
+	}
+
+	.both-sides figure {
+		margin: 0;
+	}
+
+	.both-sides figcaption,
+	.capabilities-title {
+		margin-bottom: 0.6rem;
+		color: var(--ledger);
+		font-weight: 700;
+		font-size: 0.95rem;
+	}
+
+	.both-sides :global(img) {
+		display: block;
+		width: 100%;
+		height: auto;
+		border-radius: 10px;
+		border: 1px solid var(--line);
+		box-shadow: 0 18px 40px -28px rgba(21, 40, 90, 0.4);
+	}
+
+	/* Calculation method: the app's panel, and what it can describe. */
+	.method {
+		display: flex;
+		background: var(--paper);
+	}
+
+	.method :global(img.sheet) {
+		flex: none;
 		width: auto;
 		height: 100%;
 		object-fit: cover;
 		object-position: top;
-		box-shadow: -20px 0 60px -20px rgba(0, 0, 0, 0.45);
-		opacity: 0;
-		visibility: hidden;
-		transform: translateX(6%);
-		transition:
-			opacity 0.25s ease,
-			transform 0.25s ease,
-			visibility 0s linear 0.25s;
+		border-right: 1px solid var(--line);
+		box-shadow: 20px 0 50px -30px rgba(21, 40, 90, 0.35);
 	}
 
-	[data-view='calculation'] .backdrop {
-		opacity: 1;
+	.capabilities {
+		flex: 1;
+		min-width: 0;
+		align-self: center;
+		padding: 0 clamp(1.25rem, 3.5vw, 3rem);
 	}
 
-	[data-view='calculation'] .stage :global(img.drawer) {
-		opacity: 1;
-		visibility: visible;
-		transform: none;
-		transition:
-			opacity 0.25s ease,
-			transform 0.25s ease;
+	.capabilities dl {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: clamp(0.9rem, 2vw, 1.75rem) clamp(1.25rem, 3vw, 2.5rem);
+		margin: 0;
+	}
+
+	.capabilities dt {
+		margin-bottom: 0.3rem;
+		color: var(--ink);
+		font-weight: 700;
+	}
+
+	.capabilities dd {
+		position: relative;
+		margin: 0;
+		padding: 0.15rem 0 0.15rem 1.1rem;
+		color: var(--ink-soft);
+		font-size: clamp(0.8rem, 1.15vw, 0.98rem);
+		line-height: 1.4;
+	}
+
+	.capabilities dd::before {
+		content: '';
+		position: absolute;
+		left: 0.1rem;
+		top: 0.6em;
+		width: 0.55rem;
+		height: 0.3rem;
+		border-left: 2px solid var(--gain);
+		border-bottom: 2px solid var(--gain);
+		transform: rotate(-45deg);
+	}
+
+	@media (max-width: 960px) {
+		.capabilities dl {
+			grid-template-columns: 1fr;
+			gap: 0.6rem;
+		}
 	}
 
 	@media (max-width: 760px) {
@@ -273,38 +418,44 @@ const shot = { format: 'webp' as const, widths: [1280, 2560, 3840], sizes: '(min
 			padding: 0 0.75rem;
 		}
 
-		/* On a phone the picture alone, at full width and its own height. */
+		/* On a phone each view at its own height. */
 		.stage {
 			aspect-ratio: auto;
 		}
 
-		.stage :global(img.page),
-		.stage :global(img.drawer) {
-			display: none;
+		.layer {
 			position: static;
+			display: none;
+		}
+
+		[data-view='terms'] .layer[data-for-view='terms'],
+		[data-view='link'] .layer[data-for-view='link'],
+		[data-view='repayments'] .layer[data-for-view='repayments'],
+		[data-view='assets'] .layer[data-for-view='assets'],
+		[data-view='method'] .layer[data-for-view='method'] {
+			display: flex;
+			flex-direction: column;
+		}
+
+		.layer :global(img.page) {
 			height: auto;
-			transform: none;
+		}
+
+		.method :global(img.sheet) {
+			width: 100%;
+			height: auto;
+			border-right: 0;
+			border-bottom: 1px solid var(--line);
 			box-shadow: none;
 		}
 
-		.backdrop {
-			display: none;
-		}
-
-		[data-view='terms'] .stage :global(img.page[data-for-view='terms']),
-		[data-view='link'] .stage :global(img.page[data-for-view='link']),
-		[data-view='repayments'] .stage :global(img.page[data-for-view='repayments']),
-		[data-view='ledger'] .stage :global(img.page[data-for-view='ledger']),
-		[data-view='calculation'] .stage :global(img.drawer) {
-			display: block;
-			width: 100%;
+		.capabilities {
+			padding: 1.25rem;
 		}
 	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.stage :global(img.page),
-		.backdrop,
-		.stage :global(img.drawer) {
+		.layer {
 			transition: none;
 		}
 	}
