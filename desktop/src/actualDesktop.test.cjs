@@ -61,6 +61,19 @@ test("falls back to the default local server address", () => {
   assert.deepEqual(result, { url: "http://localhost:5007", source: "default" });
 });
 
+test("falls back to the local port when the server URL has a query or fragment", () => {
+  const file = "/home/a/.config/Actual/global-store.json";
+  for (const serverUrl of ["https://actual.example.com/?x=1", "https://actual.example.com/#top"]) {
+    const result = findActualDesktopServer({
+      platform: "linux",
+      env: {},
+      homedir: "/home/a",
+      ...withStores({ [file]: JSON.stringify({ "server-url": serverUrl, syncServerConfig: { port: 5123 } }) }),
+    });
+    assert.deepEqual(result, { url: "http://localhost:5123", source: "local-server" });
+  }
+});
+
 test("ignores unreadable settings and unsafe values", () => {
   const file = "/home/a/.config/Actual/global-store.json";
   for (const contents of ["{not json", JSON.stringify({ "server-url": "javascript:alert(1)", syncServerConfig: { port: 70000 } })]) {

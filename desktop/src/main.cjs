@@ -61,6 +61,9 @@ let serverChild = null;
 let appUrl = null;
 let mainWindow = null;
 let quitting = false;
+/** The pending stop of the server, once a quit has started it. */
+let serverStopping = null;
+let serverStopped = false;
 
 function loadingPage() {
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>Actual Bench</title>
@@ -261,16 +264,24 @@ if (!app.requestSingleInstanceLock()) {
     if (process.platform !== "darwin") app.quit();
   });
 
+  // Stop the server first, then quit for real. Every quit request while the
+  // stop is pending waits for that same stop (or its grace timeout), so a
+  // second Quit, or closing the last window meanwhile, can't exit early.
   app.on("before-quit", (event) => {
-    if (!serverChild || serverChild.exitCode !== null || serverChild.signalCode !== null) {
-      quitting = true;
+    quitting = true;
+    if (serverStopped) return;
+    const child = serverChild;
+    if (!child || child.exitCode !== null || child.signalCode !== null) {
+      serverStopped = true;
       return;
     }
-    // Stop the server first, then quit for real.
     event.preventDefault();
-    quitting = true;
-    const child = serverChild;
-    serverChild = null;
-    void stopServer(child).finally(() => app.quit());
+    if (!serverStopping) {
+      serverStopping = stopServer(child).finally(() => {
+        serverStopped = true;
+        serverChild = null;
+        app.quit();
+      });
+    }
   });
 }

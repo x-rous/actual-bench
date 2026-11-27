@@ -234,7 +234,7 @@ const eslintConfig = defineConfig([
 
   // Fix: allow require() in config files
   {
-    files: ["*.config.*", "*.cjs"],
+    files: ["*.config.*", "*.cjs", "desktop/**/*.cjs"],
     rules: {
       "@typescript-eslint/no-require-imports": "off",
     },
@@ -253,6 +253,9 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     "agents/**",
     "docs-site/**",
+    // Desktop app build output: the staged server bundle and installers.
+    "desktop/.stage/**",
+    "desktop/dist/**",
     // PDF.js support files, copied from pdfjs-dist at install time.
     "public/pdfjs/**",
     // SQLite WASM and the JavaScript that starts it, copied from @sqlite.org/sqlite-wasm at install time.

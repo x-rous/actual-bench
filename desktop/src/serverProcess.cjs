@@ -44,8 +44,14 @@ async function findFreePort({ host = "127.0.0.1", preferred = PREFERRED_PORT, at
   throw new Error(`No free port between ${preferred} and ${preferred + attempts - 1} on ${host}.`);
 }
 
-/** Appends to `server.log`, moving a large one to `server.log.1` first. */
-function openServerLog(logDir) {
+/**
+ * Appends to `server.log`, moving a large one to `server.log.1` first.
+ *
+ * Returns a writer that never throws: a log that can't be opened or written
+ * (read-only file, full disk) reports asynchronously, and an unhandled stream
+ * error would crash the app. Logging then stops; the server keeps running.
+ */
+function openServerLog(logDir, { createWriteStream = fs.createWriteStream } = {}) {
   fs.mkdirSync(logDir, { recursive: true });
   const file = path.join(logDir, "server.log");
   try {
@@ -53,7 +59,19 @@ function openServerLog(logDir) {
   } catch {
     // No log yet.
   }
-  return { file, stream: fs.createWriteStream(file, { flags: "a" }) };
+  let broken = false;
+  const stream = createWriteStream(file, { flags: "a" });
+  stream.on("error", (error) => {
+    if (broken) return;
+    broken = true;
+    console.error(`Actual Bench: cannot write ${file}: ${error.message}`);
+  });
+  const log = {
+    write(chunk) {
+      if (!broken) stream.write(chunk);
+    },
+  };
+  return { file, stream: log };
 }
 
 /**
@@ -92,6 +110,11 @@ function startServer({ nodePath, serverDir, env, log }) {
   child.on("exit", (code, signal) => {
     log.write(`[${stamp()}] server exited (code ${code}, signal ${signal})\n`);
   });
+  // A runtime that can't be started reports here, maybe without any `exit`.
+  // Listening also keeps it from becoming an uncaught exception.
+  child.on("error", (error) => {
+    log.write(`[${stamp()}] server process error: ${error.message}\n`);
+  });
   return child;
 }
 
@@ -107,11 +130,14 @@ function waitForHealth({ baseUrl, child, timeoutMs = HEALTH_TIMEOUT_MS, interval
       settled = true;
       clearTimeout(timer);
       child.off("exit", onExit);
+      child.off("error", onError);
       if (error) reject(error);
       else resolve();
     };
     const onExit = (code) => finish(new Error(`The Actual Bench server stopped while starting (exit code ${code}).`));
+    const onError = (error) => finish(new Error(`The Actual Bench server could not be started: ${error.message}`));
     child.once("exit", onExit);
+    child.once("error", onError);
     const timer = setTimeout(
       () => finish(new Error(`The Actual Bench server did not start within ${Math.round(timeoutMs / 1000)} seconds.`)),
       timeoutMs

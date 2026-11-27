@@ -67,7 +67,9 @@ function cleanServerUrl(value) {
     return null;
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") return null;
-  if (url.username || url.password) return null;
+  // Bench refuses these too (src/lib/desktop/desktopMode.ts); rejecting them
+  // here lets discovery fall back to the local server's port instead.
+  if (url.username || url.password || url.search || url.hash) return null;
   return url.toString().replace(/\/+$/, "");
 }
 

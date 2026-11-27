@@ -13,7 +13,7 @@ connects to it on the same computer.
 
 ## What you need
 
-- Windows 10 or 11 (64-bit), or macOS 12 or later (Apple silicon or Intel).
+- Windows 10 or 11 (64-bit), or macOS 13.5 (Ventura) or later (Apple silicon or Intel).
 - An Actual server to connect to. Either:
   - the **Actual desktop app's own server**, on the same computer (see [below](#use-it-with-the-actual-desktop-app)), or
   - any Actual server you already use, at home or online.
@@ -113,7 +113,10 @@ key for automations) in its app folder. Your budgets stay in Actual.
 while the app is closed. Keep the `secrets` folder with it: it holds the key that opens saved
 automation credentials.
 
-Uninstalling the app leaves this folder in place, so reinstalling picks up where you left off.
+Uninstalling the **installer** version leaves this folder in place, so reinstalling picks up where
+you left off. Uninstalling the **Microsoft Store** version deletes its folder, because Windows removes
+a Store app's data with the app. Before you uninstall it, back up with **Bench data** to a folder
+outside the app (or copy the `data` folder somewhere else), and restore it after you reinstall.
 
 ## Troubleshooting
 

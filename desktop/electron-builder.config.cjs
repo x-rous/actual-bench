@@ -68,6 +68,8 @@ module.exports = {
   mac: {
     target: [{ target: "dmg" }, { target: "zip" }],
     category: "public.app-category.finance",
+    // The bundled Node 24 runtime needs macOS 13.5 or later.
+    minimumSystemVersion: "13.5",
     icon: "resources/icon.png",
     // Ad-hoc signature: Apple silicon refuses to run unsigned code at all.
     identity: "-",

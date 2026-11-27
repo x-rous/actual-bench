@@ -4,7 +4,10 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const net = require("node:net");
 const { EventEmitter } = require("node:events");
-const { findFreePort, serverEnv, waitForHealth } = require("./serverProcess.cjs");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const { findFreePort, openServerLog, serverEnv, waitForHealth } = require("./serverProcess.cjs");
 
 test("findFreePort skips a busy port", async () => {
   const busy = net.createServer();
@@ -50,4 +53,27 @@ test("waitForHealth fails when the server exits first", async () => {
   const pending = waitForHealth({ baseUrl: "http://x", child, intervalMs: 5, fetchImpl: async () => ({ ok: false }) });
   child.emit("exit", 1);
   await assert.rejects(pending, /stopped while starting \(exit code 1\)/);
+});
+
+test("waitForHealth fails at once when the server can't be launched", async () => {
+  const child = new EventEmitter();
+  const pending = waitForHealth({ baseUrl: "http://x", child, intervalMs: 5, fetchImpl: async () => ({ ok: false }) });
+  child.emit("error", new Error("spawn EACCES"));
+  await assert.rejects(pending, /could not be started: spawn EACCES/);
+});
+
+test("openServerLog survives a log it can't write", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bench-log-"));
+  const failing = new EventEmitter();
+  failing.write = () => true;
+  const { stream } = openServerLog(dir, { createWriteStream: () => failing });
+  const originalError = console.error;
+  console.error = () => {};
+  try {
+    failing.emit("error", new Error("EACCES"));
+    assert.doesNotThrow(() => stream.write("after the error\n"));
+  } finally {
+    console.error = originalError;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
