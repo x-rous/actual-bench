@@ -121,6 +121,7 @@ Never claim "nothing writes until Save" in code comments or docs; the exceptions
 - Next.js has breaking changes vs. your training data; see the managed block at the end. Never add `--webpack`.
 - React Compiler is on. The `react-hooks/incompatible-library` warning is expected; leave it.
 - Build output: `.next-build` (default, overridable via `ACTUAL_BENCH_DIST_DIR`), `.next` on Vercel, `output: "standalone"` for Docker. Preserve all of these in CI/Docker changes.
+- Demo Space: `.github/workflows/demo-deploy.yml` mirrors the repo to a Hugging Face Space, which rejects any push containing a binary file outside LFS. Never remove its `demo/track-space-binaries.py` step. A new top-level folder the demo image doesn't build from (as `docs-site/` and `desktop/` aren't) goes in that step's rsync excludes and `rm -rf` line.
 - Tailwind 4: config in `src/app/globals.css` (`@theme`); no `tailwind.config.js`. Use `cn()` and semantic tokens from `src/app/globals.css`.
 - Reuse `src/components/ui/`, `src/components/layout/` and `src/features/<feature>/`. Never create empty template folders.
 - Accessibility on new/changed UI: `aria-label` on icon-only controls, keyboard behavior matching the ARIA role, status never by color alone, labelled inputs, focus preserved in dialogs, popovers, drawers and menus.
