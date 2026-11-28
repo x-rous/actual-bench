@@ -9,6 +9,9 @@
  * nothing is silently dropped.
  *
  * Signal forwarding (SIGTERM / SIGINT) ensures Docker stop works correctly.
+ *
+ * With ACTUAL_BENCH_HTTPS=true, an HTTPS front door (scripts/https.mjs) takes
+ * PORT and the Next.js server moves to a private loopback port behind it.
  */
 
 import { spawn } from "child_process";
@@ -16,6 +19,7 @@ import { readFileSync } from "fs";
 import { dirname, join } from "path";
 import { createInterface } from "readline";
 import { fileURLToPath } from "url";
+import { findFreeLoopbackPort, httpsEnabled, resolveTlsMaterial, startHttpsFrontDoor } from "./https.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "../package.json"), "utf8"));
@@ -33,6 +37,39 @@ const SUPPRESS = [
 
 const env = process.env.NODE_ENV ?? "development";
 
+let tls = null;
+let serverEnv = process.env;
+
+if (httpsEnabled()) {
+  try {
+    tls = resolveTlsMaterial();
+    const upstreamPort = await findFreeLoopbackPort();
+    serverEnv = { ...process.env, PORT: String(upstreamPort), HOSTNAME: "127.0.0.1" };
+    await startHttpsFrontDoor({
+      port,
+      hostname: process.env.HOSTNAME || "0.0.0.0",
+      upstreamPort,
+      tls,
+    });
+  } catch (error) {
+    console.error(`Actual Bench could not start HTTPS: ${error instanceof Error ? error.message : error}`);
+    process.exit(1);
+  }
+}
+
+function httpsBannerLines() {
+  if (!tls) return [];
+  const certificate = {
+    generated: `self-signed, new (${tls.path})`,
+    existing: `self-signed (${tls.path})`,
+    provided: "your own (ACTUAL_BENCH_HTTPS_CERT)",
+  }[tls.source];
+  return [
+    `   HTTPS       : on, certificate ${certificate}`,
+    `   Fingerprint : ${tls.fingerprint}`,
+  ];
+}
+
 // Only suppress blank lines during startup — after the banner is emitted,
 // allow subsequent blank lines through (e.g. request log separators).
 let bannerDone = false;
@@ -46,7 +83,8 @@ function filterLine(line) {
       "",
       `🚀 Actual Bench v${version}`,
       `   Environment : ${env}`,
-      `   Listening on: port ${port}`,
+      `   Listening on: port ${port}${tls ? " (HTTPS; http:// redirects)" : ""}`,
+      ...httpsBannerLines(),
       `   Ready in    : ${readyMatch[1]}`,
       "",
     ].join("\n");
@@ -60,7 +98,7 @@ function filterLine(line) {
 
 const child = spawn("node", ["server.js"], {
   stdio: ["inherit", "pipe", "pipe"],
-  env: process.env,
+  env: serverEnv,
 });
 
 const rl = createInterface({ input: child.stdout, crlfDelay: Infinity });

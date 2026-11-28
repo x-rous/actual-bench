@@ -86,13 +86,15 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next-build/static ./.next-build/
 # Branded startup wrapper (reads package.json version, spawns the standalone
 # server.js). package.json comes from the standalone bundle copied above.
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/start.mjs ./scripts/start.mjs
+# Built-in HTTPS (ACTUAL_BENCH_HTTPS=true) and the health check that follows it.
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/https.mjs /app/scripts/healthcheck.mjs ./scripts/
 
 USER nextjs
 EXPOSE 3000
 
-# No curl in this image on purpose (see the npm/npx removal above) — Node's
-# own fetch is already here and free.
+# No curl in this image on purpose (see the npm/npx removal above). The check
+# is a Node script because the port speaks HTTPS when ACTUAL_BENCH_HTTPS is on.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:3000/api/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+  CMD ["node", "scripts/healthcheck.mjs"]
 
 CMD ["node", "scripts/start.mjs"]
