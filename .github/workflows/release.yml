@@ -241,3 +241,14 @@ jobs:
           name: "Actual Bench ${{ github.ref_name }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── Build the desktop app and attach its installers to the release ───────────
+  # Last, so a failed desktop build never holds back the Docker release.
+  desktop:
+    name: desktop
+    needs: publish-release
+    permissions:
+      contents: write
+    uses: ./.github/workflows/desktop.yml
+    with:
+      release-tag: ${{ github.ref_name }}

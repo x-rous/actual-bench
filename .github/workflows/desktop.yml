@@ -1,0 +1,174 @@
+name: Desktop
+
+# Builds the Actual Bench desktop app (desktop/) for Windows and macOS.
+#
+# - Pull requests that touch the desktop app: tests, plus a full build of every
+#   installer, kept as workflow artifacts for testing.
+# - A release: release.yml calls this workflow after it publishes the GitHub
+#   release, with the tag; the installers are attached to that release. (A
+#   `release: published` trigger would never fire: release-drafter publishes
+#   with GITHUB_TOKEN, and events caused by that token start no workflows.)
+# - Manual runs: a build of the current ref, as workflow artifacts.
+#
+# Builds are unsigned (see desktop/electron-builder.config.cjs).
+
+on:
+  pull_request:
+    paths:
+      - "desktop/**"
+      - "src/lib/desktop/**"
+      - ".github/workflows/desktop.yml"
+  workflow_call:
+    inputs:
+      release-tag:
+        description: Tag of the published release to attach the installers to
+        type: string
+        required: true
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ inputs.release-tag || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: "npm"
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+  build:
+    name: build (${{ matrix.name }})
+    needs: test
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x64
+            runner: windows-latest
+            builder-args: --win --x64
+          - name: macos-arm64
+            runner: macos-latest
+            builder-args: --mac --arm64
+          - name: macos-x64
+            runner: macos-15-intel
+            builder-args: --mac --x64
+    defaults:
+      run:
+        working-directory: desktop
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # The bundled Node is the one that runs the stage script, so it must be
+      # the runner's own Node for this OS and architecture, at the .nvmrc version.
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: "npm"
+          cache-dependency-path: |
+            package-lock.json
+            desktop/package-lock.json
+
+      - name: Install desktop dependencies
+        run: npm ci
+
+      - name: Stage the Bench server and Node runtime
+        run: node scripts/stage.mjs
+
+      - name: Build installers
+        run: npx electron-builder --config electron-builder.config.cjs ${{ matrix.builder-args }} --publish never
+        env:
+          # No signing identity: never pick up one from the runner's keychain.
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      # electron-builder silently drops a node_modules folder at the top of an
+      # extra resource. Without server/node_modules the app can't start, and a
+      # test run inside the repo still works (Node finds the repo's own
+      # node_modules), so check the packaged app itself.
+      - name: Check the packaged server has its dependencies
+        # -ipath: the folder is `resources` on Windows, `Contents/Resources` on macOS.
+        run: |
+          found=$(find dist -ipath "*/resources/server/node_modules/next/package.json" -print -quit)
+          if [ -z "$found" ]; then
+            echo "::error::The packaged app has no server/node_modules/next."
+            find dist -maxdepth 6 -ipath "*/resources/server" -type d -exec ls -la {} \; || true
+            exit 1
+          fi
+          echo "ok: $found"
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v7
+        with:
+          name: actual-bench-desktop-${{ matrix.name }}
+          path: |
+            desktop/dist/*.exe
+            desktop/dist/*.dmg
+            desktop/dist/*.zip
+          if-no-files-found: error
+          retention-days: 14
+
+      # The Microsoft Store package. Uploaded to Partner Center by hand; the
+      # Store signs it. Not attached to releases: unsigned, it can't be
+      # installed outside the Store. Its name keeps it out of the release
+      # pattern below.
+      - name: Upload Microsoft Store package
+        if: matrix.name == 'windows-x64'
+        uses: actions/upload-artifact@v7
+        with:
+          name: actual-bench-store-msix
+          path: desktop/dist/*.appx
+          if-no-files-found: error
+          retention-days: 30
+
+  attach-to-release:
+    name: attach-to-release
+    if: inputs.release-tag != ''
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download installers
+        uses: actions/download-artifact@v8
+        with:
+          pattern: actual-bench-desktop-*
+          path: installers
+          merge-multiple: true
+
+      - name: Attach installers to the release
+        run: gh release upload "$TAG" installers/* --clobber --repo "$REPO"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.release-tag }}
+          REPO: ${{ github.repository }}

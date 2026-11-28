@@ -80,3 +80,8 @@ skills-lock.json
 /demo/seed-data.next/
 /demo/seed-data.previous/
 /demo/seed-manifest.next.json
+
+# ── Desktop app ───────────────────────────────────────────────────────────────
+# Staged server and Node runtime, and installer output (desktop/dist is covered
+# by dist/ above)
+desktop/.stage/

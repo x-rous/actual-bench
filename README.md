@@ -150,6 +150,14 @@ Running behind a reverse proxy, want the edge build, or need to change a setting
 **[Installation](https://x-rous.github.io/actual-bench/getting-started/installation/)** and
 **[Configuration](https://x-rous.github.io/actual-bench/administration/configuration/)**.
 
+### Desktop app
+
+No Docker? Install Actual Bench as an app on **Windows** or **macOS** from the
+[latest release](https://github.com/x-rous/actual-bench/releases/latest). It runs on your own
+computer and works with the **Actual desktop app**: turn on Actual's built-in server (**Set up sync →
+Start**) and connect Bench to it in one click. See
+**[Desktop app](https://x-rous.github.io/actual-bench/administration/desktop-app/)**.
+
 ### Hosted deployment
 
 Prefer not to run your own Docker host?

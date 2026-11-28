@@ -39,7 +39,15 @@ const GITHUB_URL = "https://github.com/x-rous/actual-bench";
 /** A budget list longer than this scrolls, so it gets a filter box. */
 const BUDGET_FILTER_THRESHOLD = 5;
 
-export function ConnectForm() {
+export function ConnectForm({
+  actualDesktopServerUrl = null,
+}: {
+  /**
+   * In the Actual Bench desktop app: the server the Actual desktop app on
+   * the same computer is set up with, offered as a one-click Direct URL.
+   */
+  actualDesktopServerUrl?: string | null;
+} = {}) {
   const router = useRouter();
   const hydrated = useIsHydrated();
   const connectedInstance = useConnectionStore(selectActiveInstance);
@@ -313,6 +321,24 @@ export function ConnectForm() {
           onKeyDown={handleKeyDown}
           disabled={anyBusy}
         />
+        {actualDesktopServerUrl && connectionMode === "browser-api" && baseUrl.trim() !== actualDesktopServerUrl && (
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+            <span>Using the Actual desktop app?</span>
+            <button
+              type="button"
+              disabled={anyBusy}
+              onClick={() => {
+                setBaseUrl(actualDesktopServerUrl);
+                if (validateStatus.kind === "error") setValidateStatus({ kind: "idle" });
+                setSelectedServerId(null);
+                handleCredentialChange();
+              }}
+              className="font-medium text-action underline-offset-2 hover:underline disabled:opacity-50"
+            >
+              Use {actualDesktopServerUrl}
+            </button>
+          </p>
+        )}
       </div>
 
       {heldCredential && heldCredential.mode === connectionMode ? (
