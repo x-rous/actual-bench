@@ -277,6 +277,8 @@ export function findFreeLoopbackPort() {
 
 /** How long a new connection may stay silent before its first byte. */
 const FIRST_BYTE_TIMEOUT_MS = 10_000;
+/** How long a client may take to send a request's headers (Node's own default). */
+const HEADERS_TIMEOUT_MS = 60_000;
 
 /**
  * True when a plain-HTTP request came through a reverse proxy, which says so
@@ -302,11 +304,44 @@ const HOP_BY_HOP = new Set([
   "upgrade",
 ]);
 
+/**
+ * `headers` without hop-by-hop fields: the fixed ones, and any the
+ * `Connection` header names (RFC 9110 §7.6.1).
+ */
+function withoutHopByHop(headers) {
+  const named = String(headers.connection ?? "")
+    .split(",")
+    .map((token) => token.trim().toLowerCase())
+    .filter(Boolean);
+  const result = {};
+  for (const [name, value] of Object.entries(headers)) {
+    if (!HOP_BY_HOP.has(name) && !named.includes(name)) result[name] = value;
+  }
+  return result;
+}
+
 /** The request's headers minus hop-by-hop ones: what a proxied request keeps. */
 function endToEndHeaders(req) {
-  const headers = {};
-  for (const [name, value] of Object.entries(req.headers)) {
-    if (!HOP_BY_HOP.has(name)) headers[name] = value;
+  return withoutHopByHop(req.headers);
+}
+
+/**
+ * Headers for a request a reverse proxy forwarded over plain HTTP. Bench reads
+ * the browser's scheme and host from `X-Forwarded-Proto` / `-Host` (cookie
+ * `Secure` flag, same-origin write check), so a proxy that sent only the
+ * standard `Forwarded` header has its first entry's `proto` and `host` copied
+ * into them. Without that, the Next.js server would fill in `http` from its
+ * own connection.
+ */
+function proxiedHeaders(req) {
+  const headers = endToEndHeaders(req);
+  const forwarded = String(headers["forwarded"] ?? "").split(",")[0];
+  for (const pair of forwarded.split(";")) {
+    const [key, raw] = pair.split("=").map((part) => part?.trim());
+    if (!key || !raw) continue;
+    const value = raw.replace(/^"(.*)"$/, "$1");
+    const name = { proto: "x-forwarded-proto", host: "x-forwarded-host" }[key.toLowerCase()];
+    if (name && !headers[name]) headers[name] = value;
   }
   return headers;
 }
@@ -339,6 +374,7 @@ export function startHttpsFrontDoor({
   upstreamPort,
   tls,
   firstByteTimeoutMs = FIRST_BYTE_TIMEOUT_MS,
+  headersTimeoutMs = HEADERS_TIMEOUT_MS,
   warn = (message) => console.warn(message),
 }) {
   const agent = new http.Agent({ keepAlive: true });
@@ -355,8 +391,7 @@ export function startHttpsFrontDoor({
         agent,
       },
       (upstreamRes) => {
-        const responseHeaders = { ...upstreamRes.headers };
-        for (const name of HOP_BY_HOP) delete responseHeaders[name];
+        const responseHeaders = withoutHopByHop(upstreamRes.headers);
         res.writeHead(upstreamRes.statusCode ?? 502, upstreamRes.statusMessage, responseHeaders);
         // `pipe` leaves `res` open when the source fails, and the browser
         // would wait forever on a truncated body: cut it off instead.
@@ -383,8 +418,38 @@ export function startHttpsFrontDoor({
   };
 
   // A long export or backup download must not be cut off by Node's default
-  // five-minute request timeout; Next.js has none of its own either.
-  const secure = https.createServer({ key: tls.key, cert: tls.cert, requestTimeout: 0 }, (req, res) =>
+  // five-minute request timeout (Next.js has none of its own either).
+  const serverOptions = { requestTimeout: 0 };
+
+  // ...but a client still has to finish sending each request's headers in
+  // time. Node's own `headersTimeout` can't be relied on here: it is enforced
+  // by a checker that only tracks connections a server accepted itself, and
+  // these servers are handed their sockets by the front door. So the front
+  // door keeps the deadline: armed while a connection waits for a request's
+  // headers, cleared once they arrive, armed again after each response for
+  // the next keep-alive request. Bodies and responses are never timed.
+  const headerDeadlines = new WeakMap();
+  const clearHeaderDeadline = (socket) => {
+    clearTimeout(headerDeadlines.get(socket));
+    headerDeadlines.delete(socket);
+  };
+  const armHeaderDeadline = (socket) => {
+    clearHeaderDeadline(socket);
+    if (socket.destroyed) return;
+    headerDeadlines.set(
+      socket,
+      setTimeout(() => socket.destroy(), headersTimeoutMs),
+    );
+    socket.once("close", () => clearHeaderDeadline(socket));
+  };
+  const trackHeaders = (server) => {
+    server.on("request", (req, res) => {
+      clearHeaderDeadline(req.socket);
+      res.once("finish", () => armHeaderDeadline(req.socket));
+    });
+    server.on("upgrade", (req) => clearHeaderDeadline(req.socket));
+  };
+  const secure = https.createServer({ key: tls.key, cert: tls.cert, ...serverOptions }, (req, res) =>
     proxy(req, res, secureForwardedHeaders(req)),
   );
 
@@ -415,10 +480,10 @@ export function startHttpsFrontDoor({
     );
   };
 
-  const plain = http.createServer({ requestTimeout: 0 }, (req, res) => {
+  const plain = http.createServer(serverOptions, (req, res) => {
     if (isProxiedRequest(req.headers)) {
       noteProxy(req);
-      proxy(req, res, endToEndHeaders(req));
+      proxy(req, res, proxiedHeaders(req));
       return;
     }
     const host = req.headers.host;
@@ -436,8 +501,13 @@ export function startHttpsFrontDoor({
       return;
     }
     noteProxy(req);
-    tunnel(req, socket, head, endToEndHeaders(req));
+    tunnel(req, socket, head, proxiedHeaders(req));
   });
+
+  trackHeaders(plain);
+  trackHeaders(secure);
+  // A TLS connection waits for its first request once the handshake is done.
+  secure.on("secureConnection", (tlsSocket) => armHeaderDeadline(tlsSocket));
 
   // One port, two protocols: a TLS handshake always opens with byte 0x16.
   const front = createNetServer((socket) => {
@@ -450,7 +520,9 @@ export function startHttpsFrontDoor({
       clearTimeout(silent);
       socket.pause();
       socket.unshift(chunk);
-      (chunk[0] === 0x16 ? secure : plain).emit("connection", socket);
+      const isTls = chunk[0] === 0x16;
+      if (!isTls) armHeaderDeadline(socket);
+      (isTls ? secure : plain).emit("connection", socket);
       process.nextTick(() => socket.resume());
     });
     socket.on("error", () => socket.destroy());

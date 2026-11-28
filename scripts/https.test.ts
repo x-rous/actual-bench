@@ -3,7 +3,8 @@ import { X509Certificate } from "crypto";
 import { mkdtempSync, rmSync } from "fs";
 import http from "http";
 import https from "https";
-import { connect, type AddressInfo } from "net";
+import { connect, type AddressInfo, type Socket } from "net";
+import { connect as tlsConnect } from "tls";
 import { tmpdir } from "os";
 import { join } from "path";
 import {
@@ -81,6 +82,10 @@ describe("HTTPS front door", () => {
     warnings = [];
     upstream = http.createServer((req, res) => {
       seen.push({ headers: req.headers });
+      if (req.url === "/slow") {
+        setTimeout(() => res.end("done"), 500);
+        return;
+      }
       if (req.url === "/broken") {
         res.writeHead(200, { "content-length": "100" });
         res.write("partial");
@@ -98,6 +103,7 @@ describe("HTTPS front door", () => {
       upstreamPort,
       tls: { cert, key },
       firstByteTimeoutMs: 100,
+      headersTimeoutMs: 200,
       warn: (message: string) => warnings.push(message),
     });
   });
@@ -148,13 +154,44 @@ describe("HTTPS front door", () => {
     expect(warnings[0]).toMatch(/reverse proxy/);
   });
 
-  it("closes a connection that sends nothing", async () => {
-    const socket = connect(front.address.port, "127.0.0.1");
-    const closedAfter = await new Promise<number>((resolve) => {
+  it("gives Bench the scheme and host from a proxy that sends only Forwarded", async () => {
+    await get(false, "/", { host: "bench:3000", forwarded: 'for=10.0.0.2;proto=https;host="bench.example.com"' });
+    expect(seen[0].headers["x-forwarded-proto"]).toBe("https");
+    expect(seen[0].headers["x-forwarded-host"]).toBe("bench.example.com");
+  });
+
+  it("drops headers the Connection header names, in both directions", async () => {
+    await get(true, "/", { connection: "keep-alive, x-hop", "x-hop": "local", "x-kept": "yes" });
+    expect(seen[0].headers["x-hop"]).toBeUndefined();
+    expect(seen[0].headers["x-kept"]).toBe("yes");
+  });
+
+  const closedWithin = (socket: Socket) =>
+    new Promise<number>((resolve) => {
       const started = Date.now();
+      socket.on("error", () => undefined);
       socket.on("close", () => resolve(Date.now() - started));
     });
-    expect(closedAfter).toBeLessThan(2000);
+
+  it("closes a connection that sends nothing", async () => {
+    expect(await closedWithin(connect(front.address.port, "127.0.0.1"))).toBeLessThan(2000);
+  });
+
+  it("closes a plain connection that stops partway through its headers", async () => {
+    const socket = connect(front.address.port, "127.0.0.1", () => socket.write("GET / HTTP/1.1\r\nHo"));
+    expect(await closedWithin(socket)).toBeLessThan(2000);
+  });
+
+  it("keeps a slow response open past the header deadline", async () => {
+    const res = await get(true, "/slow");
+    expect(res.body).toBe("done");
+  });
+
+  it("closes a TLS connection that stops partway through its headers", async () => {
+    const socket = tlsConnect({ port: front.address.port, host: "127.0.0.1", rejectUnauthorized: false }, () =>
+      socket.write("GET / HTTP/1.1\r\nHo"),
+    );
+    expect(await closedWithin(socket)).toBeLessThan(2000);
   });
 
   it("cuts the response off when the upstream fails mid-body, instead of hanging", async () => {
