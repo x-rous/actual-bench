@@ -11,7 +11,8 @@
  *
  * Layout when enabled: this front door listens on `PORT` and forwards every
  * request to the Next.js server, which listens on a private loopback port.
- * Plain `http://` requests arriving on `PORT` are redirected to `https://`.
+ * Plain `http://` requests arriving on `PORT` are redirected to `https://`,
+ * except those a reverse proxy forwarded: see `isProxiedRequest`.
  *
  * The certificate is generated with `node:crypto` alone (no OpenSSL binary or
  * extra dependency) and kept in `tls/` beside the metadata database, so the
@@ -192,6 +193,12 @@ function subjectAltNames(hosts) {
 }
 
 function ipv6Bytes(address) {
+  // A dotted IPv4 ending (`::ffff:192.168.1.50`) is two 16-bit groups.
+  const dotted = address.match(/^(.*:)(\d+\.\d+\.\d+\.\d+)$/);
+  if (dotted) {
+    const [a, b, c, d] = dotted[2].split(".").map(Number);
+    address = `${dotted[1]}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
+  }
   const [head, tail = ""] = address.includes("::") ? address.split("::") : [address, null];
   const parse = (part) => (part ? part.split(":") : []);
   let groups = parse(head);
@@ -268,6 +275,22 @@ export function findFreeLoopbackPort() {
   });
 }
 
+/** How long a new connection may stay silent before its first byte. */
+const FIRST_BYTE_TIMEOUT_MS = 10_000;
+
+/**
+ * True when a plain-HTTP request came through a reverse proxy, which says so
+ * in `X-Forwarded-Proto` or `Forwarded`. The proxy owns the scheme its users
+ * see, so such a request is forwarded unchanged instead of redirected: a
+ * proxy that terminates HTTPS and talks HTTP to Bench would otherwise get the
+ * redirect back on every request and loop. Someone sending the header by hand
+ * only gets the plain HTTP they connected with; the redirect is a convenience,
+ * not a protection.
+ */
+export function isProxiedRequest(headers) {
+  return Boolean(headers["x-forwarded-proto"] || headers["forwarded"]);
+}
+
 /** Hop-by-hop headers (RFC 9110 §7.6.1): never forwarded by a proxy. */
 const HOP_BY_HOP = new Set([
   "connection",
@@ -279,10 +302,20 @@ const HOP_BY_HOP = new Set([
   "upgrade",
 ]);
 
-function forwardedHeaders(req) {
+/** The request's headers minus hop-by-hop ones: what a proxied request keeps. */
+function endToEndHeaders(req) {
   const headers = {};
   for (const [name, value] of Object.entries(req.headers)) {
-    if (!HOP_BY_HOP.has(name) && !name.startsWith("x-forwarded-")) headers[name] = value;
+    if (!HOP_BY_HOP.has(name)) headers[name] = value;
+  }
+  return headers;
+}
+
+/** Headers for a request that reached the front door over TLS. */
+function secureForwardedHeaders(req) {
+  const headers = endToEndHeaders(req);
+  for (const name of Object.keys(headers)) {
+    if (name.startsWith("x-forwarded-") || name === "forwarded") delete headers[name];
   }
   // Only this front door says how the browser connected; anything the client
   // sent under these names is dropped above. Bench reads them for its
@@ -296,25 +329,42 @@ function forwardedHeaders(req) {
 /**
  * Listen on `port` for both HTTPS and plain HTTP: TLS connections are
  * forwarded to the Next.js server at `127.0.0.1:upstreamPort`, plain ones get
- * a redirect to the same address over HTTPS. Resolves once listening.
+ * a redirect to the same address over HTTPS, unless a reverse proxy sent them
+ * (`isProxiedRequest`), in which case they are forwarded as they came.
+ * Resolves once listening.
  */
-export function startHttpsFrontDoor({ port, hostname, upstreamPort, tls }) {
+export function startHttpsFrontDoor({
+  port,
+  hostname,
+  upstreamPort,
+  tls,
+  firstByteTimeoutMs = FIRST_BYTE_TIMEOUT_MS,
+  warn = (message) => console.warn(message),
+}) {
   const agent = new http.Agent({ keepAlive: true });
+  let warnedAboutProxy = false;
 
-  const proxy = (req, res) => {
+  const proxy = (req, res, headers) => {
     const upstream = http.request(
       {
         host: "127.0.0.1",
         port: upstreamPort,
         method: req.method,
         path: req.url,
-        headers: forwardedHeaders(req),
+        headers,
         agent,
       },
       (upstreamRes) => {
-        const headers = { ...upstreamRes.headers };
-        for (const name of HOP_BY_HOP) delete headers[name];
-        res.writeHead(upstreamRes.statusCode ?? 502, upstreamRes.statusMessage, headers);
+        const responseHeaders = { ...upstreamRes.headers };
+        for (const name of HOP_BY_HOP) delete responseHeaders[name];
+        res.writeHead(upstreamRes.statusCode ?? 502, upstreamRes.statusMessage, responseHeaders);
+        // `pipe` leaves `res` open when the source fails, and the browser
+        // would wait forever on a truncated body: cut it off instead.
+        const abort = () => {
+          if (!upstreamRes.complete) res.destroy();
+        };
+        upstreamRes.on("error", abort);
+        upstreamRes.on("close", abort);
         upstreamRes.pipe(res);
       },
     );
@@ -334,11 +384,13 @@ export function startHttpsFrontDoor({ port, hostname, upstreamPort, tls }) {
 
   // A long export or backup download must not be cut off by Node's default
   // five-minute request timeout; Next.js has none of its own either.
-  const secure = https.createServer({ key: tls.key, cert: tls.cert, requestTimeout: 0 }, proxy);
+  const secure = https.createServer({ key: tls.key, cert: tls.cert, requestTimeout: 0 }, (req, res) =>
+    proxy(req, res, secureForwardedHeaders(req)),
+  );
 
-  secure.on("upgrade", (req, socket, head) => {
+  const tunnel = (req, socket, head, forwarded) => {
     const upstream = connect(upstreamPort, "127.0.0.1", () => {
-      const headers = { ...forwardedHeaders(req), connection: "Upgrade", upgrade: req.headers.upgrade ?? "" };
+      const headers = { ...forwarded, connection: "Upgrade", upgrade: req.headers.upgrade ?? "" };
       const lines = Object.entries(headers).flatMap(([name, value]) =>
         (Array.isArray(value) ? value : [value]).map((v) => `${name}: ${v}`),
       );
@@ -349,9 +401,26 @@ export function startHttpsFrontDoor({ port, hostname, upstreamPort, tls }) {
     });
     upstream.on("error", () => socket.destroy());
     socket.on("error", () => upstream.destroy());
-  });
+  };
+  secure.on("upgrade", (req, socket, head) => tunnel(req, socket, head, secureForwardedHeaders(req)));
 
-  const redirect = http.createServer((req, res) => {
+  const noteProxy = (req) => {
+    if (warnedAboutProxy) return;
+    warnedAboutProxy = true;
+    const scheme = req.headers["x-forwarded-proto"] ?? "a Forwarded header";
+    warn(
+      `ACTUAL_BENCH_HTTPS is on, but requests are reaching Bench through a reverse proxy (${scheme}). ` +
+        "They are passed through without a redirect. The proxy already decides how browsers connect, " +
+        "so ACTUAL_BENCH_HTTPS can be turned off.",
+    );
+  };
+
+  const plain = http.createServer({ requestTimeout: 0 }, (req, res) => {
+    if (isProxiedRequest(req.headers)) {
+      noteProxy(req);
+      proxy(req, res, endToEndHeaders(req));
+      return;
+    }
     const host = req.headers.host;
     if (!host || /[\s/\\@]/.test(host)) {
       res.writeHead(400, { "content-type": "text/plain; charset=utf-8" });
@@ -361,13 +430,27 @@ export function startHttpsFrontDoor({ port, hostname, upstreamPort, tls }) {
     res.writeHead(308, { location: `https://${host}${req.url ?? "/"}` });
     res.end();
   });
+  plain.on("upgrade", (req, socket, head) => {
+    if (!isProxiedRequest(req.headers)) {
+      socket.destroy();
+      return;
+    }
+    noteProxy(req);
+    tunnel(req, socket, head, endToEndHeaders(req));
+  });
 
   // One port, two protocols: a TLS handshake always opens with byte 0x16.
   const front = createNetServer((socket) => {
+    // A connection that never says anything would otherwise hold its socket
+    // open for good. The deadline only covers the first byte, so a long
+    // download after it is never cut off.
+    const silent = setTimeout(() => socket.destroy(), firstByteTimeoutMs);
+    socket.once("close", () => clearTimeout(silent));
     socket.once("data", (chunk) => {
+      clearTimeout(silent);
       socket.pause();
       socket.unshift(chunk);
-      (chunk[0] === 0x16 ? secure : redirect).emit("connection", socket);
+      (chunk[0] === 0x16 ? secure : plain).emit("connection", socket);
       process.nextTick(() => socket.resume());
     });
     socket.on("error", () => socket.destroy());
@@ -377,7 +460,7 @@ export function startHttpsFrontDoor({ port, hostname, upstreamPort, tls }) {
     front.once("error", reject);
     front.listen(Number(port), hostname, () => {
       front.off("error", reject);
-      resolve();
+      resolve({ address: front.address(), close: () => front.close() });
     });
   });
 }

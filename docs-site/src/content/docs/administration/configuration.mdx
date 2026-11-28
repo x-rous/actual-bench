@@ -187,8 +187,15 @@ environment:
 - To stop the warning altogether, import `/data/tls/cert.pem` into your devices' trusted certificates,
   or point `ACTUAL_BENCH_HTTPS_CERT` and `ACTUAL_BENCH_HTTPS_KEY` at a certificate you already trust.
   Add the addresses you use to `ACTUAL_BENCH_HTTPS_HOSTS` first, so the certificate names them.
-- Leave it off behind a reverse proxy or on a platform that provides HTTPS for you (Fly.io and
-  similar): those already terminate HTTPS, and expect plain HTTP from Bench.
+
+:::caution[Leave it off behind a reverse proxy]
+A reverse proxy, or a platform that provides HTTPS for you (Fly.io and similar), already handles
+HTTPS and talks plain HTTP to Bench. Leave `ACTUAL_BENCH_HTTPS` unset there. If it is on anyway, Bench
+passes through requests that carry the proxy's `X-Forwarded-Proto` or `Forwarded` header unchanged and
+logs a warning that the setting can be turned off; Caddy, Traefik and Nginx Proxy Manager send these by
+default. A proxy that sends neither gets redirected to `https://` on every request, and the browser
+stops with a "too many redirects" error.
+:::
 
 ## Configuration examples
 
