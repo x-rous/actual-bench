@@ -77,9 +77,16 @@ jobs:
       # Keep the Space's own files and LFS rules, and track demo user-file
       # blobs with LFS before committing the mirrored seed files.
       #
-      # docs-site/ is left out: the demo image never uses it, and its
-      # screenshots are plain binary files, which the Space refuses to accept
-      # outside LFS. rsync keeps excluded paths, so an older copy is removed.
+      # The Space refuses any binary file stored outside LFS, so a push fails
+      # outright the moment a new binary lands anywhere in the mirror. Two
+      # rules keep that from happening:
+      #   1. Folders the demo image never uses are left out (docs-site/ with
+      #      its screenshots, desktop/ with its icons and Store screenshots).
+      #      rsync keeps excluded paths, so an older copy is removed too.
+      #   2. Every binary file that is still mirrored is tracked with LFS
+      #      (demo/track-space-binaries.py), so a new one can't fail the push.
+      # When adding a top-level folder the demo doesn't build from, add it to
+      # both lists below.
       - name: Mirror main into the Space
         if: steps.changes.outputs.deploy == 'true'
         run: |
@@ -87,11 +94,12 @@ jobs:
           rsync -a --delete \
             --exclude='.git' --exclude='README.md' --exclude='.gitattributes' \
             --exclude='Dockerfile' --exclude='.deployed-from' \
-            --exclude='/docs-site' \
+            --exclude='/docs-site' --exclude='/desktop' \
             ./ "$space/"
-          rm -rf "$space/docs-site"
+          rm -rf "$space/docs-site" "$space/desktop"
           git -C "$space" add -u -- demo/seed-data/user-files
           git -C "$space" lfs track 'demo/seed-data/user-files/*.blob'
+          python3 -I demo/track-space-binaries.py "$space"
           cp demo/Dockerfile "$space/Dockerfile"
           echo "${{ steps.changes.outputs.head }}" > "$space/.deployed-from"
 
