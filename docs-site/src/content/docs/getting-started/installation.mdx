@@ -109,9 +109,10 @@ Open the app in your browser:
 The app opens on the connection screen. Continue with [Connect to a budget](../connecting/).
 
 :::tip[Use HTTPS when it isn't just localhost]
-The moment Bench is reachable from anywhere but your own machine, put HTTPS in front of it - a reverse
-proxy is fine. Direct Actual Server mode needs a secure, cross-origin-isolated context and will not
-work without one. See [Deployment](../../administration/deployment/).
+The moment you open Bench from anywhere but its own machine, it needs HTTPS for Direct Actual Server
+mode: browsers only allow Direct mode on secure pages. No reverse proxy? Set
+`ACTUAL_BENCH_HTTPS: "true"` and Bench serves HTTPS itself, with a self-signed certificate your
+browser asks you to accept once. See [Built-in HTTPS](../../administration/configuration/#built-in-https).
 :::
 
 ## Verify the installation

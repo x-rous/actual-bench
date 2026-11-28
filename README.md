@@ -146,6 +146,11 @@ default when saving is available, and you can untick it. Saved connections are e
 Actual Bench password. Credentials enrolled for automations are encrypted separately with a vault key
 Bench generates on first start and keeps in `/data/secrets/vault.key`.
 
+Opening Bench from another machine by IP address (`http://192.168.1.50:3000`) and want Direct mode?
+Browsers only allow it over HTTPS. Add `ACTUAL_BENCH_HTTPS: "true"` under `environment:` and open
+`https://<your-server>:3000`: Bench serves HTTPS itself with a self-signed certificate, which your
+browser asks you to accept once.
+
 Running behind a reverse proxy, want the edge build, or need to change a setting? See
 **[Installation](https://x-rous.github.io/actual-bench/getting-started/installation/)** and
 **[Configuration](https://x-rous.github.io/actual-bench/administration/configuration/)**.

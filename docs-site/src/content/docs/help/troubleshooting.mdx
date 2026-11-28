@@ -48,6 +48,10 @@ Redact secrets before you share a log with anyone.
 
 - **The browser cannot reach Actual Server** - open that URL in the same browser, over HTTPS, and see
   what happens.
+- **"Direct Actual Server mode needs Actual Bench to be opened over HTTPS"** - you opened Bench at
+  an `http://` address other than `localhost`. Browsers only allow Direct mode on secure pages. Set
+  `ACTUAL_BENCH_HTTPS=true` (see [Built-in HTTPS](../../administration/configuration/#built-in-https))
+  or put Bench behind an HTTPS reverse proxy, then open it with `https://`.
 - **CORS or cross-origin isolation errors** - allow CORS, or serve Actual Server same-origin through
   your proxy. Bench sets its own isolation headers already; if a proxy strips them, Direct mode
   reports that clearly and you can use HTTP API Server mode instead.

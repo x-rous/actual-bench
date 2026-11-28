@@ -8,6 +8,10 @@ services:
       NEXT_TELEMETRY_DISABLED: "1"
       ACTUAL_BENCH_DB_PATH: /data/actual-bench.sqlite
       # --- Optional settings (uncomment to use) ---
+      # Serve HTTPS on port 3000 with a self-signed certificate (kept in
+      # /data/tls). Needed for Direct mode when you open Bench by IP address
+      # or LAN name without a reverse proxy. Leave off behind a proxy.
+      # ACTUAL_BENCH_HTTPS: "true"
       # Server log verbosity: debug | info (default) | warn | error
       # LOG_LEVEL: info
       # Credential vault key. Optional: without it Bench generates one into

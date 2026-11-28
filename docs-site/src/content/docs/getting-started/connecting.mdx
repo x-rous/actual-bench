@@ -92,7 +92,9 @@ stored where.
 **Direct mode**
 
 - Open the Actual Server address in the same browser. If that fails, Bench cannot reach it either.
-- Outside your own computer, both Actual Bench and the Actual Server need HTTPS.
+- Outside your own computer, both Actual Bench and the Actual Server need HTTPS. If you open Bench at
+  an `http://` address, ask whoever runs it to turn on
+  [built-in HTTPS](../../administration/configuration/#built-in-https).
 - The server may need CORS allowed, or to sit behind the same reverse proxy as Bench. That is a job
   for whoever runs the server: see [Deployment](../../administration/deployment/#direct-mode).
 

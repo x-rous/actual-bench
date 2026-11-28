@@ -73,9 +73,11 @@ Two different paths matter, and mixing them up is the most common deployment mis
   server, so **the Bench server** must reach the Actual Server too.
 - The Actual Server must allow the browser's requests (CORS), or sit behind the same reverse proxy as
   Bench so the two share one origin.
-- Serve both over **HTTPS**. Direct mode sends your server password from the browser, so plain
-  `http://` puts it on the wire. Bench sets the cross-origin isolation headers Direct mode needs on
-  its own pages.
+- Serve both over **HTTPS**. Browsers only run Direct mode's engine on a secure page (HTTPS, or
+  `localhost`), and Direct mode sends your server password from the browser, so plain `http://`
+  would also put it on the wire. Bench sets the cross-origin isolation headers Direct mode needs on
+  its own pages. Without a reverse proxy, set `ACTUAL_BENCH_HTTPS=true` and Bench serves HTTPS itself
+  with a self-signed certificate: see [Built-in HTTPS](../configuration/#built-in-https).
 
 If an environment cannot support Direct mode, there is nothing to switch off: Bench says so clearly
 when someone connects, and they can use HTTP API mode instead.
@@ -95,7 +97,9 @@ networking.
 
 ## Reverse proxy and HTTPS
 
-Put a reverse proxy (Caddy, Traefik, Nginx) in front and terminate HTTPS there:
+For a home LAN with no proxy, [built-in HTTPS](../configuration/#built-in-https) is enough. For
+anything reachable from outside, or to use a trusted certificate without warnings, put a reverse proxy
+(Caddy, Traefik, Nginx) in front and terminate HTTPS there, with `ACTUAL_BENCH_HTTPS` left off:
 
 - Forward the original **host** and **protocol** headers.
 - Serving the Actual Server on the same scheme, hostname and port as Bench (for example under a path

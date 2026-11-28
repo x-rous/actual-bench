@@ -32,6 +32,9 @@ The table lists every environment variable supported by the current application.
 | `ACTUAL_BENCH_WORKERS_MAX` | `2` | How many automation runs may be going at once. | No | Yes |
 | `ACTUAL_BENCH_WORKER_HEAP_MB` | `512` | Memory limit for each automation run, in MB. | No | Yes |
 | `ACTUAL_BENCH_AUTOMATION_EXECUTOR` | `worker` | Where automation runs execute: `worker` (their own thread) or `in-thread` (the server's own thread). | No | Yes |
+| `ACTUAL_BENCH_HTTPS` | `false` | `true` makes Bench serve HTTPS itself, with a self-signed certificate. For installs opened by IP address or LAN name without a reverse proxy. See [Built-in HTTPS](#built-in-https). | No | Yes |
+| `ACTUAL_BENCH_HTTPS_HOSTS` | *(unset)* | Extra names and IP addresses for the generated certificate, comma-separated (for example `192.168.1.50,bench.lan`). Only needed if you want to trust the certificate on your devices. | No | Yes |
+| `ACTUAL_BENCH_HTTPS_CERT`, `ACTUAL_BENCH_HTTPS_KEY` | *(unset)* | Paths to your own PEM certificate and key, used instead of the generated pair. Set both or neither. | Key: **Yes** | Yes |
 | `ACTUAL_BENCH_RUNTIME_DIR` | `actual-runtime`, next to the metadata database | Where automation runs keep the temporary copy of a budget they open themselves. | No | Yes |
 | `LOG_LEVEL` | `info` | Server log verbosity. | No | Yes |
 | `NEXT_DEV_ALLOWED_ORIGINS` | *(unset)* | Dev-only: allow the HMR WebSocket through a reverse proxy (comma-separated hostnames). | No | Yes |
@@ -157,6 +160,35 @@ you are chasing something.
 - If you set `ACTUAL_BENCH_VAULT_KEY`, use your container platform's secret management for it.
 - Nothing secret goes in a `NEXT_PUBLIC_*` variable. Those are shipped to every browser.
 - Redact logs before you share them. Rotate anything you even suspect leaked.
+
+## Built-in HTTPS
+
+Direct Actual Server mode only works when the browser opens Bench over **HTTPS**, or on
+`localhost`. Browsers allow the in-browser engine Direct mode uses on secure pages only, so
+`http://192.168.1.50:3000` fails whatever Bench does. If you already have a reverse proxy with HTTPS,
+keep using it. If you don't, turn on Bench's own:
+
+```yaml
+environment:
+  ACTUAL_BENCH_DB_PATH: /data/actual-bench.sqlite
+  ACTUAL_BENCH_HTTPS: "true"
+```
+
+- Bench keeps listening on port **3000**, now over HTTPS. Open `https://<your-server>:3000`. Anyone who
+  types `http://` is redirected.
+- On first start Bench creates a **self-signed certificate** and keeps it in `/data/tls/`, so it
+  survives restarts and upgrades. The startup log prints its fingerprint.
+- The first time you open it, the browser warns that the certificate is not trusted. Check the
+  address, then choose to continue (**Advanced → Proceed** in Chrome and Edge, **Accept the Risk** in
+  Firefox). That is expected: the connection is encrypted, but no public authority vouches for a
+  certificate Bench made itself.
+- If your Actual Server also uses a self-signed certificate, open its address in the same browser
+  once and accept that warning too. Until you do, the browser blocks Bench's requests to it.
+- To stop the warning altogether, import `/data/tls/cert.pem` into your devices' trusted certificates,
+  or point `ACTUAL_BENCH_HTTPS_CERT` and `ACTUAL_BENCH_HTTPS_KEY` at a certificate you already trust.
+  Add the addresses you use to `ACTUAL_BENCH_HTTPS_HOSTS` first, so the certificate names them.
+- Leave it off behind a reverse proxy or on a platform that provides HTTPS for you (Fly.io and
+  similar): those already terminate HTTPS, and expect plain HTTP from Bench.
 
 ## Configuration examples
 
